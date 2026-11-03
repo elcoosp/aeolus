@@ -1,0 +1,18 @@
+[package]
+name = "aeolus-macro"
+description = "Compile-time Tailwind v4 class validation macros (tw!, tw_cn!) - syn-free"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+aeolus-core = { workspace = true }
+
+[features]
+verbose-diagnostics = []
+
+# profile section must live at workspace root; kept opt-level note here:
+# proc-macro crates build fast with opt-level 1 (mission brief 3.3)
