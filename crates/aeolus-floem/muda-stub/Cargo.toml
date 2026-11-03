@@ -1,0 +1,18 @@
+[package]
+name = "muda"
+version = "0.17.2"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+description = "No-op API-compatible stand-in for the muda menu crate (floem hard-depends on muda's `gtk` feature on Linux, which requires GTK3 dev libraries that are not available in the AEOLUS build sandbox)."
+
+# Not a workspace member: opt out of the enclosing aeolus workspace.
+[workspace]
+
+[features]
+default = []
+gtk = []
+libxdo = []
+serde = []
+
+[dependencies]
+dpi = { version = "0.1", default-features = false }

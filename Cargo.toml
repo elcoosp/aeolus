@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/aeolus-core",
+    "crates/aeolus-macro",
+    "crates/aeolus-shadcn",
+    "crates/aeolus-xilem",
+    "crates/aeolus-floem",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/aeolus-rs/aeolus"
+
+[workspace.dependencies]
+aeolus-core = { version = "0.1.0", path = "crates/aeolus-core" }
+aeolus-macro = { version = "0.1.0", path = "crates/aeolus-macro" }
+
+# AEOLUS sandbox only: floem hard-depends on muda's `gtk` feature on Linux,
+# which needs GTK3 dev headers (gdk-3.0.pc) that are not installed here and
+# cannot be installed. This path patch swaps in a no-op, API-compatible stub
+# (crates/aeolus-floem/muda-stub) covering the exact muda surface floem uses.
+# See crates/aeolus-floem/muda-stub/src/lib.rs for rationale.
+[patch.crates-io]
+muda = { path = "crates/aeolus-floem/muda-stub" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+
+# Disk-constrained sandbox: strip DWARF in dev builds (tests don't need it).
+[profile.dev]
+debug = 0
+debug-assertions = true
