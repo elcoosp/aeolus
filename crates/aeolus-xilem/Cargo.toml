@@ -1,0 +1,18 @@
+[package]
+name = "aeolus-xilem"
+description = "Aeolus backend: lower Tailwind v4 StylePlans into Masonry property stacks and Xilem views"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+
+[dependencies]
+aeolus-core = { path = "../aeolus-core" }
+masonry = { path = "../../../repos/xilem/masonry" }
+xilem_masonry = { path = "../../../repos/xilem/xilem_masonry" }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread"] }
+masonry_testing = { path = "../../../repos/xilem/masonry_testing" }
