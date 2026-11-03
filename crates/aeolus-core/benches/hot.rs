@@ -1,0 +1,80 @@
+//! Hot-path benchmarks: resolve, diff-apply, intern, cn().
+//!
+//! Run with `cargo bench -p aeolus-core` (divan). Numbers recorded in
+//! report 08 were measured on the CI sandbox (2 cores, shared) — treat as
+//! relative, not absolute.
+
+use aeolus_core::*;
+use divan::counter::ItemsCount;
+use divan::Bencher;
+
+fn theme() -> TailwindTheme {
+    TailwindTheme::from_theme_css(include_str!("../data/shadcn-light.css")).unwrap()
+}
+
+const BUTTON: &str = "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90";
+
+fn main() {
+    divan::main();
+}
+
+#[divan::bench]
+fn parse_button(b: Bencher) {
+    let t = theme();
+    b.bench(|| {
+        let resolver = Resolver::new(&t);
+        let _ = divan::black_box(&resolver);
+        aeolus_core::parser::parse_class_string(divan::black_box(BUTTON)).0
+    });
+}
+
+#[divan::bench]
+fn resolve_button_cold(b: Bencher) {
+    let t = theme();
+    b.counter(ItemsCount::new(BUTTON.split_ascii_whitespace().count()))
+        .bench(|| Resolver::new(&t).resolve(divan::black_box(BUTTON)).unwrap());
+}
+
+#[divan::bench]
+fn resolve_cached_hit(b: Bencher) {
+    let t = theme();
+    let cache = PlanCache::new();
+    let _ = cache.resolve(&t, BUTTON).unwrap();
+    b.bench(|| cache.resolve(&t, divan::black_box(BUTTON)).unwrap());
+}
+
+#[divan::bench]
+fn diff_unchanged(b: Bencher) {
+    let t = theme();
+    let a = Resolver::new(&t).resolve(BUTTON).unwrap().plan.base;
+    let c = a.clone();
+    b.bench(|| plan::diff(&a, divan::black_box(&c)));
+}
+
+#[divan::bench]
+fn intern_hit(b: Bencher) {
+    let interner = Interner::new();
+    interner.intern(BUTTON);
+    b.bench(|| interner.intern(divan::black_box(BUTTON)));
+}
+
+#[divan::bench]
+fn cn_button_merge(b: Bencher) {
+    b.bench(|| cn(&["inline-flex items-center gap-2 rounded-md text-sm bg-primary", "px-8 py-8 rounded-full"]));
+}
+
+#[divan::bench]
+fn cn_no_conflicts(b: Bencher) {
+    b.bench(|| cn(&["flex", "items-center", "gap-2", "text-sm", "font-medium", "bg-primary"]));
+}
+
+#[divan::bench]
+fn color_mix_opacity(b: Bencher) {
+    let c = Color::parse("oklch(0.205 0 0)").unwrap();
+    b.bench(|| c.mix_with_transparent(90.0));
+}
+
+#[divan::bench]
+fn theme_parse_shadcn(b: Bencher) {
+    b.bench(|| TailwindTheme::from_theme_css(include_str!("../data/shadcn-light.css")).unwrap());
+}

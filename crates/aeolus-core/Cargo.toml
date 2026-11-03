@@ -1,0 +1,19 @@
+[package]
+name = "aeolus-core"
+description = "Tailwind CSS v4 class-string compiler: parser, theme registry, StylePlan IR, conflict resolution — framework-agnostic semantic layer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+
+[dependencies]
+# Intentionally empty: the semantic layer has zero dependencies so the hot
+# path (and the proc macro) can rely on it anywhere.
+
+[dev-dependencies]
+divan = "0.1"
+
+[[bench]]
+name = "hot"
+harness = false
