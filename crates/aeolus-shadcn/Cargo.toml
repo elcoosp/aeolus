@@ -1,0 +1,20 @@
+[package]
+name = "aeolus-shadcn"
+description = "Shadcn/ui v4 class tables and thin Xilem/Floem wrappers for the Aeolus lowering stack"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+
+[dependencies]
+aeolus-core = { path = "../aeolus-core" }
+aeolus-xilem = { path = "../aeolus-xilem" }
+aeolus-floem = { path = "../aeolus-floem" }
+masonry = { path = "../../../repos/xilem/masonry" }
+xilem_masonry = { path = "../../../repos/xilem/xilem_masonry" }
+floem = { path = "../../../repos/floem" }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread"] }
