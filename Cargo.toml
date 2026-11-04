@@ -7,6 +7,8 @@ members = [
     "crates/aeolus-xilem",
     "crates/aeolus-floem",
 ]
+# cargo-fuzz's own workspace lives here; it must not join this one.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.0"
@@ -18,13 +20,17 @@ repository = "https://github.com/aeolus-rs/aeolus"
 aeolus-core = { version = "0.1.0", path = "crates/aeolus-core" }
 aeolus-macro = { version = "0.1.0", path = "crates/aeolus-macro" }
 
-# AEOLUS sandbox only: floem hard-depends on muda's `gtk` feature on Linux,
-# which needs GTK3 dev headers (gdk-3.0.pc) that are not installed here and
-# cannot be installed. This path patch swaps in a no-op, API-compatible stub
-# (crates/aeolus-floem/muda-stub) covering the exact muda surface floem uses.
-# See crates/aeolus-floem/muda-stub/src/lib.rs for rationale.
+# AEOLUS sandbox only: floem hard-depends on muda's `gtk` feature on Linux
+# (floem/Cargo.toml, `[target.'cfg(target_os = "linux")'.dependencies]` has no
+# feature gate), which needs GTK3 dev headers (gdk-3.0.pc) that are not
+# installed here and cannot be installed. This patch swaps in a no-op,
+# API-compatible stub (crates/muda-stub) covering the exact muda surface
+# floem uses. The stub is dev-only: it is NOT a workspace member, is never a
+# dependency of any publishable crate (aeolus-core / aeolus-macro do not
+# reference muda at all), and the three backend crates carry `publish = false`
+# for exactly this reason. See reports/09-publishing/PUBLISHING.md.
 [patch.crates-io]
-muda = { path = "crates/aeolus-floem/muda-stub" }
+muda = { path = "crates/muda-stub" }
 
 [profile.release]
 opt-level = 3
