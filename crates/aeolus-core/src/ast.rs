@@ -28,7 +28,14 @@ pub enum Variant<'a> {
     /// variant looked up in the variant table.
     Named(NamedVariant),
     /// `group-hover`, `group-focus/label`, `peer-focus` — parent-relative.
-    Grouped { parent: ParentKind, name: NamedVariant, label: Option<&'a str> },
+    Grouped {
+        /// The parent family (`group` or `peer`).
+        parent: ParentKind,
+        /// The guarded state on the parent/sibling.
+        name: NamedVariant,
+        /// Optional named container (`group-hover/menu`).
+        label: Option<&'a str>,
+    },
     /// `data-[state=open]`, `aria-[busy=true]`, `[&_svg]:...` — unsupported in v1.
     Arbitrary(&'a str),
 }
@@ -36,7 +43,9 @@ pub enum Variant<'a> {
 /// The parent-relative variant families (`group-*` / `peer-*`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParentKind {
+    /// A `.group` ancestor.
     Group,
+    /// A `.peer` sibling.
     Peer,
 }
 
@@ -44,13 +53,21 @@ pub enum ParentKind {
 /// but each layer is keyed by its condition, so we only need identity here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NamedVariant {
+    /// `hover`.
     Hover,
+    /// `focus`.
     Focus,
+    /// `focus-visible`.
     FocusVisible,
+    /// `focus-within`.
     FocusWithin,
+    /// `active`.
     Active,
+    /// `disabled`.
     Disabled,
+    /// `visited`.
     Visited,
+    /// `dark` (class/OS dark mode).
     Dark,
     /// Responsive breakpoints (`sm`..`2xl`) resolved against `--breakpoint-*`.
     Breakpoint(Breakpoint),
@@ -61,10 +78,15 @@ pub enum NamedVariant {
 /// Tailwind v4 default breakpoints (`--breakpoint-*`, 4px spacing base).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Breakpoint {
+    /// `sm` (640px default).
     Sm,
+    /// `md` (768px default).
     Md,
+    /// `lg` (1024px default).
     Lg,
+    /// `xl` (1280px default).
     Xl,
+    /// `2xl` (1536px default).
     Xxl,
 }
 
@@ -80,6 +102,7 @@ impl Breakpoint {
         }
     }
 
+    /// Map a variant name (`"sm"`, `"2xl"`) back to the breakpoint.
     pub fn from_name(s: &str) -> Option<Self> {
         Some(match s {
             "sm" => Breakpoint::Sm,
@@ -91,6 +114,7 @@ impl Breakpoint {
         })
     }
 
+    /// The canonical variant name (`"sm"`, `"xl"`, `"2xl"`).
     pub fn name(self) -> &'static str {
         match self {
             Breakpoint::Sm => "sm",
