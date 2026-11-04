@@ -1,7 +1,7 @@
 //! Proof test (c): `cn()` conflict resolution — rightmost wins — then the
 //! resolver, then the lowering, agree on the final padding.
 
-use aeolus_core::{cn, shadcn_default, Resolver};
+use aeolus_core::{Resolver, cn, shadcn_default};
 use aeolus_xilem::layer_get;
 use masonry::layout::Length;
 use masonry::properties::Padding;
