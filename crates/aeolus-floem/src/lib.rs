@@ -50,6 +50,16 @@ pub fn to_floem_color(c: Color) -> PenikoColor {
     PenikoColor::new([r, g, b, a])
 }
 
+/// Tailwind px → floem [`Length::Pt`], 1:1.
+///
+/// UNIT AUDIT (Phase 2): floem @ 1351ffb's `Pt` is NOT a CSS point (1/72
+/// inch) — `src/style/unit.rs` documents it as "absolute length value in
+/// Floem layout points … logical layout points rather than device pixels",
+/// and `Length::to_taffy` passes the value through unscaled into taffy
+/// (`Length::Pt(v) => LengthPercentage::length(v)`); the window scale factor
+/// is applied later at the renderer. So `p-4` = 16 logical px = 16 device px
+/// at 96dpi. Pinned by `tests/lowering.rs::pt_is_logical_pixel_not_css_point`
+/// (mutation-verified: CSS-point semantics fail it immediately).
 fn pt(px: f32) -> Length {
     Length::Pt(px as f64)
 }
@@ -147,10 +157,26 @@ pub fn apply_resolved(mut style: Style, s: &ResolvedStyle, report: &mut Lowering
             color: to_floem_color(sh.color),
             blur_radius: Length::Pt(sh.blur as f64),
             spread: Length::Pt(sh.spread as f64),
-            left_offset: if sh.offset_x >= 0.0 { pt(sh.offset_x) } else { zero },
-            right_offset: if sh.offset_x < 0.0 { pt(-sh.offset_x) } else { zero },
-            top_offset: if sh.offset_y >= 0.0 { pt(sh.offset_y) } else { zero },
-            bottom_offset: if sh.offset_y < 0.0 { pt(-sh.offset_y) } else { zero },
+            left_offset: if sh.offset_x >= 0.0 {
+                pt(sh.offset_x)
+            } else {
+                zero
+            },
+            right_offset: if sh.offset_x < 0.0 {
+                pt(-sh.offset_x)
+            } else {
+                zero
+            },
+            top_offset: if sh.offset_y >= 0.0 {
+                pt(sh.offset_y)
+            } else {
+                zero
+            },
+            bottom_offset: if sh.offset_y < 0.0 {
+                pt(-sh.offset_y)
+            } else {
+                zero
+            },
         };
         style = style.apply_box_shadows(smallvec![shadow]);
     }
@@ -269,10 +295,16 @@ pub fn lower_with_transitions(
     let mut report = LoweringReport::default();
 
     for (group_id, _) in &plan.group {
-        report.drop(format!("group:{group_id}"), "no ancestor-state selectors in Floem");
+        report.drop(
+            format!("group:{group_id}"),
+            "no ancestor-state selectors in Floem",
+        );
     }
     for (peer_id, _) in &plan.peer {
-        report.drop(format!("peer:{peer_id}"), "no sibling-state selectors in Floem");
+        report.drop(
+            format!("peer:{peer_id}"),
+            "no sibling-state selectors in Floem",
+        );
     }
 
     let mut style = apply_resolved(Style::new(), &plan.base, &mut report);
