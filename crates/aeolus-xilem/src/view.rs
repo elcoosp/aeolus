@@ -145,11 +145,7 @@ pub trait TwViewExt<State: 'static, Action>: WidgetView<State, Action> {
 
     /// Parse `classes` with `resolver` and wrap this view in a centered box
     /// (for labels inside buttons/badges: `items-center justify-center`).
-    fn tw_centered(
-        self,
-        resolver: &aeolus_core::Resolver,
-        classes: &str,
-    ) -> Tw<Self, State, Action>
+    fn tw_centered(self, resolver: &aeolus_core::Resolver, classes: &str) -> Tw<Self, State, Action>
     where
         State: 'static,
         Action: 'static,
@@ -171,11 +167,7 @@ pub trait TwViewExt<State: 'static, Action>: WidgetView<State, Action> {
     ///
     /// The parse happens once per rebuild of the wrapping view; static call
     /// sites should prefer `aeolus-macro`'s `tw!` (compile-time interning).
-    fn tw(
-        self,
-        resolver: &aeolus_core::Resolver,
-        classes: &str,
-    ) -> Tw<Self, State, Action>
+    fn tw(self, resolver: &aeolus_core::Resolver, classes: &str) -> Tw<Self, State, Action>
     where
         State: 'static,
         Action: 'static,
