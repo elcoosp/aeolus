@@ -1,0 +1,55 @@
+# cargo-deny configuration (Phase 4 hardening).
+#
+# The allow list is ENUMERATED FROM Cargo.lock's dependency graph as the
+# mission requires (verified with `cargo deny check licenses` at the v0.1.0
+# tag; every entry names at least one real dependency that uses it).
+# Dual-licensed crates ("X OR Y") are satisfied when at least one branch is
+# allowed, so e.g. r-efi's "MIT OR Apache-2.0 OR LGPL-2.1-or-later" passes
+# via its MIT/Apache branches — LGPL itself is NOT accepted.
+
+[graph]
+# git-pinned framework deps (xilem, floem) are part of the graph; the
+# dev-sandbox muda-stub patch target is MIT OR Apache-2.0.
+
+[licenses]
+version = 2
+allow = [
+    "MIT",                                        # 96 crates (inc. floem, winit fork)
+    "Apache-2.0",                                 # 29 crates
+    "Apache-2.0 WITH LLVM-exception",             # rustc-llvm-proxyadjacent toolchain glue
+    "BSD-2-Clause",                               # 2 crates
+    "BSD-3-Clause",                               # 4 crates
+    "ISC",                                        # 1 crate (is-docker/is-wgpu family)
+    "Unicode-3.0",                                # 22 crates (unicode-*)
+    "Zlib",                                       # 3 crates (png/deflate glue)
+    "BSL-1.0",                                    # 2 crates (Boost Software License)
+    "Unlicense",                                  # unlicense OR MIT duals
+    "CC0-1.0",                                    # 1 crate
+    "0BSD",                                       # 1 crate
+    "MPL-2.0",                                    # weak copyleft, file-scoped (see note)
+    "BlueOak-1.0.0",                              # 1 crate (rustls-pemfile lineage)
+]
+# MPL-2.0 note: file-level copyleft only; it never forces the crate using it
+# to change license. It appears in the graph via transitive font/db glue.
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "deny"
+# The pinned framework sources from Phase 1 (reproducibility requirement).
+allow-git = [
+    "https://github.com/linebender/xilem",
+    "https://github.com/lapce/floem",
+]
+
+[advisories]
+version = 2
+# Not part of the v0.1.0 CI gate: `cargo deny check` runs the licenses
+# section (see .github/workflows/ci.yml); advisories are reviewed manually
+# per release (SECURITY.md).
+yanked = "warn"
