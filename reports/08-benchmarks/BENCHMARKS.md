@@ -2,8 +2,8 @@
 
 Run: `cargo bench -p aeolus-core` (divan 0.1.21), release profile,
 2-core shared CI sandbox (Linux). Source: `crates/aeolus-core/benches/hot.rs`.
-Date: 2026-11-03. Treat absolute numbers as environment-specific; the ratios
-are the point.
+Date: 2026-11-03, re-run 2026-11-04 on the v0.1.0 release branch (below).
+Treat absolute numbers as environment-specific; the ratios are the point.
 
 The benchmarked button string is 33 classes (the full shadcn Button base
 plus variant utilities):
@@ -28,6 +28,25 @@ bg-primary text-primary-foreground hover:bg-primary/90
 | `cn_no_conflicts` (6 classes) | 1.49 µs | |
 | `color_mix_opacity` | 0.22 ns | oklab premultiplied mix (scalar) |
 | `theme_parse_shadcn` | 201 µs | one-time; ~270 tokens incl. default palette |
+
+## v0.1.0 re-run (2026-11-04, same sandbox, release profile)
+
+After the Phase-2/4 correctness work (calc precedence, approximate color
+equality, bounded caches, fuzz fixes) the hot path is UNCHANGED:
+
+| benchmark | v0.1.0 median | vs 2026-11-03 | note |
+|---|---|---|---|
+| `resolve_cached_hit` | **405 ns** | = | two-generation lookup added zero overhead |
+| `resolve_button_cold` | **4.6 µs** (3.7 Mitem/s) | = | shunting-yard calc only runs at theme parse |
+| `diff_unchanged` | **505 ns** | ≈4% faster | approximate `Color` eq short-circuits on tolerance |
+| `intern_hit` | **386 ns** | = | |
+| `parse_button` | 1.23 µs | ≈ | |
+| `cn_button_merge` | 3.2 µs | ≈ | new conflict families classify in the same match |
+| `theme_parse_shadcn` | 231 µs | +15% | accepted: calc() precedence + ASCII/parity checks are cold-path only, paid once per theme load |
+| `color_mix_opacity` | 0.22 ns | = | |
+
+Verdict: the production-hardening work did not regress the hot paths the
+brief pins (§3.6); theme parsing grew but stays a one-time cost.
 
 ## Steady-state claims (per mission brief §3.6)
 
