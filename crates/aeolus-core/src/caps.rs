@@ -13,28 +13,48 @@ use crate::plan::{Slot, StylePlan};
 /// Which `ResolvedStyle` slots a backend can express natively.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct PropertySupport {
+    /// `bg-*`.
     pub background: bool,
+    /// `text-{color}`.
     pub content_color: bool,
+    /// `p-*`.
     pub padding: bool,
+    /// `border-{color}`.
     pub border_color: bool,
+    /// `border-*` widths.
     pub border_width: bool,
+    /// `rounded-*`.
     pub corner_radius: bool,
+    /// `w-*` / `h-*` / `size-*`.
     pub dimensions: bool,
+    /// `min-w-*` / `min-h-*`.
     pub min_dimensions: bool,
+    /// `max-w-*` / `max-h-*`.
     pub max_dimensions: bool,
+    /// `gap-*`.
     pub gap: bool,
+    /// `shadow-*`.
     pub shadow: bool,
+    /// `m-*`.
     pub margin: bool,
+    /// flex/grid display + axis settings.
     pub layout: bool,
+    /// `opacity-*`.
     pub opacity: bool,
+    /// `ring-*`.
     pub ring: bool,
+    /// `outline-*`.
     pub outline: bool,
+    /// `cursor-*`.
     pub cursor: bool,
+    /// `pointer-events-*`.
     pub pointer_events: bool,
+    /// typography properties (font size/weight/...).
     pub text: bool,
 }
 
 impl PropertySupport {
+    /// Does this backend natively express `slot`?
     pub fn supports(&self, slot: Slot) -> bool {
         match slot {
             Slot::Background => self.background,
@@ -79,10 +99,15 @@ pub enum CascadeModel {
 /// Capability matrix entry for one backend.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BackendCapabilities {
+    /// Per-slot native support.
     pub properties: PropertySupport,
+    /// The selector/cascade model.
     pub cascade: CascadeModel,
+    /// Breakpoint variants (`md:`) handled natively.
     pub responsive: bool,
+    /// Container queries (`@md:`) handled natively.
     pub container_queries: bool,
+    /// `dark:` handled natively.
     pub dark_mode: bool,
     /// Typography via normal properties (false = side-channel needed).
     pub typography: bool,
@@ -104,6 +129,7 @@ pub enum ThemeSwap {
 
 /// The lowering contract (locked §3.2).
 pub trait Backend {
+    /// The backend's lowered-style type (a `PropertyStack`, a Floem `Style`, ...).
     type View;
     /// Lower a `StylePlan` into the backend's native styling construct.
     fn lower(plan: &StylePlan, caps: &BackendCapabilities) -> Self::View;
