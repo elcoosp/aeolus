@@ -77,7 +77,15 @@ pub fn parse_token(raw: &str) -> Result<ClassToken<'_>, ParseError> {
         return Err(ParseError::new("empty utility element (double '-')"));
     }
 
-    Ok(ClassToken { variants, elements, arbitrary, opacity, negative, important, raw })
+    Ok(ClassToken {
+        variants,
+        elements,
+        arbitrary,
+        opacity,
+        negative,
+        important,
+        raw,
+    })
 }
 
 /// Find the first top-level `needle` byte (not inside `[...]`).
@@ -117,11 +125,16 @@ fn parse_variant(v: &str) -> Result<Variant<'_>, ParseError> {
     let named = parse_named_variant(name)
         .ok_or_else(|| ParseError::new(format!("unknown variant {v:?} (v1 supports the Shadcn set: hover, focus, focus-visible, focus-within, active, disabled, dark, breakpoints, @container, group-*, peer-*)")))?;
     Ok(match parent {
-        Some(parent_kind) => Variant::Grouped { parent: parent_kind, name: named, label },
+        Some(parent_kind) => Variant::Grouped {
+            parent: parent_kind,
+            name: named,
+            label,
+        },
         None => Variant::Named(named),
     })
 }
 
+/// Look up a named variant (`"hover"`, `"md"`, `"@sm"`) in the variant table.
 pub fn parse_named_variant(name: &str) -> Option<NamedVariant> {
     Some(match name {
         "hover" => NamedVariant::Hover,
@@ -158,10 +171,10 @@ fn split_body(s: &str) -> Result<(&str, Option<&str>, Option<f32>), ParseError> 
             }
             b']' => {
                 depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    if let Some((start, _)) = bracket {
-                        bracket = Some((start, i));
-                    }
+                if depth == 0
+                    && let Some((start, _)) = bracket
+                {
+                    bracket = Some((start, i));
                 }
             }
             b'/' if depth == 0 && slash.is_none() && bracket.is_none() => slash = Some(i),
@@ -192,10 +205,15 @@ fn parse_opacity(s: &str) -> Result<Option<f32>, ParseError> {
     if s.is_empty() {
         return Ok(None);
     }
-    let inner = s.strip_prefix('[').and_then(|r| r.strip_suffix(']')).unwrap_or(s);
+    let inner = s
+        .strip_prefix('[')
+        .and_then(|r| r.strip_suffix(']'))
+        .unwrap_or(s);
     // Arbitrary opacity `/[0.37]` is a raw alpha fraction in v4.
     if inner.contains('.') && !inner.contains('%') {
-        let v: f32 = inner.parse().map_err(|_| ParseError::new(format!("bad opacity {s:?}")))?;
+        let v: f32 = inner
+            .parse()
+            .map_err(|_| ParseError::new(format!("bad opacity {s:?}")))?;
         return Ok(Some(v * 100.0));
     }
     let v: f32 = inner
