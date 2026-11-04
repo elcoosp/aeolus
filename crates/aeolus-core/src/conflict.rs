@@ -22,7 +22,23 @@ use std::collections::HashSet;
 /// into `border-w*` vs `border-color*`.
 pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
     let els: &[&str] = &t.elements;
-    let size_name = |e: &str| matches!(e, "xs" | "sm" | "base" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "5xl" | "6xl" | "7xl" | "8xl" | "9xl");
+    let size_name = |e: &str| {
+        matches!(
+            e,
+            "xs" | "sm"
+                | "base"
+                | "lg"
+                | "xl"
+                | "2xl"
+                | "3xl"
+                | "4xl"
+                | "5xl"
+                | "6xl"
+                | "7xl"
+                | "8xl"
+                | "9xl"
+        )
+    };
     Some(match els {
         ["bg", ..] => "bg",
         ["p"] | ["p", ..] => "padding",
@@ -74,7 +90,9 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         // Ring splits like border: width (numbers / px-rem arbitrary) vs
         // color, offset width vs offset color — four independent groups
         // (tw_merge 'ring-w'/'ring-color'/'ring-offset-w'/'ring-offset-color').
-        ["ring", "offset", only] | ["ring-offset", only] if is_width_value(only, t.arbitrary) => "ring-offset-w",
+        ["ring", "offset", only] | ["ring-offset", only] if is_width_value(only, t.arbitrary) => {
+            "ring-offset-w"
+        }
         ["ring", "offset", ..] | ["ring-offset", ..] => "ring-offset-color",
         ["ring"] => "ring-w",
         ["ring", only] if is_width_value(only, t.arbitrary) => "ring-w",
@@ -84,6 +102,11 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["opacity", ..] => "opacity",
         ["text", only] if size_name(only) => "font-size",
         ["text", ..] if els.len() == 2 && els[1] == "2xl" => "font-size",
+        [
+            "text",
+            "left" | "center" | "right" | "justify" | "start" | "end",
+            ..,
+        ] => "text-align",
         ["text", ..] => "text-color",
         ["font", e, ..] => match *e {
             "sans" | "serif" | "mono" => "font-family",
@@ -94,18 +117,62 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["underline-offset", ..] | ["underline", "offset", ..] => "underline-offset",
         ["whitespace", ..] => "whitespace",
         ["flex"] | ["flex", "inline"] => "display",
-        ["flex", e, ..] if matches!(*e, "col" | "row" | "wrap" | "1" | "auto" | "initial" | "none") => "flex-direction",
-        ["items", ..] => "align-items",
-        ["justify", e, ..] if !matches!(*e, "items" | "self" | "center") => "justify-content",
-        ["justify", "center"] => "justify-content",
-        ["self", ..] => "align-self",
+        ["flex", "wrap" | "nowrap" | "wrap-reverse", ..] => "flex-wrap",
+        ["flex", e, ..] if matches!(*e, "col" | "row" | "1" | "auto" | "initial" | "none") => {
+            "flex-direction"
+        }
+        ["basis", ..] => "flex-basis",
         ["grow", ..] => "flex-grow",
         ["shrink", ..] => "flex-shrink",
+        ["order", ..] => "order",
+        ["items", ..] => "align-items",
+        ["content", ..] => "align-content",
+        ["justify", "items", ..] => "justify-items",
+        ["justify", "self", ..] => "justify-self",
+        ["justify", e, ..] if !matches!(*e, "items" | "self") => "justify-content",
+        ["self", ..] => "align-self",
+        ["place", "content", ..] => "place-content",
+        ["place", "items", ..] => "place-items",
+        ["place", "self", ..] => "place-self",
+        ["place", ..] => "place-content",
         ["cursor", ..] => "cursor",
         ["pointer-events", ..] | ["pointer", "events", ..] => "pointer-events",
         ["select", ..] => "user-select",
         ["hidden"] | ["block"] | ["inline-flex"] | ["inline"] | ["grid"] => "display",
         ["display"] => "display",
+        // Positioning families (tw_merge: position/inset/top/right/bottom/left/
+        // z-index/overflow/overscroll-behavior).
+        ["static" | "fixed" | "absolute" | "relative" | "sticky"] => "position",
+        ["inset", "x", ..] => "inset-x",
+        ["inset", "y", ..] => "inset-y",
+        ["inset", ..] => "inset",
+        ["top", ..] => "top",
+        ["right", ..] => "right",
+        ["bottom", ..] => "bottom",
+        ["left", ..] => "left",
+        ["z", ..] => "z-index",
+        ["overflow", "x", ..] => "overflow-x",
+        ["overflow", "y", ..] => "overflow-y",
+        ["overflow", ..] => "overflow",
+        ["overscroll", "x", ..] => "overscroll-x",
+        ["overscroll", "y", ..] => "overscroll-y",
+        ["overscroll", ..] => "overscroll-behavior",
+        ["aspect", ..] => "aspect",
+        ["columns", ..] => "columns",
+        ["visible" | "invisible"] => "visibility",
+        ["isolate" | "isolation-auto"] => "isolation",
+        ["resize", ..] => "resize",
+        [
+            "object",
+            "contain" | "cover" | "fill" | "none" | "scale-down",
+        ] => "object-fit",
+        ["object", ..] => "object-position",
+        // Typography (tw_merge: font-style / text-transform / text-decoration /
+        // vertical-align).
+        ["italic" | "not-italic"] => "font-style",
+        ["uppercase" | "lowercase" | "capitalize" | "normal-case"] => "text-transform",
+        ["underline" | "overline" | "line-through" | "no-underline"] => "text-decoration",
+        ["align", ..] => "vertical-align",
         _ => return None,
     })
 }
@@ -113,7 +180,9 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
 fn is_border_width(els: &[&str]) -> bool {
     match els {
         ["border"] => true,
-        ["border", e] => matches!(*e, "t" | "r" | "b" | "l" | "x" | "y" | "s" | "e") || e.parse::<f32>().is_ok(),
+        ["border", e] => {
+            matches!(*e, "t" | "r" | "b" | "l" | "x" | "y" | "s" | "e") || e.parse::<f32>().is_ok()
+        }
         ["border", e, ..] => matches!(*e, "x" | "y"),
         _ => false,
     }
@@ -131,30 +200,78 @@ fn is_width_value(e: &str, arbitrary: Option<&str>) -> bool {
 fn collisions(group: &str) -> &'static [&'static str] {
     match group {
         "overflow" => &["overflow-x", "overflow-y"],
-        "inset" => &["inset-x", "inset-y", "start", "end", "top", "right", "bottom", "left"],
+        "inset" => &[
+            "inset-x", "inset-y", "start", "end", "top", "right", "bottom", "left",
+        ],
         "inset-x" => &["right", "left"],
         "inset-y" => &["top", "bottom"],
         "flex" => &["flex-basis", "flex-grow", "flex-shrink"],
         "gap" => &["gap-x", "gap-y"],
-        "padding" => &["padding-x", "padding-y", "padding-start", "padding-end", "padding-top", "padding-right", "padding-bottom", "padding-left"],
+        "overscroll-behavior" => &["overscroll-x", "overscroll-y"],
+        "padding" => &[
+            "padding-x",
+            "padding-y",
+            "padding-start",
+            "padding-end",
+            "padding-top",
+            "padding-right",
+            "padding-bottom",
+            "padding-left",
+        ],
         "padding-x" => &["padding-right", "padding-left"],
         "padding-y" => &["padding-top", "padding-bottom"],
-        "margin" => &["margin-x", "margin-y", "margin-start", "margin-end", "margin-top", "margin-right", "margin-bottom", "margin-left"],
+        "margin" => &[
+            "margin-x",
+            "margin-y",
+            "margin-start",
+            "margin-end",
+            "margin-top",
+            "margin-right",
+            "margin-bottom",
+            "margin-left",
+        ],
         "margin-x" => &["margin-right", "margin-left"],
         "margin-y" => &["margin-top", "margin-bottom"],
         "size" => &["width", "height"],
         "font-size" => &["line-height"],
-        "rounded" => &["rounded-s", "rounded-e", "rounded-t", "rounded-r", "rounded-b", "rounded-l", "rounded-ss", "rounded-se", "rounded-ee", "rounded-es", "rounded-tl", "rounded-tr", "rounded-br", "rounded-bl"],
+        "rounded" => &[
+            "rounded-s",
+            "rounded-e",
+            "rounded-t",
+            "rounded-r",
+            "rounded-b",
+            "rounded-l",
+            "rounded-ss",
+            "rounded-se",
+            "rounded-ee",
+            "rounded-es",
+            "rounded-tl",
+            "rounded-tr",
+            "rounded-br",
+            "rounded-bl",
+        ],
         "rounded-s" => &["rounded-ss", "rounded-es"],
         "rounded-e" => &["rounded-se", "rounded-ee"],
         "rounded-t" => &["rounded-tl", "rounded-tr"],
         "rounded-r" => &["rounded-tr", "rounded-br"],
         "rounded-b" => &["rounded-br", "rounded-bl"],
         "rounded-l" => &["rounded-tl", "rounded-bl"],
-        "border-w" => &["border-w-s", "border-w-e", "border-w-t", "border-w-r", "border-w-b", "border-w-l"],
+        "border-w" => &[
+            "border-w-s",
+            "border-w-e",
+            "border-w-t",
+            "border-w-r",
+            "border-w-b",
+            "border-w-l",
+        ],
         "border-w-x" => &["border-w-r", "border-w-l"],
         "border-w-y" => &["border-w-t", "border-w-b"],
-        "border-color" => &["border-color-t", "border-color-r", "border-color-b", "border-color-l"],
+        "border-color" => &[
+            "border-color-t",
+            "border-color-r",
+            "border-color-b",
+            "border-color-l",
+        ],
         "border-color-x" => &["border-color-r", "border-color-l"],
         "border-color-y" => &["border-color-t", "border-color-b"],
         _ => &[],
@@ -173,7 +290,11 @@ fn key_of(t: &ClassToken<'_>) -> (String, bool, &'static str) {
         })
         .collect::<Vec<_>>()
         .join(":");
-    (variants, t.important, collision_group(t).unwrap_or("unclassified"))
+    (
+        variants,
+        t.important,
+        collision_group(t).unwrap_or("unclassified"),
+    )
 }
 
 fn name_of(n: &NamedVariant) -> &'static str {
@@ -199,16 +320,29 @@ pub fn cn(classes: &[&str]) -> String {
         return String::new();
     }
     let joined = classes.join(" ");
-    // Fast path: single token, nothing to merge.
-    if joined.split_ascii_whitespace().count() <= 1 {
-        return joined;
+    // Fast path: 0 or 1 words. cn's output is always a normalized
+    // whitespace-separated word sequence, so zero words normalize to ""
+    // and a single word is returned WITHOUT any surrounding whitespace
+    // (fuzz findings: cn("\n") echoed "\n", cn("\n\u{1c}") echoed it
+    // with a stray "\n" — both broke idempotence).
+    let mut words = joined.split_ascii_whitespace();
+    match (words.next(), words.next()) {
+        (None, _) => return String::new(),
+        (Some(w), None) => return w.to_string(),
+        (Some(_), Some(_)) => {}
     }
     let parsed = {
         let (parsed, errs) = parse_class_string(&joined);
         if !errs.is_empty() {
             // Token/raw pairing would desync if some classes were skipped;
-            // keep malformed input verbatim (cn is best-effort).
-            return joined;
+            // keep every WORD verbatim (cn is best-effort) — but still
+            // normalize the output to a whitespace-separated word sequence.
+            // Echoing `joined` itself leaked the caller's internal
+            // whitespace and broke idempotence (fuzz finding).
+            return joined
+                .split_ascii_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
         }
         parsed
     };
@@ -275,7 +409,10 @@ mod tests {
 
     #[test]
     fn rounded_hierarchy() {
-        assert_eq!(cn(&["rounded-md", "rounded-t-lg"]), "rounded-md rounded-t-lg");
+        assert_eq!(
+            cn(&["rounded-md", "rounded-t-lg"]),
+            "rounded-md rounded-t-lg"
+        );
         assert_eq!(cn(&["rounded-t-lg", "rounded-md"]), "rounded-md");
     }
 
@@ -288,19 +425,47 @@ mod tests {
 
     #[test]
     fn variants_are_separate_stacks() {
-        assert_eq!(cn(&["bg-primary", "hover:bg-primary/90"]), "bg-primary hover:bg-primary/90");
-        assert_eq!(cn(&["hover:bg-primary/90", "hover:bg-accent"]), "hover:bg-accent");
+        assert_eq!(
+            cn(&["bg-primary", "hover:bg-primary/90"]),
+            "bg-primary hover:bg-primary/90"
+        );
+        assert_eq!(
+            cn(&["hover:bg-primary/90", "hover:bg-accent"]),
+            "hover:bg-accent"
+        );
     }
 
     #[test]
     fn unknown_kept_verbatim() {
-        assert_eq!(cn(&["custom-plugin-thing", "px-2", "px-4"]), "custom-plugin-thing px-4");
+        assert_eq!(
+            cn(&["custom-plugin-thing", "px-2", "px-4"]),
+            "custom-plugin-thing px-4"
+        );
     }
 
     #[test]
     fn display_conflicts() {
         assert_eq!(cn(&["block", "hidden"]), "hidden");
-        assert_eq!(cn(&["flex", "items-center", "hidden"]), "items-center hidden");
+        assert_eq!(
+            cn(&["flex", "items-center", "hidden"]),
+            "items-center hidden"
+        );
+    }
+
+    /// Fuzz finding: pure-whitespace class strings must normalize to ""
+    /// (cn's output is a word sequence; a zero-word input has no classes).
+    #[test]
+    fn whitespace_only_classes_normalize_to_empty() {
+        assert_eq!(cn(&["\n"]), "");
+        assert_eq!(cn(&["  ", "\t"]), "");
+        // A single "word" containing embedded ascii-whitespace normalizes
+        // to the word itself (fuzz finding: cn("\n\u{1c}") kept the "\n").
+        assert_eq!(cn(&["\n\u{1c}"]), "\u{1c}");
+        // Unparseable words are kept verbatim, but the OUTPUT is still a
+        // normalized word sequence (fuzz finding: cn("\nJ\n[") echoed "\n").
+        assert_eq!(cn(&["\nJ\n["]), "J [");
+        // A single real word is still returned verbatim (fast path).
+        assert_eq!(cn(&["p-4"]), "p-4");
     }
 
     #[test]
@@ -308,11 +473,68 @@ mod tests {
         assert_eq!(cn_opt([Some("px-2"), None, Some("px-4")]), "px-4");
     }
 
+    /// tw_merge group table (precedents.md §3): the justify-*/align-*/place-*
+    /// families are six independent groups, not a single catch-all. v0.1.0
+    /// only classified items-* and justify-content.
+    #[test]
+    fn grid_alignment_families_merge_independently() {
+        // THE bug: justify-items was unclassified (kept both).
+        assert_eq!(
+            cn(&["justify-items-start", "justify-items-center"]),
+            "justify-items-center"
+        );
+        assert_eq!(
+            cn(&["justify-self-auto", "justify-self-end"]),
+            "justify-self-end"
+        );
+        assert_eq!(cn(&["content-start", "content-center"]), "content-center");
+        assert_eq!(
+            cn(&["place-content-start", "place-content-center"]),
+            "place-content-center"
+        );
+        assert_eq!(
+            cn(&["place-items-start", "place-items-center"]),
+            "place-items-center"
+        );
+        assert_eq!(
+            cn(&["place-self-start", "place-self-center"]),
+            "place-self-center"
+        );
+        // ...and they must NOT collide with each other:
+        assert_eq!(
+            cn(&["justify-items-center", "justify-center"]),
+            "justify-items-center justify-center"
+        );
+        // flex-wrap is its own group (was lumped with flex-direction).
+        assert_eq!(cn(&["flex-wrap", "flex-nowrap"]), "flex-nowrap");
+        assert_eq!(cn(&["flex-col", "flex-wrap"]), "flex-col flex-wrap");
+        // overflow + inset families (collisions() knew them; classification didn't).
+        assert_eq!(
+            cn(&["overflow-hidden", "overflow-x-auto"]),
+            "overflow-hidden overflow-x-auto"
+        );
+        assert_eq!(
+            cn(&["overflow-x-hidden", "overflow-x-auto"]),
+            "overflow-x-auto"
+        );
+        assert_eq!(cn(&["inset-x-2", "left-4"]), "inset-x-2 left-4");
+        assert_eq!(cn(&["left-4", "inset-x-2"]), "inset-x-2");
+        // text-align (was swallowed by text-color).
+        assert_eq!(cn(&["text-left", "text-center"]), "text-center");
+        assert_eq!(
+            cn(&["text-center", "text-primary"]),
+            "text-center text-primary"
+        );
+    }
+
     #[test]
     fn ring_offset_is_its_own_group() {
         // `ring-offset-*` must not be shadowed by the `ring-*` catch-all:
         // offset width and ring color collide with neither.
-        assert_eq!(cn(&["ring-ring/50", "ring-offset-2"]), "ring-ring/50 ring-offset-2");
+        assert_eq!(
+            cn(&["ring-ring/50", "ring-offset-2"]),
+            "ring-ring/50 ring-offset-2"
+        );
         assert_eq!(cn(&["ring-offset-2", "ring-offset-4"]), "ring-offset-4");
         assert_eq!(cn(&["ring-2", "ring-4"]), "ring-4");
         // ring width vs ring color are different groups (tailwind-merge).
