@@ -26,10 +26,18 @@ impl ButtonVariant {
     pub fn classes(self) -> &'static str {
         match self {
             ButtonVariant::Default => "bg-primary text-primary-foreground hover:bg-primary/90",
-            ButtonVariant::Destructive => "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
-            ButtonVariant::Outline => "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-            ButtonVariant::Secondary => "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-            ButtonVariant::Ghost => "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+            ButtonVariant::Destructive => {
+                "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40"
+            }
+            ButtonVariant::Outline => {
+                "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+            }
+            ButtonVariant::Secondary => {
+                "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+            }
+            ButtonVariant::Ghost => {
+                "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
+            }
             ButtonVariant::Link => "text-primary underline-offset-4 hover:underline",
         }
     }
@@ -53,7 +61,9 @@ impl ButtonSize {
     pub fn classes(self) -> &'static str {
         match self {
             ButtonSize::Default => "h-9 px-4 py-2 has-[>svg]:px-3",
-            ButtonSize::Xs => "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
+            ButtonSize::Xs => {
+                "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3"
+            }
             ButtonSize::Sm => "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
             ButtonSize::Lg => "h-10 rounded-md px-6 has-[>svg]:px-4",
             ButtonSize::Icon => "size-9",
@@ -115,9 +125,15 @@ impl BadgeVariant {
     pub fn classes(self) -> &'static str {
         match self {
             BadgeVariant::Default => "bg-primary text-primary-foreground [a&]:hover:bg-primary/90",
-            BadgeVariant::Secondary => "bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
-            BadgeVariant::Destructive => "bg-destructive text-white focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90",
-            BadgeVariant::Outline => "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+            BadgeVariant::Secondary => {
+                "bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90"
+            }
+            BadgeVariant::Destructive => {
+                "bg-destructive text-white focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90"
+            }
+            BadgeVariant::Outline => {
+                "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground"
+            }
             BadgeVariant::Ghost => "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
             BadgeVariant::Link => "text-primary underline-offset-4 [a&]:hover:underline",
         }
@@ -162,15 +178,15 @@ impl AlertVariant {
     pub fn classes(self) -> &'static str {
         match self {
             AlertVariant::Default => "bg-card text-card-foreground",
-            AlertVariant::Destructive => "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current",
+            AlertVariant::Destructive => {
+                "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current"
+            }
         }
     }
 }
 
-pub const ALERT_TITLE: &str =
-    "col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight";
-pub const ALERT_DESCRIPTION: &str =
-    "col-start-2 grid justify-items-start gap-1 text-sm text-muted-foreground [&_p]:leading-relaxed";
+pub const ALERT_TITLE: &str = "col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight";
+pub const ALERT_DESCRIPTION: &str = "col-start-2 grid justify-items-start gap-1 text-sm text-muted-foreground [&_p]:leading-relaxed";
 
 pub fn alert_classes(variant: AlertVariant) -> String {
     cn(&[ALERT_BASE, variant.classes()])
