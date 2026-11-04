@@ -18,6 +18,7 @@
 //! `lower_matches_handwritten` pins the lowering and test
 //! `hover_restyle_is_paint_only` pins the invalidation behavior.
 
+pub mod button;
 pub mod view;
 pub mod widget;
 
@@ -59,7 +60,9 @@ impl LoweringReport {
 /// Masonry colors are straight-alpha sRGB floats; `Color::to_srgba` performs
 /// the OKLab → linear-sRGB → sRGB transfer conversion (and clamps out-of-gamut
 /// values, which Tailwind's own palette never produces).
-pub fn to_masonry_color(c: Color) -> masonry::peniko::color::AlphaColor<masonry::peniko::color::Srgb> {
+pub fn to_masonry_color(
+    c: Color,
+) -> masonry::peniko::color::AlphaColor<masonry::peniko::color::Srgb> {
     let [r, g, b, a] = c.to_srgba();
     masonry::peniko::color::AlphaColor::new([r, g, b, a])
 }
@@ -90,14 +93,25 @@ pub fn lower_resolved(style: &ResolvedStyle, report: &mut LoweringReport) -> Pro
     }
     if let Some(bw) = &style.border_width {
         // Masonry's BorderWidth is uniform (`border_width.rs:14-17`); Tailwind's
-        // default border utilities are uniform too. Per-side `border-t-2` etc.
-        // would need the per-side upstream gap.
+        // default border utilities are uniform too. Per-side `border-t` etc.
+        // would need the per-side upstream gap — HONESTY RULE: report the
+        // flattening, never silently drop it (only the top edge survives).
+        if !(bw.top == bw.right && bw.right == bw.bottom && bw.bottom == bw.left) {
+            report.drop(
+                "border-width:per-side",
+                "Masonry BorderWidth is uniform; using top edge",
+            );
+        }
         set.insert(BorderWidth::all(Length::px(bw.top as f64)));
     }
     if let Some(cr) = &style.corner_radius {
         // Masonry's CornerRadius is a single radius (`corner_radius.rs:13-15`);
         // use the max of the four corners so clipping stays conservative.
-        let r = cr.top_left.max(cr.top_right).max(cr.bottom_right).max(cr.bottom_left);
+        let r = cr
+            .top_left
+            .max(cr.top_right)
+            .max(cr.bottom_right)
+            .max(cr.bottom_left);
         set.insert(CornerRadius::all(Length::px(r as f64)));
     }
     if let Some(dims) = &style.dimensions {
@@ -107,7 +121,10 @@ pub fn lower_resolved(style: &ResolvedStyle, report: &mut LoweringReport) -> Pro
             (Some(w), Some(h)) => {
                 set.insert(Dimensions::new(w, h));
             }
-            _ => report.drop("w-/h-", "fractional/symbolic sizes have no Masonry Dim equivalent"),
+            _ => report.drop(
+                "w-/h-",
+                "fractional/symbolic sizes have no Masonry Dim equivalent",
+            ),
         }
     }
     if let Some(g) = &style.gap {
@@ -169,7 +186,7 @@ pub fn layer_get<P: masonry::core::Property>(
     stack.get_layers().get(index)?.1.get::<P>()
 }
 
-/// Lower a full [`StylePlan`] into a Masonry [`PropertyStack`].
+/// Lower a full [`StylePlan`] into a Masonry [`PropertyStack`](masonry::core::PropertyStack).
 ///
 /// Layer order follows Masonry's top-of-stack-wins resolution
 /// (`property_stack.rs:107-115`): the base layer is pushed first, then
@@ -183,13 +200,22 @@ pub fn lower(plan: &StylePlan) -> (masonry::core::PropertyStack, LoweringReport)
 
     // Conditions Masonry's `Selector` cannot express.
     for (group_id, _) in &plan.group {
-        report.drop(format!("group:{group_id}"), "no ancestor-state selectors (audit Q2 gap)");
+        report.drop(
+            format!("group:{group_id}"),
+            "no ancestor-state selectors (audit Q2 gap)",
+        );
     }
     for (peer_id, _) in &plan.peer {
-        report.drop(format!("peer:{peer_id}"), "no sibling-state selectors (audit Q2 gap)");
+        report.drop(
+            format!("peer:{peer_id}"),
+            "no sibling-state selectors (audit Q2 gap)",
+        );
     }
     if plan.dark.is_some() {
-        report.drop("dark", "no per-widget dark-mode signal; use RenderRoot::set_default_properties");
+        report.drop(
+            "dark",
+            "no per-widget dark-mode signal; use RenderRoot::set_default_properties",
+        );
     }
     for bp in plan.responsive.keys() {
         report.drop(
@@ -198,7 +224,10 @@ pub fn lower(plan: &StylePlan) -> (masonry::core::PropertyStack, LoweringReport)
         );
     }
     for bp in plan.container.keys() {
-        report.drop(format!("container:{bp:?}"), "no container queries in Masonry");
+        report.drop(
+            format!("container:{bp:?}"),
+            "no container queries in Masonry",
+        );
     }
 
     let mut stack = PropertyStack::new();
