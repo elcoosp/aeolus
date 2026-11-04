@@ -16,25 +16,48 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Warning {
     /// Recognized but not expressible in v1 (transitions, positioning, ...).
-    Unsupported { class: String, reason: &'static str },
+    Unsupported {
+        /// The raw class that triggered the warning.
+        class: String,
+        /// Why it cannot be lowered.
+        reason: &'static str,
+    },
     /// No utility table entry matched.
-    Unknown { class: String, suggestion: Option<String> },
+    Unknown {
+        /// The raw class that triggered the warning.
+        class: String,
+        /// A close known utility, when one is within edit distance.
+        suggestion: Option<String>,
+    },
     /// Parsed but the theme token is missing (`bg-notacolor`).
-    MissingThemeToken { class: String, token: String },
+    MissingThemeToken {
+        /// The raw class that triggered the warning.
+        class: String,
+        /// The token name that was not found.
+        token: String,
+    },
     /// The class failed the v1 grammar (unknown variant, malformed value).
     /// The rest of the string is unaffected; the class is skipped.
-    Unparseable { class: String, message: String },
+    Unparseable {
+        /// The raw class that failed to parse.
+        class: String,
+        /// The parser's error message.
+        message: String,
+    },
 }
 
 /// Result of resolving a class string.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Resolution {
+    /// The resolved plan.
     pub plan: StylePlan,
+    /// Non-fatal diagnostics (unsupported/unknown/unparseable classes).
     pub warnings: Vec<Warning>,
 }
 
 /// The resolver: one per theme snapshot.
 pub struct Resolver<'t> {
+    /// The theme tokens utilities resolve against.
     pub theme: &'t TailwindTheme,
 }
 
@@ -43,10 +66,30 @@ pub struct Resolver<'t> {
 enum Applied {
     Replace(Slot, PartialValue),
     /// Per-edge families accumulate (`p-4` then `px-2` keeps top/bottom).
-    Padding { top: Option<f32>, right: Option<f32>, bottom: Option<f32>, left: Option<f32> },
-    Margin { top: Option<f32>, right: Option<f32>, bottom: Option<f32>, left: Option<f32> },
-    BorderWidth { top: Option<f32>, right: Option<f32>, bottom: Option<f32>, left: Option<f32> },
-    Radius { tl: Option<f32>, tr: Option<f32>, br: Option<f32>, bl: Option<f32> },
+    Padding {
+        top: Option<f32>,
+        right: Option<f32>,
+        bottom: Option<f32>,
+        left: Option<f32>,
+    },
+    Margin {
+        top: Option<f32>,
+        right: Option<f32>,
+        bottom: Option<f32>,
+        left: Option<f32>,
+    },
+    BorderWidth {
+        top: Option<f32>,
+        right: Option<f32>,
+        bottom: Option<f32>,
+        left: Option<f32>,
+    },
+    Radius {
+        tl: Option<f32>,
+        tr: Option<f32>,
+        br: Option<f32>,
+        bl: Option<f32>,
+    },
     Text(TextProperty, TextValue),
     /// font-size + paired line-height (`text-sm` sets both)
     Texts(Vec<(TextProperty, TextValue)>),
@@ -77,6 +120,7 @@ struct Bucket {
 }
 
 impl<'t> Resolver<'t> {
+    /// A resolver bound to one theme snapshot.
     pub fn new(theme: &'t TailwindTheme) -> Self {
         Self { theme }
     }
@@ -89,11 +133,11 @@ impl<'t> Resolver<'t> {
         // legitimately contain variants we do not model (has-*, data-*,
         // aria-*), and the rest of the string must still style.
         if !unparseable.is_empty() {
-            resolution
-                .warnings
-                .extend(unparseable.into_iter().map(|(class, message)| {
-                    Warning::Unparseable { class, message }
-                }));
+            resolution.warnings.extend(
+                unparseable
+                    .into_iter()
+                    .map(|(class, message)| Warning::Unparseable { class, message }),
+            );
         }
         Ok(resolution)
     }
@@ -154,14 +198,22 @@ impl<'t> Resolver<'t> {
                         }
                         target = Target::Dark;
                     }
-                    Variant::Grouped { parent: ParentKind::Group, name, label } => {
+                    Variant::Grouped {
+                        parent: ParentKind::Group,
+                        name,
+                        label,
+                    } => {
                         if target != Target::Base || n_states > 0 {
                             compound_unsupported = true;
                         }
                         group_label = Some(format!("{}{}", label.unwrap_or(""), name_of(name)));
                         target = Target::Group;
                     }
-                    Variant::Grouped { parent: ParentKind::Peer, name, label } => {
+                    Variant::Grouped {
+                        parent: ParentKind::Peer,
+                        name,
+                        label,
+                    } => {
                         if target != Target::Base || n_states > 0 {
                             compound_unsupported = true;
                         }
@@ -239,7 +291,10 @@ impl<'t> Resolver<'t> {
             base: self.finalize(&base),
             layers: layers
                 .into_iter()
-                .map(|(condition, b)| ConditionalLayer { condition, style: self.finalize(&b) })
+                .map(|(condition, b)| ConditionalLayer {
+                    condition,
+                    style: self.finalize(&b),
+                })
                 .collect(),
             responsive: responsive
                 .into_iter()
@@ -276,32 +331,87 @@ impl<'t> Resolver<'t> {
 
         for a in &bucket.applied {
             match a {
-                Applied::Padding { top, right, bottom, left } => {
-                    pad = Edges { top: top.or(pad.top), right: right.or(pad.right), bottom: bottom.or(pad.bottom), left: left.or(pad.left) };
+                Applied::Padding {
+                    top,
+                    right,
+                    bottom,
+                    left,
+                } => {
+                    pad = Edges {
+                        top: top.or(pad.top),
+                        right: right.or(pad.right),
+                        bottom: bottom.or(pad.bottom),
+                        left: left.or(pad.left),
+                    };
                 }
-                Applied::Margin { top, right, bottom, left } => {
-                    mar = Edges { top: top.or(mar.top), right: right.or(mar.right), bottom: bottom.or(mar.bottom), left: left.or(mar.left) };
+                Applied::Margin {
+                    top,
+                    right,
+                    bottom,
+                    left,
+                } => {
+                    mar = Edges {
+                        top: top.or(mar.top),
+                        right: right.or(mar.right),
+                        bottom: bottom.or(mar.bottom),
+                        left: left.or(mar.left),
+                    };
                 }
-                Applied::BorderWidth { top, right, bottom, left } => {
-                    bw = Edges { top: top.or(bw.top), right: right.or(bw.right), bottom: bottom.or(bw.bottom), left: left.or(bw.left) };
+                Applied::BorderWidth {
+                    top,
+                    right,
+                    bottom,
+                    left,
+                } => {
+                    bw = Edges {
+                        top: top.or(bw.top),
+                        right: right.or(bw.right),
+                        bottom: bottom.or(bw.bottom),
+                        left: left.or(bw.left),
+                    };
                 }
                 Applied::Radius { tl, tr, br, bl } => {
-                    rad = Corners { tl: tl.or(rad.tl), tr: tr.or(rad.tr), br: br.or(rad.br), bl: bl.or(rad.bl) };
+                    rad = Corners {
+                        tl: tl.or(rad.tl),
+                        tr: tr.or(rad.tr),
+                        br: br.or(rad.br),
+                        bl: bl.or(rad.bl),
+                    };
                 }
                 _ => {}
             }
         }
         if pad != Edges::NONE {
-            style.padding = Some(Padding { top: pad.top.unwrap_or(0.0), right: pad.right.unwrap_or(0.0), bottom: pad.bottom.unwrap_or(0.0), left: pad.left.unwrap_or(0.0) });
+            style.padding = Some(Padding {
+                top: pad.top.unwrap_or(0.0),
+                right: pad.right.unwrap_or(0.0),
+                bottom: pad.bottom.unwrap_or(0.0),
+                left: pad.left.unwrap_or(0.0),
+            });
         }
         if mar != Edges::NONE {
-            style.margin = Some(Margin { top: mar.top.unwrap_or(0.0), right: mar.right.unwrap_or(0.0), bottom: mar.bottom.unwrap_or(0.0), left: mar.left.unwrap_or(0.0) });
+            style.margin = Some(Margin {
+                top: mar.top.unwrap_or(0.0),
+                right: mar.right.unwrap_or(0.0),
+                bottom: mar.bottom.unwrap_or(0.0),
+                left: mar.left.unwrap_or(0.0),
+            });
         }
         if bw != Edges::NONE {
-            style.border_width = Some(BorderWidth { top: bw.top.unwrap_or(0.0), right: bw.right.unwrap_or(0.0), bottom: bw.bottom.unwrap_or(0.0), left: bw.left.unwrap_or(0.0) });
+            style.border_width = Some(BorderWidth {
+                top: bw.top.unwrap_or(0.0),
+                right: bw.right.unwrap_or(0.0),
+                bottom: bw.bottom.unwrap_or(0.0),
+                left: bw.left.unwrap_or(0.0),
+            });
         }
         if rad != Corners::NONE {
-            style.corner_radius = Some(CornerRadius { top_left: rad.tl.unwrap_or(0.0), top_right: rad.tr.unwrap_or(0.0), bottom_right: rad.br.unwrap_or(0.0), bottom_left: rad.bl.unwrap_or(0.0) });
+            style.corner_radius = Some(CornerRadius {
+                top_left: rad.tl.unwrap_or(0.0),
+                top_right: rad.tr.unwrap_or(0.0),
+                bottom_right: rad.br.unwrap_or(0.0),
+                bottom_left: rad.bl.unwrap_or(0.0),
+            });
         }
 
         // Layout and Dimensions accumulate per-field (`h-9 w-full`,
@@ -317,18 +427,30 @@ impl<'t> Resolver<'t> {
         for a in &bucket.applied {
             match a {
                 Applied::Replace(Slot::Dimensions, PartialValue::Dimensions(d)) => {
-                    if d.width.is_some() { dims.width = d.width; }
-                    if d.height.is_some() { dims.height = d.height; }
+                    if d.width.is_some() {
+                        dims.width = d.width;
+                    }
+                    if d.height.is_some() {
+                        dims.height = d.height;
+                    }
                     dims_set = true;
                 }
                 Applied::Replace(Slot::MinDimensions, PartialValue::MinDimensions(d)) => {
-                    if d.width.is_some() { min_dims.width = d.width; }
-                    if d.height.is_some() { min_dims.height = d.height; }
+                    if d.width.is_some() {
+                        min_dims.width = d.width;
+                    }
+                    if d.height.is_some() {
+                        min_dims.height = d.height;
+                    }
                     min_set = true;
                 }
                 Applied::Replace(Slot::MaxDimensions, PartialValue::MaxDimensions(d)) => {
-                    if d.width.is_some() { max_dims.width = d.width; }
-                    if d.height.is_some() { max_dims.height = d.height; }
+                    if d.width.is_some() {
+                        max_dims.width = d.width;
+                    }
+                    if d.height.is_some() {
+                        max_dims.height = d.height;
+                    }
                     max_set = true;
                 }
                 Applied::Replace(Slot::Layout, PartialValue::Layout(l)) => {
@@ -338,24 +460,43 @@ impl<'t> Resolver<'t> {
                 _ => {}
             }
         }
-        if dims_set { style.dimensions = Some(dims); }
-        if min_set { style.min_dimensions = Some(min_dims); }
-        if max_set { style.max_dimensions = Some(max_dims); }
-        if layout_set { style.layout = Some(layout); }
+        if dims_set {
+            style.dimensions = Some(dims);
+        }
+        if min_set {
+            style.min_dimensions = Some(min_dims);
+        }
+        if max_set {
+            style.max_dimensions = Some(max_dims);
+        }
+        if layout_set {
+            style.layout = Some(layout);
+        }
 
         for a in &bucket.applied {
             if let Applied::Replace(slot, val) = a {
                 // Layout/Dimensions/Min/Max were already accumulated above.
-                if matches!(slot, Slot::Layout | Slot::Dimensions | Slot::MinDimensions | Slot::MaxDimensions) {
+                if matches!(
+                    slot,
+                    Slot::Layout | Slot::Dimensions | Slot::MinDimensions | Slot::MaxDimensions
+                ) {
                     continue;
                 }
                 match (slot, val) {
                     (Slot::Background, PartialValue::Background(v)) => style.background = Some(*v),
-                    (Slot::ContentColor, PartialValue::ContentColor(v)) => style.content_color = Some(*v),
-                    (Slot::BorderColor, PartialValue::BorderColor(v)) => style.border_color = Some(*v),
+                    (Slot::ContentColor, PartialValue::ContentColor(v)) => {
+                        style.content_color = Some(*v)
+                    }
+                    (Slot::BorderColor, PartialValue::BorderColor(v)) => {
+                        style.border_color = Some(*v)
+                    }
                     (Slot::Dimensions, PartialValue::Dimensions(v)) => style.dimensions = Some(*v),
-                    (Slot::MinDimensions, PartialValue::MinDimensions(v)) => style.min_dimensions = Some(*v),
-                    (Slot::MaxDimensions, PartialValue::MaxDimensions(v)) => style.max_dimensions = Some(*v),
+                    (Slot::MinDimensions, PartialValue::MinDimensions(v)) => {
+                        style.min_dimensions = Some(*v)
+                    }
+                    (Slot::MaxDimensions, PartialValue::MaxDimensions(v)) => {
+                        style.max_dimensions = Some(*v)
+                    }
                     (Slot::Gap, PartialValue::Gap(v)) => style.gap = Some(*v),
                     (Slot::Shadow, PartialValue::Shadow(v)) => style.shadow = Some(v.clone()),
                     (Slot::Layout, PartialValue::Layout(v)) => style.layout = Some(*v),
@@ -363,7 +504,9 @@ impl<'t> Resolver<'t> {
                     (Slot::Ring(_), PartialValue::Ring(v)) => merge_ring(&mut style, v),
                     (Slot::Outline, PartialValue::Outline(v)) => merge_outline(&mut style, v),
                     (Slot::Cursor, PartialValue::Cursor(v)) => style.cursor = Some(*v),
-                    (Slot::PointerEvents, PartialValue::PointerEvents(v)) => style.pointer_events = Some(*v),
+                    (Slot::PointerEvents, PartialValue::PointerEvents(v)) => {
+                        style.pointer_events = Some(*v)
+                    }
                     _ => {}
                 }
             } else if let Applied::Text(p, v) = a {
@@ -390,18 +533,34 @@ impl<'t> Resolver<'t> {
     // ------------------------------------------------------------------
     fn apply_utility(&self, t: &ClassToken<'_>) -> Result<Applied, Warning> {
         let class = t.raw.to_string();
-        let unknown = |suggestion: Option<String>| Warning::Unknown { class: class.clone(), suggestion };
-        let unsupported = |reason: &'static str| Warning::Unsupported { class: class.clone(), reason };
-        let missing = |token: String| Warning::MissingThemeToken { class: class.clone(), token };
+        let unknown = |suggestion: Option<String>| Warning::Unknown {
+            class: class.clone(),
+            suggestion,
+        };
+        let unsupported = |reason: &'static str| Warning::Unsupported {
+            class: class.clone(),
+            reason,
+        };
+        let missing = |token: String| Warning::MissingThemeToken {
+            class: class.clone(),
+            token,
+        };
 
         // Two-word utility heads (`min-w`, `ring-offset`, ...) — the elements
         // are split on '-', so the head must be re-joined for these families.
         const TWO_WORD_HEADS: &[&[&str]] = &[
-            &["min", "w"], &["min", "h"], &["max", "w"], &["max", "h"],
-            &["ring", "offset"], &["underline", "offset"], &["pointer", "events"],
+            &["min", "w"],
+            &["min", "h"],
+            &["max", "w"],
+            &["max", "h"],
+            &["ring", "offset"],
+            &["underline", "offset"],
+            &["pointer", "events"],
         ];
         let two_word = t.elements.len() >= 2
-            && TWO_WORD_HEADS.iter().any(|p| p[0] == t.elements[0] && p[1] == t.elements[1]);
+            && TWO_WORD_HEADS
+                .iter()
+                .any(|p| p[0] == t.elements[0] && p[1] == t.elements[1]);
         let head_len = if two_word { 2 } else { 1 };
         let head = t.elements[..head_len].join("-");
         let value_elems = &t.elements[head_len..];
@@ -414,9 +573,12 @@ impl<'t> Resolver<'t> {
         // Color spec resolver: arbitrary `[...]` wins, else theme token.
         let color_of = |name: &str| -> Result<Option<Color>, Warning> {
             if let Some(arb) = t.arbitrary {
-                return Color::parse(arb).map(Some).map_err(|_| {
-                    Warning::Unsupported { class: class.clone(), reason: "arbitrary value is not a parsable color" }
-                });
+                return Color::parse(arb)
+                    .map(Some)
+                    .map_err(|_| Warning::Unsupported {
+                        class: class.clone(),
+                        reason: "arbitrary value is not a parsable color",
+                    });
             }
             match self.theme.color(name) {
                 Some(c) => Ok(Some(c)),
@@ -433,9 +595,15 @@ impl<'t> Resolver<'t> {
             if let Some(p) = v.strip_suffix("px") {
                 p.trim().parse::<f32>().ok().map(SizedValue::Px)
             } else if let Some(r) = v.strip_suffix("rem") {
-                r.trim().parse::<f32>().ok().map(|n| SizedValue::Px(n * 16.0))
+                r.trim()
+                    .parse::<f32>()
+                    .ok()
+                    .map(|n| SizedValue::Px(n * 16.0))
             } else if let Some(p) = v.strip_suffix('%') {
-                p.trim().parse::<f32>().ok().map(|n| SizedValue::Fraction(n / 100.0))
+                p.trim()
+                    .parse::<f32>()
+                    .ok()
+                    .map(|n| SizedValue::Fraction(n / 100.0))
             } else {
                 None
             }
@@ -446,15 +614,26 @@ impl<'t> Resolver<'t> {
             "bg" => {
                 if let Some(arb) = t.arbitrary {
                     if let Ok(c) = Color::parse(arb) {
-                        return Ok(Applied::Replace(Slot::Background, PartialValue::Background(Background(with_opacity(c)))));
+                        return Ok(Applied::Replace(
+                            Slot::Background,
+                            PartialValue::Background(Background(with_opacity(c))),
+                        ));
                     }
-                    return Err(unsupported("bg-[...] value is not a color (gradients/images not in v1)"));
+                    return Err(unsupported(
+                        "bg-[...] value is not a color (gradients/images not in v1)",
+                    ));
                 }
                 let name = value_elems.join("-");
                 match color_of(&name)? {
-                    Some(c) => Ok(Applied::Replace(Slot::Background, PartialValue::Background(Background(with_opacity(c))))),
-                    None if name == "transparent" => Ok(Applied::Replace(Slot::Background, PartialValue::Background(Background(Color::TRANSPARENT)))),
-                    None => Err(unknown(suggest(&name, &self.theme))),
+                    Some(c) => Ok(Applied::Replace(
+                        Slot::Background,
+                        PartialValue::Background(Background(with_opacity(c))),
+                    )),
+                    None if name == "transparent" => Ok(Applied::Replace(
+                        Slot::Background,
+                        PartialValue::Background(Background(Color::TRANSPARENT)),
+                    )),
+                    None => Err(unknown(suggest(&name, self.theme))),
                 }
             }
             "text" if t.arbitrary.is_none() && is_size_name(value_elems) => {
@@ -474,37 +653,61 @@ impl<'t> Resolver<'t> {
                 // color (or arbitrary size/color disambiguation)
                 if let Some(arb) = t.arbitrary {
                     if let Ok(c) = Color::parse(arb) {
-                        return Ok(Applied::Replace(Slot::ContentColor, PartialValue::ContentColor(ContentColor(c))));
+                        return Ok(Applied::Replace(
+                            Slot::ContentColor,
+                            PartialValue::ContentColor(ContentColor(c)),
+                        ));
                     }
-                    if let Some(v) = arb_length(arb) {
-                        if let SizedValue::Px(px) = v {
-                            return Ok(Applied::Text(TextProperty::FontSize, TextValue::Px(px)));
-                        }
+                    if let Some(v) = arb_length(arb)
+                        && let SizedValue::Px(px) = v
+                    {
+                        return Ok(Applied::Text(TextProperty::FontSize, TextValue::Px(px)));
                     }
                     return Err(unsupported("text-[...] value is neither color nor length"));
                 }
                 let name = value_elems.join("-");
                 match color_of(&name)? {
-                    Some(c) => Ok(Applied::Replace(Slot::ContentColor, PartialValue::ContentColor(ContentColor(with_opacity(c))))),
-                    None => Err(unknown(suggest(&name, &self.theme))),
+                    Some(c) => Ok(Applied::Replace(
+                        Slot::ContentColor,
+                        PartialValue::ContentColor(ContentColor(with_opacity(c))),
+                    )),
+                    None => Err(unknown(suggest(&name, self.theme))),
                 }
             }
             "border" => {
                 // `border` | `border-2` | `border-t` | `border-{color}` | arbitrary
                 if let Some(arb) = t.arbitrary {
                     if let Ok(c) = Color::parse(arb) {
-                        return Ok(Applied::Replace(Slot::BorderColor, PartialValue::BorderColor(BorderColor(c))));
+                        return Ok(Applied::Replace(
+                            Slot::BorderColor,
+                            PartialValue::BorderColor(BorderColor(c)),
+                        ));
                     }
-                    if let Some(px) = arb.parse::<f32>().ok() {
-                        return Ok(Applied::BorderWidth { top: Some(px), right: Some(px), bottom: Some(px), left: Some(px) });
+                    if let Ok(px) = arb.parse::<f32>() {
+                        return Ok(Applied::BorderWidth {
+                            top: Some(px),
+                            right: Some(px),
+                            bottom: Some(px),
+                            left: Some(px),
+                        });
                     }
                     if let Some(p) = arb.strip_suffix("px").and_then(|v| v.parse::<f32>().ok()) {
-                        return Ok(Applied::BorderWidth { top: Some(p), right: Some(p), bottom: Some(p), left: Some(p) });
+                        return Ok(Applied::BorderWidth {
+                            top: Some(p),
+                            right: Some(p),
+                            bottom: Some(p),
+                            left: Some(p),
+                        });
                     }
                     return Err(unsupported("border-[...] value is neither color nor width"));
                 }
                 if value_elems.is_empty() {
-                    return Ok(Applied::BorderWidth { top: Some(1.0), right: Some(1.0), bottom: Some(1.0), left: Some(1.0) });
+                    return Ok(Applied::BorderWidth {
+                        top: Some(1.0),
+                        right: Some(1.0),
+                        bottom: Some(1.0),
+                        left: Some(1.0),
+                    });
                 }
                 let name = value_elems.join("-");
                 // width edges first: border-t / border-x / border-2 ...
@@ -512,9 +715,15 @@ impl<'t> Resolver<'t> {
                     return Ok(applied);
                 }
                 match color_of(&name)? {
-                    Some(c) => Ok(Applied::Replace(Slot::BorderColor, PartialValue::BorderColor(BorderColor(with_opacity(c))))),
-                    None if name == "transparent" => Ok(Applied::Replace(Slot::BorderColor, PartialValue::BorderColor(BorderColor(Color::TRANSPARENT)))),
-                    None => Err(unknown(suggest(&name, &self.theme))),
+                    Some(c) => Ok(Applied::Replace(
+                        Slot::BorderColor,
+                        PartialValue::BorderColor(BorderColor(with_opacity(c))),
+                    )),
+                    None if name == "transparent" => Ok(Applied::Replace(
+                        Slot::BorderColor,
+                        PartialValue::BorderColor(BorderColor(Color::TRANSPARENT)),
+                    )),
+                    None => Err(unknown(suggest(&name, self.theme))),
                 }
             }
             "ring" => {
@@ -527,58 +736,107 @@ impl<'t> Resolver<'t> {
                         .parse::<f32>()
                         .ok();
                     ring.width = w.ok_or_else(|| unsupported("ring-[...] expects a width"))?;
-                    return Ok(Applied::Replace(Slot::Ring(RingPart::Width), PartialValue::Ring(ring)));
+                    return Ok(Applied::Replace(
+                        Slot::Ring(RingPart::Width),
+                        PartialValue::Ring(ring),
+                    ));
                 }
                 if value_elems.is_empty() {
                     ring.width = scale_unsigned(1.0); // v4: ring = 1px
-                    return Ok(Applied::Replace(Slot::Ring(RingPart::Width), PartialValue::Ring(ring)));
+                    return Ok(Applied::Replace(
+                        Slot::Ring(RingPart::Width),
+                        PartialValue::Ring(ring),
+                    ));
                 }
                 let name = value_elems.join("-");
-                if let Some(px) = name.parse::<f32>().ok() {
+                if let Ok(px) = name.parse::<f32>() {
                     ring.width = scale_unsigned(px);
-                    return Ok(Applied::Replace(Slot::Ring(RingPart::Width), PartialValue::Ring(ring)));
+                    return Ok(Applied::Replace(
+                        Slot::Ring(RingPart::Width),
+                        PartialValue::Ring(ring),
+                    ));
                 }
                 match color_of(&name)? {
                     Some(c) => {
                         ring.color = Some(with_opacity(c));
-                        Ok(Applied::Replace(Slot::Ring(RingPart::Color), PartialValue::Ring(ring)))
+                        Ok(Applied::Replace(
+                            Slot::Ring(RingPart::Color),
+                            PartialValue::Ring(ring),
+                        ))
                     }
-                    None => Err(unknown(suggest(&name, &self.theme))),
+                    None => Err(unknown(suggest(&name, self.theme))),
                 }
             }
             "ring-offset" => {
                 let mut ring = Ring::default();
                 if value_elems.is_empty() {
                     ring.offset_width = scale_unsigned(2.0); // v4 default 2px
-                    return Ok(Applied::Replace(Slot::Ring(RingPart::OffsetWidth), PartialValue::Ring(ring)));
+                    return Ok(Applied::Replace(
+                        Slot::Ring(RingPart::OffsetWidth),
+                        PartialValue::Ring(ring),
+                    ));
                 }
                 let name = value_elems.join("-");
-                if let Some(px) = name.parse::<f32>().ok() {
+                if let Ok(px) = name.parse::<f32>() {
                     ring.offset_width = scale_unsigned(px);
-                    return Ok(Applied::Replace(Slot::Ring(RingPart::OffsetWidth), PartialValue::Ring(ring)));
+                    return Ok(Applied::Replace(
+                        Slot::Ring(RingPart::OffsetWidth),
+                        PartialValue::Ring(ring),
+                    ));
                 }
                 match color_of(&name)? {
                     Some(c) => {
                         ring.offset_color = Some(c);
-                        Ok(Applied::Replace(Slot::Ring(RingPart::OffsetColor), PartialValue::Ring(ring)))
+                        Ok(Applied::Replace(
+                            Slot::Ring(RingPart::OffsetColor),
+                            PartialValue::Ring(ring),
+                        ))
                     }
-                    None => Err(unknown(suggest(&name, &self.theme))),
+                    None => Err(unknown(suggest(&name, self.theme))),
                 }
             }
             "outline" => {
                 if value_elems.is_empty() {
-                    return Ok(Applied::Replace(Slot::Outline, PartialValue::Outline(Outline { width: 2.0, color: None, none: false })));
+                    return Ok(Applied::Replace(
+                        Slot::Outline,
+                        PartialValue::Outline(Outline {
+                            width: 2.0,
+                            color: None,
+                            none: false,
+                        }),
+                    ));
                 }
                 let name = value_elems.join("-");
                 match name.as_str() {
-                    "none" | "hidden" => Ok(Applied::Replace(Slot::Outline, PartialValue::Outline(Outline { width: 0.0, color: None, none: true }))),
+                    "none" | "hidden" => Ok(Applied::Replace(
+                        Slot::Outline,
+                        PartialValue::Outline(Outline {
+                            width: 0.0,
+                            color: None,
+                            none: true,
+                        }),
+                    )),
                     other => {
                         if let Ok(px) = other.parse::<f32>() {
-                            Ok(Applied::Replace(Slot::Outline, PartialValue::Outline(Outline { width: px, color: None, none: false })))
+                            Ok(Applied::Replace(
+                                Slot::Outline,
+                                PartialValue::Outline(Outline {
+                                    width: px,
+                                    color: None,
+                                    none: false,
+                                }),
+                            ))
                         } else {
                             match color_of(other)? {
-                                Some(c) => Ok(Applied::Replace(Slot::Outline, PartialValue::Outline(Outline { width: 0.0, color: Some(c), none: false }))),
-                                None => Err(unknown(suggest(other, &self.theme))),
+                                Some(c) => Ok(Applied::Replace(
+                                    Slot::Outline,
+                                    PartialValue::Outline(Outline {
+                                        width: 0.0,
+                                        color: Some(c),
+                                        none: false,
+                                    }),
+                                )),
+                                None => Err(unknown(suggest(other, self.theme))),
                             }
                         }
                     }
@@ -597,16 +855,19 @@ impl<'t> Resolver<'t> {
                 Ok(margin_applied(&head, v))
             }
             "gap" => {
-                if value_elems.first().map_or(false, |e| *e == "x" || *e == "y") {
+                if value_elems.first().is_some_and(|e| *e == "x" || *e == "y") {
                     return Err(unsupported("axis gap (gap-x/gap-y) is not in the v1 IR"));
                 }
                 let n = value_token(t, value_elems, unknown)?;
-                Ok(Applied::Replace(Slot::Gap, PartialValue::Gap(Gap(scale(n)))))
+                Ok(Applied::Replace(
+                    Slot::Gap,
+                    PartialValue::Gap(Gap(scale(n))),
+                ))
             }
 
             // ---------------- sizing ----------------
             "w" | "h" | "size" | "min-w" | "min-h" | "max-w" | "max-h" => {
-                let dim = size_value(t, value_elems, arb_length, spacing, &unknown, &self.theme)?;
+                let dim = size_value(t, value_elems, arb_length, spacing, &unknown, self.theme)?;
                 let mut d = Dimensions::default();
                 match head.as_str() {
                     "w" | "min-w" | "max-w" => d.width = Some(dim),
@@ -622,60 +883,138 @@ impl<'t> Resolver<'t> {
                     "max-w" | "max-h" => Slot::MaxDimensions,
                     _ => Slot::Dimensions,
                 };
-                Ok(Applied::Replace(slot, match slot {
-                    Slot::MinDimensions => PartialValue::MinDimensions(d),
-                    Slot::MaxDimensions => PartialValue::MaxDimensions(d),
-                    _ => PartialValue::Dimensions(d),
-                }))
+                Ok(Applied::Replace(
+                    slot,
+                    match slot {
+                        Slot::MinDimensions => PartialValue::MinDimensions(d),
+                        Slot::MaxDimensions => PartialValue::MaxDimensions(d),
+                        _ => PartialValue::Dimensions(d),
+                    },
+                ))
             }
 
             // ---------------- radius ----------------
             "rounded" => {
-                let full = t.arbitrary.map(|a| arb_length(a)).flatten();
+                let full = t.arbitrary.and_then(arb_length);
                 let name = value_elems.join("-");
                 let (edges, token) = radius_family(&name);
                 let px = match full {
                     Some(SizedValue::Px(v)) => v,
                     _ => match token {
-                        Some(tok) => self.theme.radius(tok).unwrap_or_else(|| default_radius(tok, spacing)),
+                        Some(tok) => self
+                            .theme
+                            .radius(tok)
+                            .unwrap_or_else(|| default_radius(tok, spacing)),
                         None => self.theme.radius("DEFAULT").unwrap_or(4.0),
                     },
                 };
                 if name == "full" {
-                    return Ok(Applied::Radius { tl: Some(9999.0), tr: Some(9999.0), br: Some(9999.0), bl: Some(9999.0) });
+                    return Ok(Applied::Radius {
+                        tl: Some(9999.0),
+                        tr: Some(9999.0),
+                        br: Some(9999.0),
+                        bl: Some(9999.0),
+                    });
                 }
                 Ok(match edges {
-                    RadiusEdges::All => Applied::Radius { tl: Some(px), tr: Some(px), br: Some(px), bl: Some(px) },
-                    RadiusEdges::Top => Applied::Radius { tl: Some(px), tr: Some(px), br: None, bl: None },
-                    RadiusEdges::Bottom => Applied::Radius { tl: None, tr: None, br: Some(px), bl: Some(px) },
-                    RadiusEdges::Left => Applied::Radius { tl: Some(px), tr: None, br: None, bl: Some(px) },
-                    RadiusEdges::Right => Applied::Radius { tl: None, tr: Some(px), br: Some(px), bl: None },
-                    RadiusEdges::Tl => Applied::Radius { tl: Some(px), tr: None, br: None, bl: None },
-                    RadiusEdges::Tr => Applied::Radius { tl: None, tr: Some(px), br: None, bl: None },
-                    RadiusEdges::Br => Applied::Radius { tl: None, tr: None, br: Some(px), bl: None },
-                    RadiusEdges::Bl => Applied::Radius { tl: None, tr: None, br: None, bl: Some(px) },
+                    RadiusEdges::All => Applied::Radius {
+                        tl: Some(px),
+                        tr: Some(px),
+                        br: Some(px),
+                        bl: Some(px),
+                    },
+                    RadiusEdges::Top => Applied::Radius {
+                        tl: Some(px),
+                        tr: Some(px),
+                        br: None,
+                        bl: None,
+                    },
+                    RadiusEdges::Bottom => Applied::Radius {
+                        tl: None,
+                        tr: None,
+                        br: Some(px),
+                        bl: Some(px),
+                    },
+                    RadiusEdges::Left => Applied::Radius {
+                        tl: Some(px),
+                        tr: None,
+                        br: None,
+                        bl: Some(px),
+                    },
+                    RadiusEdges::Right => Applied::Radius {
+                        tl: None,
+                        tr: Some(px),
+                        br: Some(px),
+                        bl: None,
+                    },
+                    RadiusEdges::Tl => Applied::Radius {
+                        tl: Some(px),
+                        tr: None,
+                        br: None,
+                        bl: None,
+                    },
+                    RadiusEdges::Tr => Applied::Radius {
+                        tl: None,
+                        tr: Some(px),
+                        br: None,
+                        bl: None,
+                    },
+                    RadiusEdges::Br => Applied::Radius {
+                        tl: None,
+                        tr: None,
+                        br: Some(px),
+                        bl: None,
+                    },
+                    RadiusEdges::Bl => Applied::Radius {
+                        tl: None,
+                        tr: None,
+                        br: None,
+                        bl: Some(px),
+                    },
                 })
             }
 
             // ---------------- shadows ----------------
             "shadow" => {
                 if value_elems.is_empty() {
-                    let spec = self.theme.shadow("").unwrap_or_else(|| v4_default_shadow(""));
-                    return Ok(Applied::Replace(Slot::Shadow, PartialValue::Shadow(to_shadow(&spec))));
+                    let spec = self
+                        .theme
+                        .shadow("")
+                        .unwrap_or_else(|| v4_default_shadow(""));
+                    return Ok(Applied::Replace(
+                        Slot::Shadow,
+                        PartialValue::Shadow(to_shadow(&spec)),
+                    ));
                 }
                 let name = value_elems.join("-");
                 if name == "none" {
-                    return Ok(Applied::Replace(Slot::Shadow, PartialValue::Shadow(BoxShadow { offset_x: 0.0, offset_y: 0.0, blur: 0.0, spread: 0.0, color: Color::TRANSPARENT, inset: false })));
+                    return Ok(Applied::Replace(
+                        Slot::Shadow,
+                        PartialValue::Shadow(BoxShadow {
+                            offset_x: 0.0,
+                            offset_y: 0.0,
+                            blur: 0.0,
+                            spread: 0.0,
+                            color: Color::TRANSPARENT,
+                            inset: false,
+                        }),
+                    ));
                 }
                 match self.theme.shadow(&name) {
-                    Some(spec) => Ok(Applied::Replace(Slot::Shadow, PartialValue::Shadow(to_shadow(&spec)))),
+                    Some(spec) => Ok(Applied::Replace(
+                        Slot::Shadow,
+                        PartialValue::Shadow(to_shadow(&spec)),
+                    )),
                     None => Err(missing(format!("--shadow-{name}"))),
                 }
             }
 
             // ---------------- layout ----------------
             "flex" => {
-                let mut layout = Layout { display: Some(Display::Flex), ..Default::default() };
+                let mut layout = Layout {
+                    display: Some(Display::Flex),
+                    ..Default::default()
+                };
                 match value_elems {
                     [] => Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(layout))),
                     ["col"] => {
@@ -703,21 +1042,37 @@ impl<'t> Resolver<'t> {
                         layout.flex_shrink = Some(1.0);
                         Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(layout)))
                     }
-                    _ => Err(unknown(suggest(&head, &self.theme))),
+                    _ => Err(unknown(suggest(&head, self.theme))),
                 }
             }
-            "inline" if value_elems == ["flex"] => {
-                Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(Layout { display: Some(Display::InlineFlex), ..Default::default() })))
-            }
-            "grid" if value_elems.is_empty() => {
-                Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(Layout { display: Some(Display::Grid), ..Default::default() })))
-            }
-            "block" if value_elems.is_empty() => {
-                Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(Layout { display: Some(Display::Block), ..Default::default() })))
-            }
-            "hidden" if value_elems.is_empty() => {
-                Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(Layout { display: Some(Display::None), ..Default::default() })))
-            }
+            "inline" if value_elems == ["flex"] => Ok(Applied::Replace(
+                Slot::Layout,
+                PartialValue::Layout(Layout {
+                    display: Some(Display::InlineFlex),
+                    ..Default::default()
+                }),
+            )),
+            "grid" if value_elems.is_empty() => Ok(Applied::Replace(
+                Slot::Layout,
+                PartialValue::Layout(Layout {
+                    display: Some(Display::Grid),
+                    ..Default::default()
+                }),
+            )),
+            "block" if value_elems.is_empty() => Ok(Applied::Replace(
+                Slot::Layout,
+                PartialValue::Layout(Layout {
+                    display: Some(Display::Block),
+                    ..Default::default()
+                }),
+            )),
+            "hidden" if value_elems.is_empty() => Ok(Applied::Replace(
+                Slot::Layout,
+                PartialValue::Layout(Layout {
+                    display: Some(Display::None),
+                    ..Default::default()
+                }),
+            )),
             "items" => {
                 let v = match value_elems {
                     ["center"] => AlignItems::Center,
@@ -725,9 +1080,15 @@ impl<'t> Resolver<'t> {
                     ["end"] => AlignItems::End,
                     ["stretch"] => AlignItems::Stretch,
                     ["baseline"] => AlignItems::Baseline,
-                    _ => return Err(unknown(suggest(&head, &self.theme))),
+                    _ => return Err(unknown(suggest(&head, self.theme))),
                 };
-                Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(Layout { align_items: Some(v), ..Default::default() })))
+                Ok(Applied::Replace(
+                    Slot::Layout,
+                    PartialValue::Layout(Layout {
+                        align_items: Some(v),
+                        ..Default::default()
+                    }),
+                ))
             }
             "justify" => {
                 let v = match value_elems {
@@ -737,9 +1098,15 @@ impl<'t> Resolver<'t> {
                     ["between"] => JustifyContent::SpaceBetween,
                     ["around"] => JustifyContent::SpaceAround,
                     ["evenly"] => JustifyContent::SpaceEvenly,
-                    _ => return Err(unknown(suggest(&head, &self.theme))),
+                    _ => return Err(unknown(suggest(&head, self.theme))),
                 };
-                Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(Layout { justify_content: Some(v), ..Default::default() })))
+                Ok(Applied::Replace(
+                    Slot::Layout,
+                    PartialValue::Layout(Layout {
+                        justify_content: Some(v),
+                        ..Default::default()
+                    }),
+                ))
             }
             "self" => {
                 let v = match value_elems {
@@ -747,15 +1114,24 @@ impl<'t> Resolver<'t> {
                     ["start"] => AlignItems::Start,
                     ["end"] => AlignItems::End,
                     ["stretch"] => AlignItems::Stretch,
-                    _ => return Err(unknown(suggest(&head, &self.theme))),
+                    _ => return Err(unknown(suggest(&head, self.theme))),
                 };
-                Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(Layout { align_self: Some(v), ..Default::default() })))
+                Ok(Applied::Replace(
+                    Slot::Layout,
+                    PartialValue::Layout(Layout {
+                        align_self: Some(v),
+                        ..Default::default()
+                    }),
+                ))
             }
             "grow" | "shrink" => {
                 let n = if value_elems.is_empty() {
                     1.0
                 } else {
-                    value_elems.join("-").parse::<f32>().map_err(|_| unknown(None))?
+                    value_elems
+                        .join("-")
+                        .parse::<f32>()
+                        .map_err(|_| unknown(None))?
                 };
                 let mut layout = Layout::default();
                 if head == "grow" {
@@ -779,14 +1155,24 @@ impl<'t> Resolver<'t> {
                     "bold" => 700,
                     "extrabold" => 800,
                     "black" => 900,
-                    _ => return Err(unsupported("font-family / font-stretch classes are not in v1")),
+                    _ => {
+                        return Err(unsupported(
+                            "font-family / font-stretch classes are not in v1",
+                        ));
+                    }
                 };
-                Ok(Applied::Text(TextProperty::FontWeight, TextValue::Weight(w)))
+                Ok(Applied::Text(
+                    TextProperty::FontWeight,
+                    TextValue::Weight(w),
+                ))
             }
             "leading" => {
                 let name = value_elems.join("-");
                 if let Ok(n) = name.parse::<f32>() {
-                    return Ok(Applied::Text(TextProperty::LineHeight, TextValue::Px(scale_unsigned(n))));
+                    return Ok(Applied::Text(
+                        TextProperty::LineHeight,
+                        TextValue::Px(scale_unsigned(n)),
+                    ));
                 }
                 let v = match name.as_str() {
                     "none" => 1.0,
@@ -797,7 +1183,10 @@ impl<'t> Resolver<'t> {
                     "loose" => 2.0,
                     _ => return Err(missing(format!("--leading-{name}"))),
                 };
-                Ok(Applied::Text(TextProperty::LineHeight, TextValue::Px(v * 16.0)))
+                Ok(Applied::Text(
+                    TextProperty::LineHeight,
+                    TextValue::Px(v * 16.0),
+                ))
             }
             "tracking" => {
                 let em = match value_elems {
@@ -809,23 +1198,34 @@ impl<'t> Resolver<'t> {
                     ["widest"] => 0.1,
                     _ => return Err(missing(format!("--tracking-{}", value_elems.join("-")))),
                 };
-                Ok(Applied::Text(TextProperty::LetterSpacing, TextValue::Spacing(em * 16.0)))
+                Ok(Applied::Text(
+                    TextProperty::LetterSpacing,
+                    TextValue::Spacing(em * 16.0),
+                ))
             }
             "underline-offset" => {
                 let n = value_token(t, value_elems, unknown)?;
-                Ok(Applied::Text(TextProperty::UnderlineOffset, TextValue::Px(n)))
+                Ok(Applied::Text(
+                    TextProperty::UnderlineOffset,
+                    TextValue::Px(n),
+                ))
             }
-            "whitespace" if value_elems == ["nowrap"] => {
-                Ok(Applied::Text(TextProperty::Whitespace, TextValue::Keyword("nowrap")))
-            }
-            "select" if value_elems == ["none"] => {
-                Ok(Applied::Text(TextProperty::Select, TextValue::Keyword("select-none")))
-            }
+            "whitespace" if value_elems == ["nowrap"] => Ok(Applied::Text(
+                TextProperty::Whitespace,
+                TextValue::Keyword("nowrap"),
+            )),
+            "select" if value_elems == ["none"] => Ok(Applied::Text(
+                TextProperty::Select,
+                TextValue::Keyword("select-none"),
+            )),
 
             // ---------------- misc ----------------
             "opacity" => {
                 let n = value_token(t, value_elems, unknown)?;
-                Ok(Applied::Replace(Slot::Opacity, PartialValue::Opacity(Opacity(n / 100.0))))
+                Ok(Applied::Replace(
+                    Slot::Opacity,
+                    PartialValue::Opacity(Opacity(n / 100.0)),
+                ))
             }
             "cursor" => {
                 let name = value_elems.join("-");
@@ -835,7 +1235,7 @@ impl<'t> Resolver<'t> {
                     "not-allowed" => Cursor::NotAllowed,
                     "text" => Cursor::Text,
                     "grab" => Cursor::Grab,
-                    _ => return Err(unknown(suggest(&name, &self.theme))),
+                    _ => return Err(unknown(suggest(&name, self.theme))),
                 };
                 Ok(Applied::Replace(Slot::Cursor, PartialValue::Cursor(v)))
             }
@@ -843,25 +1243,30 @@ impl<'t> Resolver<'t> {
                 let v = match value_elems {
                     ["none"] => PointerEvents::None,
                     ["auto"] => PointerEvents::Auto,
-                    _ => return Err(unknown(suggest(&head, &self.theme))),
+                    _ => return Err(unknown(suggest(&head, self.theme))),
                 };
-                Ok(Applied::Replace(Slot::PointerEvents, PartialValue::PointerEvents(v)))
+                Ok(Applied::Replace(
+                    Slot::PointerEvents,
+                    PartialValue::PointerEvents(v),
+                ))
             }
 
             // Recognized-but-dropped families (no transition/animation engine).
             "transition" | "animate" => Err(unsupported(match head.as_str() {
-                "transition" => "CSS transitions need a transition engine (not in v1) — documented no-op",
+                "transition" => {
+                    "CSS transitions need a transition engine (not in v1) — documented no-op"
+                }
                 _ => "CSS animations are not in v1 — documented no-op",
             })),
-            "inset" | "top" | "bottom" | "left" | "right" | "z" | "absolute" | "fixed" | "sticky"
-            | "relative" | "static" | "overflow" | "order" | "basis" | "col" | "row" | "space"
-            | "divide" | "aspect" | "object" | "overscroll" | "scroll" | "place" | "content"
-            | "grid" | "inline" | "outline-hidden" | "isolate" | "float" | "clear" | "blur"
-            | "brightness" | "contrast" | "grayscale" | "hue-rotate" | "invert" | "saturate"
-            | "sepia" | "drop-shadow" | "backdrop" | "sr" | "not-sr" | "truncate" | "accent"
-            | "appearance" | "resize" | "touch" | "will-change" | "fill" | "stroke" | "decoration"
-            | "align" | "vertical" | "list" | "text-wrap" | "text-pretty" | "hyphens"
-            | "uppercase" | "lowercase" | "capitalize" | "normal-case" | "italic"
+            "inset" | "top" | "bottom" | "left" | "right" | "z" | "absolute" | "fixed"
+            | "sticky" | "relative" | "static" | "overflow" | "order" | "basis" | "col" | "row"
+            | "space" | "divide" | "aspect" | "object" | "overscroll" | "scroll" | "place"
+            | "content" | "grid" | "inline" | "outline-hidden" | "isolate" | "float" | "clear"
+            | "blur" | "brightness" | "contrast" | "grayscale" | "hue-rotate" | "invert"
+            | "saturate" | "sepia" | "drop-shadow" | "backdrop" | "sr" | "not-sr" | "truncate"
+            | "accent" | "appearance" | "resize" | "touch" | "will-change" | "fill" | "stroke"
+            | "decoration" | "align" | "vertical" | "list" | "text-wrap" | "text-pretty"
+            | "hyphens" | "uppercase" | "lowercase" | "capitalize" | "normal-case" | "italic"
             | "underline" | "overline" | "line-through" | "no-underline" | "antialiased"
             | "subpixel" | "ordinal" | "slashed" | "lining" | "oldstyle" | "proportional"
             | "tabular" | "diagonal" | "stacked" | "scale" | "rotate" | "translate" | "skew"
@@ -870,7 +1275,7 @@ impl<'t> Resolver<'t> {
             | "container" | "has" | "group" | "peer" | "not" | "supports" | "min" | "max"
             | "clamp" | "fit" => Err(unsupported("utility family is outside the v1 Shadcn scope")),
 
-            _ => Err(unknown(suggest(&head, &self.theme))),
+            _ => Err(unknown(suggest(&head, self.theme))),
         }
     }
 }
@@ -940,13 +1345,48 @@ fn value_token<'a>(
 fn padding_applied(head: &str, v: f32) -> Applied {
     use Applied::Padding as P;
     match head {
-        "p" => P { top: Some(v), right: Some(v), bottom: Some(v), left: Some(v) },
-        "px" => P { top: None, right: Some(v), bottom: None, left: Some(v) },
-        "py" => P { top: Some(v), right: None, bottom: Some(v), left: None },
-        "pt" => P { top: Some(v), right: None, bottom: None, left: None },
-        "pr" | "pe" => P { top: None, right: Some(v), bottom: None, left: None },
-        "pb" => P { top: None, right: None, bottom: Some(v), left: None },
-        "pl" | "ps" => P { top: None, right: None, bottom: None, left: Some(v) },
+        "p" => P {
+            top: Some(v),
+            right: Some(v),
+            bottom: Some(v),
+            left: Some(v),
+        },
+        "px" => P {
+            top: None,
+            right: Some(v),
+            bottom: None,
+            left: Some(v),
+        },
+        "py" => P {
+            top: Some(v),
+            right: None,
+            bottom: Some(v),
+            left: None,
+        },
+        "pt" => P {
+            top: Some(v),
+            right: None,
+            bottom: None,
+            left: None,
+        },
+        "pr" | "pe" => P {
+            top: None,
+            right: Some(v),
+            bottom: None,
+            left: None,
+        },
+        "pb" => P {
+            top: None,
+            right: None,
+            bottom: Some(v),
+            left: None,
+        },
+        "pl" | "ps" => P {
+            top: None,
+            right: None,
+            bottom: None,
+            left: Some(v),
+        },
         _ => unreachable!(),
     }
 }
@@ -954,32 +1394,110 @@ fn padding_applied(head: &str, v: f32) -> Applied {
 fn margin_applied(head: &str, v: f32) -> Applied {
     use Applied::Margin as M;
     match head {
-        "m" => M { top: Some(v), right: Some(v), bottom: Some(v), left: Some(v) },
-        "mx" => M { top: None, right: Some(v), bottom: None, left: Some(v) },
-        "my" => M { top: Some(v), right: None, bottom: Some(v), left: None },
-        "mt" => M { top: Some(v), right: None, bottom: None, left: None },
-        "mr" | "me" => M { top: None, right: Some(v), bottom: None, left: None },
-        "mb" => M { top: None, right: None, bottom: Some(v), left: None },
-        "ml" | "ms" => M { top: None, right: None, bottom: None, left: Some(v) },
+        "m" => M {
+            top: Some(v),
+            right: Some(v),
+            bottom: Some(v),
+            left: Some(v),
+        },
+        "mx" => M {
+            top: None,
+            right: Some(v),
+            bottom: None,
+            left: Some(v),
+        },
+        "my" => M {
+            top: Some(v),
+            right: None,
+            bottom: Some(v),
+            left: None,
+        },
+        "mt" => M {
+            top: Some(v),
+            right: None,
+            bottom: None,
+            left: None,
+        },
+        "mr" | "me" => M {
+            top: None,
+            right: Some(v),
+            bottom: None,
+            left: None,
+        },
+        "mb" => M {
+            top: None,
+            right: None,
+            bottom: Some(v),
+            left: None,
+        },
+        "ml" | "ms" => M {
+            top: None,
+            right: None,
+            bottom: None,
+            left: Some(v),
+        },
         _ => unreachable!(),
     }
 }
 
 fn border_width_family(name: &str, _spacing: f32) -> Option<Applied> {
     // v4 border widths are px, not spacing-scale multiples.
+    // Non-target edges are `None` (not `Some(0.0)`) so per-side classes
+    // COMPOSE like the padding/margin families do (`border-t border-b`
+    // must keep the top edge set by the earlier class).
     let w = |n: f32| Some(n);
     use Applied::BorderWidth as B;
     Some(match name {
-        "0" => B { top: Some(0.0), right: Some(0.0), bottom: Some(0.0), left: Some(0.0) },
-        "t" => B { top: w(1.0), right: Some(0.0), bottom: Some(0.0), left: Some(0.0) },
-        "r" => B { top: Some(0.0), right: w(1.0), bottom: Some(0.0), left: Some(0.0) },
-        "b" => B { top: Some(0.0), right: Some(0.0), bottom: w(1.0), left: Some(0.0) },
-        "l" => B { top: Some(0.0), right: Some(0.0), bottom: Some(0.0), left: w(1.0) },
-        "x" => B { top: Some(0.0), right: w(1.0), bottom: Some(0.0), left: w(1.0) },
-        "y" => B { top: w(1.0), right: Some(0.0), bottom: w(1.0), left: Some(0.0) },
+        "0" => B {
+            top: Some(0.0),
+            right: Some(0.0),
+            bottom: Some(0.0),
+            left: Some(0.0),
+        },
+        "t" => B {
+            top: w(1.0),
+            right: None,
+            bottom: None,
+            left: None,
+        },
+        "r" => B {
+            top: None,
+            right: w(1.0),
+            bottom: None,
+            left: None,
+        },
+        "b" => B {
+            top: None,
+            right: None,
+            bottom: w(1.0),
+            left: None,
+        },
+        "l" => B {
+            top: None,
+            right: None,
+            bottom: None,
+            left: w(1.0),
+        },
+        "x" => B {
+            top: None,
+            right: w(1.0),
+            bottom: None,
+            left: w(1.0),
+        },
+        "y" => B {
+            top: w(1.0),
+            right: None,
+            bottom: w(1.0),
+            left: None,
+        },
         other => {
             let n: f32 = other.parse().ok()?;
-            B { top: w(n), right: w(n), bottom: w(n), left: w(n) }
+            B {
+                top: w(n),
+                right: w(n),
+                bottom: w(n),
+                left: w(n),
+            }
         }
     })
 }
@@ -993,7 +1511,12 @@ struct Edges {
 }
 
 impl Edges {
-    const NONE: Edges = Edges { top: None, right: None, bottom: None, left: None };
+    const NONE: Edges = Edges {
+        top: None,
+        right: None,
+        bottom: None,
+        left: None,
+    };
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1005,18 +1528,39 @@ struct Corners {
 }
 
 impl Corners {
-    const NONE: Corners = Corners { tl: None, tr: None, br: None, bl: None };
+    const NONE: Corners = Corners {
+        tl: None,
+        tr: None,
+        br: None,
+        bl: None,
+    };
 }
 
 fn merge_layout(acc: &mut Layout, next: &Layout) {
-    if next.display.is_some() { acc.display = next.display; }
-    if next.flex_direction.is_some() { acc.flex_direction = next.flex_direction; }
-    if next.align_items.is_some() { acc.align_items = next.align_items; }
-    if next.justify_content.is_some() { acc.justify_content = next.justify_content; }
-    if next.flex_wrap.is_some() { acc.flex_wrap = next.flex_wrap; }
-    if next.flex_grow.is_some() { acc.flex_grow = next.flex_grow; }
-    if next.flex_shrink.is_some() { acc.flex_shrink = next.flex_shrink; }
-    if next.align_self.is_some() { acc.align_self = next.align_self; }
+    if next.display.is_some() {
+        acc.display = next.display;
+    }
+    if next.flex_direction.is_some() {
+        acc.flex_direction = next.flex_direction;
+    }
+    if next.align_items.is_some() {
+        acc.align_items = next.align_items;
+    }
+    if next.justify_content.is_some() {
+        acc.justify_content = next.justify_content;
+    }
+    if next.flex_wrap.is_some() {
+        acc.flex_wrap = next.flex_wrap;
+    }
+    if next.flex_grow.is_some() {
+        acc.flex_grow = next.flex_grow;
+    }
+    if next.flex_shrink.is_some() {
+        acc.flex_shrink = next.flex_shrink;
+    }
+    if next.align_self.is_some() {
+        acc.align_self = next.align_self;
+    }
 }
 
 fn merge_ring(style: &mut ResolvedStyle, ring: &Ring) {
@@ -1065,17 +1609,62 @@ fn v4_default_shadow(name: &str) -> crate::theme::BoxShadowSpec {
     use crate::color::Color;
     let black = Color::from_srgb(0.0, 0.0, 0.0, 0.05);
     match name {
-        "sm" => crate::theme::BoxShadowSpec { offset_x: 0.0, offset_y: 1.0, blur: 3.0, spread: 0.0, color: black },
-        "md" => crate::theme::BoxShadowSpec { offset_x: 0.0, offset_y: 2.0, blur: 6.0, spread: -1.0, color: black },
-        "lg" => crate::theme::BoxShadowSpec { offset_x: 0.0, offset_y: 4.0, blur: 10.0, spread: -2.0, color: black },
-        "xl" => crate::theme::BoxShadowSpec { offset_x: 0.0, offset_y: 8.0, blur: 16.0, spread: -4.0, color: black },
+        "sm" => crate::theme::BoxShadowSpec {
+            offset_x: 0.0,
+            offset_y: 1.0,
+            blur: 3.0,
+            spread: 0.0,
+            color: black,
+        },
+        "md" => crate::theme::BoxShadowSpec {
+            offset_x: 0.0,
+            offset_y: 2.0,
+            blur: 6.0,
+            spread: -1.0,
+            color: black,
+        },
+        "lg" => crate::theme::BoxShadowSpec {
+            offset_x: 0.0,
+            offset_y: 4.0,
+            blur: 10.0,
+            spread: -2.0,
+            color: black,
+        },
+        "xl" => crate::theme::BoxShadowSpec {
+            offset_x: 0.0,
+            offset_y: 8.0,
+            blur: 16.0,
+            spread: -4.0,
+            color: black,
+        },
         // "xs" (v4 default for empty) — 0 1px 2px 0 rgb(0 0 0 / 0.05)
-        _ => crate::theme::BoxShadowSpec { offset_x: 0.0, offset_y: 1.0, blur: 2.0, spread: 0.0, color: black },
+        _ => crate::theme::BoxShadowSpec {
+            offset_x: 0.0,
+            offset_y: 1.0,
+            blur: 2.0,
+            spread: 0.0,
+            color: black,
+        },
     }
 }
 
 fn is_size_name(elems: &[&str]) -> bool {
-    matches!(elems, ["xs"] | ["sm"] | ["base"] | ["lg"] | ["xl"] | ["2xl"] | ["3xl"] | ["4xl"] | ["5xl"] | ["6xl"] | ["7xl"] | ["8xl"] | ["9xl"])
+    matches!(
+        elems,
+        ["xs"]
+            | ["sm"]
+            | ["base"]
+            | ["lg"]
+            | ["xl"]
+            | ["2xl"]
+            | ["3xl"]
+            | ["4xl"]
+            | ["5xl"]
+            | ["6xl"]
+            | ["7xl"]
+            | ["8xl"]
+            | ["9xl"]
+    )
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1157,7 +1746,12 @@ fn size_value<'a>(
         "fit" => SizedValue::FitContent,
         "auto" => SizedValue::Auto,
         "px" => SizedValue::Px(1.0),
-        "screen" => return Err(Warning::Unsupported { class: t.raw.to_string(), reason: "viewport units are resolved by the backend, not at resolve time" }),
+        "screen" => {
+            return Err(Warning::Unsupported {
+                class: t.raw.to_string(),
+                reason: "viewport units are resolved by the backend, not at resolve time",
+            });
+        }
         other => {
             if let Ok(n) = other.parse::<f32>() {
                 SizedValue::Px(n * spacing)
@@ -1174,16 +1768,58 @@ fn size_value<'a>(
 /// prefixes and color tokens.
 fn suggest(name: &str, theme: &TailwindTheme) -> Option<String> {
     const PREFIXES: &[&str] = &[
-        "bg", "text", "border", "rounded", "p", "px", "py", "pt", "pr", "pb", "pl", "m", "mx",
-        "my", "mt", "mr", "mb", "ml", "w", "h", "size", "min-w", "min-h", "max-w", "max-h",
-        "gap", "flex", "grid", "items", "justify", "shadow", "ring", "ring-offset", "outline",
-        "font", "leading", "tracking", "opacity", "cursor", "pointer-events", "transition",
-        "animate", "select", "whitespace", "underline-offset", "grow", "shrink",
+        "bg",
+        "text",
+        "border",
+        "rounded",
+        "p",
+        "px",
+        "py",
+        "pt",
+        "pr",
+        "pb",
+        "pl",
+        "m",
+        "mx",
+        "my",
+        "mt",
+        "mr",
+        "mb",
+        "ml",
+        "w",
+        "h",
+        "size",
+        "min-w",
+        "min-h",
+        "max-w",
+        "max-h",
+        "gap",
+        "flex",
+        "grid",
+        "items",
+        "justify",
+        "shadow",
+        "ring",
+        "ring-offset",
+        "outline",
+        "font",
+        "leading",
+        "tracking",
+        "opacity",
+        "cursor",
+        "pointer-events",
+        "transition",
+        "animate",
+        "select",
+        "whitespace",
+        "underline-offset",
+        "grow",
+        "shrink",
     ];
     let mut best: Option<(usize, String)> = None;
     let mut consider = |candidate: String| {
         let d = levenshtein(name, &candidate);
-        if d <= 3 && best.as_ref().map_or(true, |(bd, _)| d < *bd) {
+        if d <= 3 && best.as_ref().is_none_or(|(bd, _)| d < *bd) {
             best = Some((d, candidate));
         }
     };
