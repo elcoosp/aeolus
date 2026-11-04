@@ -6,13 +6,17 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version = "1.88"
+# Not publishable in v0.1.0: depends on git-pinned Masonry/Xilem commits
+# (crates.io rejects git dependencies) and, in this sandbox, on the local
+# `muda-stub` patch. See reports/09-publishing/PUBLISHING.md.
+publish = false
 
 [dependencies]
 aeolus-core = { path = "../aeolus-core" }
-masonry = { path = "../../../repos/xilem/masonry" }
-xilem_masonry = { path = "../../../repos/xilem/xilem_masonry" }
+masonry = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
+xilem_masonry = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
 tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
-masonry_testing = { path = "../../../repos/xilem/masonry_testing" }
+masonry_testing = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
