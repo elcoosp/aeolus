@@ -6,15 +6,20 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version = "1.88"
+# Not publishable in v0.1.0: depends on the two git-pinned backend crates
+# (which themselves depend on git-pinned framework commits; crates.io rejects
+# git dependencies). See reports/09-publishing/PUBLISHING.md.
+publish = false
 
 [dependencies]
 aeolus-core = { path = "../aeolus-core" }
 aeolus-xilem = { path = "../aeolus-xilem" }
 aeolus-floem = { path = "../aeolus-floem" }
-masonry = { path = "../../../repos/xilem/masonry" }
-xilem_masonry = { path = "../../../repos/xilem/xilem_masonry" }
-floem = { path = "../../../repos/floem" }
+masonry = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
+xilem_masonry = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
+floem = { git = "https://github.com/lapce/floem", rev = "1351ffb162faeb8be983f1301d718a0d5fb59c27" }
 tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
+masonry_testing = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
