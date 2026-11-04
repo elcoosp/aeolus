@@ -1,0 +1,100 @@
+# Aeolus CI (Phase 4 hardening).
+#
+# Gates, in mission order. The root workspace covers aeolus-core +
+# aeolus-macro (publishable) AND the three backend crates (they resolve
+# their git-pinned framework deps directly, no repos/ checkout needed).
+# cargo-deny runs the licenses gate only (see deny.toml: advisories are a
+# per-release manual review, SECURITY.md).
+#
+# Fuzzing runs the four libfuzzer targets for 60s each on every push to
+# main and on a weekly schedule (catching regressions without bloating
+# every PR by more than ~4 minutes).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly Monday 03:20 UTC fuzz sweep.
+    - cron: "20 3 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux is the gate; macOS/Windows run the same suite when available
+        # (the muda-stub patch only fires on Linux dev sandboxes; real muda
+        # builds on the other targets).
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace
+
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo test --doc -p aeolus-core
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The publishable set (see reports/09-publishing/PUBLISHING.md):
+      # core first, then macro (crates.io resolution order).
+      - run: cargo package -p aeolus-core -p aeolus-macro --allow-dirty --no-verify
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-deny
+      - run: cargo deny check licenses
+
+  fuzz:
+    # Short smoke fuzz on main pushes + the weekly sweep (mission: 60s per
+    # target). Requires nightly for the sanitizers.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@cargo-fuzz
+      - name: Fuzz 60s per target
+        run: |
+          for t in parse_class_string color_parse cn theme_from_css; do
+            cargo +nightly fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=4096
+          done
