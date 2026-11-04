@@ -151,6 +151,59 @@ fn merge_into(base: &mut ResolvedStyle, over: &ResolvedStyle) {
     }
 }
 
+/// Paint the resolved style's box chrome (shadow, background, border) using
+/// Masonry's own box-painting routines — shared by [`StyledWidget`] and
+/// [`crate::button::StyledButton`] so both render identically (DRY with
+/// Masonry's default `pre_paint`, `widget_paint.rs:48-62`).
+pub(crate) fn paint_plan_box(
+    painter: &mut masonry::imaging::Painter<'_>,
+    bbox: masonry::kurbo::Rect,
+    style: &ResolvedStyle,
+) {
+    let corner_radius = {
+        let r = style
+            .corner_radius
+            .map(|c| {
+                c.top_left
+                    .max(c.top_right)
+                    .max(c.bottom_right)
+                    .max(c.bottom_left)
+            })
+            .unwrap_or(0.0);
+        CornerRadius::all(Length::px(r as f64))
+    };
+    let border_width = {
+        let w = style.border_width.map(|b| b.top).unwrap_or(0.0);
+        BorderWidth::all(Length::px(w as f64))
+    };
+    let background = Background::Color(to_masonry_color(
+        style
+            .background
+            .map(|b| b.0)
+            .unwrap_or(aeolus_core::Color::TRANSPARENT),
+    ));
+    let border_color = BorderColor::new(to_masonry_color(
+        style
+            .border_color
+            .map(|b| b.0)
+            .unwrap_or(aeolus_core::Color::TRANSPARENT),
+    ));
+    let box_shadow = style.shadow.clone().map(|s| BoxShadow {
+        color: to_masonry_color(s.color),
+        offset: masonry::kurbo::Point::new(s.offset_x as f64, s.offset_y as f64),
+        blur_radius: Length::px(s.blur as f64),
+    });
+
+    masonry::core::paint_box_shadow(
+        painter,
+        bbox,
+        &box_shadow.unwrap_or_default(),
+        &corner_radius,
+    );
+    masonry::core::paint_background(painter, bbox, &background, &border_width, &corner_radius);
+    masonry::core::paint_border(painter, bbox, &border_color, &border_width, &corner_radius);
+}
+
 impl Widget for StyledWidget {
     type Action = ();
 
@@ -184,28 +237,44 @@ impl Widget for StyledWidget {
         // The event carries the NEW flag value; every other flag is at its
         // current value (read from ctx), so reconstructing the previous state
         // means flipping exactly this one flag back.
-        let (mut h, mut a, mut d, mut f) = (
+        // The event carries the NEW flag value. For most lanes `ctx` already
+        // reflects it, but the disabled lane flips `state.is_disabled` only
+        // AFTER `update()` returns (masonry update_disabled_for_widget), so
+        // `ctx.is_disabled()` is stale here — always use the event's value.
+        let (h, a, d, f) = (
             ctx.has_hovered(),
             ctx.has_active(),
             ctx.is_disabled(),
             ctx.has_focus_target(),
         );
-        match event {
-            Update::HoveredChanged(v) => h = !*v,
-            Update::ActiveChanged(v) => a = !*v,
-            Update::DisabledChanged(v) => d = !*v,
-            Update::FocusChanged(v) => f = !*v,
+        let (h, a, d, f) = match event {
+            Update::HoveredChanged(v) => (*v, a, d, f),
+            Update::ActiveChanged(v) => (h, *v, d, f),
+            Update::DisabledChanged(v) => (h, a, *v, f),
+            Update::FocusChanged(v) => (h, a, d, *v),
             _ => return,
-        }
-        let prev = resolved_for_state(&self.plan, h, a, d, f);
-        // ctx already reflects the new state.
-        let next = resolved_for_state(
+        };
+        // Reconstruct the PREVIOUS state by flipping exactly this one flag.
+        let prev = resolved_for_state(
             &self.plan,
-            ctx.has_hovered(),
-            ctx.has_active(),
-            ctx.is_disabled(),
-            ctx.has_focus_target(),
+            match event {
+                Update::HoveredChanged(v) => !*v,
+                _ => h,
+            },
+            match event {
+                Update::ActiveChanged(v) => !*v,
+                _ => a,
+            },
+            match event {
+                Update::DisabledChanged(v) => !*v,
+                _ => d,
+            },
+            match event {
+                Update::FocusChanged(v) => !*v,
+                _ => f,
+            },
         );
+        let next = resolved_for_state(&self.plan, h, a, d, f);
         let diff = aeolus_core::diff(&prev, &next);
         if diff.is_empty() {
             return;
@@ -240,8 +309,13 @@ impl Widget for StyledWidget {
         };
         let auto_length = len_req.into();
         let context_size = LayoutSize::maybe(axis.cross(), cross_length);
-        let child_length =
-            ctx.compute_length(&mut self.child, auto_length, context_size, axis, cross_length);
+        let child_length = ctx.compute_length(
+            &mut self.child,
+            auto_length,
+            context_size,
+            axis,
+            cross_length,
+        );
         child_length.saturating_add(Length::px(pad_total as f64))
     }
 
@@ -289,48 +363,7 @@ impl Widget for StyledWidget {
             ctx.is_disabled(),
             ctx.has_focus_target(),
         );
-        let bbox = ctx.border_box();
-
-        // Convert resolved slots into Masonry's property values and reuse the
-        // engine's own box-painting routines — identical rendering to the
-        // default property-driven path (DRY with widget_paint.rs).
-        let corner_radius = {
-            let r = style
-                .corner_radius
-                .map(|c| c.top_left.max(c.top_right).max(c.bottom_right).max(c.bottom_left))
-                .unwrap_or(0.0);
-            CornerRadius::all(Length::px(r as f64))
-        };
-        let border_width = {
-            let w = style.border_width.map(|b| b.top).unwrap_or(0.0);
-            BorderWidth::all(Length::px(w as f64))
-        };
-        let background = Background::Color(to_masonry_color(
-            style
-                .background
-                .map(|b| b.0)
-                .unwrap_or(aeolus_core::Color::TRANSPARENT),
-        ));
-        let border_color = BorderColor::new(to_masonry_color(
-            style
-                .border_color
-                .map(|b| b.0)
-                .unwrap_or(aeolus_core::Color::TRANSPARENT),
-        ));
-        let box_shadow = style.shadow.map(|s| BoxShadow {
-            color: to_masonry_color(s.color),
-            offset: masonry::kurbo::Point::new(s.offset_x as f64, s.offset_y as f64),
-            blur_radius: Length::px(s.blur as f64),
-        });
-
-        masonry::core::paint_box_shadow(
-            painter,
-            bbox,
-            &box_shadow.unwrap_or(BoxShadow::default()),
-            &corner_radius,
-        );
-        masonry::core::paint_background(painter, bbox, &background, &border_width, &corner_radius);
-        masonry::core::paint_border(painter, bbox, &border_color, &border_width, &corner_radius);
+        paint_plan_box(painter, ctx.border_box(), &style);
     }
 
     fn paint(
