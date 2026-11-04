@@ -13,6 +13,8 @@ rust-version = "1.88"
 
 [dev-dependencies]
 divan = "0.1"
+# Phase-4 hardening: property tests are dev-only; aeolus-core stays zero-dep.
+proptest = "1"
 
 [[bench]]
 name = "hot"
