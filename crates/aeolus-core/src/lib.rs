@@ -1,10 +1,10 @@
 //! # Aeolus core — the Tailwind v4 lowering compiler's semantic layer
-//!
+#![deny(missing_docs)]
 //! `aeolus-core` parses Tailwind CSS v4 class strings, resolves theme tokens,
 //! variants, opacity modifiers and conflict groups, and lowers the result
 //! into the `StylePlan` IR — **without any framework dependency**.
 //!
-//! ```no_run
+//! ```
 //! use aeolus_core::{TailwindTheme, Resolver};
 //!
 //! let theme = TailwindTheme::from_theme_css(concat!(
@@ -36,28 +36,27 @@ pub mod resolve;
 pub mod theme;
 
 pub use ast::{Breakpoint, ClassToken, NamedVariant, ParentKind, Variant};
-pub use cache::{hash_classes, CachedPlan, Interner, PlanCache};
-pub use caps::{
-    Backend, BackendCapabilities, CascadeModel, PropertySupport, ThemeSwap,
-};
+pub use cache::{CachedPlan, Interner, PlanCache, hash_classes};
+pub use caps::{Backend, BackendCapabilities, CascadeModel, PropertySupport, ThemeSwap};
 pub use color::{Color, ParseError};
 pub use conflict::{cn, cn_opt};
 pub use plan::{
-    diff, Background, BorderColor, BorderWidth, BoxShadow, ConditionalLayer,
-    ContentColor, CornerRadius, Cursor, Dimensions, Display, FlexDirection,
-    Gap, JustifyContent, Lane, Layout, Margin, Opacity, Outline, Padding,
-    PointerEvents, ResolvedStyle, Ring, RingPart, SizedValue, Slot, StyleDiff,
-    StylePlan, TextProperty, TextValue, VariantCondition,
+    Background, BorderColor, BorderWidth, BoxShadow, ConditionalLayer, ContentColor, CornerRadius,
+    Cursor, Dimensions, Display, FlexDirection, Gap, JustifyContent, Lane, Layout, Margin, Opacity,
+    Outline, Padding, PointerEvents, ResolvedStyle, Ring, RingPart, SizedValue, Slot, StyleDiff,
+    StylePlan, TextProperty, TextValue, VariantCondition, diff,
 };
 pub use resolve::{Resolution, Resolver, Warning};
-pub use theme::{BoxShadowSpec, TailwindTheme, Token, TAILWIND_DEFAULT_PALETTE};
+pub use theme::{BoxShadowSpec, TAILWIND_DEFAULT_PALETTE, TailwindTheme, Token};
 
 /// The Shadcn default theme (light + dark) as `@theme`-compatible CSS.
 ///
 /// Values are verbatim from shadcn-ui v4 (`apps/v4/app/globals.css`,
 /// shadcn-ui/ui @ HEAD 2026-11); `shadcn_default()` ships both palettes.
 pub mod shadcn_css {
+    /// The Shadcn neutral light palette (`:root` block, verbatim).
     pub const LIGHT: &str = include_str!("../data/shadcn-light.css");
+    /// The Shadcn neutral dark palette (`.dark` block, verbatim).
     pub const DARK: &str = include_str!("../data/shadcn-dark.css");
 }
 
