@@ -97,7 +97,9 @@ fn extract_string_list(input: TokenStream) -> Result<Vec<String>, String> {
                 out.extend(inner);
             }
             other => {
-                return Err(format!("tw!: unexpected token {other} (expected a string literal)"));
+                return Err(format!(
+                    "tw!: unexpected token {other} (expected a string literal)"
+                ));
             }
         }
     }
