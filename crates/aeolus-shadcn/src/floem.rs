@@ -8,8 +8,11 @@
 use aeolus_floem::FloemTwExt;
 use floem::{IntoView, views::Label};
 
-use crate::classes::{alert_classes, badge_classes, button_classes, AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, CARD, CARD_DESCRIPTION, CARD_FOOTER, CARD_HEADER, CARD_TITLE, LABEL_BASE};
-use aeolus_core::{cn, Resolver};
+use crate::classes::{
+    AlertVariant, BadgeVariant, ButtonSize, ButtonVariant, CARD, CARD_DESCRIPTION, CARD_FOOTER,
+    CARD_HEADER, CARD_TITLE, LABEL_BASE, alert_classes, badge_classes, button_classes,
+};
+use aeolus_core::{Resolver, cn};
 
 /// A Shadcn Button (centered text via floem's own flex utilities).
 pub fn button<'a>(
@@ -50,11 +53,7 @@ pub fn badge<'a>(
 }
 
 /// A Shadcn Label.
-pub fn label<'a>(
-    resolver: &Resolver<'a>,
-    label_text: &'static str,
-    class: &str,
-) -> impl IntoView {
+pub fn label<'a>(resolver: &Resolver<'a>, label_text: &'static str, class: &str) -> impl IntoView {
     let classes = cn(&[LABEL_BASE, class]);
     let plan = match resolver.resolve(&classes) {
         Ok(r) => r.plan,
