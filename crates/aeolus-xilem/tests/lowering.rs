@@ -2,12 +2,12 @@
 //! hand-written stack for the demo classes, and `cn()` must resolve
 //! conflicts rightmost-wins.
 
-use masonry::core::{PropertyStack, PropertySet, Selector};
+use masonry::core::{PropertySet, PropertyStack, Selector};
 use masonry::layout::Length;
 use masonry::properties::{Background, BorderColor, CornerRadius, Padding};
 
 use aeolus_core::color::Color;
-use aeolus_core::{shadcn_default, Resolver};
+use aeolus_core::{Resolver, shadcn_default};
 use aeolus_xilem::{lower, to_masonry_color};
 
 /// Hand-written Masonry stack for `p-4 bg-primary hover:bg-primary/90 rounded-md`
@@ -113,7 +113,9 @@ fn focus_and_disabled_layers_map_to_selectors() {
     let theme = shadcn_default().unwrap();
     let resolver = Resolver::new(&theme);
     let r = resolver
-        .resolve("bg-primary focus:bg-red-500 active:bg-black disabled:bg-gray-300 focus-within:ring-2")
+        .resolve(
+            "bg-primary focus:bg-red-500 active:bg-black disabled:bg-gray-300 focus-within:ring-2",
+        )
         .unwrap();
     let (stack, report) = lower(&r.plan);
     let selectors: Vec<_> = stack.get_layers().iter().map(|(s, _)| s.clone()).collect();
@@ -122,7 +124,10 @@ fn focus_and_disabled_layers_map_to_selectors() {
     assert!(selectors.contains(&Selector::new().with_disabled(true)));
     // focus-within has no Selector flag today: it must be REPORTED, not dropped.
     assert!(
-        report.dropped.iter().any(|(what, _)| what == "focus-within"),
+        report
+            .dropped
+            .iter()
+            .any(|(what, _)| what == "focus-within"),
         "focus-within must be reported: {report:?}"
     );
 }
@@ -139,8 +144,14 @@ fn unrepresentable_conditions_are_reported() {
     assert!(whats.iter().any(|w| w.starts_with("group:")), "{report:?}");
     assert!(whats.iter().any(|w| w.starts_with("peer:")), "{report:?}");
     assert!(whats.contains(&"dark"), "{report:?}");
-    assert!(whats.iter().any(|w| w.starts_with("responsive:")), "{report:?}");
-    assert!(whats.iter().any(|w| w.starts_with("container:")), "{report:?}");
+    assert!(
+        whats.iter().any(|w| w.starts_with("responsive:")),
+        "{report:?}"
+    );
+    assert!(
+        whats.iter().any(|w| w.starts_with("container:")),
+        "{report:?}"
+    );
 }
 
 #[test]
@@ -167,4 +178,31 @@ fn shadow_spread_is_dropped_not_panicking() {
     // shadow-sm parses (single representative layer kept by the theme).
     assert!(r.plan.base.shadow.is_some());
     let _ = report;
+}
+
+/// Per-side border widths (`border-t border-b`) are silently flattened to
+/// `BorderWidth::all(bw.top)` — the honest-degradation contract requires a
+/// LoweringReport entry whenever a class feature is not representable.
+#[test]
+fn per_side_border_width_is_reported_not_silently_dropped() {
+    let theme = shadcn_default().unwrap();
+    let resolver = Resolver::new(&theme);
+    let resolution = resolver.resolve("border-t border-b").unwrap();
+    let bw = resolution
+        .plan
+        .base
+        .border_width
+        .expect("per-side widths parsed");
+    assert_eq!(bw.top, 1.0);
+    assert_eq!(bw.bottom, 1.0);
+    assert_eq!(bw.left, 0.0);
+    assert_eq!(bw.right, 0.0);
+
+    let (_stack, report) = lower(&resolution.plan);
+    assert!(
+        report.dropped.iter().any(|(what, reason)| {
+            what == "border-width:per-side" && reason.contains("uniform")
+        }),
+        "expected a border-width:per-side drop entry, got {report:?}"
+    );
 }
