@@ -1,7 +1,7 @@
 //! Class-table integrity: every shipped v4 class string must parse through
 //! the aeolus resolver, and the essential styling slots must land.
 
-use aeolus_core::{cn, shadcn_default, Resolver};
+use aeolus_core::{Resolver, cn, shadcn_default};
 use aeolus_shadcn::classes::*;
 
 fn resolver() -> Resolver<'static> {
@@ -65,7 +65,10 @@ fn button_default_variant_resolves_essential_slots() {
     ));
     // hover:bg-primary/90 present as a layer.
     assert!(
-        r.plan.layers.iter().any(|l| l.condition == aeolus_core::plan::VariantCondition::Hover),
+        r.plan
+            .layers
+            .iter()
+            .any(|l| l.condition == aeolus_core::plan::VariantCondition::Hover),
         "hover layer present"
     );
     // disabled:opacity-50 — opacity slot inside the disabled layer (dropped
@@ -76,7 +79,10 @@ fn button_default_variant_resolves_essential_slots() {
         .iter()
         .find(|l| l.condition == aeolus_core::plan::VariantCondition::Disabled)
         .expect("disabled layer");
-    assert!(disabled.style.opacity.is_some(), "disabled:opacity-50 parsed");
+    assert!(
+        disabled.style.opacity.is_some(),
+        "disabled:opacity-50 parsed"
+    );
 }
 
 #[test]
@@ -98,7 +104,10 @@ fn destructive_button_targets_real_tokens() {
     // v4 destructive uses text-white (no destructive-foreground in v4 themes).
     let resolver = resolver();
     let r = resolver
-        .resolve(&button_classes(ButtonVariant::Destructive, ButtonSize::Default))
+        .resolve(&button_classes(
+            ButtonVariant::Destructive,
+            ButtonSize::Default,
+        ))
         .unwrap();
     let base = &r.plan.base;
     let bg = base.background.unwrap().0;
@@ -128,13 +137,19 @@ fn skeleton_uses_accent_token() {
         .background
         .unwrap()
         .0;
-    assert_eq!(bg, accent, "skeleton bg-accent resolves to the theme accent");
+    assert_eq!(
+        bg, accent,
+        "skeleton bg-accent resolves to the theme accent"
+    );
 }
 
 #[test]
 fn user_class_wins_over_component_default() {
     let resolver = resolver();
-    let merged = cn(&[&button_classes(ButtonVariant::Default, ButtonSize::Default), "bg-red-500"]);
+    let merged = cn(&[
+        &button_classes(ButtonVariant::Default, ButtonSize::Default),
+        "bg-red-500",
+    ]);
     let r = resolver.resolve(&merged).unwrap();
     let red = resolver
         .resolve("bg-red-500")
@@ -144,5 +159,9 @@ fn user_class_wins_over_component_default() {
         .background
         .unwrap()
         .0;
-    assert_eq!(r.plan.base.background.unwrap().0, red, "user bg-red-500 wins");
+    assert_eq!(
+        r.plan.base.background.unwrap().0,
+        red,
+        "user bg-red-500 wins"
+    );
 }
