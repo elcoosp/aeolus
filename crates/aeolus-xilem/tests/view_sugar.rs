@@ -22,9 +22,9 @@ use aeolus_xilem::widget::StyledWidget;
 use masonry::core::{DefaultProperties, NewWidget, WidgetTag};
 use masonry::dpi::PhysicalSize;
 use masonry_testing::{ModularWidget, TestHarness, TestHarnessParams};
+use xilem_masonry::ViewCtx;
 use xilem_masonry::core::{ProxyError, RawProxy, SendMessage, View as _, ViewId};
 use xilem_masonry::view::label;
-use xilem_masonry::ViewCtx;
 
 /// A `RawProxy` that goes nowhere: the headless build never sends messages.
 struct NoopProxy;
@@ -36,11 +36,7 @@ impl std::fmt::Debug for NoopProxy {
 }
 
 impl RawProxy for NoopProxy {
-    fn send_message(
-        &self,
-        _path: Arc<[ViewId]>,
-        _message: SendMessage,
-    ) -> Result<(), ProxyError> {
+    fn send_message(&self, _path: Arc<[ViewId]>, _message: SendMessage) -> Result<(), ProxyError> {
         Ok(())
     }
 
@@ -82,9 +78,17 @@ fn tw_view_sugar_builds_a_styled_widget_tree() {
         carried.base.background.is_some(),
         "plan carries the base background"
     );
-    assert_eq!(carried.layers.len(), 1, "hover layer is in the carried plan");
+    assert_eq!(
+        carried.layers.len(),
+        1,
+        "hover layer is in the carried plan"
+    );
     let p = carried.base.padding.expect("p-4 padding");
-    assert_eq!((p.left, p.top), (16.0, 16.0), "view path lowers padding 16px");
+    assert_eq!(
+        (p.left, p.top),
+        (16.0, 16.0),
+        "view path lowers padding 16px"
+    );
 
     // …and the widget styles itself: hover over the label flips the pixels.
     let before = harness.render();
