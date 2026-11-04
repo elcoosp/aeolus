@@ -5,8 +5,8 @@
 //! relative, not absolute.
 
 use aeolus_core::*;
-use divan::counter::ItemsCount;
 use divan::Bencher;
+use divan::counter::ItemsCount;
 
 fn theme() -> TailwindTheme {
     TailwindTheme::from_theme_css(include_str!("../data/shadcn-light.css")).unwrap()
@@ -60,12 +60,26 @@ fn intern_hit(b: Bencher) {
 
 #[divan::bench]
 fn cn_button_merge(b: Bencher) {
-    b.bench(|| cn(&["inline-flex items-center gap-2 rounded-md text-sm bg-primary", "px-8 py-8 rounded-full"]));
+    b.bench(|| {
+        cn(&[
+            "inline-flex items-center gap-2 rounded-md text-sm bg-primary",
+            "px-8 py-8 rounded-full",
+        ])
+    });
 }
 
 #[divan::bench]
 fn cn_no_conflicts(b: Bencher) {
-    b.bench(|| cn(&["flex", "items-center", "gap-2", "text-sm", "font-medium", "bg-primary"]));
+    b.bench(|| {
+        cn(&[
+            "flex",
+            "items-center",
+            "gap-2",
+            "text-sm",
+            "font-medium",
+            "bg-primary",
+        ])
+    });
 }
 
 #[divan::bench]
