@@ -10,7 +10,7 @@ use floem::style::unit::Length;
 use floem::style::{Background, PaddingLeft, StyleSelector, TextColor};
 
 use aeolus_core::color::Color;
-use aeolus_core::{shadcn_default, Resolver};
+use aeolus_core::{Resolver, shadcn_default};
 use aeolus_floem::lower;
 
 fn resolver() -> Resolver<'static> {
@@ -29,9 +29,7 @@ fn brush_rgba(b: &Brush) -> Option<[u8; 4]> {
 #[test]
 fn base_layer_lowers_exactly() {
     let resolver = resolver();
-    let r = resolver
-        .resolve("p-4 bg-primary rounded-md")
-        .unwrap();
+    let r = resolver.resolve("p-4 bg-primary rounded-md").unwrap();
     let (style, report) = lower(&r.plan);
     assert!(report.is_empty(), "unexpected drops: {report:?}");
 
@@ -76,7 +74,10 @@ fn focus_within_and_disabled_map_to_selectors() {
         .resolve("bg-primary focus-within:bg-black disabled:bg-red-500")
         .unwrap();
     let (style, report) = lower(&r.plan);
-    assert!(report.is_empty(), "focus-within and disabled must map: {report:?}");
+    assert!(
+        report.is_empty(),
+        "focus-within and disabled must map: {report:?}"
+    );
 
     let disabled = style.clone().apply_selectors(&[StyleSelector::Disabled]);
     let disabled_bg = brush_rgba(disabled.get(Background).as_ref().unwrap()).unwrap();
@@ -96,7 +97,9 @@ fn dark_layer_resolves_in_dark_mode() {
     let theme = shadcn_default().unwrap();
     let theme = theme.dark_variant(aeolus_core::shadcn_css::DARK).unwrap();
     let resolver = Resolver::new(&theme);
-    let r = resolver.resolve("bg-primary dark:bg-black text-primary dark:text-white").unwrap();
+    let r = resolver
+        .resolve("bg-primary dark:bg-black text-primary dark:text-white")
+        .unwrap();
     let (style, report) = lower(&r.plan);
     assert!(
         !report.dropped.iter().any(|(w, _)| w == "dark"),
@@ -127,7 +130,10 @@ fn group_and_peer_are_reported_not_silently_dropped() {
     assert!(whats.iter().any(|w| w.starts_with("group:")), "{report:?}");
     assert!(whats.iter().any(|w| w.starts_with("peer:")), "{report:?}");
     // md:p-8 lowers into a min-window-width responsive rule — no drop.
-    assert!(!whats.iter().any(|w| w.starts_with("responsive")), "{report:?}");
+    assert!(
+        !whats.iter().any(|w| w.starts_with("responsive")),
+        "{report:?}"
+    );
 }
 
 #[test]
@@ -151,4 +157,70 @@ fn oklab_alpha_semantics_match_v4() {
     let (style, _) = lower(&r.plan);
     let rgba = brush_rgba(style.get(Background).as_ref().unwrap()).unwrap();
     assert_eq!(rgba[3], 128, "50% alpha straight through to peniko");
+}
+
+/// Phase-2 audit item: is floem's `Length::Pt` a CSS point (1/72 inch) or a
+/// logical pixel? Verdict from floem @ 1351ffb `src/style/unit.rs`: **Pt is
+/// the logical-pixel unit** — "Floem treats absolute lengths as logical
+/// layout points rather than device pixels" and `Length::to_taffy` passes
+/// the value through unscaled (`Length::Pt(v) => LengthPercentage::length(v)`);
+/// the renderer applies the window scale factor later, like every UI toolkit.
+///
+/// So `p-4` = 16 logical px = 16 device px on a 96dpi (scale-factor 1)
+/// display. This test PINS that behavior; if a floem upgrade ever turned Pt
+/// into a true CSS point, `p-4` would render 16pt = 21.33px and both
+/// asserts below would fail.
+#[test]
+fn pt_is_logical_pixel_not_css_point() {
+    // (a) End-to-end: the lowered `p-4` padding survives the taffy
+    //     conversion as exactly 16 logical px (NOT 16 CSS pt = 21.33px).
+    let resolver = resolver();
+    let r = resolver.resolve("p-4").unwrap();
+    let (style, _) = lower(&r.plan);
+    let pad: Length = style.get(PaddingLeft);
+    let cx = floem::style::FontSizeCx::new(16.0, 16.0);
+    assert_eq!(
+        pad.to_taffy(&cx),
+        taffy::style::LengthPercentage::length(16.0),
+        "p-4 must reach taffy as 16 logical px"
+    );
+
+    // (b) A real taffy layout at scale 1: a 64px box with this padding has
+    //     a 16px resolved padding per side and a 32px content box
+    //     (a CSS-point regression would give 21.33px / 42.67px - 64px...).
+    let mut tree: taffy::TaffyTree = taffy::TaffyTree::new();
+    let leaf = tree
+        .new_leaf(taffy::style::Style {
+            size: taffy::prelude::Size {
+                width: taffy::prelude::length(64.0_f32),
+                height: taffy::prelude::length(64.0_f32),
+            },
+            padding: taffy::prelude::Rect {
+                left: pad.to_taffy(&cx),
+                right: pad.to_taffy(&cx),
+                top: pad.to_taffy(&cx),
+                bottom: pad.to_taffy(&cx),
+            },
+            ..Default::default()
+        })
+        .unwrap();
+    tree.compute_layout(
+        leaf,
+        taffy::prelude::Size {
+            width: taffy::prelude::AvailableSpace::Definite(200.0),
+            height: taffy::prelude::AvailableSpace::Definite(200.0),
+        },
+    )
+    .unwrap();
+    let layout = tree.layout(leaf).unwrap();
+    assert!(
+        (layout.padding.left - 16.0).abs() < 1e-3,
+        "layout at 96dpi → 16px pad; got {}",
+        layout.padding.left
+    );
+    assert!(
+        (layout.content_size.width - 32.0).abs() < 1e-3,
+        "64px box minus 2x16px pad → 32px content; got {}",
+        layout.content_size.width
+    );
 }
