@@ -4,15 +4,17 @@
 //! Instrumentation: masonry's `Recorder` widget wraps our `StyledWidget` and
 //! records every Widget method call. After the harness settles (initial
 //! layout flushed), a pointer move onto the widget must produce exactly:
+//!
 //! - `Update(HoveredChanged(true))` — the state flip, and
 //! - `PrePaint`/`Paint` — the repaint,
+//!
 //! and NOT `Measure`/`Layout` (a relayout would mean the restyle disturbed
 //! geometry, violating the two-lane invalidation contract).
 
 use masonry::core::{NewWidget, Widget as _};
-use masonry_testing::{Record, Recording, Recorder, TestHarness};
+use masonry_testing::{Record, Recorder, Recording, TestHarness};
 
-use aeolus_core::{shadcn_default, Resolver};
+use aeolus_core::{Resolver, shadcn_default};
 use aeolus_xilem::widget::{StyledWidget, resolved_for_state};
 
 fn plan() -> aeolus_core::StylePlan {
@@ -27,8 +29,8 @@ fn plan() -> aeolus_core::StylePlan {
 #[test]
 fn hover_restyle_is_paint_only() {
     let recording = Recording::default();
-    let styled = StyledWidget::new(masonry::widgets::Label::new("Save").prepare())
-        .with_plan(plan());
+    let styled =
+        StyledWidget::new(masonry::widgets::Label::new("Save").prepare()).with_plan(plan());
     // The Recorder wraps the StyledWidget, so every StyledWidget method call
     // is recorded. The recorder itself is the root.
     let root = Recorder::new(styled, &recording);
@@ -101,4 +103,3 @@ fn active_wins_over_hover() {
     let [br, bg_, bb, _] = black.to_srgba();
     assert!((r - br).abs() < 1e-3 && (g - bg_).abs() < 1e-3 && (b - bb).abs() < 1e-3);
 }
-
