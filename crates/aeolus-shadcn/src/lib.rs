@@ -9,12 +9,16 @@
 //! apps/v4/registry/new-york-v4/ui/{button,input,label,card,badge,separator,skeleton,alert}.tsx
 //! ```
 //!
-//! Two consumption layers:
+//! Three consumption layers:
 //! - **[`classes`]** — pure `&str` tables + variant enums; backend-agnostic,
 //!   suitable for `cn()` merging and for the `tw!` macro.
-//! - **[`xilem`]** / **[`floem`]** — thin wrappers per backend (a label
-//!   wrapped in the backend's styled primitive, user class applied last so
-//!   it wins).
+//! - **[`xilem`] interactive** — `button` (a real `StyledButton` widget:
+//!   pointer/keyboard/accesskit activation, disabled state) and `input`
+//!   (Masonry `TextInput` with the controlled-value contract) are REAL
+//!   widgets wired to callbacks, styled from the class tables.
+//! - **[`xilem`] / [`floem`] style-only** — badge, label, card family and
+//!   alert are styled boxes around labels; they are NOT interactive and do
+//!   not pretend to be.
 //!
 //! ## Capability notes (honest per-briefing §3)
 //!
@@ -37,4 +41,4 @@ pub mod floem;
 pub mod xilem;
 
 /// Re-export for callers building their own variants.
-pub use aeolus_core::{cn, Resolver};
+pub use aeolus_core::{Resolver, cn};
