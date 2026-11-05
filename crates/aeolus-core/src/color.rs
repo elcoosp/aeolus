@@ -138,6 +138,26 @@ impl Color {
     }
 
     fn parse_rgb(s: &str) -> Result<Self, ParseError> {
+        // CSS Color 4 legacy comma syntax — `rgb(251, 44, 54)` /
+        // `rgba(251, 44, 54, 0.5)` (percentages allowed, alpha is an optional
+        // 4th component). Documented in [`Color::parse`]; common in arbitrary
+        // values (`bg-[rgba(0,0,0,0.5)]`, `shadow-[0_0_0_1px_rgb(0,0,0,0.05)]`).
+        if s.contains(',') {
+            let parts: Vec<&str> = s.split(',').map(str::trim).collect();
+            if parts.len() != 3 && parts.len() != 4 {
+                return Err(ParseError::new(format!(
+                    "rgb() expects 3 comma-separated components (+ optional alpha), got {}",
+                    parts.len()
+                )));
+            }
+            let ch = |p: &str| parse_component(p, 255.0);
+            let (r, g, b) = (ch(parts[0])?, ch(parts[1])?, ch(parts[2])?);
+            let alpha = match parts.get(3) {
+                Some(a) => parse_component(a, 1.0)?.clamp(0.0, 1.0),
+                None => 1.0,
+            };
+            return Ok(Self::from_srgb(r / 255.0, g / 255.0, b / 255.0, alpha));
+        }
         let (parts, alpha) = split_alpha(s)?;
         if parts.len() != 3 {
             return Err(ParseError::new(format!(
@@ -524,6 +544,41 @@ mod tests {
         assert_ne!(a, b, "hue delta 0.669deg ≈ 0.003 on a/b axes > tolerance");
         let c = Color::parse("oklch(0.637 0.237 25.331 / 0.9)").unwrap();
         assert_ne!(a, c, "alpha is part of equality");
+    }
+
+    /// Legacy comma syntax is documented in `Color::parse` and common in
+    /// arbitrary values — it must parse exactly like the space form
+    /// (regression: `rgb(251, 44, 54)` used to fail with `bad number "251,"`).
+    #[test]
+    fn legacy_comma_rgb_parses() {
+        assert_eq!(
+            Color::parse("rgb(251, 44, 54)").unwrap().to_rgba8(),
+            [251, 44, 54, 255]
+        );
+        assert_eq!(
+            Color::parse("rgb(251,44,54)").unwrap().to_rgba8(),
+            [251, 44, 54, 255]
+        );
+        // rgba() with a 4th alpha component (number and percent forms).
+        assert_eq!(
+            Color::parse("rgba(251, 44, 54, 0.5)").unwrap().to_rgba8()[3],
+            128
+        );
+        assert_eq!(
+            Color::parse("rgb(251, 44, 54, 50%)").unwrap().to_rgba8()[3],
+            128
+        );
+        // Percentage components + commas.
+        assert_eq!(
+            Color::parse("rgba(98.4%, 17.3%, 21.2%, 1)")
+                .unwrap()
+                .to_rgba8(),
+            [251, 44, 54, 255]
+        );
+        // Wrong arity stays a precise error, never a panic.
+        assert!(Color::parse("rgb(1,2)").is_err());
+        assert!(Color::parse("rgb(1,2,3,4,5)").is_err());
+        assert!(Color::parse("rgb(1,,3)").is_err());
     }
 
     #[test]
