@@ -5,7 +5,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-rust-version = "1.88"
+rust-version = "1.96"
 # Not publishable in v0.1.0: depends on a git-pinned Floem commit (crates.io
 # rejects git dependencies) and, in this sandbox, on the local `muda-stub`
 # patch (floem hard-requires muda's `gtk` feature on Linux with no feature
