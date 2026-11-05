@@ -1,31 +1,40 @@
-//! Tokenizer + parser for Tailwind v4 class strings.
+//! Tokenizer + parser for Tailwind v4 class strings (v0.2 grammar).
 //!
 //! Grammar (per whitespace-separated token):
 //!
 //! ```text
 //! token     := important_prefix? variant* utility important_suffix?
-//! variant   := (group_prefix? name | arbitrary) ':'
-//! utility   := '-'? element ('-' element)* ('[' arbitrary ']')? ('/' opacity)?
+//! variant   := (group_prefix? name | has | not | data | aria | structural | arbitrary) ':'
+//! utility   := '-'? body ('[' arbitrary ']' | '(' arbitrary ')')? ('/' modifier)?
 //! ```
 //!
 //! v4 rules implemented:
 //! * variants stack **left to right** (first variant = outermost condition);
 //! * `!` may be a **suffix** (v4) or a **prefix** (v3 compat);
-//! * arbitrary values `[...]` may contain `/` and `:` — they are scanned with
-//!   bracket awareness so `w-[calc(100%/3)]` parses;
-//! * opacity modifier `/50` applies to the utility, not the variants.
+//! * arbitrary values `[...]` and `(...)` may contain `/` and `:` — they are
+//!   scanned with bracket+paren awareness so `w-[calc(100%/3)]` parses;
+//! * the `/modifier` is kept **raw** (`"2"`, `"[0.37]"`, `"6"`, `"(--o)"`) —
+//!   interpretation (fraction denominator vs opacity percent vs
+//!   line-height scale) belongs to the utility, not the parser (plan §3.1:
+//!   fixes F1/F6/F7 at the source);
+//! * unknown variant names parse as [`NamedVariant::Custom`] and are
+//!   resolved against theme breakpoints / `@custom-variant` later — the
+//!   runtime path never rejects a class for an unknown *name* (the `tw!`
+//!   macro enforces the strict compile-time check itself).
 
-use crate::ast::{Breakpoint, ClassToken, NamedVariant, ParentKind, Variant};
+use crate::ast::{
+    ArbForm, Arbitrary, AttrKind, Breakpoint, ClassToken, INLINE_ELEMENTS, INLINE_VARIANTS, Inline,
+    NamedVariant, ParentKind, Segments, Structural, Variant,
+};
 use crate::color::ParseError;
 
 /// Parse a class string into tokens, tolerating per-class failures.
 ///
-/// Returns `(tokens, errors)` — a class that fails to parse (e.g. an unknown
-/// variant like `has-[>svg]:px-3`) is SKIPPED and reported in `errors` as
-/// `(raw_class, message)`, matching the honest-degradation contract: unknown
-/// syntax must never take down the whole string. Callers that need the old
-/// hard-fail semantics (the `tw!` proc macro) turn non-empty `errors` into a
-/// compile error themselves.
+/// Returns `(tokens, errors)` — a class that fails to parse is SKIPPED and
+/// reported in `errors` as `(raw_class, message)`, matching the
+/// honest-degradation contract: unknown syntax must never take down the
+/// whole string. Callers that need the old hard-fail semantics (the `tw!`
+/// proc macro) turn non-empty `errors` into a compile error themselves.
 pub fn parse_class_string(input: &str) -> (Vec<ClassToken<'_>>, Vec<(String, String)>) {
     let mut tokens = Vec::new();
     let mut errors = Vec::new();
@@ -52,91 +61,189 @@ pub fn parse_token(raw: &str) -> Result<ClassToken<'_>, ParseError> {
         rest = r;
     }
 
-    // Variants: split on ':' with bracket awareness.
-    let mut variants = Vec::new();
-    while let Some(idx) = find_top_level(rest, b':') {
-        let v = &rest[..idx];
-        variants.push(parse_variant(v)?);
-        rest = &rest[idx + 1..];
+    // Variants: split on ':' with bracket+paren awareness.
+    let mut variant_parts: Vec<&str> = Vec::with_capacity(4);
+    let mut scan = rest;
+    while let Some(idx) = find_top_level(scan, b':') {
+        variant_parts.push(&scan[..idx]);
+        scan = &scan[idx + 1..];
     }
+
+    // Parse each variant; surface the first precise parse error.
+    let mut parsed: Vec<Variant<'_>> = Vec::with_capacity(variant_parts.len());
+    for v in &variant_parts {
+        parsed.push(parse_variant(v)?);
+    }
+    let variants = Inline::<Variant<'_>, INLINE_VARIANTS>::collect(Variant::Arbitrary(""), parsed)
+        .ok_or_else(|| ParseError::new(format!("too many variants (max {INLINE_VARIANTS})")))?;
 
     // Negative.
-    let negative = rest.starts_with('-');
-    if negative {
-        rest = &rest[1..];
-    }
+    let negative = scan.starts_with('-');
+    let body_src = if negative { &scan[1..] } else { scan };
 
-    // Arbitrary value + opacity with bracket-aware scanning.
-    let (body, arbitrary, opacity) = split_body(rest)?;
+    // Arbitrary value + raw modifier with bracket/paren-aware scanning.
+    let (body, arbitrary, modifier) = split_body(body_src)?;
 
     if body.is_empty() {
-        return Err(ParseError::new("empty utility"));
+        // Bare bracket with no utility head: `[mask-type:luminance]` (an
+        // arbitrary property) or garbage. Both are honest per-class errors.
+        return Err(ParseError::new("utility head is empty"));
     }
-    let elements: Vec<&str> = body.split('-').collect();
-    if elements.iter().any(|e| e.is_empty()) {
+    let mut parts = body.split('-');
+    let elements =
+        Segments::<INLINE_ELEMENTS>::from_iter_fn(|_| parts.next()).ok_or_else(|| {
+            ParseError::new(format!("too many utility elements (max {INLINE_ELEMENTS})"))
+        })?;
+    if elements.as_slice().iter().any(|e| e.is_empty()) {
         return Err(ParseError::new("empty utility element (double '-')"));
     }
 
     Ok(ClassToken {
         variants,
         elements,
+        body,
         arbitrary,
-        opacity,
+        modifier,
         negative,
         important,
         raw,
     })
 }
 
-/// Find the first top-level `needle` byte (not inside `[...]`).
+/// Find the first top-level `needle` byte (not inside `[...]` or `(...)`).
 fn find_top_level(s: &str, needle: u8) -> Option<usize> {
     let bytes = s.as_bytes();
-    let mut depth = 0usize;
+    let (mut sq, mut par) = (0usize, 0usize);
     for (i, &b) in bytes.iter().enumerate() {
         match b {
-            b'[' => depth += 1,
-            b']' => depth = depth.saturating_sub(1),
-            _ if b == needle && depth == 0 => return Some(i),
+            b'[' if par == 0 => sq += 1,
+            b']' if par == 0 => sq = sq.saturating_sub(1),
+            b'(' if sq == 0 => par += 1,
+            b')' if sq == 0 => par = par.saturating_sub(1),
+            _ if b == needle && sq == 0 && par == 0 => return Some(i),
             _ => {}
         }
     }
     None
 }
 
-fn parse_variant(v: &str) -> Result<Variant<'_>, ParseError> {
+/// Split `group-focus/tbd` → (`focus`, Some(`tbd`)); `group-data-[x=a/b]`
+/// keeps the bracket intact: the label split only fires when the part after
+/// the `/` carries no brackets.
+fn split_parent_label(v: &str) -> (&str, Option<&str>) {
+    match v.rsplit_once('/') {
+        Some((n, l)) if !n.is_empty() && !l.contains('[') && !l.contains(']') => (n, Some(l)),
+        _ => (v, None),
+    }
+}
+
+/// Parse a single variant prefix (`"hover"`, `"group-hover/menu"`,
+/// `"not-data-[x]"`, ...). Public grammar surface (fuzz target + `tw!`).
+pub fn parse_variant(v: &str) -> Result<Variant<'_>, ParseError> {
     if v.is_empty() {
         return Err(ParseError::new("empty variant before ':'"));
     }
-    let (parent, name) = if let Some(n) = v.strip_prefix("group-") {
-        (Some(ParentKind::Group), n)
-    } else if let Some(n) = v.strip_prefix("peer-") {
-        (Some(ParentKind::Peer), n)
-    } else {
-        (None, v)
-    };
-    if v.starts_with('[') || name.starts_with("data-") || name.starts_with("aria-") {
+    if v.starts_with('[') {
         return Ok(Variant::Arbitrary(v));
     }
-    // group-hover/fancy label form: `group-focus/tbd`
-    let (name, label) = match name.split_once('/') {
-        Some((n, l)) if parent.is_some() => (n, Some(l)),
-        _ => (name, None),
-    };
-    let named = parse_named_variant(name)
-        .ok_or_else(|| ParseError::new(format!("unknown variant {v:?} (v1 supports the Shadcn set: hover, focus, focus-visible, focus-within, active, disabled, dark, breakpoints, @container, group-*, peer-*)")))?;
-    Ok(match parent {
-        Some(parent_kind) => Variant::Grouped {
-            parent: parent_kind,
-            name: named,
+    if v.starts_with("::") {
+        return Ok(Variant::PseudoElement(v));
+    }
+    if let Some(rest) = v.strip_prefix("group-") {
+        let (inner, label) = split_parent_label(rest);
+        return Ok(Variant::Grouped {
+            parent: ParentKind::Group,
+            inner: Box::new(parse_variant(inner)?),
             label,
-        },
-        None => Variant::Named(named),
+        });
+    }
+    if let Some(rest) = v.strip_prefix("peer-") {
+        let (inner, label) = split_parent_label(rest);
+        return Ok(Variant::Grouped {
+            parent: ParentKind::Peer,
+            inner: Box::new(parse_variant(inner)?),
+            label,
+        });
+    }
+    if let Some(rest) = v.strip_prefix("not-") {
+        return Ok(Variant::Not(Box::new(parse_variant(rest)?)));
+    }
+    if let Some(rest) = v.strip_prefix("has-") {
+        // `has-checked` (named) or `has-[:focus]` / `has-[>svg]` (selector).
+        return Ok(Variant::Has(rest));
+    }
+    if let Some(rest) = v.strip_prefix("data-") {
+        let (name, value) = parse_attr(rest);
+        return Ok(Variant::Attr {
+            kind: AttrKind::Data,
+            name,
+            value,
+        });
+    }
+    if let Some(rest) = v.strip_prefix("aria-") {
+        let (name, value) = parse_attr(rest);
+        return Ok(Variant::Attr {
+            kind: AttrKind::Aria,
+            name,
+            value,
+        });
+    }
+    if v.starts_with("supports-") || v == "*" || v == "**" {
+        return Ok(Variant::Arbitrary(v));
+    }
+    if let Some(rest) = v.strip_prefix("nth-") {
+        if let Some(st) = parse_nth(rest, false) {
+            return Ok(Variant::Structural(st));
+        }
+        return Ok(Variant::Arbitrary(v)); // nth-[2n+1] selector forms
+    }
+    if let Some(st) = structural_of(v) {
+        return Ok(Variant::Structural(st));
+    }
+    Ok(Variant::Named(parse_named_variant(v)))
+}
+
+/// The bare structural variants (`first`, `odd`, ...).
+fn structural_of(v: &str) -> Option<Structural> {
+    Some(match v {
+        "first" => Structural::First,
+        "last" => Structural::Last,
+        "odd" => Structural::Odd,
+        "even" => Structural::Even,
+        "only" => Structural::Only,
+        "empty" => Structural::Empty,
+        _ => return None,
     })
 }
 
-/// Look up a named variant (`"hover"`, `"md"`, `"@sm"`) in the variant table.
-pub fn parse_named_variant(name: &str) -> Option<NamedVariant> {
-    Some(match name {
+/// `data-[state=open]` | `data-state` (bracket optional, v4 canonical is
+/// bracketed) → (name, value).
+fn parse_attr(rest: &str) -> (&str, Option<&str>) {
+    if let Some(inner) = rest.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+        match inner.split_once('=') {
+            Some((n, v)) => (n, Some(v)),
+            None => (inner, None),
+        }
+    } else {
+        (rest, None)
+    }
+}
+
+/// `nth-3` / `nth-last-2` → `Some(Structural::…)`; `nth-[2n+1]` → None.
+fn parse_nth(rest: &str, last: bool) -> Option<Structural> {
+    let n: i32 = rest.parse().ok()?;
+    Some(if last {
+        Structural::NthLast(n)
+    } else {
+        Structural::Nth(n)
+    })
+}
+
+/// Look up a named variant (`"hover"`, `"md"`, `"@sm"`) in the variant
+/// table. Unknown identifiers become [`NamedVariant::Custom`] (resolved
+/// later against theme breakpoints, container sizes and `@custom-variant`).
+pub fn parse_named_variant(name: &str) -> NamedVariant<'_> {
+    match name {
         "hover" => NamedVariant::Hover,
         "focus" => NamedVariant::Focus,
         "focus-visible" => NamedVariant::FocusVisible,
@@ -144,81 +251,182 @@ pub fn parse_named_variant(name: &str) -> Option<NamedVariant> {
         "active" => NamedVariant::Active,
         "disabled" => NamedVariant::Disabled,
         "visited" => NamedVariant::Visited,
+        "target" => NamedVariant::Target,
+        "enabled" => NamedVariant::Enabled,
+        "checked" => NamedVariant::Checked,
+        "indeterminate" => NamedVariant::Indeterminate,
+        "required" => NamedVariant::Required,
+        "optional" => NamedVariant::Optional,
+        "valid" => NamedVariant::Valid,
+        "invalid" => NamedVariant::Invalid,
+        "user-valid" => NamedVariant::UserValid,
+        "user-invalid" => NamedVariant::UserInvalid,
+        "placeholder-shown" => NamedVariant::PlaceholderShown,
+        "autofill" => NamedVariant::Autofill,
+        "read-only" => NamedVariant::ReadOnly,
+        "in-range" => NamedVariant::InRange,
+        "out-of-range" => NamedVariant::OutOfRange,
         "dark" => NamedVariant::Dark,
+        "print" => NamedVariant::Print,
+        "motion-safe" => NamedVariant::MotionSafe,
+        "motion-reduce" => NamedVariant::MotionReduce,
+        "contrast-more" => NamedVariant::ContrastMore,
+        "contrast-less" => NamedVariant::ContrastLess,
+        "forced-colors" => NamedVariant::ForcedColors,
+        "portrait" => NamedVariant::Portrait,
+        "landscape" => NamedVariant::Landscape,
+        "rtl" => NamedVariant::Rtl,
+        "ltr" => NamedVariant::Ltr,
+        "pointer-fine" => NamedVariant::PointerFine,
+        "pointer-coarse" => NamedVariant::PointerCoarse,
+        "pointer-none" => NamedVariant::PointerNone,
+        "any-pointer-fine" => NamedVariant::AnyPointerFine,
+        "any-pointer-coarse" => NamedVariant::AnyPointerCoarse,
+        "any-pointer-none" => NamedVariant::AnyPointerNone,
         other => {
-            if let Some(b) = other.strip_prefix('@') {
-                NamedVariant::Container(Breakpoint::from_name(b)?)
-            } else {
-                NamedVariant::Breakpoint(Breakpoint::from_name(other)?)
+            // min-* / max-* viewport variants.
+            if let Some(bp) = other.strip_prefix("min-").and_then(Breakpoint::from_name) {
+                return NamedVariant::Min(bp);
             }
+            if let Some(bp) = other.strip_prefix("max-").and_then(Breakpoint::from_name) {
+                return NamedVariant::Max(bp);
+            }
+            // @container forms: @sm, @max-sm, @md/name, @min-[400px].
+            if let Some(rest) = other.strip_prefix('@') {
+                if let Some(bp) = rest.strip_prefix("max-").and_then(Breakpoint::from_name) {
+                    return NamedVariant::MaxContainer(bp);
+                }
+                let bare = rest.split('/').next().unwrap_or(rest);
+                if let Some(bp) = Breakpoint::from_name(bare) {
+                    return NamedVariant::Container(bp);
+                }
+                // @min-[400px], @4xl, named containers — Custom, resolved by
+                // the theme (container scale / @custom-variant).
+                return NamedVariant::Custom(other);
+            }
+            if let Some(b) = Breakpoint::from_name(other) {
+                return NamedVariant::Breakpoint(b);
+            }
+            NamedVariant::Custom(other)
         }
-    })
+    }
 }
 
-/// Split `w-[calc(100%/3)]/50` into body/`Some("calc(100%/3)")`/`Some(50.0)`.
-fn split_body(s: &str) -> Result<(&str, Option<&str>, Option<f32>), ParseError> {
+/// Split `w-[calc(100%/3)]/50` into body/arbitrary/raw-modifier.
+///
+/// A top-level `/` ends the body only if no `[ ]`/`( )` group is open, so
+/// `w-[calc(100%/3)]` survives and `bg-[#fff]/50` still splits (plan §3.1).
+/// The modifier is RAW: `"50"`, `"[0.37]"`, `"(--o)"`.
+fn split_body(s: &str) -> Result<(&str, Option<Arbitrary<'_>>, Option<&str>), ParseError> {
     let bytes = s.as_bytes();
-    let mut depth = 0usize;
-    let mut bracket: Option<(usize, usize)> = None;
-    let mut slash = None;
+    let (mut sq, mut par) = (0usize, 0usize);
+    let mut group: Option<(usize, usize, ArbForm)> = None;
+    let mut open: Option<(usize, ArbForm)> = None;
+    let mut slash: Option<usize> = None;
     for (i, &b) in bytes.iter().enumerate() {
         match b {
-            b'[' => {
-                if depth == 0 {
-                    bracket = Some((i, 0));
+            b'[' if par == 0 => {
+                if sq == 0 && slash.is_none() && group.is_none() {
+                    open = Some((i, ArbForm::Bracket));
                 }
-                depth += 1;
+                sq += 1;
             }
-            b']' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0
-                    && let Some((start, _)) = bracket
+            b']' if par == 0 => {
+                sq = sq.saturating_sub(1);
+                if sq == 0
+                    && let Some((st, ArbForm::Bracket)) = open
                 {
-                    bracket = Some((start, i));
+                    group = Some((st, i, ArbForm::Bracket));
+                    open = None;
                 }
             }
-            b'/' if depth == 0 && slash.is_none() && bracket.is_none() => slash = Some(i),
+            b'(' if sq == 0 => {
+                if par == 0 && slash.is_none() && group.is_none() {
+                    open = Some((i, ArbForm::Paren));
+                }
+                par += 1;
+            }
+            b')' if sq == 0 => {
+                par = par.saturating_sub(1);
+                if par == 0
+                    && let Some((st, ArbForm::Paren)) = open
+                {
+                    group = Some((st, i, ArbForm::Paren));
+                    open = None;
+                }
+            }
+            b'/' if sq == 0 && par == 0 && slash.is_none() => slash = Some(i),
             _ => {}
         }
     }
-    if depth != 0 {
-        return Err(ParseError::new("unbalanced '[' in utility"));
+    if sq != 0 || par != 0 {
+        return Err(ParseError::new("unbalanced '[' or '(' in utility"));
     }
-    // Trailing opacity after the arbitrary bracket, e.g. `bg-[#fff]/50`.
-    if let Some((bs, be)) = bracket {
-        let after = &s[be + 1..];
-        let opacity = parse_opacity(after)?;
-        let body = s[..bs].trim_end_matches('-');
-        let arb = &s[bs + 1..be];
-        return Ok((body, Some(arb), opacity));
-    }
-    match slash {
-        Some(i) => {
-            let opacity = parse_opacity(&s[i + 1..])?;
-            Ok((s[..i].trim_end_matches('-'), None, opacity))
+
+    let (head, modifier) = match slash {
+        Some(i) => (&s[..i], Some(&s[i + 1..])),
+        None => (s, None),
+    };
+
+    // Extract the arbitrary group out of the head, if one closed there.
+    if let Some((bs, be, form)) = group {
+        if be >= head.len() {
+            // The group extends past the top-level slash — impossible for a
+            // well-formed token; treat conservatively as a parse error.
+            return Err(ParseError::new("arbitrary group crosses the '/'"));
         }
-        None => Ok((s, None, None)),
+        let after_group = &head[be + 1..];
+        if !after_group.is_empty() {
+            return Err(ParseError::new("unexpected text after arbitrary group"));
+        }
+        let body = head[..bs].strip_suffix('-').unwrap_or(&head[..bs]);
+        let raw = &s[bs + 1..be];
+        let arb = extract_arbitrary(raw, form)?;
+        return Ok((body, Some(arb), modifier));
     }
+    Ok((head, None, modifier))
 }
 
-fn parse_opacity(s: &str) -> Result<Option<f32>, ParseError> {
-    if s.is_empty() {
-        return Ok(None);
+/// Build an [`Arbitrary`] from the raw inner text, splitting type hints
+/// (`[length:200px]`) and flagging the arbitrary-property form
+/// (`[mask-type:luminance]`).
+fn extract_arbitrary(raw: &str, form: ArbForm) -> Result<Arbitrary<'_>, ParseError> {
+    if raw.is_empty() {
+        return Err(ParseError::new("empty arbitrary value"));
     }
-    let inner = s
-        .strip_prefix('[')
-        .and_then(|r| r.strip_suffix(']'))
-        .unwrap_or(s);
-    // Arbitrary opacity `/[0.37]` is a raw alpha fraction in v4.
-    if inner.contains('.') && !inner.contains('%') {
-        let v: f32 = inner
-            .parse()
-            .map_err(|_| ParseError::new(format!("bad opacity {s:?}")))?;
-        return Ok(Some(v * 100.0));
-    }
-    let v: f32 = inner
-        .trim_end_matches('%')
-        .parse()
-        .map_err(|_| ParseError::new(format!("bad opacity {s:?}")))?;
-    Ok(Some(v))
+    let (hint, value) = match form {
+        ArbForm::Bracket => raw
+            .split_once(':')
+            .map(|(h, v)| (Some(h), v))
+            .unwrap_or((None, raw)),
+        ArbForm::Paren => (None, raw),
+    };
+    // `[mask-type:luminance]` — a bare CSS property declaration. Values
+    // carrying a ':' whose prefix is not a known v4 type hint are flagged
+    // as properties; the resolver reports them with a precise reason.
+    const HINTS: &[&str] = &[
+        "length",
+        "color",
+        "url",
+        "image",
+        "number",
+        "percentage",
+        "integer",
+        "angle",
+        "time",
+        "ratio",
+        "position",
+        "family-name",
+        "generic-name",
+        "absolute-size",
+        "relative-size",
+        "string",
+    ];
+    let is_property = form == ArbForm::Bracket && hint.is_some_and(|h| !HINTS.contains(&h));
+    Ok(Arbitrary {
+        hint,
+        value,
+        form,
+        is_property,
+    })
 }
