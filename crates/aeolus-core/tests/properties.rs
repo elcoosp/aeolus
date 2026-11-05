@@ -12,55 +12,41 @@
 use proptest::prelude::*;
 
 use aeolus_core::Color;
-use aeolus_core::ast::{ClassToken, NamedVariant, Variant};
+use aeolus_core::ast::{ArbForm, ClassToken, ParentKind, Variant};
 use aeolus_core::parser::parse_class_string;
 
 /// Debug serializer for a parsed token (roundtrip oracle input).
 fn serialize_token(t: &ClassToken<'_>) -> String {
     let mut s = String::new();
-    for v in &t.variants {
-        match v {
-            Variant::Named(n) => {
-                s.push_str(name_of(n));
-                s.push(':');
-            }
-            Variant::Grouped {
-                parent,
-                name,
-                label,
-            } => {
-                s.push_str(match parent {
-                    aeolus_core::ast::ParentKind::Group => "group-",
-                    aeolus_core::ast::ParentKind::Peer => "peer-",
-                });
-                s.push_str(name_of(name));
-                if let Some(l) = label {
-                    s.push('/');
-                    s.push_str(l);
-                }
-                s.push(':');
-            }
-            Variant::Arbitrary(a) => {
-                s.push_str(a);
-                s.push(':');
-            }
-        }
+    for v in t.variants.iter() {
+        write_variant(&mut s, v);
+        s.push(':');
     }
     if t.negative {
         s.push('-');
     }
-    s.push_str(&t.elements.join("-"));
+    s.push_str(t.body);
     if let Some(arb) = t.arbitrary {
-        s.push('[');
-        s.push_str(arb);
-        s.push(']');
-    }
-    if let Some(op) = t.opacity {
-        if op.fract() == 0.0 {
-            s.push_str(&format!("/{}", op as u32));
-        } else {
-            s.push_str(&format!("/{op}"));
+        match arb.form {
+            ArbForm::Bracket => {
+                s.push('[');
+                if let Some(h) = arb.hint {
+                    s.push_str(h);
+                    s.push(':');
+                }
+                s.push_str(arb.value);
+                s.push(']');
+            }
+            ArbForm::Paren => {
+                s.push('(');
+                s.push_str(arb.value);
+                s.push(')');
+            }
         }
+    }
+    if let Some(m) = t.modifier {
+        s.push('/');
+        s.push_str(m);
     }
     if t.important {
         s.push('!');
@@ -68,17 +54,45 @@ fn serialize_token(t: &ClassToken<'_>) -> String {
     s
 }
 
-fn name_of(n: &NamedVariant) -> &'static str {
-    match n {
-        NamedVariant::Hover => "hover",
-        NamedVariant::Focus => "focus",
-        NamedVariant::FocusVisible => "focus-visible",
-        NamedVariant::FocusWithin => "focus-within",
-        NamedVariant::Active => "active",
-        NamedVariant::Disabled => "disabled",
-        NamedVariant::Visited => "visited",
-        NamedVariant::Dark => "dark",
-        NamedVariant::Breakpoint(b) | NamedVariant::Container(b) => b.name(),
+fn write_variant(s: &mut String, v: &Variant<'_>) {
+    match v {
+        Variant::Named(n) => s.push_str(&n.canonical()),
+        Variant::Grouped {
+            parent,
+            inner,
+            label,
+        } => {
+            s.push_str(match parent {
+                ParentKind::Group => "group-",
+                ParentKind::Peer => "peer-",
+            });
+            write_variant(s, inner);
+            if let Some(l) = label {
+                s.push('/');
+                s.push_str(l);
+            }
+        }
+        Variant::Not(inner) => {
+            s.push_str("not-");
+            write_variant(s, inner);
+        }
+        Variant::Has(inner) => {
+            s.push_str("has-");
+            s.push_str(inner);
+        }
+        Variant::Attr { kind, name, value } => {
+            s.push_str(match kind {
+                aeolus_core::AttrKind::Data => "data-",
+                aeolus_core::AttrKind::Aria => "aria-",
+            });
+            s.push_str(name);
+            if let Some(v) = value {
+                s.push_str(&format!("={v}"));
+            }
+        }
+        Variant::Structural(st) => s.push_str(st.canonical()),
+        Variant::PseudoElement(p) => s.push_str(p),
+        Variant::Arbitrary(a) => s.push_str(a),
     }
 }
 
@@ -111,9 +125,10 @@ proptest! {
         let (tokens2, errs2) = parse_class_string(&s);
         prop_assert!(errs2.is_empty(), "reserialized {s:?} must parse: {errs2:?}");
         let t2 = &tokens2[0];
-        prop_assert_eq!(&t2.elements, &t.elements);
-        prop_assert_eq!(&t2.variants, &t.variants);
-        prop_assert_eq!(t2.opacity, t.opacity);
+        prop_assert_eq!(t2.variants.as_slice(), t.variants.as_slice());
+        prop_assert_eq!(t2.body, t.body);
+        prop_assert_eq!(t2.arbitrary, t.arbitrary);
+        prop_assert_eq!(t2.modifier, t.modifier);
         prop_assert_eq!(t2.negative, t.negative);
         prop_assert_eq!(t2.important, t.important);
     }
