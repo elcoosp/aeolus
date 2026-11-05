@@ -1150,8 +1150,9 @@ impl<'t> Resolver<'t> {
         let spacing = self.theme.spacing();
 
         // Numeric scale value (n -> n * 4px), honoring the negative sign.
+        // (Ring/outline/underline-offset widths are plain px in v4, so only
+        // the spacing families use the scale.)
         let scale = |n: f32| n * spacing * if t.negative { -1.0 } else { 1.0 };
-        let scale_unsigned = |n: f32| n * spacing;
 
         // F1: the modifier is the denominator for sizing utilities
         // (`w-1/2` → 0.5; `translate-x-1/2`, `basis-1/3`, `top-1/2` reuse).
@@ -1348,7 +1349,10 @@ impl<'t> Resolver<'t> {
                     ));
                 }
                 if value_elems.is_empty() {
-                    ring.width = scale_unsigned(1.0); // v4: ring = 1px
+                    // v4.1.17: bare `ring` → `--default-ring-width` fallback
+                    // '1px' (verified against the tailwindcss source — NOT a
+                    // spacing multiple).
+                    ring.width = 1.0;
                     return Ok(Applied::Replace(
                         Slot::Ring(RingPart::Width),
                         PartialValue::Ring(ring),
@@ -1363,7 +1367,9 @@ impl<'t> Resolver<'t> {
                     ));
                 }
                 if let Ok(px) = value.parse::<f32>() {
-                    ring.width = scale_unsigned(px) * if t.negative { -1.0 } else { 1.0 };
+                    // v4.1.17: `ring-<number>` → `<number>px` (plain px, not
+                    // `--spacing` multiples).
+                    ring.width = px;
                     return Ok(Applied::Replace(
                         Slot::Ring(RingPart::Width),
                         PartialValue::Ring(ring),
@@ -1383,14 +1389,17 @@ impl<'t> Resolver<'t> {
             "ring-offset" => {
                 let mut ring = Ring::default();
                 if value_elems.is_empty() {
-                    ring.offset_width = scale_unsigned(2.0); // v4 default 2px
+                    // Legacy default offset (v3: `ring-offset` = 2px); v4
+                    // requires an explicit number.
+                    ring.offset_width = 2.0;
                     return Ok(Applied::Replace(
                         Slot::Ring(RingPart::OffsetWidth),
                         PartialValue::Ring(ring),
                     ));
                 }
                 if let Ok(px) = value.parse::<f32>() {
-                    ring.offset_width = scale_unsigned(px);
+                    // v4.1.17: `ring-offset-<number>` → `<number>px`.
+                    ring.offset_width = px;
                     return Ok(Applied::Replace(
                         Slot::Ring(RingPart::OffsetWidth),
                         PartialValue::Ring(ring),
@@ -1409,10 +1418,13 @@ impl<'t> Resolver<'t> {
             }
             "outline" => {
                 if value_elems.is_empty() {
+                    // v4.1.17: bare `outline` → `--default-outline-width`
+                    // fallback '1px' (verified against the tailwindcss
+                    // source; v3's 2px default does not apply to v4).
                     return Ok(Applied::Replace(
                         Slot::Outline,
                         PartialValue::Outline(Outline {
-                            width: 2.0,
+                            width: 1.0,
                             color: None,
                             none: false,
                             offset: 0.0,
@@ -1420,10 +1432,12 @@ impl<'t> Resolver<'t> {
                     ));
                 }
                 if let Some(off) = value.strip_prefix("offset-") {
-                    // v0.2: outline-offset-*
+                    // v0.2: outline-offset-* — v4.1.17 semantics:
+                    // `outline-offset-<number>` → `<number>px` (plain px,
+                    // NOT spacing multiples), negatives supported.
                     let px = off
                         .parse::<f32>()
-                        .map(scale_unsigned)
+                        .map(|n| n * if t.negative { -1.0 } else { 1.0 })
                         .ok()
                         .or_else(|| t.arbitrary.and_then(ring_width_from_arbitrary))
                         .ok_or_else(|| unknown(None))?;
@@ -2197,15 +2211,18 @@ impl<'t> Resolver<'t> {
                 ))
             }
             "underline-offset" => {
-                let n = spacing_value(
-                    t,
-                    value,
-                    value_elems,
-                    spacing,
-                    scale_unsigned,
-                    &unknown,
-                    self.theme,
-                )?;
+                // v4.1.17: `underline-offset-<number>` → `text-underline-offset:
+                // <number>px` (plain px, NOT spacing multiples; negatives
+                // supported). Arbitrary lengths pass through.
+                let n = if let Some(arb) = t.arbitrary {
+                    ring_width_from_arbitrary(arb).ok_or_else(|| unknown(None))?
+                } else {
+                    let n: f32 = value_elems
+                        .last()
+                        .and_then(|e| e.parse().ok())
+                        .ok_or_else(|| unknown(None))?;
+                    n * if t.negative { -1.0 } else { 1.0 }
+                };
                 Ok(Applied::Text(
                     TextProperty::UnderlineOffset,
                     TextValue::Px(n),
@@ -2488,7 +2505,7 @@ impl<'t> Resolver<'t> {
                 "CSS filters/backdrop-filters have no native equivalent — reported, never silent (plan §7)",
             )),
             "space" => Err(unsupported(
-                "space-x/y between-child margins are emulated as gap by the resolver (v0.2); use gap-* instead",
+                "space-x/y between-child margins have no typed slot — use gap-* on the flex/grid container (the supported equivalent, plan §3.2)",
             )),
             "divide" => Err(unsupported(
                 "divide-* between-child borders have no container-child border model — reported, never silent",
