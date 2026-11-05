@@ -19,9 +19,13 @@ let plan = resolver.resolve("p-4 bg-primary hover:bg-primary/90 rounded-md")?;
 // plan.layers           = [hover layer at 90% alpha]   <- real OKLCH color-mix
 ```
 
-Status (2026-11): **v0.1.0** — `aeolus-core` and `aeolus-macro` are
-publishable crates; the backend crates are feature-complete for their
-backends but stay `publish = false` (see *What's in v0.1 vs v0.2*).
+Status (2026-11): **v0.2.0** — the v0.2 plan (`AEOLUS_V0.2.md`) is
+implemented: the F1–F7 silent-mis-style bugs are fixed, the core owns ALL
+variant semantics behind a backend-agnostic `Probe` evaluator, the full v4
+default theme ships in every theme, the v0.2 utility families resolve to
+typed slots, and the hot path is string-key-cached (76 ns warm hits).
+`aeolus-core`/`aeolus-macro` stay publishable; backends stay
+`publish = false` (git-pinned deps).
 
 ## Crates
 
@@ -35,7 +39,38 @@ backends but stay `publish = false` (see *What's in v0.1 vs v0.2*).
 
 All crates are `MIT OR Apache-2.0` (`LICENSE-MIT`, `LICENSE-APACHE`).
 
-## What's in v0.1 — honestly
+## What's in v0.2 — honestly
+
+**Done and tested (122 tests, all six fuzz targets clean):**
+
+- Everything listed under v0.1 below, PLUS:
+- **Correctness (F1–F7)**: fractions (`w-1/2` = 50%, not 4px), absolute
+  arbitrary lengths (`p-[7px]` = 7px), compound variants (`dark:hover:*`
+  and `md:hover:*` keep BOTH conditions — the shipped Shadcn Ghost/Outline
+  hovers are correct), logical radius edges (`rounded-s-lg`), `text-sm/6`
+  line-height modifiers, bracket/var opacity (`[0.37]`, `(--o)`), exact
+  `cn()` variant keys, collision-proof string-keyed plan cache.
+- **The parity engine**: `Probe` + `StylePlan::resolve` — backends answer
+  questions about the element's situation; ONE evaluator flattens the plan
+  for both. Compound variants, group/peer, `data-*`/`aria-*`, `not-*`,
+  `has-*`, structural selectors and container queries all flow through it.
+- **Full v4 default theme** (diffed against tailwindcss v4.1.17):
+  `--container-*`, multi-layer `--shadow-*`, text scales with paired line
+  heights, weights, tracking, leading, radii, easings, animations.
+- **Utility coverage guard**: every v4 utility family resolves to a typed
+  slot or a precise `Unsupported` — `Unknown` fails CI.
+- **Floem**: the v0.1 lowering gaps are closed (align/self/wrap/display,
+  gap axes, auto margins, position/insets/z-index, aspect ratio, cursor,
+  pointer events, typography, transforms, ring→outline, per-set
+  transitions) plus a reactive `tw_plan` path for everything native
+  selectors cannot express.
+- **Masonry/Xilem**: `TwEnv` + `plan.resolve(&probe)` in the fallback
+  widget (dark, responsive, container, group/peer), margins, per-side
+  borders, per-corner radii, ring/outline stroking, multi-layer shadows.
+- **MSRV split (F9)**: core/macro verified on real Rust **1.88**; shadcn +
+  backends declare **1.96**; CI runs both gates.
+
+<details><summary><b>What was in v0.1</b></summary>
 
 **Done and tested (87 tests):**
 
@@ -63,6 +98,8 @@ All crates are `MIT OR Apache-2.0` (`LICENSE-MIT`, `LICENSE-APACHE`).
 - Hardening: 4 fuzz targets (60s clean each), property tests, CI gates,
   bounded caches, poison-tolerant locks, `#![deny(missing_docs)]`.
 
+</details>
+
 **Deferred to v0.2 (tracked in CHANGELOG):** publishing the backends
 (needs upstream releases), group/peer conditional layers (needs a Masonry
 patch — proposal in `reports/07-upstream-patches/`), view-side stack
@@ -76,8 +113,11 @@ contract (every drop is reported, never silent) in the design report.
 
 ## Building
 
-Stable Rust 1.88+ (MSRV). No sibling checkouts needed — backend framework
-deps resolve from pinned git revs.
+MSRV (v0.2, F9 fix): `aeolus-core`/`aeolus-macro` build on stable Rust
+**1.88**; `aeolus-shadcn` and the backend crates (`aeolus-xilem`,
+`aeolus-floem`) need **1.96+** (Masonry 0.4's `rustc` requirement). No
+sibling checkouts needed — backend framework deps resolve from pinned git
+revs.
 
 ```sh
 git clone https://github.com/aeolus-rs/aeolus && cd aeolus
