@@ -43,3 +43,17 @@ bench = false
 
 # Hide the fuzz workspace from IDEs and keep it out of the root workspace.
 [workspace]
+
+[[bin]]
+name = "parse_variant"
+path = "fuzz_targets/parse_variant.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "probe_eval"
+path = "fuzz_targets/probe_eval.rs"
+test = false
+doc = false
+bench = false
