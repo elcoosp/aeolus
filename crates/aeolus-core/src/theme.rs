@@ -5,12 +5,22 @@
 //! token *resolution* in v1 — documented limitation) plus the light/dark
 //! `:root`/`.dark` variable blocks that Shadcn uses.
 //!
+//! v0.2 (plan §3.3): every theme ships the **full v4 default theme** —
+//! `--container-*`, `--shadow-*` (parsed as multi-layer comma-separated
+//! lists), `--text-*` + paired line heights, `--font-weight-*`,
+//! `--tracking-*`, `--leading-*`, `--radius-*`, `--blur-*`,
+//! `--perspective-*`, `--ease-*`, `--animate-*` and the default transition
+//! duration — diffed against upstream tailwindcss v4.1.17. `@custom-variant`
+//! registrations (e.g. the class-based `dark` strategy) and `@utility`
+//! expansions (`@utility name { @apply … }`) are extracted alongside tokens.
+//!
 //! Runtime mutation is explicit: swap the token map, bump the version (`TailwindTheme::version`),
 //! and re-resolve. Aeolus does not pretend to have CSS custom-property
 //! propagation.
 
 use crate::ast::Breakpoint;
 use crate::color::{Color, ParseError};
+use crate::plan::Ease;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -19,6 +29,12 @@ use std::sync::Arc;
 /// Every theme is seeded with it; user declarations merge on top
 /// (same key → later wins), matching v4's `@theme` layering.
 pub const TAILWIND_DEFAULT_PALETTE: &str = include_str!("../data/tailwind-default-palette.css");
+
+/// Tailwind CSS v4 default theme — the NON-color tokens (`--container-*`,
+/// `--shadow-*`, `--text-*`, `--font-*`, `--ease-*`, `--animate-*`, ...),
+/// verbatim from tailwindcss v4.1.17 (plan §3.3). Seeded into every theme
+/// under the palette.
+pub const TAILWIND_DEFAULT_THEME: &str = include_str!("../data/tailwind-default-theme.css");
 
 /// A typed theme token.
 #[derive(Clone, Debug, PartialEq)]
@@ -34,11 +50,17 @@ pub enum Token {
         /// Paired line height in px, when declared.
         line_height: Option<f32>,
     },
-    /// `--shadow-*` presets.
-    Shadow(BoxShadowSpec),
+    /// `--shadow-*` presets — v4 values are multi-layer comma-separated
+    /// lists; every layer is kept (v0.2, plan §3.3).
+    Shadow(Vec<BoxShadowSpec>),
+    /// A value that is not a length or color (font stacks, `cubic-bezier()`
+    /// easings, `--animate-*` shorthand, `16 / 9` aspect ratios, ...).
+    /// Stored verbatim so the default theme parses cleanly and consumers
+    /// (`ease`, `animation`) can interpret their own keys.
+    Raw(String),
 }
 
-/// One shadow layer (v1: single-layer presets).
+/// One shadow layer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BoxShadowSpec {
     /// Horizontal offset in px.
@@ -51,10 +73,32 @@ pub struct BoxShadowSpec {
     pub spread: f32,
     /// Shadow color.
     pub color: Color,
+    /// `inset` keyword (`--inset-shadow-*`, `shadow-inner`).
+    pub inset: bool,
+}
+
+/// What a `@custom-variant` registration means to the resolver.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CustomVariant {
+    /// `@custom-variant dark (&:where(.dark, .dark *))` — this name means
+    /// the `dark` media/class strategy.
+    Dark,
+    /// Registered but not mappable to a typed condition; the resolver
+    /// reports it with the selector text.
+    Unsupported(String),
+}
+
+/// A parsed `@utility name { @apply … }` expansion (depth-limited).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CustomUtility {
+    /// The utility name (`tab-corpher` for `@utility tab-corpher`).
+    pub name: String,
+    /// The `@apply` class list (verbatim from the body).
+    pub classes: String,
 }
 
 /// A parsed, immutable-by-convention theme snapshot.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct TailwindTheme {
     tokens: HashMap<String, Token>,
     breakpoints: Vec<(Breakpoint, f32)>,
@@ -62,6 +106,13 @@ pub struct TailwindTheme {
     raw_calcs: Vec<(String, String)>,
     /// `--text-sm--line-height` ratios pending their `--text-sm` parent.
     pending_lh: Vec<(String, f32)>,
+    /// Raw declaration values (for `var()` opacity modifiers like
+    /// `bg-red-500/(--o)`).
+    raw_vars: HashMap<String, String>,
+    /// `@custom-variant` registrations.
+    custom_variants: Vec<(String, CustomVariant)>,
+    /// `@utility name { @apply … }` expansions.
+    custom_utilities: Vec<CustomUtility>,
     /// Source CSS, re-parsed when deriving the dark variant so
     /// `@theme inline` var chains re-resolve against the dark palette.
     source_css: String,
@@ -71,8 +122,42 @@ pub struct TailwindTheme {
     dark_mode: bool,
 }
 
+impl Default for TailwindTheme {
+    fn default() -> Self {
+        // Seed every theme with the full v4 defaults (palette + theme),
+        // parsed once and cloned (plan §3.3). The version base is unique
+        // per instance so two distinct themes never share a cache key.
+        static TEMPLATE: std::sync::OnceLock<TailwindTheme> = std::sync::OnceLock::new();
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let tpl = TEMPLATE.get_or_init(|| {
+            let mut t = TailwindTheme::empty();
+            let _ = t.absorb_css(TAILWIND_DEFAULT_PALETTE);
+            let _ = t.absorb_css(TAILWIND_DEFAULT_THEME);
+            t
+        });
+        let mut t = tpl.clone();
+        t.version = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        t
+    }
+}
+
 impl TailwindTheme {
-    /// A theme with no user tokens (still seeded with the default palette).
+    fn empty() -> Self {
+        Self {
+            tokens: HashMap::new(),
+            breakpoints: Vec::new(),
+            raw_calcs: Vec::new(),
+            pending_lh: Vec::new(),
+            raw_vars: HashMap::new(),
+            custom_variants: Vec::new(),
+            custom_utilities: Vec::new(),
+            source_css: String::new(),
+            version: 0,
+            dark_mode: false,
+        }
+    }
+
+    /// A theme with no user tokens (seeded with the full v4 defaults).
     pub fn new() -> Self {
         Self::default()
     }
@@ -87,22 +172,41 @@ impl TailwindTheme {
         self.dark_mode
     }
 
+    /// Build the `--color-{name}` / `--{name}` lookup keys in a 96-byte
+    /// stack buffer — no `format!` on the hot path (plan §3.4.2).
+    fn prefixed<'b>(&self, buf: &'b mut [u8; 96], prefix: &str, name: &str) -> Option<&'b str> {
+        if prefix.len() + name.len() > buf.len() {
+            return None;
+        }
+        buf[..prefix.len()].copy_from_slice(prefix.as_bytes());
+        buf[prefix.len()..prefix.len() + name.len()].copy_from_slice(name.as_bytes());
+        std::str::from_utf8(&buf[..prefix.len() + name.len()]).ok()
+    }
+
     /// Look up a color token. `theme.color("primary")` matches
     /// `--color-primary` (v4 registry naming) or `--primary` (shadcn app
     /// naming, mapped via `@theme inline`).
     pub fn color(&self, name: &str) -> Option<Color> {
-        if let Some(Token::Color(c)) = self.tokens.get(&format!("--color-{name}")) {
+        let mut buf = [0u8; 96];
+        if let Some(k) = self.prefixed(&mut buf, "--color-", name)
+            && let Some(Token::Color(c)) = self.tokens.get(k)
+        {
             return Some(*c);
         }
-        match self.tokens.get(&format!("--{name}")) {
-            Some(Token::Color(c)) => Some(*c),
-            _ => None,
+        let mut buf2 = [0u8; 96];
+        if let Some(k) = self.prefixed(&mut buf2, "--", name)
+            && let Some(Token::Color(c)) = self.tokens.get(k)
+        {
+            return Some(*c);
         }
+        None
     }
 
     /// Look up a length token (`--spacing`, `--radius-md`, ...) in px.
     pub fn length(&self, name: &str) -> Option<f32> {
-        match self.tokens.get(&format!("--{name}")) {
+        let mut buf = [0u8; 96];
+        let k = self.prefixed(&mut buf, "--", name)?;
+        match self.tokens.get(k) {
             Some(Token::Length(l)) => Some(*l),
             _ => None,
         }
@@ -115,23 +219,134 @@ impl TailwindTheme {
 
     /// Look up a `--text-{name}` font-size token (+ paired line height).
     pub fn font_size(&self, name: &str) -> Option<(f32, Option<f32>)> {
-        match self.tokens.get(&format!("--text-{name}")) {
+        let mut buf = [0u8; 96];
+        let k = self.prefixed(&mut buf, "--text-", name)?;
+        match self.tokens.get(k) {
             Some(Token::FontSize { size, line_height }) => Some((*size, *line_height)),
             _ => None,
         }
     }
 
-    /// Look up a `--shadow-{name}` preset.
-    pub fn shadow(&self, name: &str) -> Option<BoxShadowSpec> {
-        match self.tokens.get(&format!("--shadow-{name}")) {
-            Some(Token::Shadow(s)) => Some(s.clone()),
+    /// Look up a `--font-weight-{name}` token (v0.2 default scale).
+    pub fn font_weight(&self, name: &str) -> Option<u16> {
+        match name {
+            "thin" => Some(100),
+            "extralight" => Some(200),
+            "light" => Some(300),
+            "normal" => Some(400),
+            "medium" => Some(500),
+            "semibold" => Some(600),
+            "bold" => Some(700),
+            "extrabold" => Some(800),
+            "black" => Some(900),
+            other => self.raw_number(&format!("--font-weight-{other}")),
+        }
+    }
+
+    /// The `--default-transition-duration` in ms (v4 default 150).
+    pub fn default_transition_ms(&self) -> f32 {
+        match self.tokens.get("--default-transition-duration") {
+            Some(Token::Raw(v)) => parse_duration(v).unwrap_or(150.0),
+            _ => 150.0,
+        }
+    }
+
+    /// A `--leading-{name}` unitless ratio (`--leading-tight: 1.25`).
+    /// Leading tokens are unitless so they live in `Raw`.
+    pub fn leading(&self, name: &str) -> Option<f32> {
+        let mut buf = [0u8; 96];
+        let k = self.prefixed(&mut buf, "--leading-", name)?;
+        match self.tokens.get(k) {
+            Some(Token::Length(l)) => Some(*l),
+            Some(Token::Raw(s)) => s.trim().parse().ok(),
             _ => None,
+        }
+    }
+
+    /// The raw declaration value of a var (`--aspect-video` → `"16 / 9"`).
+    pub fn raw_var(&self, name: &str) -> Option<&str> {
+        self.raw_vars.get(name).map(String::as_str)
+    }
+
+    fn raw_number(&self, key: &str) -> Option<u16> {
+        match self.tokens.get(key) {
+            Some(Token::Raw(s)) => s.trim().parse().ok(),
+            _ => None,
+        }
+    }
+
+    /// The FIRST (dominant) layer of `--shadow-{name}` — v0.1 compat.
+    /// Use [`TailwindTheme::shadows`] for the full multi-layer list.
+    pub fn shadow(&self, name: &str) -> Option<BoxShadowSpec> {
+        self.shadows(name).into_iter().next()
+    }
+
+    /// All layers of `--shadow-{name}` (v0.2, plan §3.3). Bare `shadow`
+    /// (`name == ""`) maps to the deprecated `--shadow` token, falling back
+    /// to `--shadow-sm` (the v4 default box shadow).
+    pub fn shadows(&self, name: &str) -> Vec<BoxShadowSpec> {
+        if name.is_empty() {
+            if let Some(Token::Shadow(v)) = self.tokens.get("--shadow") {
+                return v.clone();
+            }
+            if let Some(Token::Shadow(v)) = self.tokens.get("--shadow-sm") {
+                return v.clone();
+            }
+            return Vec::new();
+        }
+        let mut buf = [0u8; 96];
+        let Some(k) = self.prefixed(&mut buf, "--shadow-", name) else {
+            return Vec::new();
+        };
+        match self.tokens.get(k) {
+            Some(Token::Shadow(v)) => v.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// All layers of `--inset-shadow-{name}` (v0.2).
+    pub fn inset_shadows(&self, name: &str) -> Vec<BoxShadowSpec> {
+        let mut buf = [0u8; 96];
+        let Some(k) = self.prefixed(&mut buf, "--inset-shadow-", name) else {
+            return Vec::new();
+        };
+        match self.tokens.get(k) {
+            Some(Token::Shadow(v)) => v.clone(),
+            _ => Vec::new(),
         }
     }
 
     /// Look up a `--radius-{name}` token in px.
     pub fn radius(&self, name: &str) -> Option<f32> {
-        self.length(&format!("radius-{name}"))
+        let mut buf = [0u8; 96];
+        let k = self.prefixed(&mut buf, "--radius-", name)?;
+        match self.tokens.get(k) {
+            Some(Token::Length(l)) => Some(*l),
+            _ => None,
+        }
+    }
+
+    /// A `--container-{name}` token in px (v0.2 `@container` scale).
+    pub fn container_px(&self, name: &str) -> Option<f32> {
+        let mut buf = [0u8; 96];
+        let k = self.prefixed(&mut buf, "--container-", name)?;
+        match self.tokens.get(k) {
+            Some(Token::Length(l)) => Some(*l),
+            _ => None,
+        }
+    }
+
+    /// The container-query px for a `@container` breakpoint
+    /// (`@sm` = `--container-sm` = 24rem = 384px — NOT the `sm` viewport
+    /// breakpoint; plan §3.3 fixes the v0.1 conflation).
+    pub fn container_breakpoint_px(&self, b: Breakpoint) -> f32 {
+        self.container_px(b.name()).unwrap_or(match b {
+            Breakpoint::Sm => 384.0,
+            Breakpoint::Md => 448.0,
+            Breakpoint::Lg => 512.0,
+            Breakpoint::Xl => 576.0,
+            Breakpoint::Xxl => 672.0,
+        })
     }
 
     /// The effective breakpoint px for `b` (user override or v4 default).
@@ -141,6 +356,88 @@ impl TailwindTheme {
             .find(|(n, _)| *n == b)
             .map(|(_, px)| *px)
             .unwrap_or_else(|| b.default_px())
+    }
+
+    /// The full theme-aware breakpoint px table (`Breakpoint::index` order).
+    pub fn breakpoints_px(&self) -> [f32; 5] {
+        [
+            self.breakpoint_px(Breakpoint::Sm),
+            self.breakpoint_px(Breakpoint::Md),
+            self.breakpoint_px(Breakpoint::Lg),
+            self.breakpoint_px(Breakpoint::Xl),
+            self.breakpoint_px(Breakpoint::Xxl),
+        ]
+    }
+
+    /// The `--ease-{name}` timing function (`linear`, `in`, `out`,
+    /// `in-out`, or a theme-defined `cubic-bezier(...)`; v0.2).
+    pub fn ease(&self, name: &str) -> Option<Ease> {
+        let mut buf = [0u8; 96];
+        if let Some(k) = self.prefixed(&mut buf, "--ease-", name)
+            && let Some(Token::Raw(v)) = self.tokens.get(k)
+        {
+            return Some(ease_from_value(v));
+        }
+        match name {
+            "linear" => Some(Ease::Linear),
+            "in" => Some(Ease::In),
+            "out" => Some(Ease::Out),
+            "in-out" => Some(Ease::InOut),
+            _ => None,
+        }
+    }
+
+    /// An `--animate-{name}` shorthand (`spin 1s linear infinite`),
+    /// parsed into `(name, duration_ms, ease, infinite)`.
+    pub fn animation(&self, name: &str) -> Option<AnimationSpec> {
+        let mut buf = [0u8; 96];
+        let k = self.prefixed(&mut buf, "--animate-", name)?;
+        match self.tokens.get(k) {
+            Some(Token::Raw(v)) => parse_animation(v),
+            _ => None,
+        }
+    }
+
+    /// The registered custom variant, when `name` was declared via
+    /// `@custom-variant`.
+    pub fn custom_variant(&self, name: &str) -> Option<&CustomVariant> {
+        self.custom_variants
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, m)| m)
+    }
+
+    /// The `@utility` expansion for `name`, when declared.
+    pub fn custom_utility(&self, name: &str) -> Option<&CustomUtility> {
+        self.custom_utilities.iter().find(|u| u.name == name)
+    }
+
+    /// True when the theme declares any `@utility` — the resolver's
+    /// expansion pre-scan fast path (zero cost for stock themes).
+    pub fn has_custom_utilities(&self) -> bool {
+        !self.custom_utilities.is_empty()
+    }
+
+    /// Resolve a raw variable value to an opacity PERCENT for
+    /// `bg-{color}/(--var)` modifiers (F7): `"50%"` → 50, `"0.5"` → 50,
+    /// `"50"` → 50.
+    pub fn var_percent(&self, name: &str) -> Option<f32> {
+        let key = if name.starts_with("--") {
+            name.to_string()
+        } else {
+            format!("--{name}")
+        };
+        let raw = self.raw_vars.get(key.as_str())?;
+        let v = raw.trim();
+        if let Some(p) = v.strip_suffix('%') {
+            return p.trim().parse().ok();
+        }
+        let n: f32 = v.parse().ok()?;
+        Some(if (0.0..=1.0).contains(&n) {
+            n * 100.0
+        } else {
+            n
+        })
     }
 
     /// All color token names (for `tw_audit`), without prefixes.
@@ -157,10 +454,9 @@ impl TailwindTheme {
 
     /// Parse `@theme`/`:root`/`.dark` CSS into a fresh theme.
     pub fn from_theme_css(css: &str) -> Result<Self, ParseError> {
-        let mut theme = Self::new();
-        // v4 semantics: the default palette is the baseline; user `@theme`
-        // declarations are merged over it (same key → later wins).
-        theme.absorb_css(TAILWIND_DEFAULT_PALETTE)?;
+        let mut theme = Self::default();
+        // v4 semantics: the default palette + theme are the baseline; user
+        // `@theme` declarations are merged over them (same key → later wins).
         theme.absorb_css(css)?;
         Ok(theme)
     }
@@ -169,6 +465,9 @@ impl TailwindTheme {
     pub fn absorb_css(&mut self, css: &str) -> Result<(), ParseError> {
         self.source_css.push('\n');
         self.source_css.push_str(css);
+        let (variants, utilities) = extract_custom_rules(css);
+        self.custom_variants.extend(variants);
+        self.custom_utilities.extend(utilities);
         self.absorb_declarations(&extract_declarations(css))
     }
 
@@ -213,8 +512,10 @@ impl TailwindTheme {
     /// palette — the propagation CSS gives us for free and Aeolus does
     /// explicitly (mission brief §3.5).
     pub fn dark_variant(&self, dark_css: &str) -> Result<Self, ParseError> {
-        let mut dark = Self::new();
-        dark.dark_mode = true;
+        let mut dark = TailwindTheme {
+            dark_mode: true,
+            ..TailwindTheme::default()
+        };
         // 1. light palette (`:root` etc.)
         let all = extract_declarations(&self.source_css);
         let roots: Vec<_> = all
@@ -232,6 +533,10 @@ impl TailwindTheme {
         dark.absorb_declarations(&extract_declarations(dark_css))?;
         // 3. re-resolve `@theme inline` var chains against the final palette
         dark.absorb_declarations(&themes)?;
+        // Custom rules from the source CSS carry over.
+        let (variants, utilities) = extract_custom_rules(&self.source_css);
+        dark.custom_variants.extend(variants);
+        dark.custom_utilities.extend(utilities);
         Ok(dark)
     }
 
@@ -263,6 +568,8 @@ impl TailwindTheme {
     }
 
     fn insert_var(&mut self, key: &str, value: &str) -> Result<(), ParseError> {
+        // Keep the raw declaration for var() opacity modifiers.
+        self.raw_vars.insert(key.to_string(), value.to_string());
         // Defer calc() values until all their var() deps are parsed.
         if value.trim_start().starts_with("calc(") {
             self.raw_calcs.push((key.to_string(), value.to_string()));
@@ -285,6 +592,12 @@ impl TailwindTheme {
         if let Some(parent) = key.strip_suffix("--line-height")
             && parent.starts_with("--text-")
         {
+            // v4.1 ships unitless ratios for large sizes (`--text-5xl--line-height: 1`)
+            // alongside px/calc forms — a bare number is a RATIO of the size.
+            if let Ok(ratio) = value.trim().parse::<f32>() {
+                self.pending_lh.push((parent.to_string(), ratio));
+                return Ok(());
+            }
             let lh = parse_length(value)?;
             if let Some(Token::FontSize { line_height, .. }) = self.tokens.get_mut(parent) {
                 *line_height = Some(lh);
@@ -307,7 +620,27 @@ impl TailwindTheme {
                 }
             }
             k if k.starts_with("--shadow-") => {
-                Token::Shadow(parse_shadow_spec(&resolve_vars(value, &self.tokens)?)?)
+                Token::Shadow(parse_shadow_layers(&resolve_vars(value, &self.tokens)?)?)
+            }
+            k if k.starts_with("--inset-shadow-") => Token::Shadow(
+                parse_shadow_layers(&resolve_vars(value, &self.tokens)?)?
+                    .into_iter()
+                    .map(|mut s| {
+                        s.inset = true;
+                        s
+                    })
+                    .collect(),
+            ),
+            k if k.starts_with("--animate-")
+                || k.starts_with("--ease-")
+                || k.starts_with("--font-sans")
+                || k.starts_with("--font-serif")
+                || k.starts_with("--font-mono")
+                || k.starts_with("--default-")
+                || k.starts_with("--aspect-")
+                || k.starts_with("--perspective-") =>
+            {
+                Token::Raw(value.to_string())
             }
             // Value-based sniffing: any oklch()/rgb()/hsl()/hex/color-mix value is a
             // color token regardless of its name (shadcn uses --chart-1..5,
@@ -324,17 +657,122 @@ impl TailwindTheme {
             }
             k if k.starts_with("--breakpoint-") => {
                 let px = parse_length(value)?;
-                if let Some(b) = Breakpoint::from_name(k.trim_start_matches("--breakpoint-")) {
-                    self.breakpoints.retain(|(n, _)| *n != b);
-                    self.breakpoints.push((b, px));
+                match Breakpoint::from_name(k.trim_start_matches("--breakpoint-")) {
+                    Some(b) => {
+                        self.breakpoints.retain(|(n, _)| *n != b);
+                        self.breakpoints.push((b, px));
+                    }
+                    // Custom breakpoint names (`--breakpoint-3xl`) are kept
+                    // as lengths so `Custom` variants can resolve them.
+                    None => {
+                        self.tokens.insert(key.to_string(), Token::Length(px));
+                    }
                 }
                 return Ok(());
             }
-            _ => Token::Length(parse_length(value)?),
+            _ => match parse_length(value) {
+                Ok(l) => Token::Length(l),
+                // Non-length, non-color values (raw numbers like
+                // `--font-weight-thin: 100`, prose, ...) are kept verbatim
+                // so the default theme always parses (v0.2).
+                Err(_) => Token::Raw(value.to_string()),
+            },
         };
         self.tokens.insert(key.to_string(), token);
         Ok(())
     }
+}
+
+/// The parsed form of an `--animate-*` shorthand.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnimationSpec {
+    /// The animation name (`spin`).
+    pub name: String,
+    /// Duration in ms (`1s` → 1000).
+    pub duration_ms: f32,
+    /// Timing function keyword/cubic-bezier, when present.
+    pub ease: Option<Ease>,
+    /// `infinite` keyword present.
+    pub infinite: bool,
+}
+
+fn parse_animation(v: &str) -> Option<AnimationSpec> {
+    let mut parts = v.split_ascii_whitespace();
+    let name = parts.next()?.trim().to_string();
+    let mut spec = AnimationSpec {
+        name,
+        duration_ms: 1000.0,
+        ease: None,
+        infinite: true,
+    };
+    for p in parts {
+        if let Some(d) = parse_duration(p) {
+            spec.duration_ms = d;
+        } else if p == "infinite" {
+            spec.infinite = true;
+        } else if p == "linear" {
+            spec.ease = Some(Ease::Linear);
+        } else if p.starts_with("cubic-bezier(") {
+            spec.ease = Some(ease_from_value(p));
+        }
+        // (iteration counts, alternate, ... are carried in the name token by
+        // backends that support them; Aeolus models the v4 presets.)
+    }
+    Some(spec)
+}
+
+/// `150ms` → 150, `1s` → 1000.
+fn parse_duration(s: &str) -> Option<f32> {
+    if let Some(ms) = s.strip_suffix("ms") {
+        return ms.trim().parse().ok();
+    }
+    if let Some(sec) = s.strip_suffix('s') {
+        return sec.trim().parse::<f32>().ok().map(|v| v * 1000.0);
+    }
+    None
+}
+
+/// Map a `cubic-bezier(...)` value (or `linear`) to the typed [`Ease`].
+fn ease_from_value(v: &str) -> Ease {
+    let v = v.trim();
+    if v == "linear" {
+        return Ease::Linear;
+    }
+    if let Some(inner) = v
+        .strip_prefix("cubic-bezier(")
+        .and_then(|r| r.strip_suffix(')'))
+    {
+        let nums: Vec<f32> = inner
+            .split(',')
+            .filter_map(|n| n.trim().parse().ok())
+            .collect();
+        if nums.len() == 4 {
+            // Match against the v4 default easings.
+            let close = |a: f32, b: f32| (a - b).abs() < 1e-4;
+            if close(nums[0], 0.4)
+                && close(nums[1], 0.0)
+                && close(nums[2], 1.0)
+                && close(nums[3], 1.0)
+            {
+                return Ease::In;
+            }
+            if close(nums[0], 0.0)
+                && close(nums[1], 0.0)
+                && close(nums[2], 0.2)
+                && close(nums[3], 1.0)
+            {
+                return Ease::Out;
+            }
+            if close(nums[0], 0.4)
+                && close(nums[1], 0.0)
+                && close(nums[2], 0.2)
+                && close(nums[3], 1.0)
+            {
+                return Ease::InOut;
+            }
+        }
+    }
+    Ease::InOut
 }
 
 fn value_is_color(value: &str, tokens: &HashMap<String, Token>) -> bool {
@@ -435,32 +873,41 @@ fn bad_length(s: &str) -> ParseError {
     ParseError::new(format!("theme length requires px/rem unit: {s:?}"))
 }
 
-fn parse_shadow_spec(value: &str) -> Result<BoxShadowSpec, ParseError> {
-    // v4 defaults ship multi-layer shadows (`--shadow-sm: 0 1px 3px 0 rgb(0 0 0 /
-    // 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)`). The locked StylePlan IR has a
-    // single `BoxShadow` slot (§3.1), so keep the first (dominant) layer.
-    let value = {
-        let mut depth = 0usize;
-        let mut cut = value.len();
-        for (i, ch) in value.char_indices() {
-            match ch {
-                '(' => depth += 1,
-                ')' => depth = depth.saturating_sub(1),
-                ',' if depth == 0 => {
-                    cut = i;
-                    break;
-                }
-                _ => {}
+/// Parse a multi-layer v4 shadow value (`0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px
+/// 2px -1px rgb(0 0 0 / 0.1)`) into every layer — v0.2 stops truncating at
+/// the first comma (plan §1.3/§3.3).
+fn parse_shadow_layers(value: &str) -> Result<Vec<BoxShadowSpec>, ParseError> {
+    let mut layers = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (i, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                layers.push(parse_shadow_layer(&value[start..i])?);
+                start = i + 1;
             }
+            _ => {}
         }
-        &value[..cut]
-    };
+    }
+    layers.push(parse_shadow_layer(&value[start..])?);
+    Ok(layers)
+}
+
+fn parse_shadow_layer(value: &str) -> Result<BoxShadowSpec, ParseError> {
+    let mut value = value.trim();
+    let mut inset = false;
+    if let Some(rest) = value.strip_prefix("inset") {
+        inset = true;
+        value = rest.trim();
+    }
     // v4 shape: `0px 1px 2px 0px rgb(0 0 0 / 5%)` / oklch(...) — the color
     // may itself contain spaces, so scan from the last numeric token.
     let mut nums: Vec<f32> = Vec::with_capacity(4);
     let mut color_start = value.len();
-    for (idx, part) in value.split_whitespace().enumerate() {
-        if idx >= 4 || !(part.ends_with("px") || part.parse::<f32>().is_ok()) {
+    for part in value.split_whitespace() {
+        if nums.len() >= 4 || !(part.ends_with("px") || part.parse::<f32>().is_ok()) {
             color_start = value.find(part).unwrap_or(value.len());
             break;
         }
@@ -480,6 +927,7 @@ fn parse_shadow_spec(value: &str) -> Result<BoxShadowSpec, ParseError> {
         blur: *nums.get(2).unwrap_or(&0.0),
         spread: *nums.get(3).unwrap_or(&0.0),
         color,
+        inset,
     })
 }
 
@@ -719,6 +1167,87 @@ pub fn extract_declarations(css: &str) -> Vec<(BlockKind, String, String)> {
     out
 }
 
+/// Extract `@custom-variant name (selector);` registrations and
+/// `@utility name { … }` blocks (with `@apply …;` bodies) from CSS.
+pub fn extract_custom_rules(css: &str) -> (Vec<(String, CustomVariant)>, Vec<CustomUtility>) {
+    let owned = strip_comments(css);
+    let mut variants = Vec::new();
+    let mut utilities = Vec::new();
+    let mut rest: &str = &owned;
+    while let Some(i) = rest.find("@custom-variant") {
+        let after = &rest[i + "@custom-variant".len()..];
+        // Form A: `@custom-variant name (selector);`
+        // Form B: `@custom-variant name { … }` (block form — registered as
+        // unsupported with its body text).
+        let semi = after.find(';');
+        let brace = after.find('{');
+        match (brace, semi) {
+            (Some(b), Some(s)) if b < s => {
+                // Block form.
+                let header = after[..b].trim();
+                let close = matching_brace(after.as_bytes(), b);
+                let body = after.get(b + 1..close).unwrap_or("");
+                let name = header.split_whitespace().next().unwrap_or("").to_string();
+                if !name.is_empty() {
+                    variants.push((name, CustomVariant::Unsupported(body.trim().to_string())));
+                }
+                rest = &after[close + 1..];
+            }
+            (Some(b), None) => {
+                let header = after[..b].trim();
+                let close = matching_brace(after.as_bytes(), b);
+                let body = after.get(b + 1..close).unwrap_or("");
+                let name = header.split_whitespace().next().unwrap_or("").to_string();
+                if !name.is_empty() {
+                    variants.push((name, CustomVariant::Unsupported(body.trim().to_string())));
+                }
+                rest = &after[close + 1..];
+            }
+            (_, Some(s)) => {
+                let decl = after[..s].trim();
+                let (name, selector) = match decl.split_once(char::is_whitespace) {
+                    Some((n, sel)) => (n.trim(), sel.trim()),
+                    None => (decl, ""),
+                };
+                if !name.is_empty() {
+                    let meaning = if selector.contains(".dark") {
+                        CustomVariant::Dark
+                    } else {
+                        CustomVariant::Unsupported(selector.to_string())
+                    };
+                    variants.push((name.to_string(), meaning));
+                }
+                rest = &after[s + 1..];
+            }
+            (None, None) => break,
+        }
+    }
+    rest = &owned;
+    while let Some(i) = rest.find("@utility") {
+        let after = &rest[i + "@utility".len()..];
+        let Some(b) = after.find('{') else { break };
+        let header = after[..b].trim();
+        let close = matching_brace(after.as_bytes(), b);
+        let body = after.get(b + 1..close).unwrap_or("");
+        let name = header.split_whitespace().next().unwrap_or("").to_string();
+        if !name.is_empty() {
+            // Expansion source: the `@apply …;` line (v4 custom utilities
+            // may also carry raw CSS — those properties are outside the
+            // class-string model and stay reported by the resolver).
+            let classes = body
+                .split(';')
+                .find_map(|stmt| {
+                    let stmt = stmt.trim();
+                    stmt.strip_prefix("@apply").map(|c| c.trim().to_string())
+                })
+                .unwrap_or_default();
+            utilities.push(CustomUtility { name, classes });
+        }
+        rest = &after[close + 1..];
+    }
+    (variants, utilities)
+}
+
 /// Remove `/* ... */` comments so selector classification cannot be fooled
 /// by documentation text inside them.
 fn strip_comments(css: &str) -> String {
@@ -877,5 +1406,85 @@ mod tests {
         assert_eq!(t.spacing(), 4.0);
         let t = TailwindTheme::from_theme_css("@theme { --spacing: 0.25rem; }").unwrap();
         assert_eq!(t.spacing(), 4.0);
+    }
+
+    /// v0.2: every theme ships the full v4 default theme (plan §3.3).
+    #[test]
+    fn full_v4_defaults_are_seeded() {
+        let t = TailwindTheme::new();
+        // Container scale.
+        assert_eq!(t.container_px("sm"), Some(384.0));
+        assert_eq!(t.container_px("7xl"), Some(1280.0));
+        assert_eq!(t.container_breakpoint_px(Breakpoint::Sm), 384.0);
+        // Multi-layer shadows (v0.1 truncated to the first layer).
+        let sm = t.shadows("sm");
+        assert_eq!(sm.len(), 2, "shadow-sm has two layers");
+        assert_eq!(sm[0].offset_y, 1.0);
+        assert_eq!(sm[1].spread, -1.0);
+        let md = t.shadows("md");
+        assert_eq!(md.len(), 2);
+        assert!((md[0].color.alpha - 0.1).abs() < 1e-3);
+        // Easings.
+        assert_eq!(t.ease("in-out"), Some(Ease::InOut));
+        assert_eq!(t.ease("out"), Some(Ease::Out));
+        // Animations.
+        let spin = t.animation("spin").unwrap();
+        assert_eq!(spin.name, "spin");
+        assert_eq!(spin.duration_ms, 1000.0);
+        assert!(spin.infinite);
+        let pulse = t.animation("pulse").unwrap();
+        assert_eq!(pulse.duration_ms, 2000.0);
+        // Text sizes carry paired line heights (v4.1 ratios).
+        let (size, lh) = t.font_size("sm").unwrap();
+        assert_eq!(size, 14.0);
+        assert!((lh.unwrap() - 20.0).abs() < 0.1, "text-sm lh");
+        // Radius scale.
+        assert_eq!(t.radius("xs"), Some(2.0));
+        assert_eq!(t.radius("4xl"), Some(32.0));
+        // Font weights.
+        assert_eq!(t.font_weight("semibold"), Some(600));
+        // Default transition duration.
+        assert_eq!(t.length("default-transition-duration"), None);
+        assert!(matches!(
+            t.tokens.get("--default-transition-duration"),
+            Some(Token::Raw(_))
+        ));
+    }
+
+    /// @custom-variant + @utility extraction (plan §3.3).
+    #[test]
+    fn custom_rules_extract() {
+        let t = TailwindTheme::from_theme_css(
+            "@custom-variant dark (&:where(.dark, .dark *));\n@utility tab-corpher { @apply tabular-nums px-2; }",
+        )
+        .unwrap();
+        assert_eq!(t.custom_variant("dark"), Some(&CustomVariant::Dark));
+        let u = t.custom_utility("tab-corpher").unwrap();
+        assert_eq!(u.classes, "tabular-nums px-2");
+    }
+
+    /// var() opacity modifiers resolve through the raw var table (F7).
+    #[test]
+    fn var_opacity_resolves() {
+        let t = TailwindTheme::from_theme_css(":root { --o: 37%; --half: 0.5; }").unwrap();
+        assert_eq!(t.var_percent("--o"), Some(37.0));
+        assert_eq!(t.var_percent("half"), Some(50.0));
+        assert_eq!(t.var_percent("--missing"), None);
+    }
+
+    /// Multi-layer shadow parsing keeps every layer and the inset keyword.
+    #[test]
+    fn multi_layer_shadows_parse() {
+        let t = TailwindTheme::from_theme_css(
+            "@theme { --shadow-x: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 2px 4px -1px oklch(0 0 0 / 0.2); --inset-shadow-y: inset 0 1px 1px rgb(0 0 0 / 0.05); }",
+        )
+        .unwrap();
+        let v = t.shadows("x");
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[1].offset_y, 2.0);
+        assert!((v[1].color.alpha - 0.2).abs() < 1e-3);
+        let i = t.inset_shadows("y");
+        assert_eq!(i.len(), 1);
+        assert!(i[0].inset);
     }
 }
