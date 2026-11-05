@@ -4,6 +4,75 @@ All notable changes to Aeolus are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Post-0.2.0 audit round: a full-repo sweep for gaps, panic paths and
+semantic divergences from Tailwind v4.1.17 (verified against the
+`tailwindcss` source, not the docs alone). The v0.2 plan of record now
+ships in-repo as `AEOLUS_V0.2.md` (every `plan §X.Y` code citation
+resolves there).
+
+### Fixed
+
+- **Theme parser panics on unbalanced custom-rule blocks**: CSS ending in
+  `@utility foo {` or `@custom-variant x {` with no closing brace sliced
+  past the end (`rest[close + 1..]`) — fuzz-reachable via
+  `theme_from_css`. The malformed tail is now ignored, matching
+  `extract_declarations`' contract.
+- **Theme resolution was declaration-ORDER dependent** (CSS custom
+  properties resolve at use time): an `@theme inline { --color-primary:
+  var(--primary); }` block preceding its `:root` source failed with
+  `unsupported color function "var"`, and a `calc()` referencing a var
+  whose own value is a later `calc()` failed with `calc() references
+  unknown token`. Bare-var color values now defer and the deferred
+  calc()/var() passes run to a fixpoint; truly-unresolvable references
+  keep the precise-error contract.
+- **Ring/outline/underline-offset widths were spacing multiples, not px**
+  (v4.1.17 semantics, verified in `utilities.ts`): `ring-2` resolved 8px
+  (correct: 2px), bare `ring` 4px (correct: 1px — `--default-ring-width`
+  fallback), `ring-offset-2` 8px (correct: 2px), bare `outline` 2px
+  (correct: 1px — `--default-outline-width` fallback), `outline-offset-2`
+  8px (correct: 2px), `underline-offset-4` 16px (correct: 4px). Negative
+  offsets (`-outline-offset-2`, `-underline-offset-2`) now carry their
+  sign. Only the spacing families keep `--spacing` multiples.
+- **State-layer cascade ignored the canonical variant order**:
+  `StylePlan::resolve` ranked legacy state layers by source order, so
+  `focus:bg-blue-500 hover:bg-red-500` resolved the HOVER layer on a
+  focused+hovered element (Tailwind sorts generated CSS by variant order →
+  focus wins). Layers now rank by `VariantCondition::rank` — the same
+  order the stack lowering and `resolved_for_state` already used.
+- **Floem silently dropped viewport/fit-content sizes**: `apply_dim`
+  no-op'd `w-screen`/`h-dvh`/`w-fit` shapes without a report (the
+  no-silent-failures contract). They are now `LoweringReport` entries, and
+  `slot_coverage` classifies text props exactly as `lower_text` maps them.
+
+### Added
+
+- **Legacy comma color syntax**: `Color::parse` documented
+  `rgb(r, g, b, a)` but only the space form parsed — `rgb(251, 44, 54)`
+  failed with `bad number "251,"`. Common in arbitrary values
+  (`bg-[rgba(0,0,0,0.5)]`); comma forms (with optional alpha component,
+  numbers or percentages) parse now.
+- **Missing `cn()` conflict groups** (tw_merge parity): logical inset
+  edges `start-*`/`end-*`, the six grid-line families
+  (`col/row-span/start/end`), and the shadow/outline splits —
+  `shadow-md` + `shadow-destructive` and `outline-2` + `outline-primary`
+  no longer knock each other out (preset-width vs color are independent
+  groups, plus `outline-style`).
+- `AEOLUS_V0.2.md` — the v0.2 plan of record (referenced by this README
+  since 0.2.0 but never committed).
+- Regression suites: `tests/px_semantics.rs` (px-vs-spacing semantics +
+  canonical state cascade), theme order-independence and unbalanced-block
+  tests, legacy comma color tests, and per-family `cn()` merge tests.
+
+### Changed
+
+- The `space-*` warning no longer claims the resolver "emulates" it as
+  gap — it reports precisely that `gap-*` is the supported equivalent.
+- README's deferred list moved to v0.3 (group/peer layers, structured
+  variants, container queries, responsive/dark on Masonry and Floem
+  transitions shipped in 0.2.0).
+
 ## [0.2.0] — 2026-11-05
 
 The "serious Tailwind v4 compiler" release (plan: `AEOLUS_V0.2.md`): the
