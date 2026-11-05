@@ -29,25 +29,37 @@ pub mod ast;
 pub mod cache;
 pub mod caps;
 pub mod color;
+pub mod cond;
 pub mod conflict;
+pub mod eval;
 pub mod parser;
 pub mod plan;
 pub mod resolve;
 pub mod theme;
 
-pub use ast::{Breakpoint, ClassToken, NamedVariant, ParentKind, Variant};
+pub use ast::{
+    ArbForm, Arbitrary, AttrKind, Breakpoint, ClassToken, INLINE_ELEMENTS, INLINE_VARIANTS, Inline,
+    Media, NamedVariant, ParentKind, Segments, State, Structural, Variant,
+};
 pub use cache::{CachedPlan, Interner, PlanCache, hash_classes};
 pub use caps::{Backend, BackendCapabilities, CascadeModel, PropertySupport, ThemeSwap};
 pub use color::{Color, ParseError};
+pub use cond::{Atom, Cond, Rule, Test};
 pub use conflict::{cn, cn_opt};
+pub use eval::{Probe, Rel, in_window, split_group_label};
 pub use plan::{
-    Background, BorderColor, BorderWidth, BoxShadow, ConditionalLayer, ContentColor, CornerRadius,
-    Cursor, Dimensions, Display, FlexDirection, Gap, JustifyContent, Lane, Layout, Margin, Opacity,
-    Outline, Padding, PointerEvents, ResolvedStyle, Ring, RingPart, SizedValue, Slot, StyleDiff,
-    StylePlan, TextProperty, TextValue, VariantCondition, diff,
+    AlignItems, Animation, AutoEdges, Background, BorderColor, BorderStyle, BorderWidth, BoxShadow,
+    ConditionalLayer, ContentAlign, ContentColor, CornerRadius, Cursor, Dimensions, Display, Ease,
+    Extras, FlexDirection, Gap, GapAxes, Grid, Inset, JustifyContent, Lane, Layout, Margin,
+    Opacity, Outline, Overflow, OverflowKind, Padding, PointerEvents, Position, ResolvedStyle,
+    Ring, RingPart, SizedValue, Slot, StyleDiff, StylePlan, TextProperty, TextValue, Transform,
+    Transition, TransitionSet, VariantCondition, Visibility, diff,
 };
 pub use resolve::{Resolution, Resolver, Warning};
-pub use theme::{BoxShadowSpec, TAILWIND_DEFAULT_PALETTE, TailwindTheme, Token};
+pub use theme::{
+    AnimationSpec, BoxShadowSpec, CustomUtility, CustomVariant, TAILWIND_DEFAULT_PALETTE,
+    TAILWIND_DEFAULT_THEME, TailwindTheme, Token,
+};
 
 /// The Shadcn default theme (light + dark) as `@theme`-compatible CSS.
 ///
