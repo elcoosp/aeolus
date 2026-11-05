@@ -86,7 +86,12 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
             _ => "border-w",
         },
         ["border", ..] => "border-color",
-        ["shadow", ..] => "shadow",
+        // Shadow splits like border: preset widths vs shadow color
+        // (tw_merge 'shadow' vs 'shadow-color' — `shadow-md` and
+        // `shadow-red-500` do NOT conflict).
+        ["shadow"] => "shadow",
+        ["shadow", e, ..] if SHADOW_PRESETS.contains(e) => "shadow",
+        ["shadow", ..] => "shadow-color",
         // Ring splits like border: width (numbers / px-rem arbitrary) vs
         // color, offset width vs offset color — four independent groups
         // (tw_merge 'ring-w'/'ring-color'/'ring-offset-w'/'ring-offset-color').
@@ -100,7 +105,16 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["ring", only] if is_width_value(only, t.arbitrary.as_ref()) => "ring-w",
         ["ring", ..] if is_width_value("", t.arbitrary.as_ref()) => "ring-w",
         ["ring", ..] => "ring-color",
-        ["outline", ..] => "outline",
+        // Outline splits like ring: width / style / offset / color are four
+        // independent groups (tw_merge 'outline-w'/'outline-style'/
+        // 'outline-offset'/'outline-color' — `outline-2` and `outline-red-500`
+        // do NOT conflict).
+        ["outline", "offset", ..] | ["outline-offset", ..] => "outline-offset",
+        ["outline", "solid" | "dashed" | "dotted" | "double"] => "outline-style",
+        ["outline"] | ["outline", "none" | "hidden"] => "outline-w",
+        ["outline", only] if is_width_value(only, t.arbitrary.as_ref()) => "outline-w",
+        ["outline", ..] if is_width_value("", t.arbitrary.as_ref()) => "outline-w",
+        ["outline", ..] => "outline-color",
         ["opacity", ..] => "opacity",
         ["text", only] if size_name(only) => "font-size",
         ["text", ..] if els.len() == 2 && els[1] == "2xl" => "font-size",
@@ -148,6 +162,10 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["inset", "x", ..] => "inset-x",
         ["inset", "y", ..] => "inset-y",
         ["inset", ..] => "inset",
+        // Logical inset edges (`start-*`/`end-*`): the parent `inset` group
+        // already knocks them out; they are independent of top/right/...
+        ["start", ..] => "start",
+        ["end", ..] => "end",
         ["top", ..] => "top",
         ["right", ..] => "right",
         ["bottom", ..] => "bottom",
@@ -161,6 +179,14 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["overscroll", ..] => "overscroll-behavior",
         ["aspect", ..] => "aspect",
         ["columns", ..] => "columns",
+        // Grid line families (tw_merge: six independent groups —
+        // `col-span-2` and `col-start-1` do not conflict).
+        ["col", "span", ..] => "col-span",
+        ["col", "start", ..] => "col-start",
+        ["col", "end", ..] => "col-end",
+        ["row", "span", ..] => "row-span",
+        ["row", "start", ..] => "row-start",
+        ["row", "end", ..] => "row-end",
         ["visible" | "invisible"] => "visibility",
         ["isolate" | "isolation-auto"] => "isolation",
         ["resize", ..] => "resize",
@@ -189,6 +215,10 @@ fn is_border_width(els: &[&str]) -> bool {
         _ => false,
     }
 }
+
+/// The v4 shadow preset names (`shadow-{2xs,xs,sm,md,lg,xl,2xl,inner,none}`)
+/// — any other value is a shadow COLOR.
+const SHADOW_PRESETS: &[&str] = &["2xs", "xs", "sm", "md", "lg", "xl", "2xl", "inner", "none"];
 
 /// Is this ring element an explicit width? `2` (ring-2), `3px` (ring-[3px]),
 /// bare `ring` (default width). Colors never parse as numbers and arbitrary
@@ -507,6 +537,69 @@ mod tests {
             cn(&["text-center", "text-primary"]),
             "text-center text-primary"
         );
+    }
+
+    /// The v4 default shadow scale keeps a preset and its color independent
+    /// (tw_merge 'shadow' vs 'shadow-color').
+    #[test]
+    fn shadow_preset_and_color_are_independent() {
+        assert_eq!(
+            cn(&["shadow-md", "shadow-destructive"]),
+            "shadow-md shadow-destructive"
+        );
+        // Presets still merge among themselves, colors among themselves.
+        assert_eq!(cn(&["shadow-sm", "shadow-lg"]), "shadow-lg");
+        assert_eq!(cn(&["shadow-red-500", "shadow-primary"]), "shadow-primary");
+        // `shadow-none` is a preset, not a color.
+        assert_eq!(cn(&["shadow-md", "shadow-none"]), "shadow-none");
+    }
+
+    /// Outline width / style / offset / color are four independent groups
+    /// (tw_merge); `outline-2` + `outline-primary` must compose.
+    #[test]
+    fn outline_families_merge_independently() {
+        assert_eq!(
+            cn(&["outline-2", "outline-primary"]),
+            "outline-2 outline-primary"
+        );
+        assert_eq!(cn(&["outline-2", "outline-4"]), "outline-4");
+        assert_eq!(cn(&["outline-dashed", "outline-solid"]), "outline-solid");
+        assert_eq!(
+            cn(&["outline-offset-2", "outline-offset-4"]),
+            "outline-offset-4"
+        );
+        assert_eq!(
+            cn(&["outline-2", "outline-primary", "outline-offset-2"]),
+            "outline-2 outline-primary outline-offset-2"
+        );
+        // `outline-none` is a width-class value, not a color.
+        assert_eq!(cn(&["outline-2", "outline-none"]), "outline-none");
+    }
+
+    /// Logical inset edges (`start-*`/`end-*`) are their own groups; the
+    /// parent `inset` group knocks them out (tw_merge 'start'/'end').
+    #[test]
+    fn logical_inset_edges_merge() {
+        assert_eq!(cn(&["start-0", "start-4"]), "start-4");
+        assert_eq!(cn(&["end-0", "end-4"]), "end-4");
+        assert_eq!(cn(&["start-2", "end-2"]), "start-2 end-2");
+        // A later inset shorthand knocks out an earlier start edge; a later
+        // start edge survives an earlier inset (last-wins per CSS cascade).
+        assert_eq!(cn(&["start-4", "inset-0"]), "inset-0");
+        assert_eq!(cn(&["inset-0", "start-4"]), "inset-0 start-4");
+    }
+
+    /// Grid line families are six independent groups (tw_merge): spans merge
+    /// among themselves, starts among themselves, never across.
+    #[test]
+    fn grid_line_families_merge_independently() {
+        assert_eq!(cn(&["col-span-2", "col-span-3"]), "col-span-3");
+        assert_eq!(cn(&["col-start-1", "col-start-2"]), "col-start-2");
+        assert_eq!(cn(&["col-span-2", "col-start-1"]), "col-span-2 col-start-1");
+        assert_eq!(cn(&["row-span-2", "row-span-3"]), "row-span-3");
+        assert_eq!(cn(&["row-span-2", "row-start-1"]), "row-span-2 row-start-1");
+        // col and row families never collide.
+        assert_eq!(cn(&["col-span-2", "row-span-2"]), "col-span-2 row-span-2");
     }
 
     #[test]
