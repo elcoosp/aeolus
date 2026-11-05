@@ -83,9 +83,12 @@ fn pt_auto(px: f32) -> LengthAuto {
 }
 
 /// Map a typed [`SizedValue`] through a setter that takes [`LengthAuto`].
+/// Values Floem cannot express (viewport units, `fit-content`) are recorded
+/// in `report` — the no-silent-failures rule applies to value SHAPES too.
 fn apply_dim(
     style: Style,
     v: Option<SizedValue>,
+    report: &mut LoweringReport,
     f: impl FnOnce(Style, LengthAuto) -> Style,
 ) -> Style {
     match v {
@@ -97,11 +100,19 @@ fn apply_dim(
         Some(SizedValue::Full) => f(style, LengthAuto::Pct(100.0)),
         Some(SizedValue::Viewport) => {
             // Viewport units are window-resolved; Floem has no vh unit —
-            // callers should pass the window size. Reported, not silent.
+            // callers should pass the window size.
+            report.drop(
+                "viewport size (w-screen/h-dvh/…)",
+                "Floem has no viewport units — resolve the window size at the call site",
+            );
             style
         }
-        // FitContent/Auto have no Floem equivalent beyond the default Auto.
-        Some(SizedValue::FitContent) | Some(SizedValue::Auto) | None => style,
+        Some(SizedValue::FitContent) => {
+            report.drop("fit-content", "Floem has no fit-content sizing");
+            style
+        }
+        // Auto IS Floem's default — a true no-op.
+        Some(SizedValue::Auto) | None => style,
     }
 }
 
@@ -221,16 +232,16 @@ pub fn apply_resolved(mut style: Style, s: &ResolvedStyle, report: &mut Lowering
             .border_bottom_left_radius(pt(cr.bottom_left));
     }
     if let Some(d) = &s.dimensions {
-        style = apply_dim(style, d.width, |s, v| s.width(v));
-        style = apply_dim(style, d.height, |s, v| s.height(v));
+        style = apply_dim(style, d.width, report, |s, v| s.width(v));
+        style = apply_dim(style, d.height, report, |s, v| s.height(v));
     }
     if let Some(d) = &s.min_dimensions {
-        style = apply_dim(style, d.width, |s, v| s.min_width(v));
-        style = apply_dim(style, d.height, |s, v| s.min_height(v));
+        style = apply_dim(style, d.width, report, |s, v| s.min_width(v));
+        style = apply_dim(style, d.height, report, |s, v| s.min_height(v));
     }
     if let Some(d) = &s.max_dimensions {
-        style = apply_dim(style, d.width, |s, v| s.max_width(v));
-        style = apply_dim(style, d.height, |s, v| s.max_height(v));
+        style = apply_dim(style, d.width, report, |s, v| s.max_width(v));
+        style = apply_dim(style, d.height, report, |s, v| s.max_height(v));
     }
     if let Some(g) = &s.gap {
         style = style.gap(pt(g.0));
@@ -324,10 +335,10 @@ pub fn apply_resolved(mut style: Style, s: &ResolvedStyle, report: &mut Lowering
         }
     }
     if let Some(i) = &e.inset {
-        style = apply_dim(style, i.top, |s, v| s.inset_top(v));
-        style = apply_dim(style, i.bottom, |s, v| s.inset_bottom(v));
-        style = apply_dim(style, i.left, |s, v| s.inset_left(v));
-        style = apply_dim(style, i.right, |s, v| s.inset_right(v));
+        style = apply_dim(style, i.top, report, |s, v| s.inset_top(v));
+        style = apply_dim(style, i.bottom, report, |s, v| s.inset_bottom(v));
+        style = apply_dim(style, i.left, report, |s, v| s.inset_left(v));
+        style = apply_dim(style, i.right, report, |s, v| s.inset_right(v));
     }
     if let Some(z) = e.z_index {
         style = style.z_index(z);
@@ -954,7 +965,19 @@ pub fn slot_coverage(s: &ResolvedStyle) -> Vec<(Slot, Coverage)> {
         push(S::PointerEvents, Coverage::Native);
     }
     for (p, _) in &s.text {
-        push(S::Text(*p), Coverage::Native);
+        // Match the actual `lower_text` mapping: the typography props with a
+        // native Floem setter, everything else reported.
+        let cov = match p {
+            TextProperty::FontSize
+            | TextProperty::Color
+            | TextProperty::FontWeight
+            | TextProperty::FontStyle
+            | TextProperty::LineHeight
+            | TextProperty::TextAlign
+            | TextProperty::TextOverflow => Coverage::Native,
+            _ => Coverage::Reported,
+        };
+        push(S::Text(*p), cov);
     }
     let e = &s.extras;
     if e.position.is_some() {
