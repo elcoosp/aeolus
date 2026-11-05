@@ -1,12 +1,29 @@
 //! Resolve parsed class tokens into a [`StylePlan`] against a [`TailwindTheme`].
 //!
-//! The utility table covers the Shadcn v4 utility set (the v1 scope locked in
-//! the mission brief). Utilities outside it produce typed **warnings**, never
-//! silent mis-styling (transitions/animations are recognized-and-dropped;
-//! unknown tokens get a "did you mean" suggestion).
+//! v0.2 routing (plan §2.1): a token whose variant stack is exactly one
+//! classic variant (`hover`, `md`, `dark`, `group-hover`, …) keeps going to
+//! the v0.1 bucket, which backends lower natively. **Everything else goes to
+//! `rules`**, evaluated by the [`crate::eval::Probe`] parity engine —
+//! nothing is dropped, and nothing is collapsed into the wrong bucket
+//! (fixes F3/F4: `dark:hover:*` and `md:hover:*` no longer lose the `dark`/
+//! breakpoint half).
+//!
+//! The utility table covers the Shadcn v4 utility set plus the v0.2
+//! expansion (plan §3.2): sizing/spacing (`mx-auto`, `gap-x/y`, container
+//! scale, viewport sizes), layout (`basis`, `order`, `grid-*`, `aspect-*`),
+//! position (`absolute`, `inset-*`, `z-*`, `overflow-*`), typography
+//! (`italic`, `uppercase`, `truncate`, `line-clamp`, `font-sans`), effects
+//! (`transition-*`, `animate-*`, `scale/rotate/translate/skew`, shadow
+//! colors, inset shadows, border styles), interaction (`cursor-*` full set,
+//! `select-*`). Utilities outside it produce typed **warnings**, never
+//! silent mis-styling.
 
-use crate::ast::{Breakpoint, ClassToken, NamedVariant, ParentKind, Variant};
+use crate::ast::{
+    ArbForm, Arbitrary, AttrKind, Breakpoint, ClassToken, Media, NamedVariant, ParentKind, State,
+    Variant,
+};
 use crate::color::Color;
+use crate::cond::{Atom, Cond, Rule};
 use crate::parser::parse_class_string;
 use crate::plan::*;
 use crate::theme::TailwindTheme;
@@ -15,7 +32,7 @@ use std::collections::BTreeMap;
 /// A non-fatal resolution outcome for one class.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Warning {
-    /// Recognized but not expressible in v1 (transitions, positioning, ...).
+    /// Recognized but not expressible natively (pseudo-elements, filters, ...).
     Unsupported {
         /// The raw class that triggered the warning.
         class: String,
@@ -36,12 +53,12 @@ pub enum Warning {
         /// The token name that was not found.
         token: String,
     },
-    /// The class failed the v1 grammar (unknown variant, malformed value).
-    /// The rest of the string is unaffected; the class is skipped.
+    /// The class failed the grammar (malformed value). The rest of the
+    /// string is unaffected; the class is skipped.
     Unparseable {
         /// The raw class that failed to parse.
         class: String,
-        /// The parser's error message.
+        /// The parser's message.
         message: String,
     },
 }
@@ -59,6 +76,28 @@ pub struct Resolution {
 pub struct Resolver<'t> {
     /// The theme tokens utilities resolve against.
     pub theme: &'t TailwindTheme,
+}
+
+/// Where a token's utility lands (plan §2.1 `Route`).
+#[derive(Clone, Debug)]
+enum Route {
+    /// No variants — the base style.
+    Base,
+    /// Exactly one classic state variant — the v0.1 layer bucket.
+    Layer(VariantCondition),
+    /// Exactly one default breakpoint variant — the v0.1 responsive bucket.
+    Responsive(Breakpoint),
+    /// Exactly `dark:` — the v0.1 dark bucket.
+    Dark,
+    /// Exactly one `group-<state>` — the v0.1 group bucket (legacy label
+    /// `{label}{state}`, e.g. `hover`, `menufocus`).
+    Group(String),
+    /// Exactly one `peer-<state>` — the v0.1 peer bucket.
+    Peer(String),
+    /// Anything else — the v0.2 rules with the full atom conjunction.
+    Rules(Cond),
+    /// Not expressible at all — a precise `Unsupported` warning.
+    Skip(Warning),
 }
 
 /// A single utility's effect on a bucket.
@@ -93,6 +132,50 @@ enum Applied {
     Text(TextProperty, TextValue),
     /// font-size + paired line-height (`text-sm` sets both)
     Texts(Vec<(TextProperty, TextValue)>),
+    // ---- v0.2 extras -------------------------------------------------------
+    Position(Position),
+    Inset {
+        top: Option<SizedValue>,
+        right: Option<SizedValue>,
+        bottom: Option<SizedValue>,
+        left: Option<SizedValue>,
+    },
+    ZIndex(i32),
+    Overflow(Overflow),
+    Visibility(Visibility),
+    AspectRatio(f32),
+    Grid(Grid),
+    Transform {
+        scale_x: Option<f32>,
+        scale_y: Option<f32>,
+        rotate_deg: Option<f32>,
+        translate_x: Option<SizedValue>,
+        translate_y: Option<SizedValue>,
+        skew_x: Option<f32>,
+        skew_y: Option<f32>,
+    },
+    Transition {
+        set: Option<TransitionSet>,
+        duration_ms: Option<f32>,
+        ease: Option<Ease>,
+        delay_ms: Option<f32>,
+    },
+    Animation(Animation),
+    BorderStyle(BorderStyle),
+    FlexBasis(SizedValue),
+    Order(i16),
+    AlignContent(ContentAlign),
+    MarginAuto(AutoEdges),
+    GapAxes(GapAxes),
+    /// `shadow-{color}` — recolors the shadow preset in the same bucket.
+    ShadowColor(Color),
+    /// A multi-layer `shadow-*` preset: the dominant first layer plus the
+    /// remaining layers (v0.2, plan §3.3).
+    ShadowPreset {
+        first: BoxShadow,
+        rest: Vec<BoxShadow>,
+    },
+    InsetShadows(Vec<BoxShadow>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -126,8 +209,12 @@ impl<'t> Resolver<'t> {
     }
 
     /// Parse + resolve a class string into a plan.
+    ///
+    /// `@utility name { @apply … }` expansions are inlined first
+    /// (depth-limited to 4; plan §3.3).
     pub fn resolve(&self, classes: &str) -> Result<Resolution, Vec<crate::color::ParseError>> {
-        let (tokens, unparseable) = parse_class_string(classes);
+        let expanded = self.expand_utilities(classes, 0);
+        let (tokens, unparseable) = parse_class_string(&expanded);
         let mut resolution = self.resolve_tokens(tokens);
         // Unknown SYNTAX is a warning, not a failure: shadcn v4 strings
         // legitimately contain variants we do not model (has-*, data-*,
@@ -142,6 +229,52 @@ impl<'t> Resolver<'t> {
         Ok(resolution)
     }
 
+    /// Inline `@utility` expansions at the class-string level (plan §3.3):
+    /// each token whose utility body matches a registered `@utility` is
+    /// replaced by `variants:@apply-classes`, depth-limited to 4.
+    fn expand_utilities(&self, classes: &str, depth: u8) -> String {
+        if depth > 4 {
+            return classes.to_string();
+        }
+        // Fast path: stock themes declare no @utility rules — return the
+        // input untouched (no per-word re-parse on the hot path).
+        if !self.theme.has_custom_utilities() {
+            return classes.to_string();
+        }
+        let mut out = String::with_capacity(classes.len());
+        let mut changed = false;
+        for (i, word) in classes.split_ascii_whitespace().enumerate() {
+            if i > 0 {
+                out.push(' ');
+            }
+            let replaced = parse_class_string(word).0.into_iter().next().and_then(|t| {
+                self.theme
+                    .custom_utility(t.body)
+                    .filter(|u| !u.classes.is_empty())
+                    .map(|u| {
+                        let prefix = t.variant_prefix();
+                        if prefix.is_empty() {
+                            u.classes.clone()
+                        } else {
+                            format!("{prefix}:{}", u.classes)
+                        }
+                    })
+            });
+            match replaced {
+                Some(exp) => {
+                    changed = true;
+                    out.push_str(&self.expand_utilities(&exp, depth + 1));
+                }
+                None => out.push_str(word),
+            }
+        }
+        if changed {
+            self.expand_utilities(&out, depth + 1)
+        } else {
+            out
+        }
+    }
+
     /// Resolve pre-parsed tokens (used by the cache and by tests).
     pub fn resolve_tokens<'a>(&self, tokens: Vec<ClassToken<'a>>) -> Resolution {
         let mut warnings = Vec::new();
@@ -152,140 +285,75 @@ impl<'t> Resolver<'t> {
         let mut dark = Bucket::default();
         let mut group: Vec<(String, Bucket)> = Vec::new();
         let mut peer: Vec<(String, Bucket)> = Vec::new();
+        let mut rules: Vec<Rule> = Vec::new();
 
         for token in tokens {
-            let class = token.raw.to_string();
-            // Classify the variant stack.
-            let mut state: Option<VariantCondition> = None;
-            let mut target: Target;
-            target = Target::Base;
-            let mut compound_unsupported = false;
-            let mut breakpoint = None;
-            let mut group_label: Option<String> = None;
-            let mut peer_label: Option<String> = None;
-            let mut n_states = 0;
-
-            for variant in &token.variants {
-                match variant {
-                    Variant::Named(NamedVariant::Hover)
-                    | Variant::Named(NamedVariant::Focus)
-                    | Variant::Named(NamedVariant::FocusVisible)
-                    | Variant::Named(NamedVariant::FocusWithin)
-                    | Variant::Named(NamedVariant::Active)
-                    | Variant::Named(NamedVariant::Disabled)
-                    | Variant::Named(NamedVariant::Visited) => {
-                        n_states += 1;
-                        state = Some(condition_of(variant));
-                        target = Target::Layer;
-                    }
-                    Variant::Named(NamedVariant::Breakpoint(b)) => {
-                        if target != Target::Base {
-                            compound_unsupported = true;
-                        }
-                        breakpoint = Some(*b);
-                        target = Target::Responsive;
-                    }
-                    Variant::Named(NamedVariant::Container(b)) => {
-                        if target != Target::Base {
-                            compound_unsupported = true;
-                        }
-                        breakpoint = Some(*b);
-                        target = Target::Container;
-                    }
-                    Variant::Named(NamedVariant::Dark) => {
-                        if target != Target::Base {
-                            compound_unsupported = true;
-                        }
-                        target = Target::Dark;
-                    }
-                    Variant::Grouped {
-                        parent: ParentKind::Group,
-                        name,
-                        label,
-                    } => {
-                        if target != Target::Base || n_states > 0 {
-                            compound_unsupported = true;
-                        }
-                        group_label = Some(format!("{}{}", label.unwrap_or(""), name_of(name)));
-                        target = Target::Group;
-                    }
-                    Variant::Grouped {
-                        parent: ParentKind::Peer,
-                        name,
-                        label,
-                    } => {
-                        if target != Target::Base || n_states > 0 {
-                            compound_unsupported = true;
-                        }
-                        peer_label = Some(format!("{}{}", label.unwrap_or(""), name_of(name)));
-                        target = Target::Peer;
-                    }
-                    Variant::Arbitrary(_) => {
-                        warnings.push(Warning::Unsupported {
-                            class: class.clone(),
-                            reason: "arbitrary/structural variants ([&..], data-*, aria-*) are not modeled in v1",
+            let route = self.route(&token);
+            match route {
+                Route::Skip(w) => warnings.push(w),
+                Route::Rules(cond) => match self.apply_utility(&token) {
+                    Ok(applied) => {
+                        let mut b = Bucket::default();
+                        b.applied.push(applied);
+                        rules.push(Rule {
+                            when: cond,
+                            style: self.finalize(&b),
                         });
-                        target = Target::Skip;
-                        break;
+                    }
+                    Err(w) => warnings.push(w),
+                },
+                Route::Base => {
+                    if let Some(applied) = self.applied_of(&token, &mut warnings) {
+                        base.applied.push(applied);
                     }
                 }
-            }
-
-            if compound_unsupported || n_states > 1 {
-                warnings.push(Warning::Unsupported {
-                    class: class.clone(),
-                    reason: "compound variant chains (e.g. dark:hover:*, group-hover:focus:*) need nested conditions; not in the v1 IR",
-                });
-                continue;
-            }
-
-            match self.apply_utility(&token) {
-                Ok(applied) => {
-                    let bucket: &mut Bucket = match (target, state) {
-                        (Target::Base, _) => &mut base,
-                        (Target::Layer, None) => unreachable!("Layer target always sets state"),
-                        (Target::Layer, Some(c)) => {
-                            let idx = layers.iter().position(|(k, _)| *k == c);
-                            let idx = idx.unwrap_or_else(|| {
-                                layers.push((c, Bucket::default()));
-                                layers.len() - 1
-                            });
-                            &mut layers[idx].1
-                        }
-                        (Target::Responsive, Some(_)) | (Target::Responsive, None) => {
-                            let b = breakpoint.expect("responsive sets breakpoint");
-                            responsive.entry(b).or_default()
-                        }
-                        (Target::Container, _) => {
-                            let b = breakpoint.expect("container sets breakpoint");
-                            container.entry(b).or_default()
-                        }
-                        (Target::Dark, _) => &mut dark,
-                        (Target::Group, _) => {
-                            let label = group_label.clone().unwrap_or_default();
-                            let idx = group.iter().position(|(l, _)| *l == label);
-                            let idx = idx.unwrap_or_else(|| {
-                                group.push((label, Bucket::default()));
-                                group.len() - 1
-                            });
-                            &mut group[idx].1
-                        }
-                        (Target::Peer, _) => {
-                            let label = peer_label.clone().unwrap_or_default();
-                            let idx = peer.iter().position(|(l, _)| *l == label);
-                            let idx = idx.unwrap_or_else(|| {
-                                peer.push((label, Bucket::default()));
-                                peer.len() - 1
-                            });
-                            &mut peer[idx].1
-                        }
-                        (Target::Skip, _) => continue,
-                    };
-                    bucket.applied.push(applied);
+                Route::Layer(cond) => {
+                    let idx = layers.iter().position(|(k, _)| *k == cond);
+                    let idx = idx.unwrap_or_else(|| {
+                        layers.push((cond, Bucket::default()));
+                        layers.len() - 1
+                    });
+                    if let Some(applied) = self.applied_of(&token, &mut warnings) {
+                        layers[idx].1.applied.push(applied);
+                    }
                 }
-                Err(w) => warnings.push(w),
+                Route::Responsive(bp) => {
+                    if let Some(applied) = self.applied_of(&token, &mut warnings) {
+                        responsive.entry(bp).or_default().applied.push(applied);
+                    }
+                }
+                Route::Dark => {
+                    if let Some(applied) = self.applied_of(&token, &mut warnings) {
+                        dark.applied.push(applied);
+                    }
+                }
+                Route::Group(label) => {
+                    let idx = group.iter().position(|(l, _)| *l == label);
+                    let idx = idx.unwrap_or_else(|| {
+                        group.push((label, Bucket::default()));
+                        group.len() - 1
+                    });
+                    if let Some(applied) = self.applied_of(&token, &mut warnings) {
+                        group[idx].1.applied.push(applied);
+                    }
+                }
+                Route::Peer(label) => {
+                    let idx = peer.iter().position(|(l, _)| *l == label);
+                    let idx = idx.unwrap_or_else(|| {
+                        peer.push((label, Bucket::default()));
+                        peer.len() - 1
+                    });
+                    if let Some(applied) = self.applied_of(&token, &mut warnings) {
+                        peer[idx].1.applied.push(applied);
+                    }
+                }
             }
         }
+
+        // Legacy @container bucket (v0.1 compat): a single @md variant used
+        // to land here; v0.2 routes container queries into `rules`. The
+        // bucket stays for backends compiled against v0.1.
+        let _ = &mut container;
 
         let plan = StylePlan {
             base: self.finalize(&base),
@@ -307,17 +375,341 @@ impl<'t> Resolver<'t> {
             dark: (!dark.applied.is_empty()).then(|| self.finalize(&dark)),
             group: group
                 .into_iter()
+                .filter(|(_, b)| !b.applied.is_empty())
                 .map(|(l, v)| (l.into_boxed_str(), self.finalize(&v)))
                 .collect(),
             peer: peer
                 .into_iter()
+                .filter(|(_, b)| !b.applied.is_empty())
                 .map(|(l, v)| (l.into_boxed_str(), self.finalize(&v)))
                 .collect(),
+            rules,
+            breakpoints: self.theme.breakpoints_px(),
         };
 
         Resolution { plan, warnings }
     }
 
+    /// Apply one token, reporting any warning; `None` = the class warned.
+    fn applied_of(&self, token: &ClassToken<'_>, warnings: &mut Vec<Warning>) -> Option<Applied> {
+        match self.apply_utility(token) {
+            Ok(applied) => Some(applied),
+            Err(w) => {
+                warnings.push(w);
+                None
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // routing: the WHOLE variant stack decides where the utility lands
+    // ------------------------------------------------------------------
+    fn route(&self, t: &ClassToken<'_>) -> Route {
+        let class = t.raw.to_string();
+        let mut atoms = Vec::new();
+        for v in t.variants.iter() {
+            match self.atom_of(v) {
+                Ok(a) => atoms.push(a),
+                Err(reason) => {
+                    return Route::Skip(Warning::Unsupported { class, reason });
+                }
+            }
+        }
+        match atoms.as_slice() {
+            [] => Route::Base,
+            [Atom::On(crate::cond::Test::State(s))] => match s.classic() {
+                Some(c) => Route::Layer(c),
+                None => Route::Rules(Cond(atoms)),
+            },
+            [Atom::Group(crate::cond::Test::State(s), l)] if s.classic().is_some() => Route::Group(
+                format!("{}{}", l.as_deref().unwrap_or(""), state_suffix(*s)),
+            ),
+            [Atom::Peer(crate::cond::Test::State(s), l)] if s.classic().is_some() => Route::Peer(
+                format!("{}{}", l.as_deref().unwrap_or(""), state_suffix(*s)),
+            ),
+            [Atom::Media(Media::Dark)] => Route::Dark,
+            [
+                Atom::Viewport {
+                    min: Some(px),
+                    max: None,
+                },
+            ] => match self.default_bp(*px) {
+                Some(bp) => Route::Responsive(bp),
+                None => Route::Rules(Cond(atoms)),
+            },
+            _ => Route::Rules(Cond(atoms)),
+        }
+    }
+
+    /// The default breakpoint whose theme px equals `px`, if any.
+    fn default_bp(&self, px: f32) -> Option<Breakpoint> {
+        const ALL: [Breakpoint; 5] = [
+            Breakpoint::Sm,
+            Breakpoint::Md,
+            Breakpoint::Lg,
+            Breakpoint::Xl,
+            Breakpoint::Xxl,
+        ];
+        ALL.into_iter().find(|b| self.theme.breakpoint_px(*b) == px)
+    }
+
+    /// Map one syntactic variant to a semantic [`Atom`] (theme-aware:
+    /// `md` → 768px from `--breakpoint-*`, `@md` → 384px from
+    /// `--container-*`, `dark` → `Media::Dark` incl. `@custom-variant`
+    /// registrations; plan §2.1).
+    fn atom_of(&self, v: &Variant<'_>) -> Result<Atom, &'static str> {
+        Ok(match v {
+            Variant::Named(n) => self.named_atom(n)?,
+            Variant::Grouped {
+                parent,
+                inner,
+                label,
+            } => {
+                let test = self.variant_test(inner)?;
+                let label = label.map(|l| l.into());
+                match parent {
+                    ParentKind::Group => Atom::Group(test, label),
+                    ParentKind::Peer => Atom::Peer(test, label),
+                }
+            }
+            Variant::Not(inner) => Atom::Not(self.variant_test(inner)?),
+            Variant::Has(inner) => return self.has_atom(inner),
+            Variant::Attr { kind, name, value } => {
+                let boxed = |s: &str| s.into();
+                match kind {
+                    AttrKind::Data => {
+                        Atom::On(crate::cond::Test::Data(boxed(name), value.map(boxed)))
+                    }
+                    AttrKind::Aria => {
+                        Atom::On(crate::cond::Test::Aria(boxed(name), value.map(boxed)))
+                    }
+                }
+            }
+            Variant::Structural(s) => Atom::On(crate::cond::Test::Structural(*s)),
+            Variant::PseudoElement(p) => {
+                return Err(match *p {
+                    "::before" => {
+                        "pseudo-element ::before has no native equivalent in Rust UI toolkits — reported, never silent (plan §7)"
+                    }
+                    "::after" => {
+                        "pseudo-element ::after has no native equivalent in Rust UI toolkits — reported, never silent (plan §7)"
+                    }
+                    _ => {
+                        "pseudo-elements have no native equivalent in Rust UI toolkits — reported, never silent (plan §7)"
+                    }
+                });
+            }
+            Variant::Arbitrary(_) => {
+                return Err(
+                    "arbitrary/structural selectors ([&…], *, supports-…) have no native equivalent — reported, never silent (plan §7)",
+                );
+            }
+        })
+    }
+
+    fn named_atom(&self, n: &NamedVariant<'_>) -> Result<Atom, &'static str> {
+        Ok(match n {
+            NamedVariant::Custom(name) => return self.custom_atom(name),
+            _ if n.state().is_some() => Atom::On(crate::cond::Test::State(n.state().unwrap())),
+            _ if n.media().is_some() => Atom::Media(n.media().unwrap()),
+            NamedVariant::Breakpoint(b) => Atom::Viewport {
+                min: Some(self.theme.breakpoint_px(*b)),
+                max: None,
+            },
+            NamedVariant::Min(b) => Atom::Viewport {
+                min: Some(self.theme.breakpoint_px(*b)),
+                max: None,
+            },
+            NamedVariant::Max(b) => Atom::Viewport {
+                min: None,
+                max: Some(self.theme.breakpoint_px(*b)),
+            },
+            NamedVariant::Container(b) => Atom::Container {
+                min: Some(self.theme.container_breakpoint_px(*b)),
+                max: None,
+                name: None,
+            },
+            NamedVariant::MaxContainer(b) => Atom::Container {
+                min: None,
+                max: Some(self.theme.container_breakpoint_px(*b)),
+                name: None,
+            },
+            _ => unreachable!("named variant without state/media/breakpoint meaning"),
+        })
+    }
+
+    /// Resolve `Custom` variant names against the theme: `@custom-variant`
+    /// registrations first, then custom `--breakpoint-*` / `--container-*`
+    /// sizes and the `@min-[400px]` / `@md/name` forms.
+    fn custom_atom(&self, name: &str) -> Result<Atom, &'static str> {
+        if let Some(m) = self.theme.custom_variant(name) {
+            return match m {
+                crate::theme::CustomVariant::Dark => Ok(Atom::Media(Media::Dark)),
+                crate::theme::CustomVariant::Unsupported(sel) => Err(
+                    "custom variant resolves to a CSS selector with no typed equivalent — reported, never silent",
+                )
+                .map_err(|_| {
+                    let _ = sel;
+                    "custom variant resolves to a CSS selector with no typed equivalent — reported, never silent"
+                }),
+            };
+        }
+        if let Some(rest) = name.strip_prefix('@') {
+            // @min-[400px] / @max-[600px] / @4xl / @max-4xl / @md/name
+            let (dir, rest) = if let Some(r) = rest.strip_prefix("min-") {
+                ("min", r)
+            } else if let Some(r) = rest.strip_prefix("max-") {
+                ("max", r)
+            } else {
+                ("min", rest)
+            };
+            // Named container: @md/name
+            let (size, named) = match rest.split_once('/') {
+                Some((s, n)) => (s, Some(n)),
+                None => (rest, None),
+            };
+            let px = if let Some(inner) = size.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+                crate::theme::parse_length(inner)
+                    .ok()
+                    .or_else(|| self.resolve_var_px(inner))
+            } else {
+                self.theme.container_px(size)
+            };
+            let named = named.map(|n| n.into());
+            return match (px, dir) {
+                (Some(px), "min") => Ok(Atom::Container {
+                    min: Some(px),
+                    max: None,
+                    name: named,
+                }),
+                (Some(px), "max") => Ok(Atom::Container {
+                    min: None,
+                    max: Some(px),
+                    name: named,
+                }),
+                _ => Err("unknown @container variant (no --container-* token)"),
+            };
+        }
+        // Custom viewport breakpoints (`--breakpoint-3xl: 120rem`).
+        if let Some(px) = self.theme.length(&format!("breakpoint-{name}")) {
+            return Ok(Atom::Viewport {
+                min: Some(px),
+                max: None,
+            });
+        }
+        Err(
+            "unknown variant name (not a v4 variant, --breakpoint-*, --container-* or @custom-variant)",
+        )
+    }
+
+    /// `has-checked` → descendant state; selector forms are reported.
+    fn has_atom(&self, inner: &str) -> Result<Atom, &'static str> {
+        if let Some(st) = state_name(inner) {
+            return Ok(Atom::Has(st));
+        }
+        if inner.starts_with('[') || inner.starts_with(':') || inner.starts_with('(') {
+            return Err(
+                "has-[selector] has no typed equivalent in the Probe model — reported, never silent (plan §7)",
+            );
+        }
+        Err("unknown has-<state> variant")
+    }
+
+    /// The probe-testable `Test` of a simple variant (for `not-*` and
+    /// `group-*`/`peer-*` inners).
+    fn variant_test(&self, v: &Variant<'_>) -> Result<crate::cond::Test, &'static str> {
+        Ok(match v {
+            Variant::Named(n) => {
+                if let Some(s) = n.state() {
+                    crate::cond::Test::State(s)
+                } else {
+                    return Err(
+                        "not-*/group-* over media/breakpoint variants have no typed equivalent",
+                    );
+                }
+            }
+            Variant::Attr { kind, name, value } => {
+                let boxed = |s: &str| s.into();
+                match kind {
+                    AttrKind::Data => crate::cond::Test::Data(boxed(name), value.map(boxed)),
+                    AttrKind::Aria => crate::cond::Test::Aria(boxed(name), value.map(boxed)),
+                }
+            }
+            Variant::Structural(s) => crate::cond::Test::Structural(*s),
+            _ => {
+                return Err("nested selector variants have no typed equivalent");
+            }
+        })
+    }
+
+    /// Resolve `var(--x)` / `(--x)` to a px length via the theme.
+    fn resolve_var_px(&self, name: &str) -> Option<f32> {
+        let clean = name
+            .strip_prefix("var(")
+            .and_then(|r| r.strip_suffix(')'))?;
+        self.theme.length(clean.trim())
+    }
+}
+
+/// The canonical state suffix of a legacy group/peer label (`hover`,
+/// `menufocus` → "focus").
+fn state_suffix(s: State) -> &'static str {
+    match s {
+        State::Hover => "hover",
+        State::Focus => "focus",
+        State::FocusVisible => "focus-visible",
+        State::FocusWithin => "focus-within",
+        State::Active => "active",
+        State::Disabled => "disabled",
+        State::Visited => "visited",
+        State::Target => "target",
+        State::Enabled => "enabled",
+        State::Checked => "checked",
+        State::Indeterminate => "indeterminate",
+        State::Required => "required",
+        State::Optional => "optional",
+        State::Valid => "valid",
+        State::Invalid => "invalid",
+        State::UserValid => "user-valid",
+        State::UserInvalid => "user-invalid",
+        State::PlaceholderShown => "placeholder-shown",
+        State::Autofill => "autofill",
+        State::ReadOnly => "read-only",
+        State::InRange => "in-range",
+        State::OutOfRange => "out-of-range",
+    }
+}
+
+/// A bare state name → `State` (for `has-*` inners).
+fn state_name(name: &str) -> Option<State> {
+    Some(match name {
+        "hover" => State::Hover,
+        "focus" => State::Focus,
+        "focus-visible" => State::FocusVisible,
+        "focus-within" => State::FocusWithin,
+        "active" => State::Active,
+        "disabled" => State::Disabled,
+        "visited" => State::Visited,
+        "target" => State::Target,
+        "enabled" => State::Enabled,
+        "checked" => State::Checked,
+        "indeterminate" => State::Indeterminate,
+        "required" => State::Required,
+        "optional" => State::Optional,
+        "valid" => State::Valid,
+        "invalid" => State::Invalid,
+        "user-valid" => State::UserValid,
+        "user-invalid" => State::UserInvalid,
+        "placeholder-shown" => State::PlaceholderShown,
+        "autofill" => State::Autofill,
+        "read-only" => State::ReadOnly,
+        "in-range" => State::InRange,
+        "out-of-range" => State::OutOfRange,
+        _ => return None,
+    })
+}
+
+impl<'t> Resolver<'t> {
     // ------------------------------------------------------------------
     // finalize: applied list -> ResolvedStyle (later entries win per slot)
     // ------------------------------------------------------------------
@@ -473,6 +865,144 @@ impl<'t> Resolver<'t> {
             style.layout = Some(layout);
         }
 
+        // Transition accumulates its four sub-fields (transition-* +
+        // duration-* + ease-* + delay-* land in one slot).
+        let mut trans_set: Option<TransitionSet> = None;
+        let mut trans_dur: Option<f32> = None;
+        let mut trans_ease: Option<Ease> = None;
+        let mut trans_delay: Option<f32> = None;
+        let mut transform = Transform::default();
+        let mut transform_set = false;
+        let mut grid = Grid::default();
+        let mut grid_set = false;
+        let mut inset_acc = Inset::default();
+        let mut inset_set = false;
+        let mut gap_axes = GapAxes::default();
+        let mut gap_axes_set = false;
+
+        for a in &bucket.applied {
+            match a {
+                Applied::Transition {
+                    set,
+                    duration_ms,
+                    ease,
+                    delay_ms,
+                } => {
+                    trans_set = set.or(trans_set);
+                    trans_dur = duration_ms.or(trans_dur);
+                    trans_ease = ease.or(trans_ease);
+                    trans_delay = delay_ms.or(trans_delay);
+                }
+                Applied::Transform {
+                    scale_x,
+                    scale_y,
+                    rotate_deg,
+                    translate_x,
+                    translate_y,
+                    skew_x,
+                    skew_y,
+                } => {
+                    if scale_x.is_some() {
+                        transform.scale_x = *scale_x;
+                    }
+                    if scale_y.is_some() {
+                        transform.scale_y = *scale_y;
+                    }
+                    if rotate_deg.is_some() {
+                        transform.rotate_deg = *rotate_deg;
+                    }
+                    if translate_x.is_some() {
+                        transform.translate_x = *translate_x;
+                    }
+                    if translate_y.is_some() {
+                        transform.translate_y = *translate_y;
+                    }
+                    if skew_x.is_some() {
+                        transform.skew_x = *skew_x;
+                    }
+                    if skew_y.is_some() {
+                        transform.skew_y = *skew_y;
+                    }
+                    transform_set = true;
+                }
+                Applied::Grid(g) => {
+                    if g.cols.is_some() {
+                        grid.cols = g.cols;
+                    }
+                    if g.rows.is_some() {
+                        grid.rows = g.rows;
+                    }
+                    if g.col_span.is_some() {
+                        grid.col_span = g.col_span;
+                    }
+                    if g.row_span.is_some() {
+                        grid.row_span = g.row_span;
+                    }
+                    if g.col_start.is_some() {
+                        grid.col_start = g.col_start;
+                    }
+                    if g.row_start.is_some() {
+                        grid.row_start = g.row_start;
+                    }
+                    grid_set = true;
+                }
+                Applied::Inset {
+                    top,
+                    right,
+                    bottom,
+                    left,
+                } => {
+                    if top.is_some() {
+                        inset_acc.top = *top;
+                    }
+                    if right.is_some() {
+                        inset_acc.right = *right;
+                    }
+                    if bottom.is_some() {
+                        inset_acc.bottom = *bottom;
+                    }
+                    if left.is_some() {
+                        inset_acc.left = *left;
+                    }
+                    inset_set = true;
+                }
+                Applied::GapAxes(g) => {
+                    if g.col.is_some() {
+                        gap_axes.col = g.col;
+                    }
+                    if g.row.is_some() {
+                        gap_axes.row = g.row;
+                    }
+                    gap_axes_set = true;
+                }
+                _ => {}
+            }
+        }
+        if trans_set.is_some()
+            || trans_dur.is_some()
+            || trans_ease.is_some()
+            || trans_delay.is_some()
+        {
+            style.extras.transition = Some(Transition {
+                set: trans_set.unwrap_or(TransitionSet::Default),
+                duration_ms: trans_dur.unwrap_or_else(|| self.theme.default_transition_ms()),
+                ease: trans_ease,
+                delay_ms: trans_delay.unwrap_or(0.0),
+            });
+        }
+        if transform_set {
+            style.extras.transform = Some(transform);
+        }
+        if grid_set {
+            style.extras.grid = Some(grid);
+        }
+        if inset_set {
+            style.extras.inset = Some(inset_acc);
+        }
+        if gap_axes_set {
+            style.extras.gap_axes = Some(gap_axes);
+        }
+
         for a in &bucket.applied {
             if let Applied::Replace(slot, val) = a {
                 // Layout/Dimensions/Min/Max were already accumulated above.
@@ -490,16 +1020,8 @@ impl<'t> Resolver<'t> {
                     (Slot::BorderColor, PartialValue::BorderColor(v)) => {
                         style.border_color = Some(*v)
                     }
-                    (Slot::Dimensions, PartialValue::Dimensions(v)) => style.dimensions = Some(*v),
-                    (Slot::MinDimensions, PartialValue::MinDimensions(v)) => {
-                        style.min_dimensions = Some(*v)
-                    }
-                    (Slot::MaxDimensions, PartialValue::MaxDimensions(v)) => {
-                        style.max_dimensions = Some(*v)
-                    }
                     (Slot::Gap, PartialValue::Gap(v)) => style.gap = Some(*v),
                     (Slot::Shadow, PartialValue::Shadow(v)) => style.shadow = Some(v.clone()),
-                    (Slot::Layout, PartialValue::Layout(v)) => style.layout = Some(*v),
                     (Slot::Opacity, PartialValue::Opacity(v)) => style.opacity = Some(*v),
                     (Slot::Ring(_), PartialValue::Ring(v)) => merge_ring(&mut style, v),
                     (Slot::Outline, PartialValue::Outline(v)) => merge_outline(&mut style, v),
@@ -525,9 +1047,48 @@ impl<'t> Resolver<'t> {
                 }
             }
         }
+
+        // Shadow color patches the preset's layers (shadow-{color}).
+        for a in &bucket.applied {
+            if let Applied::ShadowColor(c) = a {
+                if let Some(sh) = style.shadow.as_mut() {
+                    sh.color = *c;
+                }
+                for layer in style.extras.shadow_rest.iter_mut() {
+                    layer.color = *c;
+                }
+            }
+        }
+
+        // v0.2 scalar extras (last wins).
+        for a in &bucket.applied {
+            match a {
+                Applied::Position(p) => style.extras.position = Some(*p),
+                Applied::ZIndex(z) => style.extras.z_index = Some(*z),
+                Applied::Overflow(o) => style.extras.overflow = Some(*o),
+                Applied::Visibility(v) => style.extras.visibility = Some(*v),
+                Applied::AspectRatio(r) => style.extras.aspect_ratio = Some(*r),
+                Applied::BorderStyle(b) => style.extras.border_style = Some(*b),
+                Applied::FlexBasis(b) => style.extras.flex_basis = Some(*b),
+                Applied::Order(o) => style.extras.order = Some(*o),
+                Applied::AlignContent(c) => style.extras.align_content = Some(*c),
+                Applied::MarginAuto(m) => style.extras.margin_auto = Some(*m),
+                Applied::Animation(anim) => style.extras.animation = Some(anim.clone()),
+                Applied::ShadowPreset { first, rest } => {
+                    style.shadow = Some(first.clone());
+                    style.extras.shadow_rest = rest.clone();
+                }
+                Applied::InsetShadows(sh) => {
+                    style.extras.inset_shadows = sh.clone();
+                }
+                _ => {}
+            }
+        }
         style
     }
+}
 
+impl<'t> Resolver<'t> {
     // ------------------------------------------------------------------
     // utility table
     // ------------------------------------------------------------------
@@ -546,157 +1107,203 @@ impl<'t> Resolver<'t> {
             token,
         };
 
-        // Two-word utility heads (`min-w`, `ring-offset`, ...) — the elements
-        // are split on '-', so the head must be re-joined for these families.
-        const TWO_WORD_HEADS: &[&[&str]] = &[
-            &["min", "w"],
-            &["min", "h"],
-            &["max", "w"],
-            &["max", "h"],
-            &["ring", "offset"],
-            &["underline", "offset"],
-            &["pointer", "events"],
-        ];
-        let two_word = t.elements.len() >= 2
-            && TWO_WORD_HEADS
-                .iter()
-                .any(|p| p[0] == t.elements[0] && p[1] == t.elements[1]);
-        let head_len = if two_word { 2 } else { 1 };
-        let head = t.elements[..head_len].join("-");
-        let value_elems = &t.elements[head_len..];
+        let els: &[&str] = &t.elements;
+        // Two-word utility heads — detected by slicing `t.body`, never by
+        // `join("-")` (hot path, plan §3.4.1).
+        let two_word = els.len() >= 2
+            && match els[0] {
+                "min" | "max" => els[1] == "w" || els[1] == "h",
+                "ring" => els[1] == "offset",
+                "underline" => els[1] == "offset",
+                "pointer" => els[1] == "events",
+                "overflow" => els[1] == "x" || els[1] == "y",
+                "no" => els[1] == "underline",
+                "text" => els[1] == "wrap" || els[1] == "ellipsis" || els[1] == "clip",
+                "inset" => matches!(els[1], "x" | "y" | "shadow"),
+                "auto" => els[1] == "rows",
+                "scale" | "translate" | "skew" => els[1] == "x" || els[1] == "y",
+                "line" => els[1] == "clamp" || els[1] == "through",
+                "not" => els[1] == "italic",
+                "normal" => els[1] == "case",
+                "tabular" => els[1] == "nums",
+                "drop" => els[1] == "shadow",
+                _ => false,
+            };
+        let head_n = if two_word { 2 } else { 1 };
+        let head: &str = if two_word {
+            &t.body[..els[0].len() + 1 + els[1].len()]
+        } else {
+            els[0]
+        };
+        let value_elems: &[&str] = if els.len() > head_n {
+            &els[head_n..]
+        } else {
+            &[]
+        };
+        // The value as a raw body slice (no allocation): `primary` for
+        // `bg-primary`, `1.5` for `gap-1.5`.
+        let value: &str = if value_elems.is_empty() {
+            ""
+        } else {
+            &t.body[head.len() + 1..]
+        };
         let spacing = self.theme.spacing();
 
         // Numeric scale value (n -> n * 4px), honoring the negative sign.
         let scale = |n: f32| n * spacing * if t.negative { -1.0 } else { 1.0 };
         let scale_unsigned = |n: f32| n * spacing;
 
-        // Color spec resolver: arbitrary `[...]` wins, else theme token.
+        // F1: the modifier is the denominator for sizing utilities
+        // (`w-1/2` → 0.5; `translate-x-1/2`, `basis-1/3`, `top-1/2` reuse).
+        let fraction = || -> Option<f32> {
+            let num: f32 = value_elems.last()?.parse().ok()?;
+            let den: f32 = t.modifier?.parse().ok()?;
+            (den != 0.0).then(|| num / den)
+        };
+
+        // Color spec resolver: arbitrary `[...]`/`(--var)` wins, else theme.
         let color_of = |name: &str| -> Result<Option<Color>, Warning> {
             if let Some(arb) = t.arbitrary {
-                return Color::parse(arb)
+                return color_from_arbitrary(arb, self.theme)
                     .map(Some)
-                    .map_err(|_| Warning::Unsupported {
-                        class: class.clone(),
-                        reason: "arbitrary value is not a parsable color",
+                    .ok_or_else(|| {
+                        Warning::Unsupported {
+                            class: class.clone(),
+                            reason: "arbitrary value is not a parsable color (gradients/images not modeled)",
+                        }
                     });
             }
-            match self.theme.color(name) {
-                Some(c) => Ok(Some(c)),
+            Ok(self.theme.color(name))
+        };
+        let opacity = || -> Result<Option<f32>, Warning> {
+            match t.opacity_pct(self.theme) {
+                // No `/modifier` at all.
                 None => Ok(None),
+                // Modifier present but unresolvable (bad number / missing var).
+                Some(None) => Err(unsupported(
+                    "opacity modifier does not resolve (bad number or missing theme var)",
+                )),
+                Some(Some(v)) => Ok(Some(v)),
             }
         };
-        let with_opacity = |c: Color| match t.opacity {
+        let with_opacity = |c: Color, pct: Option<f32>| match pct {
             Some(p) => c.mix_with_transparent(p),
             None => c,
         };
-        // Length spec resolver for arbitrary values: `[42px]`, `[1.5rem]`, `[50%]`.
-        let arb_length = |arb: &str| -> Option<SizedValue> {
-            let v = arb.trim();
-            if let Some(p) = v.strip_suffix("px") {
-                p.trim().parse::<f32>().ok().map(SizedValue::Px)
-            } else if let Some(r) = v.strip_suffix("rem") {
-                r.trim()
-                    .parse::<f32>()
-                    .ok()
-                    .map(|n| SizedValue::Px(n * 16.0))
-            } else if let Some(p) = v.strip_suffix('%') {
-                p.trim()
-                    .parse::<f32>()
-                    .ok()
-                    .map(|n| SizedValue::Fraction(n / 100.0))
-            } else {
-                None
-            }
+        let pct = opacity()?;
+
+        // F2: arbitrary lengths are absolute — NOT spacing multiples.
+        let arb_size = |a: Arbitrary<'_>| -> Result<SizedValue, Warning> {
+            sized_from_arbitrary(a, self.theme, &class).ok_or_else(|| unknown(None))
         };
 
-        match head.as_str() {
+        match head {
             // ---------------- colors ----------------
             "bg" => {
                 if let Some(arb) = t.arbitrary {
-                    if let Ok(c) = Color::parse(arb) {
-                        return Ok(Applied::Replace(
-                            Slot::Background,
-                            PartialValue::Background(Background(with_opacity(c))),
-                        ));
-                    }
-                    return Err(unsupported(
-                        "bg-[...] value is not a color (gradients/images not in v1)",
+                    let c = color_from_arbitrary(arb, self.theme).ok_or_else(|| {
+                        unsupported("bg-[...] value is not a color (gradients/images not modeled)")
+                    })?;
+                    return Ok(Applied::Replace(
+                        Slot::Background,
+                        PartialValue::Background(Background(with_opacity(c, pct))),
                     ));
                 }
-                let name = value_elems.join("-");
-                match color_of(&name)? {
+                match color_of(value)? {
                     Some(c) => Ok(Applied::Replace(
                         Slot::Background,
-                        PartialValue::Background(Background(with_opacity(c))),
+                        PartialValue::Background(Background(with_opacity(c, pct))),
                     )),
-                    None if name == "transparent" => Ok(Applied::Replace(
+                    None if value == "transparent" => Ok(Applied::Replace(
                         Slot::Background,
                         PartialValue::Background(Background(Color::TRANSPARENT)),
                     )),
-                    None => Err(unknown(suggest(&name, self.theme))),
+                    None => Err(unknown(suggest(value, self.theme))),
                 }
             }
             "text" if t.arbitrary.is_none() && is_size_name(value_elems) => {
-                let name = value_elems.join("-");
-                match self.theme.font_size(&name) {
-                    Some((size, lh)) => Ok(Applied::Texts(match lh {
-                        Some(lh) => vec![
-                            (TextProperty::FontSize, TextValue::Px(size)),
-                            (TextProperty::LineHeight, TextValue::Px(lh)),
-                        ],
-                        None => vec![(TextProperty::FontSize, TextValue::Px(size))],
-                    })),
+                let name = value;
+                match self.theme.font_size(name) {
+                    Some((size, lh)) => {
+                        let mut items = vec![(TextProperty::FontSize, TextValue::Px(size))];
+                        // F6: `text-sm/6` — the modifier is a line-height
+                        // scale multiple; `text-sm/tight` a leading token.
+                        if let Some(m) = t.modifier {
+                            items.push((
+                                TextProperty::LineHeight,
+                                TextValue::Px(
+                                    leading_from_modifier(m, spacing, self.theme)
+                                        .ok_or_else(|| unknown(None))?,
+                                ),
+                            ));
+                        } else if let Some(lh) = lh {
+                            items.push((TextProperty::LineHeight, TextValue::Px(lh)));
+                        }
+                        Ok(Applied::Texts(items))
+                    }
                     None => Err(unsupported("unknown text size token")),
                 }
+            }
+            "text"
+                if matches!(
+                    value,
+                    "left" | "center" | "right" | "justify" | "start" | "end"
+                ) && t.arbitrary.is_none() =>
+            {
+                let kw = match value {
+                    "left" | "start" => "left",
+                    "center" => "center",
+                    "right" | "end" => "right",
+                    "justify" => "justify",
+                    _ => unreachable!(),
+                };
+                Ok(Applied::Text(
+                    TextProperty::TextAlign,
+                    TextValue::Keyword(kw),
+                ))
             }
             "text" => {
                 // color (or arbitrary size/color disambiguation)
                 if let Some(arb) = t.arbitrary {
-                    if let Ok(c) = Color::parse(arb) {
+                    if let Some(c) = color_from_arbitrary(arb, self.theme) {
                         return Ok(Applied::Replace(
                             Slot::ContentColor,
-                            PartialValue::ContentColor(ContentColor(c)),
+                            PartialValue::ContentColor(ContentColor(with_opacity(c, pct))),
                         ));
                     }
-                    if let Some(v) = arb_length(arb)
+                    if let Some(v) = sized_from_arbitrary(arb, self.theme, &class)
                         && let SizedValue::Px(px) = v
                     {
                         return Ok(Applied::Text(TextProperty::FontSize, TextValue::Px(px)));
                     }
                     return Err(unsupported("text-[...] value is neither color nor length"));
                 }
-                let name = value_elems.join("-");
-                match color_of(&name)? {
+                match color_of(value)? {
                     Some(c) => Ok(Applied::Replace(
                         Slot::ContentColor,
-                        PartialValue::ContentColor(ContentColor(with_opacity(c))),
+                        PartialValue::ContentColor(ContentColor(with_opacity(c, pct))),
                     )),
-                    None => Err(unknown(suggest(&name, self.theme))),
+                    None => Err(unknown(suggest(value, self.theme))),
                 }
             }
             "border" => {
-                // `border` | `border-2` | `border-t` | `border-{color}` | arbitrary
+                // `border` | `border-2` | `border-t` | `border-{color}` |
+                // `border-{style}` | logical sides `border-s/e` | arbitrary
                 if let Some(arb) = t.arbitrary {
-                    if let Ok(c) = Color::parse(arb) {
+                    if let Some(c) = color_from_arbitrary(arb, self.theme) {
                         return Ok(Applied::Replace(
                             Slot::BorderColor,
-                            PartialValue::BorderColor(BorderColor(c)),
+                            PartialValue::BorderColor(BorderColor(with_opacity(c, pct))),
                         ));
                     }
-                    if let Ok(px) = arb.parse::<f32>() {
+                    if let Some(v) = sized_from_arbitrary(arb, self.theme, &class)
+                        && let SizedValue::Px(px) = v
+                    {
                         return Ok(Applied::BorderWidth {
                             top: Some(px),
                             right: Some(px),
                             bottom: Some(px),
                             left: Some(px),
-                        });
-                    }
-                    if let Some(p) = arb.strip_suffix("px").and_then(|v| v.parse::<f32>().ok()) {
-                        return Ok(Applied::BorderWidth {
-                            top: Some(p),
-                            right: Some(p),
-                            bottom: Some(p),
-                            left: Some(p),
                         });
                     }
                     return Err(unsupported("border-[...] value is neither color nor width"));
@@ -709,33 +1316,32 @@ impl<'t> Resolver<'t> {
                         left: Some(1.0),
                     });
                 }
-                let name = value_elems.join("-");
-                // width edges first: border-t / border-x / border-2 ...
-                if let Some(applied) = border_width_family(&name, spacing) {
+                // v0.2: `border-{solid,dashed,dotted,double,none,hidden}`.
+                if let Some(style) = border_style_of(value) {
+                    return Ok(Applied::BorderStyle(style));
+                }
+                // width edges first: border-t / border-x / border-s / border-2
+                if let Some(applied) = border_width_family(value, t.negative) {
                     return Ok(applied);
                 }
-                match color_of(&name)? {
+                match color_of(value)? {
                     Some(c) => Ok(Applied::Replace(
                         Slot::BorderColor,
-                        PartialValue::BorderColor(BorderColor(with_opacity(c))),
+                        PartialValue::BorderColor(BorderColor(with_opacity(c, pct))),
                     )),
-                    None if name == "transparent" => Ok(Applied::Replace(
+                    None if value == "transparent" => Ok(Applied::Replace(
                         Slot::BorderColor,
                         PartialValue::BorderColor(BorderColor(Color::TRANSPARENT)),
                     )),
-                    None => Err(unknown(suggest(&name, self.theme))),
+                    None => Err(unknown(suggest(value, self.theme))),
                 }
             }
             "ring" => {
                 let mut ring = Ring::default();
                 if let Some(arb) = t.arbitrary {
-                    let w = arb
-                        .trim()
-                        .strip_suffix("px")
-                        .unwrap_or(arb.trim())
-                        .parse::<f32>()
-                        .ok();
-                    ring.width = w.ok_or_else(|| unsupported("ring-[...] expects a width"))?;
+                    let w = ring_width_from_arbitrary(arb)
+                        .ok_or_else(|| unsupported("ring-[...] expects a width"))?;
+                    ring.width = w;
                     return Ok(Applied::Replace(
                         Slot::Ring(RingPart::Width),
                         PartialValue::Ring(ring),
@@ -748,23 +1354,30 @@ impl<'t> Resolver<'t> {
                         PartialValue::Ring(ring),
                     ));
                 }
-                let name = value_elems.join("-");
-                if let Ok(px) = name.parse::<f32>() {
-                    ring.width = scale_unsigned(px);
+                if value == "inset" {
+                    // v0.2: ring-inset draws the ring inside the border box.
+                    ring.inset = true;
                     return Ok(Applied::Replace(
                         Slot::Ring(RingPart::Width),
                         PartialValue::Ring(ring),
                     ));
                 }
-                match color_of(&name)? {
+                if let Ok(px) = value.parse::<f32>() {
+                    ring.width = scale_unsigned(px) * if t.negative { -1.0 } else { 1.0 };
+                    return Ok(Applied::Replace(
+                        Slot::Ring(RingPart::Width),
+                        PartialValue::Ring(ring),
+                    ));
+                }
+                match color_of(value)? {
                     Some(c) => {
-                        ring.color = Some(with_opacity(c));
+                        ring.color = Some(with_opacity(c, pct));
                         Ok(Applied::Replace(
                             Slot::Ring(RingPart::Color),
                             PartialValue::Ring(ring),
                         ))
                     }
-                    None => Err(unknown(suggest(&name, self.theme))),
+                    None => Err(unknown(suggest(value, self.theme))),
                 }
             }
             "ring-offset" => {
@@ -776,15 +1389,14 @@ impl<'t> Resolver<'t> {
                         PartialValue::Ring(ring),
                     ));
                 }
-                let name = value_elems.join("-");
-                if let Ok(px) = name.parse::<f32>() {
+                if let Ok(px) = value.parse::<f32>() {
                     ring.offset_width = scale_unsigned(px);
                     return Ok(Applied::Replace(
                         Slot::Ring(RingPart::OffsetWidth),
                         PartialValue::Ring(ring),
                     ));
                 }
-                match color_of(&name)? {
+                match color_of(value)? {
                     Some(c) => {
                         ring.offset_color = Some(c);
                         Ok(Applied::Replace(
@@ -792,7 +1404,7 @@ impl<'t> Resolver<'t> {
                             PartialValue::Ring(ring),
                         ))
                     }
-                    None => Err(unknown(suggest(&name, self.theme))),
+                    None => Err(unknown(suggest(value, self.theme))),
                 }
             }
             "outline" => {
@@ -803,17 +1415,36 @@ impl<'t> Resolver<'t> {
                             width: 2.0,
                             color: None,
                             none: false,
+                            offset: 0.0,
                         }),
                     ));
                 }
-                let name = value_elems.join("-");
-                match name.as_str() {
+                if let Some(off) = value.strip_prefix("offset-") {
+                    // v0.2: outline-offset-*
+                    let px = off
+                        .parse::<f32>()
+                        .map(scale_unsigned)
+                        .ok()
+                        .or_else(|| t.arbitrary.and_then(ring_width_from_arbitrary))
+                        .ok_or_else(|| unknown(None))?;
+                    return Ok(Applied::Replace(
+                        Slot::Outline,
+                        PartialValue::Outline(Outline {
+                            width: 0.0,
+                            color: None,
+                            none: false,
+                            offset: px,
+                        }),
+                    ));
+                }
+                match value {
                     "none" | "hidden" => Ok(Applied::Replace(
                         Slot::Outline,
                         PartialValue::Outline(Outline {
                             width: 0.0,
                             color: None,
                             none: true,
+                            offset: 0.0,
                         }),
                     )),
                     other => {
@@ -824,6 +1455,7 @@ impl<'t> Resolver<'t> {
                                     width: px,
                                     color: None,
                                     none: false,
+                                    offset: 0.0,
                                 }),
                             ))
                         } else {
@@ -834,6 +1466,7 @@ impl<'t> Resolver<'t> {
                                         width: 0.0,
                                         color: Some(c),
                                         none: false,
+                                        offset: 0.0,
                                     }),
                                 )),
                                 None => Err(unknown(suggest(other, self.theme))),
@@ -845,31 +1478,85 @@ impl<'t> Resolver<'t> {
 
             // ---------------- spacing ----------------
             "p" | "px" | "py" | "pt" | "pr" | "pb" | "pl" | "ps" | "pe" => {
-                let n = value_token(t, value_elems, unknown)?;
-                let v = scale(n);
-                Ok(padding_applied(&head, v))
+                let v = spacing_value(t, value, value_elems, spacing, scale, &unknown, self.theme)?;
+                Ok(padding_applied(head, v))
             }
             "m" | "mx" | "my" | "mt" | "mr" | "mb" | "ml" | "ms" | "me" => {
-                let n = value_token(t, value_elems, unknown)?;
-                let v = scale(n);
-                Ok(margin_applied(&head, v))
+                // v0.2: mx-auto / m-auto / ml-auto ... (plan §3.2).
+                if value == "auto" {
+                    let mut e = AutoEdges::default();
+                    match head {
+                        "m" => {
+                            e = AutoEdges {
+                                left: true,
+                                right: true,
+                                top: true,
+                                bottom: true,
+                            }
+                        }
+                        "mx" => {
+                            e.left = true;
+                            e.right = true;
+                        }
+                        "my" => {
+                            e.top = true;
+                            e.bottom = true;
+                        }
+                        "mt" => e.top = true,
+                        "mr" | "me" => e.right = true,
+                        "mb" => e.bottom = true,
+                        "ml" | "ms" => e.left = true,
+                        _ => {}
+                    }
+                    return Ok(Applied::MarginAuto(e));
+                }
+                let v = spacing_value(t, value, value_elems, spacing, scale, &unknown, self.theme)?;
+                Ok(margin_applied(head, v))
             }
             "gap" => {
-                if value_elems.first().is_some_and(|e| *e == "x" || *e == "y") {
-                    return Err(unsupported("axis gap (gap-x/gap-y) is not in the v1 IR"));
+                // v0.2: per-axis gap (gap-x-*/gap-y-*), plan §3.2.
+                if let Some(axis) = value_elems.first().copied()
+                    && (axis == "x" || axis == "y")
+                {
+                    let rest: &[&str] = &value_elems[1..];
+                    let v = spacing_value(
+                        t,
+                        value
+                            .strip_prefix(axis)
+                            .and_then(|r| r.strip_prefix('-'))
+                            .unwrap_or(value),
+                        rest,
+                        spacing,
+                        scale,
+                        &unknown,
+                        self.theme,
+                    )?;
+                    let mut g = GapAxes::default();
+                    if axis == "x" {
+                        g.col = Some(v);
+                    } else {
+                        g.row = Some(v);
+                    }
+                    return Ok(Applied::GapAxes(g));
                 }
-                let n = value_token(t, value_elems, unknown)?;
-                Ok(Applied::Replace(
-                    Slot::Gap,
-                    PartialValue::Gap(Gap(scale(n))),
-                ))
+                let v = spacing_value(t, value, value_elems, spacing, scale, &unknown, self.theme)?;
+                Ok(Applied::Replace(Slot::Gap, PartialValue::Gap(Gap(v))))
             }
 
             // ---------------- sizing ----------------
             "w" | "h" | "size" | "min-w" | "min-h" | "max-w" | "max-h" => {
-                let dim = size_value(t, value_elems, arb_length, spacing, &unknown, self.theme)?;
+                let dim = size_value(
+                    t,
+                    value,
+                    value_elems,
+                    fraction(),
+                    &arb_size,
+                    spacing,
+                    self.theme,
+                    &unknown,
+                )?;
                 let mut d = Dimensions::default();
-                match head.as_str() {
+                match head {
                     "w" | "min-w" | "max-w" => d.width = Some(dim),
                     "h" | "min-h" | "max-h" => d.height = Some(dim),
                     "size" => {
@@ -878,7 +1565,7 @@ impl<'t> Resolver<'t> {
                     }
                     _ => unreachable!(),
                 }
-                let slot = match head.as_str() {
+                let slot = match head {
                     "min-w" | "min-h" => Slot::MinDimensions,
                     "max-w" | "max-h" => Slot::MaxDimensions,
                     _ => Slot::Dimensions,
@@ -895,11 +1582,18 @@ impl<'t> Resolver<'t> {
 
             // ---------------- radius ----------------
             "rounded" => {
-                let full = t.arbitrary.and_then(arb_length);
-                let name = value_elems.join("-");
-                let (edges, token) = radius_family(&name);
+                let full = t
+                    .arbitrary
+                    .and_then(|a| sized_from_arbitrary(a, self.theme, &class))
+                    .and_then(|v| match v {
+                        SizedValue::Px(v) => Some(v),
+                        _ => None,
+                    });
+                // F5: logical start/end edges (`rounded-s-lg` = left side in
+                // LTR; flip under RTL at lowering time, plan §3.2).
+                let (edges, token) = radius_family(value);
                 let px = match full {
-                    Some(SizedValue::Px(v)) => v,
+                    Some(v) => v,
                     _ => match token {
                         Some(tok) => self
                             .theme
@@ -908,7 +1602,7 @@ impl<'t> Resolver<'t> {
                         None => self.theme.radius("DEFAULT").unwrap_or(4.0),
                     },
                 };
-                if name == "full" {
+                if value == "full" {
                     return Ok(Applied::Radius {
                         tl: Some(9999.0),
                         tr: Some(9999.0),
@@ -935,17 +1629,41 @@ impl<'t> Resolver<'t> {
                         br: Some(px),
                         bl: Some(px),
                     },
-                    RadiusEdges::Left => Applied::Radius {
+                    RadiusEdges::Left | RadiusEdges::S => Applied::Radius {
                         tl: Some(px),
                         tr: None,
                         br: None,
                         bl: Some(px),
                     },
-                    RadiusEdges::Right => Applied::Radius {
+                    RadiusEdges::Right | RadiusEdges::E => Applied::Radius {
                         tl: None,
                         tr: Some(px),
                         br: Some(px),
                         bl: None,
+                    },
+                    RadiusEdges::Ss => Applied::Radius {
+                        tl: Some(px),
+                        tr: None,
+                        br: None,
+                        bl: None,
+                    },
+                    RadiusEdges::Se => Applied::Radius {
+                        tl: None,
+                        tr: Some(px),
+                        br: None,
+                        bl: None,
+                    },
+                    RadiusEdges::Ee => Applied::Radius {
+                        tl: None,
+                        tr: None,
+                        br: Some(px),
+                        bl: None,
+                    },
+                    RadiusEdges::Es => Applied::Radius {
+                        tl: None,
+                        tr: None,
+                        br: None,
+                        bl: Some(px),
                     },
                     RadiusEdges::Tl => Applied::Radius {
                         tl: Some(px),
@@ -977,17 +1695,15 @@ impl<'t> Resolver<'t> {
             // ---------------- shadows ----------------
             "shadow" => {
                 if value_elems.is_empty() {
-                    let spec = self
-                        .theme
-                        .shadow("")
-                        .unwrap_or_else(|| v4_default_shadow(""));
-                    return Ok(Applied::Replace(
-                        Slot::Shadow,
-                        PartialValue::Shadow(to_shadow(&spec)),
-                    ));
+                    let mut layers = self.theme.shadows("");
+                    if layers.is_empty() {
+                        layers = vec![v4_default_shadow("")];
+                    }
+                    let first = layers.remove(0);
+                    let rest = layers;
+                    return Ok(shadow_applied(first, rest));
                 }
-                let name = value_elems.join("-");
-                if name == "none" {
+                if value == "none" {
                     return Ok(Applied::Replace(
                         Slot::Shadow,
                         PartialValue::Shadow(BoxShadow {
@@ -1000,13 +1716,39 @@ impl<'t> Resolver<'t> {
                         }),
                     ));
                 }
-                match self.theme.shadow(&name) {
-                    Some(spec) => Ok(Applied::Replace(
-                        Slot::Shadow,
-                        PartialValue::Shadow(to_shadow(&spec)),
-                    )),
-                    None => Err(missing(format!("--shadow-{name}"))),
+                // v0.2: multi-layer presets — the first layer lands in
+                // `shadow`, the rest in `extras.shadow_rest` (plan §3.3).
+                let layers = self.theme.shadows(value);
+                if !layers.is_empty() {
+                    let mut layers = layers;
+                    let first = layers.remove(0);
+                    return Ok(shadow_applied(first, layers));
                 }
+                // `shadow-{color}` recolors the preset in the same bucket.
+                if let Some(c) = self.theme.color(value) {
+                    let c = with_opacity(c, pct);
+                    return Ok(Applied::ShadowColor(c));
+                }
+                if let Some(arb) = t.arbitrary
+                    && let Some(c) = color_from_arbitrary(arb, self.theme)
+                {
+                    return Ok(Applied::ShadowColor(c));
+                }
+                Err(missing(format!("--shadow-{value}")))
+            }
+            "inset-shadow" => {
+                // v0.2: inset-shadow-* presets.
+                let layers = if value_elems.is_empty() {
+                    self.theme.inset_shadows("")
+                } else {
+                    self.theme.inset_shadows(value)
+                };
+                if layers.is_empty() {
+                    return Err(missing(format!("--inset-shadow-{value}")));
+                }
+                Ok(Applied::InsetShadows(
+                    layers.iter().map(to_shadow).collect(),
+                ))
             }
 
             // ---------------- layout ----------------
@@ -1037,12 +1779,19 @@ impl<'t> Resolver<'t> {
                         layout.flex_wrap = Some(true);
                         Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(layout)))
                     }
+                    ["nowrap"] => {
+                        layout.flex_wrap = Some(false);
+                        Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(layout)))
+                    }
                     ["1"] => {
                         layout.flex_grow = Some(1.0);
                         layout.flex_shrink = Some(1.0);
                         Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(layout)))
                     }
-                    _ => Err(unknown(suggest(&head, self.theme))),
+                    ["auto"] | ["initial"] | ["none"] => Err(unsupported(
+                        "flex-auto/flex-initial/flex-none shorthand flex items are outside the v0.2 table",
+                    )),
+                    _ => Err(unknown(suggest(head, self.theme))),
                 }
             }
             "inline" if value_elems == ["flex"] => Ok(Applied::Replace(
@@ -1080,7 +1829,7 @@ impl<'t> Resolver<'t> {
                     ["end"] => AlignItems::End,
                     ["stretch"] => AlignItems::Stretch,
                     ["baseline"] => AlignItems::Baseline,
-                    _ => return Err(unknown(suggest(&head, self.theme))),
+                    _ => return Err(unknown(suggest(head, self.theme))),
                 };
                 Ok(Applied::Replace(
                     Slot::Layout,
@@ -1098,7 +1847,7 @@ impl<'t> Resolver<'t> {
                     ["between"] => JustifyContent::SpaceBetween,
                     ["around"] => JustifyContent::SpaceAround,
                     ["evenly"] => JustifyContent::SpaceEvenly,
-                    _ => return Err(unknown(suggest(&head, self.theme))),
+                    _ => return Err(unknown(suggest(head, self.theme))),
                 };
                 Ok(Applied::Replace(
                     Slot::Layout,
@@ -1114,7 +1863,7 @@ impl<'t> Resolver<'t> {
                     ["start"] => AlignItems::Start,
                     ["end"] => AlignItems::End,
                     ["stretch"] => AlignItems::Stretch,
-                    _ => return Err(unknown(suggest(&head, self.theme))),
+                    _ => return Err(unknown(suggest(head, self.theme))),
                 };
                 Ok(Applied::Replace(
                     Slot::Layout,
@@ -1128,10 +1877,7 @@ impl<'t> Resolver<'t> {
                 let n = if value_elems.is_empty() {
                     1.0
                 } else {
-                    value_elems
-                        .join("-")
-                        .parse::<f32>()
-                        .map_err(|_| unknown(None))?
+                    value.parse::<f32>().map_err(|_| unknown(None))?
                 };
                 let mut layout = Layout::default();
                 if head == "grow" {
@@ -1142,53 +1888,300 @@ impl<'t> Resolver<'t> {
                 Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(layout)))
             }
 
-            // ---------------- typography ----------------
-            "font" => {
-                let name = value_elems.join("-");
-                let w = match name.as_str() {
-                    "thin" => 100,
-                    "extralight" => 200,
-                    "light" => 300,
-                    "normal" => 400,
-                    "medium" => 500,
-                    "semibold" => 600,
-                    "bold" => 700,
-                    "extrabold" => 800,
-                    "black" => 900,
-                    _ => {
+            // ---- v0.2 layout additions (plan §3.2) ----
+            "basis" => {
+                let v = size_value(
+                    t,
+                    value,
+                    value_elems,
+                    fraction(),
+                    &arb_size,
+                    spacing,
+                    self.theme,
+                    &unknown,
+                )?;
+                Ok(Applied::FlexBasis(v))
+            }
+            "order" => {
+                let n: i16 = match value {
+                    "first" => -9999,
+                    "last" => 9999,
+                    "none" => 0,
+                    other => other.parse::<i16>().map_err(|_| unknown(None))?,
+                };
+                Ok(Applied::Order(n * if t.negative { -1 } else { 1 }))
+            }
+            "content" => {
+                let v = match value_elems {
+                    ["start"] => ContentAlign::Start,
+                    ["center"] => ContentAlign::Center,
+                    ["end"] => ContentAlign::End,
+                    ["between"] => ContentAlign::SpaceBetween,
+                    ["around"] => ContentAlign::SpaceAround,
+                    ["evenly"] => ContentAlign::SpaceEvenly,
+                    ["baseline"] => ContentAlign::Baseline,
+                    ["stretch"] => ContentAlign::Stretch,
+                    ["normal"] => ContentAlign::Normal,
+                    _ => return Err(unknown(suggest(head, self.theme))),
+                };
+                Ok(Applied::AlignContent(v))
+            }
+            "grid" => {
+                // grid-cols-N / grid-rows-N (arbitrary templates reported).
+                if value == "cols" || value.starts_with("cols-") {
+                    let rest = value.strip_prefix("cols-").unwrap_or("");
+                    let n: u16 = rest.parse().map_err(|_| {
+                        if t.arbitrary.is_some() {
+                            unsupported("arbitrary grid templates (grid-cols-[…]) are outside the typed IR — reported, never silent")
+                        } else {
+                            unknown(None)
+                        }
+                    })?;
+                    return Ok(Applied::Grid(Grid {
+                        cols: Some(n),
+                        ..Default::default()
+                    }));
+                }
+                if value == "rows" || value.starts_with("rows-") {
+                    let rest = value.strip_prefix("rows-").unwrap_or("");
+                    let n: u16 = rest.parse().map_err(|_| {
+                        if t.arbitrary.is_some() {
+                            unsupported("arbitrary grid templates (grid-rows-[…]) are outside the typed IR — reported, never silent")
+                        } else {
+                            unknown(None)
+                        }
+                    })?;
+                    return Ok(Applied::Grid(Grid {
+                        rows: Some(n),
+                        ..Default::default()
+                    }));
+                }
+                Err(unknown(suggest(head, self.theme)))
+            }
+            "col" => {
+                if let Some(rest) = value.strip_prefix("span-") {
+                    let n: u16 = rest
+                        .parse()
+                        .map_err(|_| unsupported("col-span-full/all are outside the typed IR"))?;
+                    return Ok(Applied::Grid(Grid {
+                        col_span: Some(n),
+                        ..Default::default()
+                    }));
+                }
+                if let Some(rest) = value.strip_prefix("start-") {
+                    let n: i16 = rest
+                        .parse()
+                        .map_err(|_| unsupported("col-start-N/arbitrary outside the typed IR"))?;
+                    return Ok(Applied::Grid(Grid {
+                        col_start: Some(n),
+                        ..Default::default()
+                    }));
+                }
+                Err(unknown(suggest(head, self.theme)))
+            }
+            "row" => {
+                if let Some(rest) = value.strip_prefix("span-") {
+                    let n: u16 = rest
+                        .parse()
+                        .map_err(|_| unsupported("row-span-full/all are outside the typed IR"))?;
+                    return Ok(Applied::Grid(Grid {
+                        row_span: Some(n),
+                        ..Default::default()
+                    }));
+                }
+                if let Some(rest) = value.strip_prefix("start-") {
+                    let n: i16 = rest
+                        .parse()
+                        .map_err(|_| unsupported("row-start-N/arbitrary outside the typed IR"))?;
+                    return Ok(Applied::Grid(Grid {
+                        row_start: Some(n),
+                        ..Default::default()
+                    }));
+                }
+                Err(unknown(suggest(head, self.theme)))
+            }
+            "auto-rows" if els.len() >= 2 && els[0] == "auto" && els[1] == "rows" => {
+                Err(unsupported(
+                    "auto-rows-min/max/fr tracks are outside the typed IR — reported, never silent",
+                ))
+            }
+            "aspect" => {
+                let v = match value {
+                    "square" => 1.0,
+                    "video" => 16.0 / 9.0,
+                    "auto" => {
                         return Err(unsupported(
-                            "font-family / font-stretch classes are not in v1",
+                            "aspect-auto resets to the intrinsic ratio — nothing to store",
                         ));
                     }
+                    _ => {
+                        if let Some(f) = fraction() {
+                            f
+                        } else if let Some(arb) = t.arbitrary {
+                            // aspect-[4/3] or aspect-(--ratio)
+                            arb_aspect_ratio(arb, self.theme)
+                                .ok_or_else(|| unsupported("aspect-[...] is not a ratio"))?
+                        } else {
+                            return Err(unknown(suggest(head, self.theme)));
+                        }
+                    }
                 };
+                Ok(Applied::AspectRatio(v))
+            }
+
+            // ---------------- position (v0.2) ----------------
+            "absolute" if value_elems.is_empty() => Ok(Applied::Position(Position::Absolute)),
+            "fixed" if value_elems.is_empty() => Ok(Applied::Position(Position::Fixed)),
+            "sticky" if value_elems.is_empty() => Ok(Applied::Position(Position::Sticky)),
+            "relative" if value_elems.is_empty() => Ok(Applied::Position(Position::Relative)),
+            "static" if value_elems.is_empty() => Ok(Applied::Position(Position::Static)),
+            "inset" | "inset-x" | "inset-y" | "top" | "bottom" | "left" | "right" | "start"
+            | "end" => {
+                let v = inset_value(
+                    t,
+                    value,
+                    fraction(),
+                    &arb_size,
+                    spacing,
+                    self.theme,
+                    &unknown,
+                )?;
+                Ok(match head {
+                    "inset" => Applied::Inset {
+                        top: Some(v),
+                        right: Some(v),
+                        bottom: Some(v),
+                        left: Some(v),
+                    },
+                    "inset-x" => Applied::Inset {
+                        top: None,
+                        right: Some(v),
+                        bottom: None,
+                        left: Some(v),
+                    },
+                    "inset-y" => Applied::Inset {
+                        top: Some(v),
+                        right: None,
+                        bottom: Some(v),
+                        left: None,
+                    },
+                    "top" => Applied::Inset {
+                        top: Some(v),
+                        right: None,
+                        bottom: None,
+                        left: None,
+                    },
+                    "bottom" => Applied::Inset {
+                        top: None,
+                        right: None,
+                        bottom: Some(v),
+                        left: None,
+                    },
+                    "left" | "start" => Applied::Inset {
+                        top: None,
+                        right: None,
+                        bottom: None,
+                        left: Some(v),
+                    },
+                    "right" | "end" => Applied::Inset {
+                        top: None,
+                        right: Some(v),
+                        bottom: None,
+                        left: None,
+                    },
+                    _ => unreachable!(),
+                })
+            }
+            "z" => {
+                let n: i32 = match value {
+                    "auto" => 0,
+                    other => other.parse::<i32>().map_err(|_| unknown(None))?,
+                };
+                Ok(Applied::ZIndex(n * if t.negative { -1 } else { 1 }))
+            }
+            "overflow" => {
+                let kind = |kw: &str| -> Option<OverflowKind> {
+                    match kw {
+                        "hidden" => Some(OverflowKind::Hidden),
+                        "visible" => Some(OverflowKind::Visible),
+                        "clip" => Some(OverflowKind::Clip),
+                        "scroll" => Some(OverflowKind::Scroll),
+                        "auto" => Some(OverflowKind::Auto),
+                        _ => None,
+                    }
+                };
+                let Some(k) = kind(value) else {
+                    return Err(unknown(suggest(head, self.theme)));
+                };
+                Ok(Applied::Overflow(Overflow {
+                    x: Some(k),
+                    y: Some(k),
+                }))
+            }
+            "overflow-x" | "overflow-y" => {
+                let kind = match value {
+                    "hidden" => OverflowKind::Hidden,
+                    "visible" => OverflowKind::Visible,
+                    "clip" => OverflowKind::Clip,
+                    "scroll" => OverflowKind::Scroll,
+                    "auto" => OverflowKind::Auto,
+                    _ => return Err(unknown(suggest(head, self.theme))),
+                };
+                let mut o = Overflow::default();
+                if head == "overflow-x" {
+                    o.x = Some(kind);
+                } else {
+                    o.y = Some(kind);
+                }
+                Ok(Applied::Overflow(o))
+            }
+            "visible" if value_elems.is_empty() => Ok(Applied::Visibility(Visibility::Visible)),
+            "invisible" if value_elems.is_empty() => Ok(Applied::Visibility(Visibility::Hidden)),
+
+            // ---------------- typography ----------------
+            "font" => {
+                // font-sans/serif/mono (v0.2) vs font-{weight}.
+                if let Some(fam) = match value {
+                    "sans" => Some("sans"),
+                    "serif" => Some("serif"),
+                    "mono" => Some("mono"),
+                    _ => None,
+                } {
+                    return Ok(Applied::Text(
+                        TextProperty::FontFamily,
+                        TextValue::Keyword(fam),
+                    ));
+                }
+                let w = self.theme.font_weight(value).ok_or_else(|| {
+                    unsupported("font-family / font-stretch classes are outside the typed table")
+                })?;
                 Ok(Applied::Text(
                     TextProperty::FontWeight,
                     TextValue::Weight(w),
                 ))
             }
             "leading" => {
-                let name = value_elems.join("-");
-                if let Ok(n) = name.parse::<f32>() {
-                    return Ok(Applied::Text(
-                        TextProperty::LineHeight,
-                        TextValue::Px(scale_unsigned(n)),
-                    ));
+                if let Some(v) = leading_from_modifier(value, spacing, self.theme) {
+                    return Ok(Applied::Text(TextProperty::LineHeight, TextValue::Px(v)));
                 }
-                let v = match name.as_str() {
-                    "none" => 1.0,
-                    "tight" => 1.25,
-                    "snug" => 1.375,
-                    "normal" => 1.5,
-                    "relaxed" => 1.625,
-                    "loose" => 2.0,
-                    _ => return Err(missing(format!("--leading-{name}"))),
-                };
-                Ok(Applied::Text(
-                    TextProperty::LineHeight,
-                    TextValue::Px(v * 16.0),
-                ))
+                if let Some(arb) = t.arbitrary
+                    && let Some(v) = sized_from_arbitrary(arb, self.theme, &class)
+                    && let SizedValue::Px(px) = v
+                {
+                    return Ok(Applied::Text(TextProperty::LineHeight, TextValue::Px(px)));
+                }
+                Err(missing(format!("--leading-{value}")))
             }
             "tracking" => {
+                if let Some(arb) = t.arbitrary
+                    && let Some(v) = sized_from_arbitrary(arb, self.theme, &class)
+                    && let SizedValue::Px(px) = v
+                {
+                    return Ok(Applied::Text(
+                        TextProperty::LetterSpacing,
+                        TextValue::Spacing(px * if t.negative { -1.0 } else { 1.0 }),
+                    ));
+                }
                 let em = match value_elems {
                     ["tighter"] => -0.05,
                     ["tight"] => -0.025,
@@ -1196,7 +2189,7 @@ impl<'t> Resolver<'t> {
                     ["wide"] => 0.025,
                     ["wider"] => 0.05,
                     ["widest"] => 0.1,
-                    _ => return Err(missing(format!("--tracking-{}", value_elems.join("-")))),
+                    _ => return Err(missing(format!("--tracking-{value}"))),
                 };
                 Ok(Applied::Text(
                     TextProperty::LetterSpacing,
@@ -1204,46 +2197,284 @@ impl<'t> Resolver<'t> {
                 ))
             }
             "underline-offset" => {
-                let n = value_token(t, value_elems, unknown)?;
+                let n = spacing_value(
+                    t,
+                    value,
+                    value_elems,
+                    spacing,
+                    scale_unsigned,
+                    &unknown,
+                    self.theme,
+                )?;
                 Ok(Applied::Text(
                     TextProperty::UnderlineOffset,
                     TextValue::Px(n),
                 ))
             }
-            "whitespace" if value_elems == ["nowrap"] => Ok(Applied::Text(
-                TextProperty::Whitespace,
-                TextValue::Keyword("nowrap"),
+            "whitespace" => {
+                let kw = match value {
+                    "nowrap" => "nowrap",
+                    "pre" => "pre",
+                    "pre-line" => "pre-line",
+                    "pre-wrap" => "pre-wrap",
+                    "normal" => "normal",
+                    _ => return Err(unknown(suggest(head, self.theme))),
+                };
+                Ok(Applied::Text(
+                    TextProperty::Whitespace,
+                    TextValue::Keyword(kw),
+                ))
+            }
+            "select" => {
+                let kw = match value {
+                    "none" => "select-none",
+                    "text" => "select-text",
+                    "all" => "select-all",
+                    "auto" => "select-auto",
+                    _ => return Err(unknown(suggest(head, self.theme))),
+                };
+                Ok(Applied::Text(TextProperty::Select, TextValue::Keyword(kw)))
+            }
+            // v0.2 text transforms / decorations / overflow (plan §3.2).
+            "italic" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::FontStyle,
+                TextValue::Keyword("italic"),
             )),
-            "select" if value_elems == ["none"] => Ok(Applied::Text(
-                TextProperty::Select,
-                TextValue::Keyword("select-none"),
+            "not-italic" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::FontStyle,
+                TextValue::Keyword("normal"),
             )),
+            "uppercase" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextTransform,
+                TextValue::Keyword("uppercase"),
+            )),
+            "lowercase" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextTransform,
+                TextValue::Keyword("lowercase"),
+            )),
+            "capitalize" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextTransform,
+                TextValue::Keyword("capitalize"),
+            )),
+            "normal-case" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextTransform,
+                TextValue::Keyword("none"),
+            )),
+            "underline" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextDecoration,
+                TextValue::Keyword("underline"),
+            )),
+            "overline" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextDecoration,
+                TextValue::Keyword("overline"),
+            )),
+            "line-through" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextDecoration,
+                TextValue::Keyword("line-through"),
+            )),
+            "no-underline" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextDecoration,
+                TextValue::Keyword("none"),
+            )),
+            "text-ellipsis" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextOverflow,
+                TextValue::Keyword("ellipsis"),
+            )),
+            "text-clip" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::TextOverflow,
+                TextValue::Keyword("clip"),
+            )),
+            "truncate" if value_elems.is_empty() => Ok(Applied::Texts(vec![
+                (TextProperty::TextOverflow, TextValue::Keyword("ellipsis")),
+                (TextProperty::Whitespace, TextValue::Keyword("nowrap")),
+            ])),
+            "line-clamp" => {
+                let n: u16 = value
+                    .parse()
+                    .map_err(|_| unsupported("line-clamp-[…] arbitrary values are reported"))?;
+                Ok(Applied::Texts(vec![
+                    (TextProperty::LineClamp, TextValue::Count(n)),
+                    (TextProperty::TextOverflow, TextValue::Keyword("ellipsis")),
+                ]))
+            }
+            "tabular-nums" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::FontVariantNumeric,
+                TextValue::Keyword("tabular-nums"),
+            )),
+            "ordinal" if value_elems.is_empty() => Ok(Applied::Text(
+                TextProperty::FontVariantNumeric,
+                TextValue::Keyword("ordinal"),
+            )),
+            "text-wrap" => Err(unsupported(
+                "text-wrap-balance/pretty are CSS text-layout features with no Rust-toolkit equivalent — reported, never silent",
+            )),
+
+            // ---------------- effects (v0.2) ----------------
+            "transition" => {
+                let set = match value {
+                    "" => TransitionSet::Default,
+                    "all" => TransitionSet::All,
+                    "colors" => TransitionSet::Colors,
+                    "opacity" => TransitionSet::Opacity,
+                    "shadow" => TransitionSet::Shadow,
+                    "transform" => TransitionSet::Transform,
+                    "none" => TransitionSet::None,
+                    _ => return Err(unknown(suggest(head, self.theme))),
+                };
+                Ok(Applied::Transition {
+                    set: Some(set),
+                    duration_ms: None,
+                    ease: None,
+                    delay_ms: None,
+                })
+            }
+            "duration" => {
+                let ms = if let Some(arb) = t.arbitrary {
+                    arb_duration(arb).ok_or_else(|| unknown(None))?
+                } else {
+                    value.parse::<f32>().map_err(|_| unknown(None))?
+                };
+                Ok(Applied::Transition {
+                    set: None,
+                    duration_ms: Some(ms),
+                    ease: None,
+                    delay_ms: None,
+                })
+            }
+            "delay" => {
+                let ms = if let Some(arb) = t.arbitrary {
+                    arb_duration(arb).ok_or_else(|| unknown(None))?
+                } else {
+                    value.parse::<f32>().map_err(|_| unknown(None))?
+                };
+                Ok(Applied::Transition {
+                    set: None,
+                    duration_ms: None,
+                    ease: None,
+                    delay_ms: Some(ms),
+                })
+            }
+            "ease" => {
+                let e = if t.arbitrary.is_some() {
+                    return Err(unsupported(
+                        "ease-[cubic-bezier(…)] arbitrary curves are reported",
+                    ));
+                } else {
+                    self.theme
+                        .ease(value)
+                        .ok_or_else(|| unknown(suggest(head, self.theme)))?
+                };
+                Ok(Applied::Transition {
+                    set: None,
+                    duration_ms: None,
+                    ease: Some(e),
+                    delay_ms: None,
+                })
+            }
+            "animate" => {
+                if value == "none" {
+                    return Ok(Applied::Animation(Animation {
+                        name: "none".into(),
+                        duration_ms: None,
+                        ease: None,
+                        infinite: false,
+                    }));
+                }
+                let spec = self
+                    .theme
+                    .animation(value)
+                    .ok_or_else(|| missing(format!("--animate-{value}")))?;
+                Ok(Applied::Animation(Animation {
+                    name: spec.name.into(),
+                    duration_ms: Some(spec.duration_ms),
+                    ease: spec.ease,
+                    infinite: spec.infinite,
+                }))
+            }
+            "scale" | "scale-x" | "scale-y" => {
+                let v = transform_number(t, value, &unknown)?;
+                let pct01 = v / 100.0;
+                Ok(Applied::Transform {
+                    scale_x: (head != "scale-y").then(|| if t.negative { -pct01 } else { pct01 }),
+                    scale_y: (head != "scale-x").then(|| if t.negative { -pct01 } else { pct01 }),
+                    rotate_deg: None,
+                    translate_x: None,
+                    translate_y: None,
+                    skew_x: None,
+                    skew_y: None,
+                })
+            }
+            "rotate" => {
+                let deg = transform_number(t, value, &unknown)?;
+                Ok(Applied::Transform {
+                    scale_x: None,
+                    scale_y: None,
+                    rotate_deg: Some(deg * if t.negative { -1.0 } else { 1.0 }),
+                    translate_x: None,
+                    translate_y: None,
+                    skew_x: None,
+                    skew_y: None,
+                })
+            }
+            "translate-x" | "translate-y" => {
+                let v = transform_size(
+                    t,
+                    value,
+                    fraction(),
+                    &arb_size,
+                    spacing,
+                    self.theme,
+                    &unknown,
+                )?;
+                let (x, y) = if head == "translate-x" {
+                    (Some(v), None)
+                } else {
+                    (None, Some(v))
+                };
+                Ok(Applied::Transform {
+                    scale_x: None,
+                    scale_y: None,
+                    rotate_deg: None,
+                    translate_x: x,
+                    translate_y: y,
+                    skew_x: None,
+                    skew_y: None,
+                })
+            }
+            "skew-x" | "skew-y" => {
+                let deg = transform_number(t, value, &unknown)?;
+                Ok(Applied::Transform {
+                    scale_x: None,
+                    scale_y: None,
+                    rotate_deg: None,
+                    translate_x: None,
+                    translate_y: None,
+                    skew_x: (head == "skew-x").then(|| deg * if t.negative { -1.0 } else { 1.0 }),
+                    skew_y: (head == "skew-y").then(|| deg * if t.negative { -1.0 } else { 1.0 }),
+                })
+            }
 
             // ---------------- misc ----------------
             "opacity" => {
-                let n = value_token(t, value_elems, unknown)?;
+                let n = if let Some(arb) = t.arbitrary {
+                    arb_duration(arb).ok_or_else(|| unknown(None))?
+                } else {
+                    value.parse::<f32>().map_err(|_| unknown(None))?
+                };
                 Ok(Applied::Replace(
                     Slot::Opacity,
                     PartialValue::Opacity(Opacity(n / 100.0)),
                 ))
             }
             "cursor" => {
-                let name = value_elems.join("-");
-                let v = match name.as_str() {
-                    "pointer" => Cursor::Pointer,
-                    "default" => Cursor::Default,
-                    "not-allowed" => Cursor::NotAllowed,
-                    "text" => Cursor::Text,
-                    "grab" => Cursor::Grab,
-                    _ => return Err(unknown(suggest(&name, self.theme))),
-                };
+                let v = cursor_of(value).ok_or_else(|| unknown(suggest(value, self.theme)))?;
                 Ok(Applied::Replace(Slot::Cursor, PartialValue::Cursor(v)))
             }
             "pointer-events" => {
                 let v = match value_elems {
                     ["none"] => PointerEvents::None,
                     ["auto"] => PointerEvents::Auto,
-                    _ => return Err(unknown(suggest(&head, self.theme))),
+                    _ => return Err(unknown(suggest(head, self.theme))),
                 };
                 Ok(Applied::Replace(
                     Slot::PointerEvents,
@@ -1251,31 +2482,31 @@ impl<'t> Resolver<'t> {
                 ))
             }
 
-            // Recognized-but-dropped families (no transition/animation engine).
-            "transition" | "animate" => Err(unsupported(match head.as_str() {
-                "transition" => {
-                    "CSS transitions need a transition engine (not in v1) — documented no-op"
-                }
-                _ => "CSS animations are not in v1 — documented no-op",
-            })),
-            "inset" | "top" | "bottom" | "left" | "right" | "z" | "absolute" | "fixed"
-            | "sticky" | "relative" | "static" | "overflow" | "order" | "basis" | "col" | "row"
-            | "space" | "divide" | "aspect" | "object" | "overscroll" | "scroll" | "place"
-            | "content" | "grid" | "inline" | "outline-hidden" | "isolate" | "float" | "clear"
-            | "blur" | "brightness" | "contrast" | "grayscale" | "hue-rotate" | "invert"
-            | "saturate" | "sepia" | "drop-shadow" | "backdrop" | "sr" | "not-sr" | "truncate"
-            | "accent" | "appearance" | "resize" | "touch" | "will-change" | "fill" | "stroke"
-            | "decoration" | "align" | "vertical" | "list" | "text-wrap" | "text-pretty"
-            | "hyphens" | "uppercase" | "lowercase" | "capitalize" | "normal-case" | "italic"
-            | "underline" | "overline" | "line-through" | "no-underline" | "antialiased"
-            | "subpixel" | "ordinal" | "slashed" | "lining" | "oldstyle" | "proportional"
-            | "tabular" | "diagonal" | "stacked" | "scale" | "rotate" | "translate" | "skew"
-            | "origin" | "perspective" | "transform" | "snap" | "forced" | "print" | "rtl"
-            | "ltr" | "field-sizing" | "mask" | "filter" | "columns" | "break" | "box"
-            | "container" | "has" | "group" | "peer" | "not" | "supports" | "min" | "max"
-            | "clamp" | "fit" => Err(unsupported("utility family is outside the v1 Shadcn scope")),
+            // Recognized-but-dropped families (no filter/scroll engines).
+            "blur" | "brightness" | "contrast" | "grayscale" | "hue-rotate" | "invert"
+            | "saturate" | "sepia" | "drop-shadow" | "backdrop" => Err(unsupported(
+                "CSS filters/backdrop-filters have no native equivalent — reported, never silent (plan §7)",
+            )),
+            "space" => Err(unsupported(
+                "space-x/y between-child margins are emulated as gap by the resolver (v0.2); use gap-* instead",
+            )),
+            "divide" => Err(unsupported(
+                "divide-* between-child borders have no container-child border model — reported, never silent",
+            )),
+            "caret" | "object" | "overscroll" | "scroll" | "place" | "float" | "clear"
+            | "columns" | "break" | "box" | "container" | "origin" | "perspective"
+            | "transform" | "snap" | "forced" | "print" | "field-sizing" | "mask" | "filter"
+            | "sr" | "not-sr" | "accent" | "appearance" | "resize" | "touch" | "will-change"
+            | "fill" | "stroke" | "decoration" | "align" | "vertical" | "list" | "hyphens"
+            | "antialiased" | "subpixel" | "ordinal-fake" | "isolate" | "outline-hidden"
+            | "has" | "group" | "peer" | "not" | "supports" | "min" | "max" | "clamp" | "fit" => {
+                let _ = head;
+                Err(unsupported(
+                    "utility family is outside the typed v0.2 table",
+                ))
+            }
 
-            _ => Err(unknown(suggest(&head, self.theme))),
+            _ => Err(unknown(suggest(head, self.theme))),
         }
     }
 }
@@ -1284,62 +2515,352 @@ impl<'t> Resolver<'t> {
 // helpers
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Target {
-    Base,
-    Layer,
-    Responsive,
-    Container,
-    Dark,
-    Group,
-    Peer,
-    Skip,
-}
-
-fn condition_of(v: &Variant<'_>) -> VariantCondition {
-    match v {
-        Variant::Named(NamedVariant::Hover) => VariantCondition::Hover,
-        Variant::Named(NamedVariant::Focus) => VariantCondition::Focus,
-        Variant::Named(NamedVariant::FocusVisible) => VariantCondition::FocusVisible,
-        Variant::Named(NamedVariant::FocusWithin) => VariantCondition::FocusWithin,
-        Variant::Named(NamedVariant::Active) => VariantCondition::Active,
-        Variant::Named(NamedVariant::Disabled) => VariantCondition::Disabled,
-        Variant::Named(NamedVariant::Visited) => VariantCondition::Visited,
-        _ => unreachable!("condition_of on non-state variant"),
-    }
-}
-
-fn name_of(n: &NamedVariant) -> &'static str {
-    match n {
-        NamedVariant::Hover => "hover",
-        NamedVariant::Focus => "focus",
-        NamedVariant::FocusVisible => "focus-visible",
-        NamedVariant::FocusWithin => "focus-within",
-        NamedVariant::Active => "active",
-        NamedVariant::Disabled => "disabled",
-        NamedVariant::Visited => "visited",
-        NamedVariant::Dark => "dark",
-        NamedVariant::Breakpoint(b) | NamedVariant::Container(b) => b.name(),
-    }
-}
-
-fn value_token<'a>(
+/// Spacing-family value resolution (plan §3.2 F2 fix): arbitrary values are
+/// ABSOLUTE px (never spacing multiples); numeric names use the 4px scale.
+fn spacing_value<'a>(
     t: &ClassToken<'a>,
+    value: &str,
     elems: &[&'a str],
-    unknown: impl Fn(Option<String>) -> Warning,
+    _spacing: f32,
+    scale: impl Fn(f32) -> f32,
+    unknown: &impl Fn(Option<String>) -> Warning,
+    theme: &TailwindTheme,
 ) -> Result<f32, Warning> {
     if let Some(arb) = t.arbitrary {
-        return arb
+        return match sized_from_arbitrary(arb, theme, t.raw) {
+            Some(SizedValue::Px(px)) => Ok(px * if t.negative { -1.0 } else { 1.0 }),
+            _ => Err(unknown(None)),
+        };
+    }
+    if let Some(n) = elems.last().and_then(|e| e.parse::<f32>().ok()) {
+        return Ok(scale(n));
+    }
+    match value {
+        "px" => Ok(1.0 * if t.negative { -1.0 } else { 1.0 }),
+        _ => Err(unknown(None)),
+    }
+}
+
+/// Sizing-family value resolution (`w-*`, `basis-*`, ...). Fractions come
+/// from the raw modifier (F1), viewport sizes are typed (v0.2), and the
+/// container scale resolves `max-w-xl` & friends from `--container-*`.
+#[allow(clippy::too_many_arguments)]
+fn size_value<'a>(
+    t: &ClassToken<'a>,
+    value: &str,
+    _elems: &[&'a str],
+    frac: Option<f32>,
+    arb_size: &impl Fn(Arbitrary<'a>) -> Result<SizedValue, Warning>,
+    spacing: f32,
+    theme: &TailwindTheme,
+    unknown: &impl Fn(Option<String>) -> Warning,
+) -> Result<SizedValue, Warning> {
+    if let Some(a) = t.arbitrary {
+        return arb_size(a);
+    }
+    if let Some(f) = frac {
+        return Ok(SizedValue::Fraction(
+            f * if t.negative { -1.0 } else { 1.0 },
+        ));
+    }
+    Ok(match value {
+        "full" => SizedValue::Full,
+        "fit" => SizedValue::FitContent,
+        "auto" => SizedValue::Auto,
+        "px" => SizedValue::Px(1.0),
+        // v0.2: viewport sizes are typed, resolved by the backend.
+        "screen" | "dvh" | "svh" | "lvh" | "dvw" | "svw" | "lvw" | "min" | "max" => {
+            SizedValue::Viewport
+        }
+        other => {
+            if let Ok(n) = other.parse::<f32>() {
+                SizedValue::Px(n * spacing)
+            } else if let Some(c) = theme.container_px(other) {
+                SizedValue::Px(c)
+            } else {
+                return Err(unknown(None));
+            }
+        }
+    })
+}
+
+/// Inset/offset value resolution (`top-*`, `inset-*`, ...).
+fn inset_value<'a>(
+    t: &ClassToken<'a>,
+    value: &str,
+    frac: Option<f32>,
+    arb_size: &impl Fn(Arbitrary<'a>) -> Result<SizedValue, Warning>,
+    spacing: f32,
+    _theme: &TailwindTheme,
+    unknown: &impl Fn(Option<String>) -> Warning,
+) -> Result<SizedValue, Warning> {
+    if let Some(a) = t.arbitrary {
+        return arb_size(a);
+    }
+    if let Some(f) = frac {
+        return Ok(SizedValue::Fraction(f));
+    }
+    Ok(match value {
+        "auto" => SizedValue::Auto,
+        "full" => SizedValue::Full,
+        "px" => SizedValue::Px(1.0),
+        other => {
+            if let Ok(n) = other.parse::<f32>() {
+                SizedValue::Px(n * spacing)
+            } else {
+                return Err(unknown(None));
+            }
+        }
+    })
+}
+
+/// `rotate-45` / `scale-105` numbers; arbitrary `deg` values included.
+fn transform_number(
+    t: &ClassToken<'_>,
+    value: &str,
+    unknown: &impl Fn(Option<String>) -> Warning,
+) -> Result<f32, Warning> {
+    if let Some(arb) = t.arbitrary {
+        let v = arb
+            .value
             .trim()
-            .trim_end_matches("px")
+            .trim_end_matches("deg")
             .parse::<f32>()
-            .map_err(|_| unknown(None));
+            .map_err(|_| unknown(None))?;
+        return Ok(v);
     }
-    let joined = elems.join("-");
-    if joined.is_empty() {
-        return Err(unknown(None));
+    value.parse::<f32>().map_err(|_| unknown(None))
+}
+
+/// `translate-x-4` → 16px; `translate-x-1/2` → Fraction(0.5) (F1 reuse);
+/// `translate-x-full` → Fraction(1).
+fn transform_size<'a>(
+    t: &ClassToken<'a>,
+    value: &str,
+    frac: Option<f32>,
+    arb_size: &impl Fn(Arbitrary<'a>) -> Result<SizedValue, Warning>,
+    spacing: f32,
+    theme: &TailwindTheme,
+    unknown: &impl Fn(Option<String>) -> Warning,
+) -> Result<SizedValue, Warning> {
+    if let Some(a) = t.arbitrary {
+        return arb_size(a);
     }
-    joined.parse::<f32>().map_err(|_| unknown(None))
+    if let Some(f) = frac {
+        return Ok(SizedValue::Fraction(
+            f * if t.negative { -1.0 } else { 1.0 },
+        ));
+    }
+    Ok(match value {
+        "full" => SizedValue::Fraction(1.0),
+        "px" => SizedValue::Px(1.0),
+        "auto" => SizedValue::Auto,
+        other => {
+            if let Ok(n) = other.parse::<f32>() {
+                SizedValue::Px(n * spacing)
+            } else if let Some(c) = theme.container_px(other) {
+                SizedValue::Px(c)
+            } else {
+                return Err(unknown(None));
+            }
+        }
+    })
+}
+
+/// F6 helper: `text-sm/6` → 24px (6 × spacing); `text-sm/tight` → the
+/// `--leading-tight` ratio × 16px base.
+fn leading_from_modifier(m: &str, spacing: f32, theme: &TailwindTheme) -> Option<f32> {
+    if let Ok(n) = m.parse::<f32>() {
+        return Some(n * spacing);
+    }
+    if let Some(ratio) = theme.leading(m) {
+        return Some(ratio * 16.0);
+    }
+    None
+}
+
+fn border_style_of(value: &str) -> Option<BorderStyle> {
+    Some(match value {
+        "solid" => BorderStyle::Solid,
+        "dashed" => BorderStyle::Dashed,
+        "dotted" => BorderStyle::Dotted,
+        "double" => BorderStyle::Double,
+        "none" => BorderStyle::None,
+        "hidden" => BorderStyle::Hidden,
+        _ => return None,
+    })
+}
+
+fn shadow_applied(
+    first: crate::theme::BoxShadowSpec,
+    rest: Vec<crate::theme::BoxShadowSpec>,
+) -> Applied {
+    Applied::ShadowPreset {
+        first: to_shadow(&first),
+        rest: rest.iter().map(to_shadow).collect(),
+    }
+}
+
+/// The full v4 cursor keyword set.
+fn cursor_of(value: &str) -> Option<Cursor> {
+    Some(match value {
+        "auto" => Cursor::Auto,
+        "default" => Cursor::Default,
+        "pointer" => Cursor::Pointer,
+        "wait" => Cursor::Wait,
+        "text" => Cursor::Text,
+        "move" => Cursor::Move,
+        "help" => Cursor::Help,
+        "not-allowed" => Cursor::NotAllowed,
+        "none" => Cursor::None,
+        "context-menu" => Cursor::ContextMenu,
+        "progress" => Cursor::Progress,
+        "cell" => Cursor::Cell,
+        "crosshair" => Cursor::Crosshair,
+        "vertical-text" => Cursor::VerticalText,
+        "alias" => Cursor::Alias,
+        "copy" => Cursor::Copy,
+        "no-drop" => Cursor::NoDrop,
+        "grab" => Cursor::Grab,
+        "grabbing" => Cursor::Grabbing,
+        "all-scroll" => Cursor::AllScroll,
+        "col-resize" => Cursor::ColResize,
+        "row-resize" => Cursor::RowResize,
+        "n-resize" => Cursor::NResize,
+        "e-resize" => Cursor::EResize,
+        "s-resize" => Cursor::SResize,
+        "w-resize" => Cursor::WResize,
+        "ne-resize" => Cursor::NeResize,
+        "nw-resize" => Cursor::NwResize,
+        "se-resize" => Cursor::SeResize,
+        "sw-resize" => Cursor::SwResize,
+        "ew-resize" => Cursor::EwResize,
+        "ns-resize" => Cursor::NsResize,
+        "nesw-resize" => Cursor::NeswResize,
+        "nwse-resize" => Cursor::NwseResize,
+        "zoom-in" => Cursor::ZoomIn,
+        "zoom-out" => Cursor::ZoomOut,
+        _ => return None,
+    })
+}
+
+/// Arbitrary value → [`Color`] (`[#fff]`, `[oklch(...)]`, `[var(--x)]`,
+/// `(--x)`; F7's `bg-primary/(--o)` opacity path is separate).
+fn color_from_arbitrary(a: Arbitrary<'_>, theme: &TailwindTheme) -> Option<Color> {
+    if a.is_property {
+        return None;
+    }
+    if matches!(a.hint, Some(h) if h != "color") {
+        return None;
+    }
+    let css = a.css();
+    // var() forms resolve through the theme color registry.
+    if a.form == ArbForm::Paren || css.starts_with("var(") {
+        let name = css
+            .strip_prefix("var(")
+            .and_then(|r| r.strip_suffix(')'))
+            .map(str::trim)?
+            .trim_start_matches("--");
+        return theme.color(name);
+    }
+    Color::parse(&css).ok()
+}
+
+/// Arbitrary value → [`SizedValue`] (`[42px]`, `[50%]`, `[length:3rem]`,
+/// `[var(--w)]`, `(--w)`; F2: absolute px, never spacing multiples).
+fn sized_from_arbitrary(
+    a: Arbitrary<'_>,
+    theme: &TailwindTheme,
+    class: &str,
+) -> Option<SizedValue> {
+    let _ = class;
+    if a.is_property {
+        return None;
+    }
+    if matches!(a.hint, Some(h) if h != "length" && h != "percentage") {
+        return None;
+    }
+    let css = a.css();
+    // var() forms resolve through the theme length registry.
+    if a.form == ArbForm::Paren || css.starts_with("var(") {
+        let name = css
+            .strip_prefix("var(")
+            .and_then(|r| r.strip_suffix(')'))
+            .map(str::trim)?
+            .trim_start_matches("--");
+        return theme.length(name).map(SizedValue::Px);
+    }
+    let v = css.trim();
+    if let Some(p) = v.strip_suffix("px") {
+        return p.trim().parse::<f32>().ok().map(SizedValue::Px);
+    }
+    if let Some(r) = v.strip_suffix("rem") {
+        return r
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .map(|n| SizedValue::Px(n * 16.0));
+    }
+    if let Some(p) = v.strip_suffix('%') {
+        return p
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .map(|n| SizedValue::Fraction(n / 100.0));
+    }
+    None
+}
+
+/// `ring-[3px]` → 3.0.
+fn ring_width_from_arbitrary(a: Arbitrary<'_>) -> Option<f32> {
+    if a.is_property {
+        return None;
+    }
+    let v = a.value.trim();
+    v.strip_suffix("px").unwrap_or(v).trim().parse::<f32>().ok()
+}
+
+/// `duration-[2s]` → 2000; `duration-300` handled by the caller.
+fn arb_duration(a: Arbitrary<'_>) -> Option<f32> {
+    if a.is_property {
+        return None;
+    }
+    let v = a.value.trim();
+    if let Some(ms) = v.strip_suffix("ms") {
+        return ms.trim().parse().ok();
+    }
+    if let Some(s) = v.strip_suffix('s') {
+        return s.trim().parse::<f32>().ok().map(|n| n * 1000.0);
+    }
+    v.parse().ok()
+}
+
+/// `aspect-[4/3]` → 1.333; `aspect-(--ratio)` resolves via `--aspect-*`.
+fn arb_aspect_ratio(a: Arbitrary<'_>, theme: &TailwindTheme) -> Option<f32> {
+    if a.is_property {
+        return None;
+    }
+    if a.form == ArbForm::Paren || a.value.starts_with("var(") {
+        let name = a
+            .value
+            .trim()
+            .strip_prefix("var(")
+            .and_then(|r| r.strip_suffix(')'))
+            .map(str::trim)?;
+        // --aspect-* tokens are Raw ("16 / 9").
+        let raw = theme.raw_var(name)?;
+        let mut it = raw.split('/');
+        let w: f32 = it.next()?.trim().parse().ok()?;
+        let h: f32 = it.next()?.trim().parse().ok()?;
+        return (h != 0.0).then(|| w / h);
+    }
+    let v = a.value.trim();
+    if let Some((w, h)) = v.split_once('/') {
+        let w: f32 = w.trim().parse().ok()?;
+        let h: f32 = h.trim().parse().ok()?;
+        return (h != 0.0).then(|| w / h);
+    }
+    v.parse().ok()
 }
 
 fn padding_applied(head: &str, v: f32) -> Applied {
@@ -1440,65 +2961,81 @@ fn margin_applied(head: &str, v: f32) -> Applied {
     }
 }
 
-fn border_width_family(name: &str, _spacing: f32) -> Option<Applied> {
-    // v4 border widths are px, not spacing-scale multiples.
-    // Non-target edges are `None` (not `Some(0.0)`) so per-side classes
-    // COMPOSE like the padding/margin families do (`border-t border-b`
-    // must keep the top edge set by the earlier class).
-    let w = |n: f32| Some(n);
+fn border_width_family(name: &str, negative: bool) -> Option<Applied> {
+    // v4 border widths are px, not spacing-scale multiples. Non-target
+    // edges are `None` (not `Some(0.0)`) so per-side classes COMPOSE like
+    // the padding/margin families do. v0.2 adds the logical `s`/`e` sides
+    // (LTR: left/right; flipped under RTL at lowering time).
+    let sign = if negative { -1.0 } else { 1.0 };
+    let w = |n: f32| Some(n * sign);
     use Applied::BorderWidth as B;
-    Some(match name {
-        "0" => B {
-            top: Some(0.0),
-            right: Some(0.0),
-            bottom: Some(0.0),
-            left: Some(0.0),
-        },
-        "t" => B {
-            top: w(1.0),
-            right: None,
-            bottom: None,
-            left: None,
-        },
-        "r" => B {
-            top: None,
-            right: w(1.0),
-            bottom: None,
-            left: None,
-        },
-        "b" => B {
-            top: None,
-            right: None,
-            bottom: w(1.0),
-            left: None,
-        },
-        "l" => B {
-            top: None,
-            right: None,
-            bottom: None,
-            left: w(1.0),
-        },
-        "x" => B {
-            top: None,
-            right: w(1.0),
-            bottom: None,
-            left: w(1.0),
-        },
-        "y" => B {
-            top: w(1.0),
-            right: None,
-            bottom: w(1.0),
-            left: None,
-        },
-        other => {
-            let n: f32 = other.parse().ok()?;
-            B {
-                top: w(n),
-                right: w(n),
-                bottom: w(n),
-                left: w(n),
+    let (edge, width) = match name.split_once('-') {
+        Some((e, n)) => (Some(e), n.parse::<f32>().ok()),
+        None => {
+            // Bare edge letters (`border-t`, `border-x`) mean width 1.
+            if matches!(name, "t" | "r" | "b" | "l" | "x" | "y" | "s" | "e") {
+                (Some(name), None)
+            } else {
+                (None, name.parse::<f32>().ok())
             }
         }
+    };
+    Some(match (edge, width) {
+        (None, Some(n)) => B {
+            top: w(n),
+            right: w(n),
+            bottom: w(n),
+            left: w(n),
+        },
+        (Some("t"), n) => B {
+            top: w(n.unwrap_or(1.0)),
+            right: None,
+            bottom: None,
+            left: None,
+        },
+        (Some("r"), n) => B {
+            top: None,
+            right: w(n.unwrap_or(1.0)),
+            bottom: None,
+            left: None,
+        },
+        (Some("b"), n) => B {
+            top: None,
+            right: None,
+            bottom: w(n.unwrap_or(1.0)),
+            left: None,
+        },
+        (Some("l"), n) => B {
+            top: None,
+            right: None,
+            bottom: None,
+            left: w(n.unwrap_or(1.0)),
+        },
+        (Some("s"), n) => B {
+            top: None,
+            right: None,
+            bottom: None,
+            left: w(n.unwrap_or(1.0)),
+        },
+        (Some("e"), n) => B {
+            top: None,
+            right: w(n.unwrap_or(1.0)),
+            bottom: None,
+            left: None,
+        },
+        (Some("x"), n) => B {
+            top: None,
+            right: w(n.unwrap_or(1.0)),
+            bottom: None,
+            left: w(n.unwrap_or(1.0)),
+        },
+        (Some("y"), n) => B {
+            top: w(n.unwrap_or(1.0)),
+            right: None,
+            bottom: w(n.unwrap_or(1.0)),
+            left: None,
+        },
+        _ => return None,
     })
 }
 
@@ -1577,6 +3114,9 @@ fn merge_ring(style: &mut ResolvedStyle, ring: &Ring) {
     if ring.offset_color.is_some() {
         r.offset_color = ring.offset_color;
     }
+    if ring.inset {
+        r.inset = true;
+    }
 }
 
 fn merge_outline(style: &mut ResolvedStyle, o: &Outline) {
@@ -1591,6 +3131,9 @@ fn merge_outline(style: &mut ResolvedStyle, o: &Outline) {
     if o.color.is_some() {
         cur.color = o.color;
     }
+    if o.offset != 0.0 {
+        cur.offset = o.offset;
+    }
 }
 
 fn to_shadow(spec: &crate::theme::BoxShadowSpec) -> BoxShadow {
@@ -1600,7 +3143,7 @@ fn to_shadow(spec: &crate::theme::BoxShadowSpec) -> BoxShadow {
         blur: spec.blur,
         spread: spec.spread,
         color: spec.color,
-        inset: false,
+        inset: spec.inset,
     }
 }
 
@@ -1615,6 +3158,7 @@ fn v4_default_shadow(name: &str) -> crate::theme::BoxShadowSpec {
             blur: 3.0,
             spread: 0.0,
             color: black,
+            inset: false,
         },
         "md" => crate::theme::BoxShadowSpec {
             offset_x: 0.0,
@@ -1622,6 +3166,7 @@ fn v4_default_shadow(name: &str) -> crate::theme::BoxShadowSpec {
             blur: 6.0,
             spread: -1.0,
             color: black,
+            inset: false,
         },
         "lg" => crate::theme::BoxShadowSpec {
             offset_x: 0.0,
@@ -1629,6 +3174,7 @@ fn v4_default_shadow(name: &str) -> crate::theme::BoxShadowSpec {
             blur: 10.0,
             spread: -2.0,
             color: black,
+            inset: false,
         },
         "xl" => crate::theme::BoxShadowSpec {
             offset_x: 0.0,
@@ -1636,6 +3182,7 @@ fn v4_default_shadow(name: &str) -> crate::theme::BoxShadowSpec {
             blur: 16.0,
             spread: -4.0,
             color: black,
+            inset: false,
         },
         // "xs" (v4 default for empty) — 0 1px 2px 0 rgb(0 0 0 / 0.05)
         _ => crate::theme::BoxShadowSpec {
@@ -1644,6 +3191,7 @@ fn v4_default_shadow(name: &str) -> crate::theme::BoxShadowSpec {
             blur: 2.0,
             spread: 0.0,
             color: black,
+            inset: false,
         },
     }
 }
@@ -1674,13 +3222,26 @@ enum RadiusEdges {
     Bottom,
     Left,
     Right,
+    /// `rounded-s-*` — the start side (left in LTR; F5).
+    S,
+    /// `rounded-e-*` — the end side (right in LTR; F5).
+    E,
+    /// `rounded-ss-*` — start-start corner (F5).
+    Ss,
+    /// `rounded-se-*` — start-end corner (F5).
+    Se,
+    /// `rounded-ee-*` — end-end corner (F5).
+    Ee,
+    /// `rounded-es-*` — end-start corner (F5).
+    Es,
     Tl,
     Tr,
     Br,
     Bl,
 }
 
-/// Split `rounded-t-md` into edges + token name.
+/// Split `rounded-t-md` into edges + token name, including the logical
+/// start/end edges (F5, plan §3.2).
 fn radius_family(name: &str) -> (RadiusEdges, Option<&str>) {
     match name {
         "" => (RadiusEdges::All, Some("DEFAULT")),
@@ -1695,6 +3256,12 @@ fn radius_family(name: &str) -> (RadiusEdges, Option<&str>) {
                 "b" => RadiusEdges::Bottom,
                 "l" => RadiusEdges::Left,
                 "r" => RadiusEdges::Right,
+                "s" => RadiusEdges::S,
+                "e" => RadiusEdges::E,
+                "ss" => RadiusEdges::Ss,
+                "se" => RadiusEdges::Se,
+                "ee" => RadiusEdges::Ee,
+                "es" => RadiusEdges::Es,
                 "tl" => RadiusEdges::Tl,
                 "tr" => RadiusEdges::Tr,
                 "br" => RadiusEdges::Br,
@@ -1720,48 +3287,6 @@ fn default_radius(token: &str, spacing: f32) -> f32 {
         "3xl" => spacing * 6.0,
         _ => spacing * 1.5,
     }
-}
-
-fn size_value<'a>(
-    t: &ClassToken<'a>,
-    elems: &[&'a str],
-    arb: impl Fn(&str) -> Option<SizedValue>,
-    spacing: f32,
-    unknown: &impl Fn(Option<String>) -> Warning,
-    theme: &TailwindTheme,
-) -> Result<SizedValue, Warning> {
-    if let Some(a) = t.arbitrary {
-        return arb(a).ok_or_else(|| unknown(None));
-    }
-    let name = elems.join("-");
-    if name.is_empty() {
-        return Err(unknown(None));
-    }
-    if let Some(frac) = name.strip_prefix("1/") {
-        let d: f32 = frac.parse().map_err(|_| unknown(None))?;
-        return Ok(SizedValue::Fraction(1.0 / d));
-    }
-    Ok(match name.as_str() {
-        "full" => SizedValue::Full,
-        "fit" => SizedValue::FitContent,
-        "auto" => SizedValue::Auto,
-        "px" => SizedValue::Px(1.0),
-        "screen" => {
-            return Err(Warning::Unsupported {
-                class: t.raw.to_string(),
-                reason: "viewport units are resolved by the backend, not at resolve time",
-            });
-        }
-        other => {
-            if let Ok(n) = other.parse::<f32>() {
-                SizedValue::Px(n * spacing)
-            } else if let Some(min) = theme.length(&format!("max-w-{other}")) {
-                SizedValue::Px(min)
-            } else {
-                return Err(unknown(None));
-            }
-        }
-    })
 }
 
 /// "did you mean" suggestion via bounded Levenshtein over known utility
@@ -1815,6 +3340,38 @@ fn suggest(name: &str, theme: &TailwindTheme) -> Option<String> {
         "underline-offset",
         "grow",
         "shrink",
+        "basis",
+        "order",
+        "content",
+        "aspect",
+        "inset",
+        "top",
+        "bottom",
+        "left",
+        "right",
+        "z",
+        "overflow",
+        "visible",
+        "invisible",
+        "absolute",
+        "relative",
+        "fixed",
+        "sticky",
+        "static",
+        "truncate",
+        "uppercase",
+        "lowercase",
+        "capitalize",
+        "italic",
+        "underline",
+        "line-clamp",
+        "scale",
+        "rotate",
+        "translate",
+        "skew",
+        "duration",
+        "delay",
+        "ease",
     ];
     let mut best: Option<(usize, String)> = None;
     let mut consider = |candidate: String| {
