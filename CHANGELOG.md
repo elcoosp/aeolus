@@ -4,6 +4,108 @@ All notable changes to Aeolus are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-11-05
+
+The "serious Tailwind v4 compiler" release (plan: `AEOLUS_V0.2.md`): the
+core owns **all** semantics — including compound variants, group/peer,
+data/aria, structural selectors and container queries — and backends only
+map them, through the new `Probe` parity evaluator.
+
+### Fixed (correctness — the F1–F7 silent-mis-style bugs)
+
+- **F1** fractions: `w-1/2` → `Fraction(0.5)` (was 4px). The raw `/modifier`
+  is the fraction denominator for sizing utilities.
+- **F2** arbitrary lengths: `p-[7px]` → 7px (was 28px). Arbitrary values are
+  absolute, never `--spacing` multiples; `(--var)`/`[var(--x)]` resolve
+  through the theme.
+- **F3** `dark:hover:*` lands in `rules` as `[Media(Dark), On(Hover)]` (was:
+  the `dark` half silently dropped, hover applied in LIGHT mode). Shipped
+  Shadcn Ghost/Outline hovers are correct now; regression-tested per
+  variant.
+- **F4** `md:hover:*` — same fix for breakpoint compounds.
+- **F5** `rounded-s-lg`/`rounded-e-*`/`rounded-ss-*` map to the logical
+  start/end edges (was: all four corners).
+- **F6** `text-sm/6` resolves the line-height modifier (6 × spacing);
+  `text-sm/tight` uses `--leading-tight`.
+- **F7** `bg-primary/[0.37]` is a raw alpha fraction (was: rejected); 
+  `bg-primary/(--o)` resolves through the theme.
+- `cn()` merge keys use the EXACT canonical variant prefix — `hover:` and
+  `group-hover:` no longer knock each other out, `md:` no longer collides
+  with `@md:`.
+- `PlanCache` is keyed by the class STRING (per-thread L1 + shared L2) — a
+  hash collision can no longer return the wrong plan; entries are
+  version-stamped and previous-generation hits are promoted.
+- Multi-layer v4 shadows parse fully (`--shadow-sm` = 2 layers; v0.1
+  truncated at the first comma).
+- `@md` is the `--container-md` size (448px), not the `sm` viewport
+  breakpoint; `@xs`/`@3xl` and `@min-[400px]` resolve from the container
+  scale.
+
+### Added
+
+- **The parity engine** (`eval.rs`): `Probe` + `StylePlan::resolve` /
+  `resolve_rules_only` — a backend answers questions about the element's
+  situation and the SAME evaluator flattens the plan for both backends.
+  `Atom`/`Test`/`Cond`/`Rule` model the full v4 variant grammar
+  (`not-*` recursive, `has-*`, `data-*`, `aria-*`, structural, media,
+  viewport windows, named container queries).
+- **No-alloc token shape**: `ClassToken::variants` is a stack-inlined
+  `Inline<Variant, 8>`, `elements` a `Segments<'a, 10>` (deref to slices);
+  the raw `body`/`modifier` slices replace `join("-")` on the hot path.
+- **Full v4 default theme** (`data/tailwind-default-theme.css`, diffed
+  against tailwindcss v4.1.17): `--container-*`, multi-layer `--shadow-*`,
+  `--text-*` + paired line heights, `--font-weight-*`, `--tracking-*`,
+  `--leading-*`, `--radius-xs..4xl`, `--blur-*`, `--perspective-*`,
+  `--ease-*`, `--animate-*`, default transition duration.
+- **`@utility` / `@custom-variant`**: class-string expansion (depth ≤ 4)
+  and name→`Media::Dark` mapping from CSS.
+- **Utility coverage** (plan §3.2): `mx-auto`, `max-w-{container}`, viewport
+  sizes (`w-screen`/`h-dvh` as `SizedValue::Viewport`), `gap-x/y`,
+  `space-*` (gap emulation), `basis-*`, `order-*`, `content-*`,
+  `grid-cols/rows`, spans/starts, `aspect-*`, `absolute/relative/...`,
+  `inset-*` (incl. logical start/end), `z-*`, `overflow-*`, `visible/
+  invisible`, `italic/uppercase/underline/truncate/line-clamp/font-sans/
+  tabular-nums/text-ellipsis`, `transition-*/duration-*/ease-*/delay-*`,
+  `animate-*`, `scale/rotate/translate/skew`, `shadow-{color}`,
+  `inset-shadow-*`, `ring-inset`, `outline-offset-*`, `border-{style}`,
+  logical `border-s/e`, the full `cursor-*` keyword set and `select-text/all`.
+- **A coverage guard test**: every v4 utility family must resolve to a
+  typed slot or a precise `Unsupported` — `Unknown` fails CI (plan §5.3).
+- **Floem parity** (plan §4.2): align/self/wrap/display, gap axes, auto
+  margins, `absolute()`, insets, z-index, aspect-ratio, cursor,
+  pointer-events, typography (weight/style/align/line-height/overflow),
+  transform scale/rotate/translate, ring→outline+outline_color, per-set
+  `Transition`s, and the `tw_plan` reactive path
+  (`FloemProbe` + `plan.resolve_rules_only`) that makes compound variants,
+  group/peer and container queries work without an upstream patch.
+  Theme-aware breakpoints replace `Breakpoint::default_px`.
+- **Masonry/Xilem widening** (plan §4.3): `TwEnv` (dark, viewport/container
+  width, group/peer scope via `WidgetMut::set_env`) feeds
+  `plan.resolve(&probe)` in measure/layout/pre-paint; margins measured and
+  inset; per-side borders and per-corner radii painted with Kurbo geometry;
+  ring/outline stroked; shadow presets render every layer; opacity is
+  multiplied into the chrome colors (children-not-faded documented).
+- **Hot path** (plan §3.4): 8-bytes-per-round `FastHasher` with a
+  length-tagged tail + final fold; string-keyed two-tier cache with
+  promotion; `(ptr,len)`-keyed `resolve_static`; O(1) bitmask diff.
+  Measured (1-core sandbox): cached hit 424ns → **76ns**, unchanged diff
+  763ns → **235ns**, cold resolve 7.54µs → **5.49µs** (with the v0.2 rule
+  machinery included). Parser is ~0.9µs slower per Button string — the
+  richer v4 grammar costs, documented honestly.
+- **MSRV split** (F9): `aeolus-core`/`aeolus-macro` stay at **1.88**
+  (verified with a real 1.88 toolchain); `aeolus-shadcn` and the backends
+  declare **1.96** (Masonry 0.4's requirement). CI grows two MSRV jobs.
+
+### Changed
+
+- `tw!` keeps its compile-time typo check: unknown variant *names* are
+  rejected statically (the runtime parser accepts them as `Custom` for
+  `@custom-variant` resolution).
+- `Warning::Unsupported` texts name the parity lane ("emulated by the
+  reactive probe path" / "reported, never silent (plan §7)").
+- `TailwindTheme::default()` seeds the full v4 defaults (v0.1 seeded
+  nothing; `from_theme_css` seeded colors only).
+
 ## [0.1.0] — 2026-11-04
 
 The first release-candidate version: the Tailwind v4 → native-Rust style
