@@ -5,13 +5,19 @@
 //! cascade (`PropertyStack`+`Selector` on Masonry, nested selector maps on
 //! Floem, state-keyed closures on Iced) instead of re-implementing variants.
 //!
-//! Slot types are named after Masonry's property types where they exist
-//! (`Background`, `BorderColor`, `BorderWidth`, `CornerRadius`, `Dimensions`,
-//! `Padding`, `BoxShadow`, `ContentColor`, `Gap`) so the Xilem/Masonry
-//! lowering is nearly mechanical.
+//! v0.2 (plan §2.1) adds — **additively**, so v0.1 backends keep compiling:
+//! * [`StylePlan::rules`] — conditional [`Rule`]s for everything the buckets
+//!   cannot express (compound variants, group/peer, data/aria, has/not,
+//!   structural, container queries), evaluated by the [`crate::eval::Probe`]
+//!   parity engine;
+//! * [`StylePlan::breakpoints`] — the theme-aware breakpoint px table;
+//! * [`ResolvedStyle::extras`] — the v0.2 typed slots (position, inset,
+//!   z-index, overflow, grid, transform, transition, animation, ...).
 
 use crate::ast::Breakpoint;
 use crate::color::Color;
+use crate::cond::Rule;
+use std::collections::BTreeMap;
 
 /// The complete styling plan for one element.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -22,7 +28,9 @@ pub struct StylePlan {
     pub layers: Vec<ConditionalLayer>,
     /// `sm:`..`2xl:` responsive overrides.
     pub responsive: BTreeMap<Breakpoint, ResolvedStyle>,
-    /// `@sm:`.. container-query overrides.
+    /// `@sm:`.. container-query overrides (v0.1 legacy bucket; v0.2 routes
+    /// container queries into `rules` — this stays for backend compat and is
+    /// only populated when a backend opts into bucket-mode routing).
     pub container: BTreeMap<Breakpoint, ResolvedStyle>,
     /// `dark:` overrides.
     pub dark: Option<ResolvedStyle>,
@@ -30,6 +38,13 @@ pub struct StylePlan {
     pub group: Vec<(GroupId, ResolvedStyle)>,
     /// `peer-*:` layers keyed by peer label.
     pub peer: Vec<(PeerId, ResolvedStyle)>,
+    /// v0.2: conditional rules for everything the buckets cannot express.
+    /// A token whose variant stack is exactly one classic variant keeps
+    /// going to the v0.1 bucket; **everything else** lands here (plan §2.1).
+    pub rules: Vec<Rule>,
+    /// v0.2: theme-aware breakpoint px (index = [`Breakpoint::index`]).
+    /// Backends MUST use this instead of hardcoded defaults (plan §4.2).
+    pub breakpoints: [f32; 5],
 }
 
 /// A `(Condition, ResolvedStyle)` pair.
@@ -112,7 +127,7 @@ pub struct ResolvedStyle {
     pub max_dimensions: Option<Dimensions>,
     /// `gap-*`.
     pub gap: Option<Gap>,
-    /// `shadow-*` preset (single layer).
+    /// `shadow-*` preset (first layer of the multi-layer v4 presets).
     pub shadow: Option<BoxShadow>,
     /// `m-*` family (no Masonry property; capability-negotiated).
     pub margin: Option<Margin>,
@@ -130,6 +145,51 @@ pub struct ResolvedStyle {
     pub pointer_events: Option<PointerEvents>,
     /// Typography and text-flow properties (`text-sm`, `font-medium`, ...).
     pub text: Vec<(TextProperty, TextValue)>,
+    /// v0.2 slots (position, inset, z-index, overflow, grid, transform,
+    /// transition, animation, ...). See the [`Extras`] fields.
+    pub extras: Extras,
+}
+
+/// The v0.2 typed slots (plan §2.1 `Extras`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Extras {
+    /// `absolute`/`relative`/... positioning mode.
+    pub position: Option<Position>,
+    /// `top-*`/`inset-*`/... offsets.
+    pub inset: Option<Inset>,
+    /// `z-*`.
+    pub z_index: Option<i32>,
+    /// `overflow-*`.
+    pub overflow: Option<Overflow>,
+    /// `visible`/`invisible`.
+    pub visibility: Option<Visibility>,
+    /// `aspect-*` as width/height ratio.
+    pub aspect_ratio: Option<f32>,
+    /// `grid-cols-*`/`col-span-*`/...
+    pub grid: Option<Grid>,
+    /// `scale-*`/`rotate-*`/`translate-*`/`skew-*`.
+    pub transform: Option<Transform>,
+    /// `transition-*`/`duration-*`/`ease-*`/`delay-*`.
+    pub transition: Option<Transition>,
+    /// `animate-*`.
+    pub animation: Option<Animation>,
+    /// `border-{solid,dashed,...}`.
+    pub border_style: Option<BorderStyle>,
+    /// `basis-*`.
+    pub flex_basis: Option<SizedValue>,
+    /// `order-*`.
+    pub order: Option<i16>,
+    /// `content-*` (align-content).
+    pub align_content: Option<ContentAlign>,
+    /// `mx-auto`/`m-auto`/... auto-margin edges.
+    pub margin_auto: Option<AutoEdges>,
+    /// `gap-x-*`/`gap-y-*` (per-axis gap).
+    pub gap_axes: Option<GapAxes>,
+    /// Remaining shadow layers of a multi-layer preset (`shadow-sm`'s
+    /// second layer). `shadow` carries the first (dominant) layer.
+    pub shadow_rest: Vec<BoxShadow>,
+    /// `inset-shadow-*` presets.
+    pub inset_shadows: Vec<BoxShadow>,
 }
 
 /// One typed slot of [`ResolvedStyle`], used for diffs and capability checks.
@@ -173,6 +233,89 @@ pub enum Slot {
     PointerEvents,
     /// Text slot (individual text properties are sub-keyed).
     Text(TextProperty),
+    // ---- v0.2 slots -------------------------------------------------------
+    /// Positioning mode.
+    Position,
+    /// Inset offsets.
+    Inset,
+    /// Z-index.
+    ZIndex,
+    /// Overflow.
+    Overflow,
+    /// Visibility.
+    Visibility,
+    /// Aspect ratio.
+    AspectRatio,
+    /// Grid template/span.
+    Grid,
+    /// Transform (scale/rotate/translate/skew).
+    Transform,
+    /// Transition.
+    Transition,
+    /// Animation.
+    Animation,
+    /// Border style.
+    BorderStyle,
+    /// Flex basis.
+    FlexBasis,
+    /// Order.
+    Order,
+    /// Align content.
+    AlignContent,
+    /// Auto margins.
+    MarginAuto,
+    /// Per-axis gap.
+    GapAxes,
+    /// Extra shadow layers.
+    ShadowRest,
+    /// Inset shadows.
+    InsetShadows,
+}
+
+/// Dense slot index for the O(1) diff bitmask (plan §3.4.5).
+impl Slot {
+    /// Stable dense index (< 128) used by the diff bitmask.
+    pub fn index(self) -> u16 {
+        match self {
+            Slot::Background => 0,
+            Slot::ContentColor => 1,
+            Slot::Padding => 2,
+            Slot::BorderColor => 3,
+            Slot::BorderWidth => 4,
+            Slot::CornerRadius => 5,
+            Slot::Dimensions => 6,
+            Slot::MinDimensions => 7,
+            Slot::MaxDimensions => 8,
+            Slot::Gap => 9,
+            Slot::Shadow => 10,
+            Slot::Margin => 11,
+            Slot::Layout => 12,
+            Slot::Opacity => 13,
+            Slot::Ring(_) => 14,
+            Slot::Outline => 15,
+            Slot::Cursor => 16,
+            Slot::PointerEvents => 17,
+            Slot::Text(_) => 18,
+            Slot::Position => 19,
+            Slot::Inset => 20,
+            Slot::ZIndex => 21,
+            Slot::Overflow => 22,
+            Slot::Visibility => 23,
+            Slot::AspectRatio => 24,
+            Slot::Grid => 25,
+            Slot::Transform => 26,
+            Slot::Transition => 27,
+            Slot::Animation => 28,
+            Slot::BorderStyle => 29,
+            Slot::FlexBasis => 30,
+            Slot::Order => 31,
+            Slot::AlignContent => 32,
+            Slot::MarginAuto => 33,
+            Slot::GapAxes => 34,
+            Slot::ShadowRest => 35,
+            Slot::InsetShadows => 36,
+        }
+    }
 }
 
 impl Slot {
@@ -187,6 +330,13 @@ impl Slot {
             | Slot::Opacity
             | Slot::Cursor
             | Slot::PointerEvents
+            | Slot::Visibility
+            | Slot::Overflow
+            | Slot::ZIndex
+            | Slot::Transform
+            | Slot::Transition
+            | Slot::Animation
+            | Slot::BorderStyle
             | Slot::Text(TextProperty::Color)
             | Slot::Text(TextProperty::UnderlineOffset)
             | Slot::Ring(_) => Lane::Cosmetic,
@@ -203,6 +353,17 @@ impl Slot {
             | Slot::Margin
             | Slot::Layout
             | Slot::Outline
+            | Slot::Position
+            | Slot::Inset
+            | Slot::AspectRatio
+            | Slot::Grid
+            | Slot::FlexBasis
+            | Slot::Order
+            | Slot::AlignContent
+            | Slot::MarginAuto
+            | Slot::GapAxes
+            | Slot::ShadowRest
+            | Slot::InsetShadows
             | Slot::Text(_) => Lane::Geometric,
         }
     }
@@ -313,13 +474,17 @@ pub enum SizedValue {
     FitContent,
     /// `w-auto`.
     Auto,
+    /// `w-screen` / `h-dvh` — 100% of the viewport; backends resolve the
+    /// actual size from the window (v0.2, plan §3.2).
+    Viewport,
 }
 
 /// `gap-*` in px.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Gap(pub f32);
 
-/// `shadow-*` — one layer per shadow (v1: preset shadows, single layer).
+/// `shadow-*` — one layer per shadow (v4 presets are multi-layer: the first
+/// layer lives here, the rest in `Extras::shadow_rest`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct BoxShadow {
     /// Horizontal offset in px (positive = right).
@@ -332,7 +497,7 @@ pub struct BoxShadow {
     pub spread: f32,
     /// Shadow color (alpha carried here).
     pub color: Color,
-    /// `shadow-inner` — inset shadows are parsed but v1 backends drop them.
+    /// `shadow-inner` / `inset-shadow-*` — inset shadows.
     pub inset: bool,
 }
 
@@ -435,6 +600,8 @@ pub struct Ring {
     pub offset_width: f32,
     /// `ring-offset-{color}`.
     pub offset_color: Option<Color>,
+    /// `ring-inset` — draw the ring inside the border box (v0.2).
+    pub inset: bool,
 }
 
 /// `outline-none`, `outline-*`.
@@ -446,21 +613,85 @@ pub struct Outline {
     pub color: Option<Color>,
     /// `outline-none` in v4 sets width 0 + `outline-style: none` semantically.
     pub none: bool,
+    /// `outline-offset-*` in px (v0.2).
+    pub offset: f32,
 }
 
-/// The mouse cursor (`cursor-*`).
+/// The mouse cursor (`cursor-*`) — the full v4 keyword set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cursor {
+    /// `cursor-auto`.
+    Auto,
     /// `cursor-default`.
     Default,
     /// `cursor-pointer`.
     Pointer,
-    /// `cursor-not-allowed`.
-    NotAllowed,
+    /// `cursor-wait`.
+    Wait,
     /// `cursor-text`.
     Text,
+    /// `cursor-move`.
+    Move,
+    /// `cursor-help`.
+    Help,
+    /// `cursor-not-allowed`.
+    NotAllowed,
+    /// `cursor-none`.
+    None,
+    /// `cursor-context-menu`.
+    ContextMenu,
+    /// `cursor-progress`.
+    Progress,
+    /// `cursor-cell`.
+    Cell,
+    /// `cursor-crosshair`.
+    Crosshair,
+    /// `cursor-vertical-text`.
+    VerticalText,
+    /// `cursor-alias`.
+    Alias,
+    /// `cursor-copy`.
+    Copy,
+    /// `cursor-no-drop`.
+    NoDrop,
     /// `cursor-grab`.
     Grab,
+    /// `cursor-grabbing`.
+    Grabbing,
+    /// `cursor-all-scroll`.
+    AllScroll,
+    /// `cursor-col-resize`.
+    ColResize,
+    /// `cursor-row-resize`.
+    RowResize,
+    /// `cursor-n-resize`.
+    NResize,
+    /// `cursor-e-resize`.
+    EResize,
+    /// `cursor-s-resize`.
+    SResize,
+    /// `cursor-w-resize`.
+    WResize,
+    /// `cursor-ne-resize`.
+    NeResize,
+    /// `cursor-nw-resize`.
+    NwResize,
+    /// `cursor-se-resize`.
+    SeResize,
+    /// `cursor-sw-resize`.
+    SwResize,
+    /// `cursor-ew-resize`.
+    EwResize,
+    /// `cursor-ns-resize`.
+    NsResize,
+    /// `cursor-nesw-resize`.
+    NeswResize,
+    /// `cursor-nwse-resize`.
+    NwseResize,
+    /// `cursor-zoom-in`.
+    ZoomIn,
+    /// `cursor-zoom-out`.
+    ZoomOut,
 }
 
 /// The `pointer-events` value.
@@ -493,6 +724,21 @@ pub enum TextProperty {
     TextAlign,
     /// `select-none` / `select-text`.
     Select,
+    // ---- v0.2 --------------------------------------------------------------
+    /// `italic` / `not-italic`.
+    FontStyle,
+    /// `uppercase` / `lowercase` / `capitalize` / `normal-case`.
+    TextTransform,
+    /// `underline` / `overline` / `line-through` / `no-underline`.
+    TextDecoration,
+    /// `font-sans` / `font-serif` / `font-mono`.
+    FontFamily,
+    /// `text-ellipsis` / `text-clip` (with `truncate`).
+    TextOverflow,
+    /// `line-clamp-N`.
+    LineClamp,
+    /// `tabular-nums` / `ordinal` / ... font-variant-numeric.
+    FontVariantNumeric,
 }
 
 /// The value of one [`TextProperty`].
@@ -504,16 +750,246 @@ pub enum TextValue {
     Weight(u16),
     /// letter-spacing px (negative for `tracking-tighter`).
     Spacing(f32),
-    /// `whitespace-nowrap`, `select-none` etc. are keywords.
+    /// `whitespace-nowrap`, `select-none`, `italic`, `uppercase`,
+    /// `underline`, `sans`, `ellipsis`, `tabular-nums`... keywords.
     Keyword(&'static str),
+    /// A count (`line-clamp-3`).
+    Count(u16),
     /// text color.
     Color(Color),
 }
 
+// ---------------------------------------------------------------------------
+// v0.2 Extras payloads
+// ---------------------------------------------------------------------------
+
+/// The CSS `position` value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Position {
+    /// `static`.
+    Static,
+    /// `fixed`.
+    Fixed,
+    /// `absolute`.
+    Absolute,
+    /// `relative`.
+    Relative,
+    /// `sticky`.
+    Sticky,
+}
+
+/// `top-*`/`right-*`/`bottom-*`/`left-*`/`inset-*` offsets.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Inset {
+    /// `top-*` offset.
+    pub top: Option<SizedValue>,
+    /// `right-*` offset.
+    pub right: Option<SizedValue>,
+    /// `bottom-*` offset.
+    pub bottom: Option<SizedValue>,
+    /// `left-*` offset.
+    pub left: Option<SizedValue>,
+}
+
+/// The overflow kind per axis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OverflowKind {
+    /// `overflow-visible`.
+    Visible,
+    /// `overflow-hidden`.
+    Hidden,
+    /// `overflow-clip`.
+    Clip,
+    /// `overflow-scroll`.
+    Scroll,
+    /// `overflow-auto`.
+    Auto,
+}
+
+/// `overflow-*` per axis.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Overflow {
+    /// `overflow-x-*`.
+    pub x: Option<OverflowKind>,
+    /// `overflow-y-*`.
+    pub y: Option<OverflowKind>,
+}
+
+/// `visible` / `invisible`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Visibility {
+    /// `visible`.
+    Visible,
+    /// `invisible`.
+    Hidden,
+}
+
+/// `grid-cols-*` / `grid-rows-*` / spans / starts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Grid {
+    /// `grid-cols-N`.
+    pub cols: Option<u16>,
+    /// `grid-rows-N`.
+    pub rows: Option<u16>,
+    /// `col-span-N`.
+    pub col_span: Option<u16>,
+    /// `row-span-N`.
+    pub row_span: Option<u16>,
+    /// `col-start-N`.
+    pub col_start: Option<i16>,
+    /// `row-start-N`.
+    pub row_start: Option<i16>,
+}
+
+/// `scale-*`/`rotate-*`/`translate-*`/`skew-*`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Transform {
+    /// `scale-x-*` (1.0 = 100%).
+    pub scale_x: Option<f32>,
+    /// `scale-y-*` (1.0 = 100%).
+    pub scale_y: Option<f32>,
+    /// `rotate-*` degrees (positive = clockwise).
+    pub rotate_deg: Option<f32>,
+    /// `translate-x-*`.
+    pub translate_x: Option<SizedValue>,
+    /// `translate-y-*`.
+    pub translate_y: Option<SizedValue>,
+    /// `skew-x-*` degrees.
+    pub skew_x: Option<f32>,
+    /// `skew-y-*` degrees.
+    pub skew_y: Option<f32>,
+}
+
+/// The timing function (`ease-*`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ease {
+    /// `ease-linear`.
+    Linear,
+    /// `ease-in` (`--ease-in`).
+    In,
+    /// `ease-out` (`--ease-out`).
+    Out,
+    /// `ease-in-out` (`--ease-in-out`).
+    InOut,
+}
+
+/// Which property set a `transition-*` applies to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransitionSet {
+    /// `transition` — the v4 default set (colors, opacity, shadow, transform,
+    /// filter, backdrop-filter).
+    Default,
+    /// `transition-all`.
+    All,
+    /// `transition-colors`.
+    Colors,
+    /// `transition-opacity`.
+    Opacity,
+    /// `transition-shadow`.
+    Shadow,
+    /// `transition-transform`.
+    Transform,
+    /// `transition-none`.
+    None,
+}
+
+/// `transition-*` + `duration-*` + `ease-*` + `delay-*`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Transition {
+    /// Which property set transitions.
+    pub set: TransitionSet,
+    /// `duration-*` ms (`--default-transition-duration` = 150 when unset).
+    pub duration_ms: f32,
+    /// `ease-*`.
+    pub ease: Option<Ease>,
+    /// `delay-*` ms.
+    pub delay_ms: f32,
+}
+
+/// `animate-*`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Animation {
+    /// Animation name (`spin`, `ping`, `pulse`, `bounce`, or the token
+    /// suffix of a custom `--animate-*`).
+    pub name: Box<str>,
+    /// `duration-*` override in ms, when set.
+    pub duration_ms: Option<f32>,
+    /// `ease-*` override, when set.
+    pub ease: Option<Ease>,
+    /// Infinite by default (v4 presets), unless the token says otherwise.
+    pub infinite: bool,
+}
+
+/// `border-{solid,dashed,dotted,double,...}`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BorderStyle {
+    /// `border-solid`.
+    Solid,
+    /// `border-dashed`.
+    Dashed,
+    /// `border-dotted`.
+    Dotted,
+    /// `border-double`.
+    Double,
+    /// `border-none`.
+    None,
+    /// `border-hidden`.
+    Hidden,
+}
+
+/// `content-*` (align-content).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContentAlign {
+    /// `content-start`.
+    Start,
+    /// `content-center`.
+    Center,
+    /// `content-end`.
+    End,
+    /// `content-between`.
+    SpaceBetween,
+    /// `content-around`.
+    SpaceAround,
+    /// `content-evenly`.
+    SpaceEvenly,
+    /// `content-baseline`.
+    Baseline,
+    /// `content-stretch`.
+    Stretch,
+    /// `content-normal`.
+    Normal,
+}
+
+/// `mx-auto`/`m-auto`/... — which edges are auto.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AutoEdges {
+    /// `ml-auto` / `m-auto`.
+    pub left: bool,
+    /// `mr-auto` / `m-auto`.
+    pub right: bool,
+    /// `mt-auto` / `m-auto`.
+    pub top: bool,
+    /// `mb-auto` / `m-auto`.
+    pub bottom: bool,
+}
+
+/// `gap-x-*` / `gap-y-*` (per-axis gap in px).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GapAxes {
+    /// `gap-x-*` (column gap) in px.
+    pub col: Option<f32>,
+    /// `gap-y-*` (row gap) in px.
+    pub row: Option<f32>,
+}
+
+// ---------------------------------------------------------------------------
+// slots(), overlay(), diff
+// ---------------------------------------------------------------------------
+
 impl ResolvedStyle {
     /// Iterate over set slots (for diffing / capability checks).
     pub fn slots(&self) -> Vec<Slot> {
-        let mut v = Vec::with_capacity(20);
+        let mut v = Vec::with_capacity(40);
         if self.background.is_some() {
             v.push(Slot::Background);
         }
@@ -569,68 +1045,97 @@ impl ResolvedStyle {
             v.push(Slot::PointerEvents);
         }
         for (p, _) in &self.text {
-            if !v.contains(&Slot::Text(*p)) {
-                v.push(Slot::Text(*p));
+            let s = Slot::Text(*p);
+            if !v.contains(&s) {
+                v.push(s);
             }
+        }
+        let e = &self.extras;
+        if e.position.is_some() {
+            v.push(Slot::Position);
+        }
+        if e.inset.is_some() {
+            v.push(Slot::Inset);
+        }
+        if e.z_index.is_some() {
+            v.push(Slot::ZIndex);
+        }
+        if e.overflow.is_some() {
+            v.push(Slot::Overflow);
+        }
+        if e.visibility.is_some() {
+            v.push(Slot::Visibility);
+        }
+        if e.aspect_ratio.is_some() {
+            v.push(Slot::AspectRatio);
+        }
+        if e.grid.is_some() {
+            v.push(Slot::Grid);
+        }
+        if e.transform.is_some() {
+            v.push(Slot::Transform);
+        }
+        if e.transition.is_some() {
+            v.push(Slot::Transition);
+        }
+        if e.animation.is_some() {
+            v.push(Slot::Animation);
+        }
+        if e.border_style.is_some() {
+            v.push(Slot::BorderStyle);
+        }
+        if e.flex_basis.is_some() {
+            v.push(Slot::FlexBasis);
+        }
+        if e.order.is_some() {
+            v.push(Slot::Order);
+        }
+        if e.align_content.is_some() {
+            v.push(Slot::AlignContent);
+        }
+        if e.margin_auto.is_some() {
+            v.push(Slot::MarginAuto);
+        }
+        if e.gap_axes.is_some() {
+            v.push(Slot::GapAxes);
+        }
+        if !e.shadow_rest.is_empty() {
+            v.push(Slot::ShadowRest);
+        }
+        if !e.inset_shadows.is_empty() {
+            v.push(Slot::InsetShadows);
         }
         v
     }
 
     /// Overlay `other` on top of `self` (later layers win per slot).
     pub fn overlay(&mut self, other: &ResolvedStyle) {
-        if other.background.is_some() {
-            self.background = other.background;
+        macro_rules! rep {
+            ($($f:ident),* $(,)?) => {
+                $(if other.$f.is_some() { self.$f = other.$f; })*
+            };
         }
-        if other.content_color.is_some() {
-            self.content_color = other.content_color;
-        }
-        if other.padding.is_some() {
-            self.padding = other.padding;
-        }
-        if other.border_color.is_some() {
-            self.border_color = other.border_color;
-        }
-        if other.border_width.is_some() {
-            self.border_width = other.border_width;
-        }
-        if other.corner_radius.is_some() {
-            self.corner_radius = other.corner_radius;
-        }
-        if other.dimensions.is_some() {
-            self.dimensions = other.dimensions;
-        }
-        if other.min_dimensions.is_some() {
-            self.min_dimensions = other.min_dimensions;
-        }
-        if other.max_dimensions.is_some() {
-            self.max_dimensions = other.max_dimensions;
-        }
-        if other.gap.is_some() {
-            self.gap = other.gap;
-        }
+        rep!(
+            background,
+            content_color,
+            padding,
+            border_color,
+            border_width,
+            corner_radius,
+            dimensions,
+            min_dimensions,
+            max_dimensions,
+            gap,
+            margin,
+            layout,
+            opacity,
+            ring,
+            outline,
+            cursor,
+            pointer_events
+        );
         if other.shadow.is_some() {
             self.shadow = other.shadow.clone();
-        }
-        if other.margin.is_some() {
-            self.margin = other.margin;
-        }
-        if other.layout.is_some() {
-            self.layout = other.layout;
-        }
-        if other.opacity.is_some() {
-            self.opacity = other.opacity;
-        }
-        if other.ring.is_some() {
-            self.ring = other.ring;
-        }
-        if other.outline.is_some() {
-            self.outline = other.outline;
-        }
-        if other.cursor.is_some() {
-            self.cursor = other.cursor;
-        }
-        if other.pointer_events.is_some() {
-            self.pointer_events = other.pointer_events;
         }
         for (p, val) in &other.text {
             if let Some(slot) = self.text.iter_mut().find(|(q, _)| q == p) {
@@ -638,6 +1143,36 @@ impl ResolvedStyle {
             } else {
                 self.text.push((*p, *val));
             }
+        }
+        // Extras: per-field `Some`-replacing; Vec slots replace when non-empty.
+        macro_rules! ex {
+            ($($f:ident),* $(,)?) => {
+                $(if other.extras.$f.is_some() { self.extras.$f = other.extras.$f.clone(); })*
+            };
+        }
+        ex!(
+            position,
+            inset,
+            z_index,
+            overflow,
+            visibility,
+            aspect_ratio,
+            grid,
+            transform,
+            transition,
+            animation,
+            border_style,
+            flex_basis,
+            order,
+            align_content,
+            margin_auto,
+            gap_axes
+        );
+        if !other.extras.shadow_rest.is_empty() {
+            self.extras.shadow_rest = other.extras.shadow_rest.clone();
+        }
+        if !other.extras.inset_shadows.is_empty() {
+            self.extras.inset_shadows = other.extras.inset_shadows.clone();
         }
     }
 }
@@ -661,46 +1196,160 @@ impl StyleDiff {
     }
 }
 
+/// Bitset of slot indices (all slot indices are < 128).
+type SlotBits = u128;
+
+fn bits_of(style: &ResolvedStyle) -> SlotBits {
+    let mut bits: SlotBits = 0;
+    for s in style.slots() {
+        bits |= 1u128 << s.index();
+    }
+    bits
+}
+
 /// Diff `next` against `prev`, returning the changed slots.
+///
+/// v0.2: computed via a per-field compare into a slot bitmask — O(n) with
+/// no allocation and no `contains` scans (plan §3.4.5).
 pub fn diff(prev: &ResolvedStyle, next: &ResolvedStyle) -> StyleDiff {
+    let pb = bits_of(prev);
+    let nb = bits_of(next);
     let mut changed = Vec::new();
+    let mut xor = pb ^ nb;
+    while xor != 0 {
+        let idx = xor.trailing_zeros() as u16;
+        xor &= xor - 1;
+        if let Some(slot) = slot_from_index(idx) {
+            changed.push(slot);
+        }
+    }
+    // Same-slot-set but different values (e.g. width changed, slot present
+    // on both sides): fall back to the per-field compare for the shared bits.
+    let shared = pb & nb;
     for slot in next.slots() {
-        let changed_slot = match slot {
-            Slot::Background => prev.background != next.background,
-            Slot::ContentColor => prev.content_color != next.content_color,
-            Slot::Padding => prev.padding != next.padding,
-            Slot::BorderColor => prev.border_color != next.border_color,
-            Slot::BorderWidth => prev.border_width != next.border_width,
-            Slot::CornerRadius => prev.corner_radius != next.corner_radius,
-            Slot::Dimensions => prev.dimensions != next.dimensions,
-            Slot::MinDimensions => prev.min_dimensions != next.min_dimensions,
-            Slot::MaxDimensions => prev.max_dimensions != next.max_dimensions,
-            Slot::Gap => prev.gap != next.gap,
-            Slot::Shadow => prev.shadow != next.shadow,
-            Slot::Margin => prev.margin != next.margin,
-            Slot::Layout => prev.layout != next.layout,
-            Slot::Opacity => prev.opacity != next.opacity,
-            Slot::Ring(_) => prev.ring != next.ring,
-            Slot::Outline => prev.outline != next.outline,
-            Slot::Cursor => prev.cursor != next.cursor,
-            Slot::PointerEvents => prev.pointer_events != next.pointer_events,
-            Slot::Text(p) => {
-                let pv = prev.text.iter().find(|(q, _)| *q == p).map(|(_, v)| *v);
-                let nv = next.text.iter().find(|(q, _)| *q == p).map(|(_, v)| *v);
-                pv != nv
-            }
-        };
-        if changed_slot {
+        if shared & (1u128 << slot.index()) != 0 && slot_differs(slot, prev, next) {
             changed.push(slot);
         }
     }
-    // Slots that disappeared.
-    for slot in prev.slots() {
-        if !next.slots().contains(&slot) && !changed.contains(&slot) {
-            changed.push(slot);
-        }
-    }
+    changed.sort_by_key(|s| s.index());
+    changed.dedup();
     StyleDiff { changed }
 }
 
-use std::collections::BTreeMap;
+fn slot_from_index(idx: u16) -> Option<Slot> {
+    // Reconstruct from a canonical instance list.
+    const ALL: &[Slot] = &[
+        Slot::Background,
+        Slot::ContentColor,
+        Slot::Padding,
+        Slot::BorderColor,
+        Slot::BorderWidth,
+        Slot::CornerRadius,
+        Slot::Dimensions,
+        Slot::MinDimensions,
+        Slot::MaxDimensions,
+        Slot::Gap,
+        Slot::Shadow,
+        Slot::Margin,
+        Slot::Layout,
+        Slot::Opacity,
+        Slot::Ring(RingPart::Width),
+        Slot::Ring(RingPart::Color),
+        Slot::Ring(RingPart::OffsetWidth),
+        Slot::Ring(RingPart::OffsetColor),
+        Slot::Outline,
+        Slot::Cursor,
+        Slot::PointerEvents,
+        Slot::Position,
+        Slot::Inset,
+        Slot::ZIndex,
+        Slot::Overflow,
+        Slot::Visibility,
+        Slot::AspectRatio,
+        Slot::Grid,
+        Slot::Transform,
+        Slot::Transition,
+        Slot::Animation,
+        Slot::BorderStyle,
+        Slot::FlexBasis,
+        Slot::Order,
+        Slot::AlignContent,
+        Slot::MarginAuto,
+        Slot::GapAxes,
+        Slot::ShadowRest,
+        Slot::InsetShadows,
+    ];
+    ALL.iter().copied().find(|s| s.index() == idx).or_else(|| {
+        // Text slots: the enum's discriminants start after the variants above
+        // in declaration order; reconstruct by scanning all text properties.
+        TEXT_PROPS
+            .iter()
+            .map(|p| Slot::Text(*p))
+            .find(|s| s.index() == idx)
+    })
+}
+
+const TEXT_PROPS: &[TextProperty] = &[
+    TextProperty::FontSize,
+    TextProperty::LineHeight,
+    TextProperty::FontWeight,
+    TextProperty::LetterSpacing,
+    TextProperty::Color,
+    TextProperty::UnderlineOffset,
+    TextProperty::Whitespace,
+    TextProperty::TextAlign,
+    TextProperty::Select,
+    TextProperty::FontStyle,
+    TextProperty::TextTransform,
+    TextProperty::TextDecoration,
+    TextProperty::FontFamily,
+    TextProperty::TextOverflow,
+    TextProperty::LineClamp,
+    TextProperty::FontVariantNumeric,
+];
+
+fn slot_differs(slot: Slot, prev: &ResolvedStyle, next: &ResolvedStyle) -> bool {
+    match slot {
+        Slot::Background => prev.background != next.background,
+        Slot::ContentColor => prev.content_color != next.content_color,
+        Slot::Padding => prev.padding != next.padding,
+        Slot::BorderColor => prev.border_color != next.border_color,
+        Slot::BorderWidth => prev.border_width != next.border_width,
+        Slot::CornerRadius => prev.corner_radius != next.corner_radius,
+        Slot::Dimensions => prev.dimensions != next.dimensions,
+        Slot::MinDimensions => prev.min_dimensions != next.min_dimensions,
+        Slot::MaxDimensions => prev.max_dimensions != next.max_dimensions,
+        Slot::Gap => prev.gap != next.gap,
+        Slot::Shadow => prev.shadow != next.shadow,
+        Slot::Margin => prev.margin != next.margin,
+        Slot::Layout => prev.layout != next.layout,
+        Slot::Opacity => prev.opacity != next.opacity,
+        Slot::Ring(_) => prev.ring != next.ring,
+        Slot::Outline => prev.outline != next.outline,
+        Slot::Cursor => prev.cursor != next.cursor,
+        Slot::PointerEvents => prev.pointer_events != next.pointer_events,
+        Slot::Text(p) => {
+            let pv = prev.text.iter().find(|(q, _)| *q == p).map(|(_, v)| *v);
+            let nv = next.text.iter().find(|(q, _)| *q == p).map(|(_, v)| *v);
+            pv != nv
+        }
+        Slot::Position => prev.extras.position != next.extras.position,
+        Slot::Inset => prev.extras.inset != next.extras.inset,
+        Slot::ZIndex => prev.extras.z_index != next.extras.z_index,
+        Slot::Overflow => prev.extras.overflow != next.extras.overflow,
+        Slot::Visibility => prev.extras.visibility != next.extras.visibility,
+        Slot::AspectRatio => prev.extras.aspect_ratio != next.extras.aspect_ratio,
+        Slot::Grid => prev.extras.grid != next.extras.grid,
+        Slot::Transform => prev.extras.transform != next.extras.transform,
+        Slot::Transition => prev.extras.transition != next.extras.transition,
+        Slot::Animation => prev.extras.animation != next.extras.animation,
+        Slot::BorderStyle => prev.extras.border_style != next.extras.border_style,
+        Slot::FlexBasis => prev.extras.flex_basis != next.extras.flex_basis,
+        Slot::Order => prev.extras.order != next.extras.order,
+        Slot::AlignContent => prev.extras.align_content != next.extras.align_content,
+        Slot::MarginAuto => prev.extras.margin_auto != next.extras.margin_auto,
+        Slot::GapAxes => prev.extras.gap_axes != next.extras.gap_axes,
+        Slot::ShadowRest => prev.extras.shadow_rest != next.extras.shadow_rest,
+        Slot::InsetShadows => prev.extras.inset_shadows != next.extras.inset_shadows,
+    }
+}
