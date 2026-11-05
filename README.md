@@ -100,12 +100,12 @@ All crates are `MIT OR Apache-2.0` (`LICENSE-MIT`, `LICENSE-APACHE`).
 
 </details>
 
-**Deferred to v0.2 (tracked in CHANGELOG):** publishing the backends
-(needs upstream releases), group/peer conditional layers (needs a Masonry
-patch — proposal in `reports/07-upstream-patches/`), view-side stack
-registration (retires the fallback widget), Masonry typography/responsive/
-dark slots, container queries, transitions/animations (recognized and
-dropped **with warnings**), structured variants (`has-[…]`, `data-[…]`).
+**Deferred to v0.3 (tracked in CHANGELOG):** publishing the backends
+(needs upstream releases), view-side property-stack registration (upstream
+gap #4 — retires the fallback widget), Masonry typography via native
+properties (upstream patch proposal #3), transitions/animations on the
+Masonry backend (Floem has per-set transitions; Masonry drops them with
+warnings), and arbitrary selector variants (`[&_svg]`, `[a&]`).
 
 The full capability matrix per framework lives in
 [`reports/02-capability-matrix/CAPABILITY_MATRIX.md`]; the honest-limitation
