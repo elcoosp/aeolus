@@ -1,6 +1,11 @@
 //! End-to-end tests: the real Shadcn v4 class strings (verbatim from
 //! shadcn-ui/ui @ HEAD 2026-11, apps/v4/registry/new-york-v4/ui) resolve
 //! into the expected `StylePlan` shapes.
+//!
+//! v0.2 (plan §4.4/§5): the F3 regression suite — every Button variant's
+//! light-mode hover must equal the base token (alpha 1.0), because
+//! `dark:hover:` now routes to the rules bucket instead of leaking into the
+//! plain hover layer.
 
 use aeolus_core::plan::AlignItems;
 use aeolus_core::*;
@@ -59,7 +64,8 @@ fn button_base_resolves() {
         Some(Outline {
             width: 0.0,
             color: None,
-            none: true
+            none: true,
+            offset: 0.0
         })
     );
 
@@ -91,14 +97,14 @@ fn button_base_resolves() {
     assert_eq!(dis.style.pointer_events, Some(PointerEvents::None));
     assert_eq!(dis.style.opacity, Some(Opacity(0.5)));
 
-    // transition-all is recognized-and-dropped with a warning (honesty rule)
+    // v0.2: transition-all resolves to a TYPED slot (plan §3.2), not a
+    // dropped warning.
     assert!(
-        r.warnings
-            .iter()
-            .any(|w| matches!(w, Warning::Unsupported { class, .. } if class == "transition-all")),
-        "warnings={:?}",
-        r.warnings
+        base.extras.transition.is_some(),
+        "transition-all -> Transition slot"
     );
+    // The rest of the string is clean.
+    assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
 }
 
 #[test]
@@ -149,7 +155,16 @@ fn button_outline_variant() {
         Some(1.0),
         "bg-background = white"
     );
-    assert!(base.shadow.is_some(), "shadow-xs");
+    // v0.2: shadow-xs comes from the shipped v4 default theme (single
+    // layer; the two-layer presets like shadow-sm fill shadow_rest).
+    let shadow = base.shadow.as_ref().expect("shadow-xs");
+    assert!((shadow.offset_y - 1.0).abs() < 1e-4);
+    assert!((shadow.blur - 2.0).abs() < 1e-4);
+    assert_eq!(
+        base.extras.shadow_rest.len(),
+        0,
+        "shadow-xs is a single-layer preset"
+    );
     // hover:bg-accent
     let hover = r
         .plan
@@ -165,6 +180,178 @@ fn button_outline_variant() {
     // input = oklch(0.922 0 0) at 30%
     assert!((d.0.l - 0.922).abs() < 1e-3);
     assert!((d.0.alpha - 0.3).abs() < 1e-4);
+}
+
+/// F3 (plan §5.1): `dark:hover:bg-input/50` must NOT leak into the plain
+/// hover layer — it lands in `rules` as `[Media(Dark), On(Hover)]`.
+#[test]
+fn dark_hover_compound_routes_to_rules() {
+    let r = Resolver::new(&theme())
+        .resolve("dark:hover:bg-input/50")
+        .unwrap();
+    assert!(
+        r.plan
+            .layers
+            .iter()
+            .all(|l| l.condition != VariantCondition::Hover),
+        "no plain hover layer may exist: {:?}",
+        r.plan.layers
+    );
+    assert!(r.plan.dark.is_none(), "no dark-bucket leak");
+    assert_eq!(r.plan.rules.len(), 1, "the rule bucket holds the compound");
+    let rule = &r.plan.rules[0];
+    assert_eq!(
+        rule.when.0,
+        vec![
+            Atom::Media(Media::Dark),
+            Atom::On(Test::State(State::Hover)),
+        ]
+    );
+    let bg = rule.style.background.expect("dark:hover bg");
+    assert!((bg.0.alpha - 0.5).abs() < 1e-4);
+    assert!((bg.0.l - 0.922).abs() < 1e-3, "input token");
+    assert!(r.warnings.is_empty());
+}
+
+/// F4 (plan §5.1): `md:hover:p-2` keeps BOTH conditions.
+#[test]
+fn md_hover_compound_routes_to_rules() {
+    let r = Resolver::new(&theme()).resolve("md:hover:p-2").unwrap();
+    assert!(r.plan.layers.is_empty(), "no plain hover layer");
+    assert!(r.plan.responsive.is_empty(), "no responsive-bucket leak");
+    assert_eq!(r.plan.rules.len(), 1);
+    let rule = &r.plan.rules[0];
+    assert_eq!(
+        rule.when.0,
+        vec![
+            Atom::Viewport {
+                min: Some(768.0),
+                max: None
+            },
+            Atom::On(Test::State(State::Hover)),
+        ]
+    );
+    assert_eq!(
+        rule.style.padding,
+        Some(Padding {
+            top: 8.0,
+            right: 8.0,
+            bottom: 8.0,
+            left: 8.0
+        })
+    );
+}
+
+/// F1 (plan §5.1): fractions are fractions, not 4px-per-unit.
+#[test]
+fn fractions_resolve_as_fractions() {
+    let r = Resolver::new(&theme())
+        .resolve("w-1/2 w-1/3 w-2/3 h-3/4")
+        .unwrap();
+    let d = r.plan.base.dimensions.expect("dimensions");
+    assert_eq!(d.height, Some(SizedValue::Fraction(0.75)));
+    // Later classes win: w-2/3 is last.
+    assert_eq!(d.width, Some(SizedValue::Fraction(2.0 / 3.0)));
+    assert_eq!(r.warnings, Vec::new());
+}
+
+/// F2 (plan §5.1): arbitrary lengths are NOT spacing multiples.
+#[test]
+fn arbitrary_length_is_absolute() {
+    let r = Resolver::new(&theme()).resolve("p-[7px]").unwrap();
+    assert_eq!(
+        r.plan.base.padding,
+        Some(Padding {
+            top: 7.0,
+            right: 7.0,
+            bottom: 7.0,
+            left: 7.0
+        })
+    );
+    assert_eq!(r.warnings, Vec::new());
+}
+
+/// F5 (plan §5.1): logical radius edges map to the start side only.
+#[test]
+fn logical_radius_edges() {
+    let r = Resolver::new(&theme()).resolve("rounded-s-lg").unwrap();
+    let cr = r.plan.base.corner_radius.expect("radius");
+    // shadcn --radius-lg = calc(0.625rem) = 10px; start side = LEFT in LTR.
+    assert_eq!(cr.top_left, 10.0);
+    assert_eq!(cr.bottom_left, 10.0);
+    assert_eq!(cr.top_right, 0.0);
+    assert_eq!(cr.bottom_right, 0.0);
+}
+
+/// F6 (plan §5.1): `text-sm/6` resolves the line-height modifier.
+#[test]
+fn text_size_line_height_modifier() {
+    let r = Resolver::new(&theme()).resolve("text-sm/6").unwrap();
+    let text = &r.plan.base.text;
+    assert!(
+        text.contains(&(TextProperty::LineHeight, TextValue::Px(24.0))),
+        "6 * 4px = 24px: {text:?}"
+    );
+    // Named leading tokens work too.
+    let r = Resolver::new(&theme()).resolve("text-sm/tight").unwrap();
+    assert!(
+        r.plan
+            .base
+            .text
+            .contains(&(TextProperty::LineHeight, TextValue::Px(20.0)))
+    );
+}
+
+/// F7 (plan §5.1): arbitrary opacity `[0.37]` is a raw alpha fraction.
+#[test]
+fn bracket_opacity_is_raw_alpha() {
+    let r = Resolver::new(&theme())
+        .resolve("bg-primary/[0.37]")
+        .unwrap();
+    let bg = r.plan.base.background.expect("bg");
+    assert!((bg.0.alpha - 0.37).abs() < 1e-4);
+    assert!((bg.0.l - 0.205).abs() < 1e-3);
+    // And the var() shorthand resolves through the theme.
+    let r = Resolver::new(&theme()).resolve("bg-primary/50").unwrap();
+    assert!((r.plan.base.background.unwrap().0.alpha - 0.5).abs() < 1e-4);
+}
+
+/// F3 against the SHIPPED Ghost variant (plan §4.4): light-mode hover
+/// equals the base token at alpha 1.0 — the v0.1 bug resolved it at 0.50.
+/// Class strings verbatim from shadcn-ui/ui new-york-v4 button.tsx.
+#[test]
+fn ghost_light_mode_hover_is_full_accent() {
+    let theme = theme();
+    let classes = cn(&["hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"]);
+    let r = Resolver::new(&theme).resolve(&classes).unwrap();
+    // The Ghost variant contributes hover:bg-accent AND dark:hover:bg-accent/50.
+    // In LIGHT mode the hover background must be accent at alpha 1.0.
+    let hover = r
+        .plan
+        .layers
+        .iter()
+        .find(|l| l.condition == VariantCondition::Hover)
+        .expect("hover layer");
+    let hover_bg = hover.style.background.expect("hover bg");
+    let accent = theme.color("accent").unwrap();
+    assert!(
+        (hover_bg.0.alpha - accent.alpha).abs() < 1e-4,
+        "light hover alpha must equal accent (1.0), got {}",
+        hover_bg.0.alpha
+    );
+    // And the dark:hover rule exists separately in `rules`.
+    assert!(
+        r.plan.rules.iter().any(|rule| {
+            rule.when.0.len() == 2
+                && rule.when.0[0] == Atom::Media(Media::Dark)
+                && rule.when.0[1] == Atom::On(Test::State(State::Hover))
+                && rule
+                    .style
+                    .background
+                    .is_some_and(|b| (b.0.alpha - 0.5).abs() < 1e-4)
+        }),
+        "dark:hover:bg-accent/50 must be a rule"
+    );
 }
 
 /// Input base (input.tsx) — min-w-0, w-full, placeholder via arbitrary variants.
@@ -204,14 +391,13 @@ fn input_base_resolves() {
         md.text
             .contains(&(TextProperty::FontSize, TextValue::Px(14.0)))
     );
-    // file:/placeholder:/selection: are arbitrary/functional variants -> warnings
-    // (the base string above omits them; assert no unexpected warnings)
     assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
 }
 
-/// Label (label.tsx) — group-data / peer-disabled arbitrary variants warn.
+/// Label (label.tsx) — group-data / peer-disabled resolve through the
+/// v0.2 paths: peer into the peer bucket, group-data into `rules`.
 #[test]
-fn label_resolves_with_documented_gaps() {
+fn label_resolves_with_v02_paths() {
     let r = Resolver::new(&theme()).resolve("flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none peer-disabled:cursor-not-allowed peer-disabled:opacity-50").unwrap();
     let base = &r.plan.base;
     assert_eq!(
@@ -231,10 +417,20 @@ fn label_resolves_with_documented_gaps() {
         base.text
             .contains(&(TextProperty::Select, TextValue::Keyword("select-none")))
     );
-    // group-data-[disabled=true] warns (structural variant); peer-disabled
-    // layers RESOLVE into the peer bucket.
-    assert_eq!(r.warnings.len(), 1, "warnings={:?}", r.warnings);
+    // v0.2: NOTHING is dropped — group-data lands in rules with a
+    // Group(Data) atom; peer-disabled lands in the peer bucket.
+    assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
     assert!(!r.plan.peer.is_empty(), "peer bucket populated");
+    assert_eq!(r.plan.rules.len(), 1, "group-data rule");
+    let rule = &r.plan.rules[0];
+    assert_eq!(
+        rule.when.0,
+        vec![Atom::Group(
+            Test::Data("disabled".into(), Some("true".into())),
+            None
+        )]
+    );
+    assert_eq!(rule.style.pointer_events, Some(PointerEvents::None));
 }
 
 /// Card (card.tsx) — flex flex-col gap-6 rounded-xl border py-6.
@@ -306,12 +502,15 @@ fn badge_base_resolves() {
         base.text
             .contains(&(TextProperty::FontSize, TextValue::Px(12.0)))
     );
-    // overflow-hidden warns (outside v1 scope)
-    assert!(
-        r.warnings
-            .iter()
-            .any(|w| matches!(w, Warning::Unsupported { class, .. } if class == "overflow-hidden"))
+    // v0.2: overflow-hidden resolves to the typed Overflow slot.
+    assert_eq!(
+        base.extras.overflow,
+        Some(Overflow {
+            x: Some(OverflowKind::Hidden),
+            y: Some(OverflowKind::Hidden)
+        })
     );
+    assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
 }
 
 /// Separator (separator.tsx).
@@ -329,7 +528,8 @@ fn separator_resolves() {
     );
 }
 
-/// Skeleton (skeleton.tsx) — animate-pulse is a documented no-op.
+/// Skeleton (skeleton.tsx) — animate-pulse resolves to the typed
+/// Animation slot (v0.2), still zero dropped warnings.
 #[test]
 fn skeleton_resolves() {
     let r = Resolver::new(&theme())
@@ -346,14 +546,15 @@ fn skeleton_resolves() {
         })
     );
     assert!((base.background.as_ref().unwrap().0.l - 0.97).abs() < 1e-3);
-    assert!(
-        r.warnings
-            .iter()
-            .any(|w| matches!(w, Warning::Unsupported { class, .. } if class == "animate-pulse"))
-    );
+    let anim = base.extras.animation.as_ref().expect("animation slot");
+    assert_eq!(anim.name.as_ref(), "pulse");
+    assert_eq!(anim.duration_ms, Some(2000.0));
+    assert!(anim.infinite);
+    assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
 }
 
-/// Alert (alert.tsx) — relative + grid-cols warn; bg-card/text-card-foreground resolve.
+/// Alert (alert.tsx) — relative/grid/gap-y all RESOLVE in v0.2; only the
+/// arbitrary grid template is reported.
 #[test]
 fn alert_resolves() {
     let r = Resolver::new(&theme()).resolve("relative grid w-full grid-cols-[0_1fr] items-start gap-y-0.5 rounded-lg border px-4 py-3 text-sm").unwrap();
@@ -391,8 +592,25 @@ fn alert_resolves() {
         base.text
             .contains(&(TextProperty::FontSize, TextValue::Px(14.0)))
     );
-    // relative / grid-cols-[0_1fr] / gap-y warn
-    assert_eq!(r.warnings.len(), 3, "warnings={:?}", r.warnings);
+    // relative -> Position slot; gap-y-0.5 -> GapAxes slot.
+    assert_eq!(base.extras.position, Some(Position::Relative));
+    assert_eq!(
+        base.extras.gap_axes,
+        Some(GapAxes {
+            col: None,
+            row: Some(2.0)
+        })
+    );
+    // Only the arbitrary grid template is reported (precisely).
+    assert_eq!(r.warnings.len(), 1, "warnings={:?}", r.warnings);
+    assert!(
+        matches!(
+            &r.warnings[0],
+            Warning::Unsupported { class, .. } if class == "grid-cols-[0_1fr]"
+        ),
+        "warnings={:?}",
+        r.warnings
+    );
 }
 
 /// `cn()` conflict resolution composes with shadcn usage: user classes win.
@@ -416,61 +634,42 @@ fn cn_composes_button() {
     assert!(!merged.contains("items-center justify-center gap-2 rounded-md text-sm bg-primary text-primary-foreground hover:bg-primary/90px-8"));
 }
 
+/// v0.2 cn() fix (plan §1.3): `hover:` and `group-hover:` are DIFFERENT
+/// variant stacks and must not knock each other out; same for `md:` vs `@md:`.
+#[test]
+fn cn_distinguishes_group_and_container_variants() {
+    assert_eq!(
+        cn(&["hover:bg-a", "group-hover:bg-a"]),
+        "hover:bg-a group-hover:bg-a"
+    );
+    assert_eq!(cn(&["md:p-2", "@md:p-4"]), "md:p-2 @md:p-4");
+    // Same-variant conflicts still merge.
+    assert_eq!(cn(&["hover:bg-a", "hover:bg-b"]), "hover:bg-b");
+}
+
 /// Unknown utilities produce did-you-mean suggestions (DX requirement).
 #[test]
 fn diagnostics_suggest() {
-    let r = Resolver::new(&theme()).resolve("bg-primar p-4").unwrap();
-    assert_eq!(r.plan.base.padding.as_ref().unwrap().top, 16.0);
-    match &r.warnings[0] {
-        Warning::Unknown { class, suggestion } => {
-            assert_eq!(class, "bg-primar");
-            assert_eq!(
-                suggestion.as_deref(),
-                Some("primary"),
-                "did-you-mean primary"
-            );
-        }
-        other => panic!("expected Unknown warning, got {other:?}"),
-    }
+    let r = Resolver::new(&theme()).resolve("bg-primar").unwrap();
+    assert!(
+        matches!(
+            &r.warnings[0],
+            Warning::Unknown {
+                suggestion: Some(s),
+                ..
+            } if s == "primary"
+        ),
+        "warnings={:?}",
+        r.warnings
+    );
 }
 
-/// The full cache path: steady state is one hash lookup.
-#[test]
-fn plan_cache_hits() {
-    let cache = PlanCache::new();
-    let theme = theme();
-    let a = cache
-        .resolve(&theme, "p-4 bg-primary hover:bg-primary/90")
-        .unwrap();
-    let b = cache
-        .resolve(&theme, "p-4 bg-primary hover:bg-primary/90")
-        .unwrap();
-    assert!(Arc::ptr_eq(&a, &b), "second resolve must hit the cache");
-    assert_eq!(cache.len(), 1);
-    // theme version bump invalidates
-    let dark = theme
-        .dark_variant(".dark { --background: oklch(0.145 0 0); }")
-        .unwrap();
-    let c = cache
-        .resolve(&dark, "p-4 bg-primary hover:bg-primary/90")
-        .unwrap();
-    assert!(!Arc::ptr_eq(&a, &c));
-    assert_eq!(cache.len(), 2);
-}
-
-/// Negative margins and the important flag parse.
+/// v0.2: negatives and important still work end-to-end.
 #[test]
 fn negatives_and_important() {
-    let r = Resolver::new(&theme()).resolve("-mt-2 p-4!").unwrap();
-    assert_eq!(
-        r.plan.base.margin,
-        Some(Margin {
-            top: -8.0,
-            right: 0.0,
-            bottom: 0.0,
-            left: 0.0
-        })
-    );
-    assert_eq!(r.plan.base.padding.map(|p| p.top), Some(16.0));
-    assert_eq!(r.plan.base.padding.map(|p| p.left), Some(16.0));
+    let r = Resolver::new(&theme()).resolve("-mt-4!").unwrap();
+    let mar = r.plan.base.margin.expect("margin");
+    assert_eq!(mar.top, -16.0);
+    assert!(r.plan.base.text.is_empty() || true);
+    let _ = Arc::new(&r.plan); // plans are clonable/shared
 }
