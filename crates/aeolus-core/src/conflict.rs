@@ -10,7 +10,7 @@
 //! tables; the compile-time trie (`tw!` pre-interned IDs) is the planned
 //! optimization and produces identical results.
 
-use crate::ast::{ClassToken, NamedVariant};
+use crate::ast::ClassToken;
 use crate::parser::parse_class_string;
 use std::collections::HashSet;
 
@@ -90,13 +90,15 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         // Ring splits like border: width (numbers / px-rem arbitrary) vs
         // color, offset width vs offset color — four independent groups
         // (tw_merge 'ring-w'/'ring-color'/'ring-offset-w'/'ring-offset-color').
-        ["ring", "offset", only] | ["ring-offset", only] if is_width_value(only, t.arbitrary) => {
+        ["ring", "offset", only] | ["ring-offset", only]
+            if is_width_value(only, t.arbitrary.as_ref()) =>
+        {
             "ring-offset-w"
         }
         ["ring", "offset", ..] | ["ring-offset", ..] => "ring-offset-color",
         ["ring"] => "ring-w",
-        ["ring", only] if is_width_value(only, t.arbitrary) => "ring-w",
-        ["ring", ..] if is_width_value("", t.arbitrary) => "ring-w",
+        ["ring", only] if is_width_value(only, t.arbitrary.as_ref()) => "ring-w",
+        ["ring", ..] if is_width_value("", t.arbitrary.as_ref()) => "ring-w",
         ["ring", ..] => "ring-color",
         ["outline", ..] => "outline",
         ["opacity", ..] => "opacity",
@@ -191,8 +193,8 @@ fn is_border_width(els: &[&str]) -> bool {
 /// Is this ring element an explicit width? `2` (ring-2), `3px` (ring-[3px]),
 /// bare `ring` (default width). Colors never parse as numbers and arbitrary
 /// colors carry `#`/`oklch(`/names.
-fn is_width_value(e: &str, arbitrary: Option<&str>) -> bool {
-    let v = arbitrary.unwrap_or(e);
+fn is_width_value(e: &str, arbitrary: Option<&crate::ast::Arbitrary<'_>>) -> bool {
+    let v = arbitrary.map(|a| a.value).unwrap_or(e);
     v.parse::<f32>().is_ok() || v.ends_with("px") || v.ends_with("rem") || v.ends_with("em")
 }
 
@@ -279,36 +281,16 @@ fn collisions(group: &str) -> &'static [&'static str] {
 }
 
 /// The merge key: same variants + importance + group ⇒ later wins.
+///
+/// v0.2 fix (plan §1.3): the variant key is the EXACT canonical variant
+/// prefix (`token.variant_prefix()`), so `hover:` and `group-hover:` no
+/// longer share a key, and `md:` no longer collides with `@md:`.
 fn key_of(t: &ClassToken<'_>) -> (String, bool, &'static str) {
-    let variants = t
-        .variants
-        .iter()
-        .map(|v| match v {
-            crate::ast::Variant::Named(n) => name_of(n),
-            crate::ast::Variant::Grouped { name, .. } => name_of(name),
-            crate::ast::Variant::Arbitrary(a) => a,
-        })
-        .collect::<Vec<_>>()
-        .join(":");
     (
-        variants,
+        t.variant_prefix(),
         t.important,
         collision_group(t).unwrap_or("unclassified"),
     )
-}
-
-fn name_of(n: &NamedVariant) -> &'static str {
-    match n {
-        NamedVariant::Hover => "hover",
-        NamedVariant::Focus => "focus",
-        NamedVariant::FocusVisible => "focus-visible",
-        NamedVariant::FocusWithin => "focus-within",
-        NamedVariant::Active => "active",
-        NamedVariant::Disabled => "disabled",
-        NamedVariant::Visited => "visited",
-        NamedVariant::Dark => "dark",
-        NamedVariant::Breakpoint(b) | NamedVariant::Container(b) => b.name(),
-    }
 }
 
 /// Merge conflicting Tailwind classes; the last conflicting class wins.
