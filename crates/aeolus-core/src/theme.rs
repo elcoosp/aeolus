@@ -106,6 +106,11 @@ pub struct TailwindTheme {
     raw_calcs: Vec<(String, String)>,
     /// `--text-sm--line-height` ratios pending their `--text-sm` parent.
     pending_lh: Vec<(String, f32)>,
+    /// Bare `var(--x)` values for COLOR keys (`@theme inline
+    /// { --color-primary: var(--primary); }`) whose target token had not
+    /// been parsed yet — declaration order is irrelevant to custom-property
+    /// resolution, so these re-resolve in a fixpoint pass.
+    pending_vars: Vec<(String, String)>,
     /// Raw declaration values (for `var()` opacity modifiers like
     /// `bg-red-500/(--o)`).
     raw_vars: HashMap<String, String>,
@@ -141,6 +146,14 @@ impl Default for TailwindTheme {
     }
 }
 
+/// Outcome of one pending bare-var color retry.
+enum PendingVar {
+    /// Deps still missing — keep pending.
+    Unresolved,
+    /// The value became parseable but is not a valid color.
+    Invalid(ParseError),
+}
+
 impl TailwindTheme {
     fn empty() -> Self {
         Self {
@@ -148,6 +161,7 @@ impl TailwindTheme {
             breakpoints: Vec::new(),
             raw_calcs: Vec::new(),
             pending_lh: Vec::new(),
+            pending_vars: Vec::new(),
             raw_vars: HashMap::new(),
             custom_variants: Vec::new(),
             custom_utilities: Vec::new(),
@@ -478,18 +492,56 @@ impl TailwindTheme {
         for (_kind, key, value) in decls {
             self.insert_var(key, value)?;
         }
-        // Deferred calc() pass: deps now exist.
-        let pending = std::mem::take(&mut self.raw_calcs);
-        for (key, expr) in pending {
-            let (raw, is_px) = eval_calc(&expr, &self.tokens)?;
-            if let Some(parent) = key.strip_suffix("--line-height")
-                && parent.starts_with("--text-")
-            {
-                // `calc(1.25 / 0.875)` is a unitless ratio of font-size.
-                self.pending_lh.push((parent.to_string(), raw));
-                continue;
+        // Deferred calc()/var() pass, iterated to a FIXPOINT: entries may
+        // depend on other deferred entries (`--b: calc(var(--a) + 2px)` with
+        // `--a: calc(1px + 1px)`), and CSS declaration order is irrelevant to
+        // custom-property resolution (`@theme inline` may precede its
+        // `:root` source). Only entries whose deps NEVER appear error.
+        let mut pending_calcs = std::mem::take(&mut self.raw_calcs);
+        let mut pending_vars = std::mem::take(&mut self.pending_vars);
+        while !pending_calcs.is_empty() || !pending_vars.is_empty() {
+            let mut progress = false;
+            let mut still_calcs = Vec::new();
+            for (key, expr) in pending_calcs {
+                match eval_calc(&expr, &self.tokens) {
+                    Ok((raw, is_px)) => {
+                        progress = true;
+                        if let Some(parent) = key.strip_suffix("--line-height")
+                            && parent.starts_with("--text-")
+                        {
+                            // `calc(1.25 / 0.875)` is a unitless ratio of font-size.
+                            self.pending_lh.push((parent.to_string(), raw));
+                            continue;
+                        }
+                        self.store_length(&key, if is_px { raw } else { raw * 16.0 });
+                    }
+                    // Deps not parsed yet — retry after the next round.
+                    Err(_) => still_calcs.push((key, expr)),
+                }
             }
-            self.store_length(&key, if is_px { raw } else { raw * 16.0 });
+            pending_calcs = still_calcs;
+            let mut still_vars = Vec::new();
+            for (key, value) in pending_vars {
+                match self.try_pending_color_var(&key, &value) {
+                    Ok(()) => progress = true,
+                    Err(PendingVar::Unresolved) => still_vars.push((key, value)),
+                    Err(PendingVar::Invalid(e)) => return Err(e),
+                }
+            }
+            pending_vars = still_vars;
+            if !progress {
+                break;
+            }
+        }
+        // Truly-unresolvable references keep the old precise-error contract.
+        if let Some((key, expr)) = pending_calcs.first() {
+            let err = eval_calc(expr, &self.tokens).expect_err("unresolved calc must still fail");
+            return Err(ParseError::new(format!("{key}: {}", err.message)));
+        }
+        if let Some((key, _)) = pending_vars.first() {
+            return Err(ParseError::new(format!(
+                "{key}: var() reference never resolves to a color token"
+            )));
         }
         // Pair any pending line-height ratios whose parents arrived earlier.
         let pending_lh = std::mem::take(&mut self.pending_lh);
@@ -567,6 +619,29 @@ impl TailwindTheme {
         }
     }
 
+    /// Retry one deferred bare-`var()` COLOR value (`--color-x: var(--x)`).
+    /// `Ok(())` = stored; `Unresolved` = the target token is still unknown;
+    /// `Invalid` = resolvable but not a color (precise error, as before).
+    fn try_pending_color_var(&mut self, key: &str, value: &str) -> Result<(), PendingVar> {
+        let inner = value
+            .trim()
+            .strip_prefix("var(")
+            .and_then(|r| r.strip_suffix(')'))
+            .map(str::trim)
+            .unwrap_or("");
+        if !matches!(self.tokens.get(inner), Some(Token::Color(_))) {
+            return Err(PendingVar::Unresolved);
+        }
+        let resolved = resolve_vars(value, &self.tokens).map_err(PendingVar::Invalid)?;
+        match Color::parse(&resolved) {
+            Ok(c) => {
+                self.tokens.insert(key.to_string(), Token::Color(c));
+                Ok(())
+            }
+            Err(e) => Err(PendingVar::Invalid(e)),
+        }
+    }
+
     fn insert_var(&mut self, key: &str, value: &str) -> Result<(), ParseError> {
         // Keep the raw declaration for var() opacity modifiers.
         self.raw_vars.insert(key.to_string(), value.to_string());
@@ -587,6 +662,22 @@ impl TailwindTheme {
             }
             self.raw_calcs.push((key.to_string(), value.to_string()));
             return Ok(());
+        }
+        // A bare `var(--x)` for a COLOR key (`@theme inline` chains):
+        // substitute now when the target is a known color, otherwise defer —
+        // CSS declaration order must not matter (the `@theme inline` block
+        // may precede the `:root` block that defines the variable).
+        if value.trim_start().starts_with("var(")
+            && (key.starts_with("--color-") || is_color_only_key(key))
+        {
+            match self.try_pending_color_var(key, value) {
+                Ok(()) => return Ok(()),
+                Err(PendingVar::Unresolved) => {
+                    self.pending_vars.push((key.to_string(), value.to_string()));
+                    return Ok(());
+                }
+                Err(PendingVar::Invalid(e)) => return Err(e),
+            }
         }
         // --text-sm--line-height patches its parent --text-sm token.
         if let Some(parent) = key.strip_suffix("--line-height")
@@ -1191,6 +1282,12 @@ pub fn extract_custom_rules(css: &str) -> (Vec<(String, CustomVariant)>, Vec<Cus
                 if !name.is_empty() {
                     variants.push((name, CustomVariant::Unsupported(body.trim().to_string())));
                 }
+                if close >= after.len() {
+                    // Unbalanced block: the malformed tail is ignored, never
+                    // sliced out of bounds (same contract as
+                    // `extract_declarations`; fuzz-reachable panic).
+                    break;
+                }
                 rest = &after[close + 1..];
             }
             (Some(b), None) => {
@@ -1200,6 +1297,9 @@ pub fn extract_custom_rules(css: &str) -> (Vec<(String, CustomVariant)>, Vec<Cus
                 let name = header.split_whitespace().next().unwrap_or("").to_string();
                 if !name.is_empty() {
                     variants.push((name, CustomVariant::Unsupported(body.trim().to_string())));
+                }
+                if close >= after.len() {
+                    break;
                 }
                 rest = &after[close + 1..];
             }
@@ -1242,6 +1342,11 @@ pub fn extract_custom_rules(css: &str) -> (Vec<(String, CustomVariant)>, Vec<Cus
                 })
                 .unwrap_or_default();
             utilities.push(CustomUtility { name, classes });
+        }
+        if close >= after.len() {
+            // Unbalanced `@utility` block: ignore the malformed tail
+            // (fuzz-reachable panic — `rest[close + 1..]` was out of bounds).
+            break;
         }
         rest = &after[close + 1..];
     }
@@ -1315,9 +1420,47 @@ mod tests {
         assert!(TailwindTheme::from_theme_css(".dark { --x: oklch(0 0 0)").is_ok());
         assert!(TailwindTheme::from_theme_css("{a").is_ok());
         assert!(TailwindTheme::from_theme_css(":root { --primary: oklch(0.2 0 0) } {").is_ok());
+        // Same contract for the custom-rule scanner (panicked before the
+        // guard: `@utility foo {` with no closing brace).
+        assert!(TailwindTheme::from_theme_css("@utility foo { @apply px-2;").is_ok());
+        assert!(TailwindTheme::from_theme_css("@custom-variant sidebar { &::before").is_ok());
         // Well-formed input still parses its declarations.
         let t = TailwindTheme::from_theme_css(":root { --radius: 10px }").unwrap();
         assert_eq!(t.length("radius"), Some(10.0));
+    }
+
+    /// CSS custom properties resolve at USE time, so declaration ORDER must
+    /// not matter: an `@theme inline` var chain may precede its `:root`
+    /// source (regression: it used to fail with `unsupported color function
+    /// "var"`), and a calc() may reference a var whose own value is a later
+    /// calc() (regression: `calc() references unknown token`).
+    #[test]
+    fn deferred_vars_and_calcs_are_order_independent() {
+        let t = TailwindTheme::from_theme_css(
+            "@theme inline { --color-primary: var(--primary); }\n:root { --primary: oklch(0.205 0 0); }",
+        )
+        .unwrap();
+        let p = t.color("primary").expect("out-of-order var chain");
+        assert!((p.l - 0.205).abs() < 1e-4);
+
+        let t = TailwindTheme::from_theme_css(
+            "@theme { --radius-md: calc(var(--radius) - 2px); }\n:root { --radius: 10px; }",
+        )
+        .unwrap();
+        assert_eq!(t.radius("md"), Some(8.0));
+
+        // calc() → calc() dependency chains (multi-level deferral).
+        let t = TailwindTheme::from_theme_css(
+            "@theme { --b: calc(var(--a) + 2px); --a: calc(1px + 1px); }",
+        )
+        .unwrap();
+        assert_eq!(t.length("b"), Some(4.0));
+
+        // A truly-unresolvable reference keeps the precise-error contract.
+        assert!(
+            TailwindTheme::from_theme_css("@theme inline { --color-x: var(--never-defined); }")
+                .is_err()
+        );
     }
 
     /// v4 `calc()` uses standard operator precedence. The Shadcn strings only
