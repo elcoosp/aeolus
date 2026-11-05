@@ -106,7 +106,17 @@ impl StylePlan {
         for l in &self.layers {
             let state = State::from(l.condition);
             if p.test(&Test::State(state)) {
-                hits.push(((Atom::On(Test::State(state)).order(), 1), &l.style));
+                // The tiebreak is the condition's canonical v4 rank
+                // (hover < focus < focus-visible < focus-within < active <
+                // disabled < visited — `VariantCondition::rank`), NOT source
+                // order: Tailwind sorts the generated CSS by variant order,
+                // so a focused+hovered element resolves the FOCUS layer even
+                // when the class string lists `hover:` first. Same order the
+                // stack lowering and `resolved_for_state` use.
+                hits.push((
+                    (Atom::On(Test::State(state)).order(), l.condition.rank() + 1),
+                    &l.style,
+                ));
             }
         }
         for (bp, s) in &self.responsive {
