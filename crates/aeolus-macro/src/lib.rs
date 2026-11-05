@@ -25,6 +25,21 @@ pub fn tw(input: TokenStream) -> TokenStream {
     // duplicated grammar (DRY).
     let (tokens, errors) = aeolus_core::parser::parse_class_string(&literal);
     if errors.is_empty() {
+        // v0.2 (plan §5.6): the runtime parser no longer rejects unknown
+        // variant *names* (they become `NamedVariant::Custom`, resolved
+        // against theme breakpoints / @custom-variant at runtime). The
+        // macro keeps the HARD contract: a static class list must be fully
+        // understood at compile time, so Custom variants are a compile
+        // error (preserves the typo check).
+        let unknown: Vec<&str> = tokens.iter().flat_map(|t| unknown_variants(t)).collect();
+        if !unknown.is_empty() {
+            let mut msg = String::from("tw!: unknown variant name(s)");
+            for v in unknown {
+                msg.push_str(&format!(" {v}:"));
+            }
+            msg.push_str(" — a static class list must only use v4 variants known to aeolus (dynamic strings may use @custom-variant names via the runtime resolver)");
+            return compile_error(&input, &msg);
+        }
         let n = tokens.len();
         if cfg!(feature = "verbose-diagnostics") && n == 0 {
             return compile_error(&input, "tw!: empty class string");
@@ -140,4 +155,24 @@ fn compile_error(input: &TokenStream, msg: &str) -> TokenStream {
     // Preserve the span by attaching to the first token when possible.
     let _ = input;
     format!("compile_error!({:?})", msg).parse().unwrap()
+}
+
+/// Collect every `NamedVariant::Custom` name in a token's variant stack
+/// (including group/peer/not inners) — the compile-time typo check.
+fn unknown_variants<'a>(t: &aeolus_core::ClassToken<'a>) -> Vec<&'a str> {
+    fn walk<'a>(out: &mut Vec<&'a str>, v: &aeolus_core::Variant<'a>) {
+        match v {
+            aeolus_core::Variant::Named(aeolus_core::NamedVariant::Custom(name)) => {
+                out.push(name);
+            }
+            aeolus_core::Variant::Grouped { inner, .. } => walk(out, inner),
+            aeolus_core::Variant::Not(inner) => walk(out, inner),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for v in t.variants.iter() {
+        walk(&mut out, v);
+    }
+    out
 }
