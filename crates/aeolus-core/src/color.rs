@@ -327,6 +327,12 @@ fn parse_component(s: &str, scale: f32) -> Result<f32, ParseError> {
             .trim()
             .parse()
             .map_err(|_| ParseError::new(format!("bad percentage {s:?}")))?;
+        // Percentages need a FINITE reference range. For unbounded
+        // components (Oklab a/b, Oklch chroma — `scale = INFINITY`) the CSS
+        // spec's percentage reference is ±0.4; `v% of INFINITY` would
+        // produce NaN/inf and silently poison the whole conversion
+        // (fuzz-found: `oklab(0% 0% 3)` used to yield NaN chroma).
+        let scale = if scale.is_infinite() { 0.4 } else { scale };
         return Ok(v / 100.0 * scale);
     }
     s.parse::<f32>()
@@ -387,6 +393,25 @@ fn linear_srgb_from_oklab(l: f32, a: f32, b: f32) -> (f32, f32, f32) {
 
 #[cfg(test)]
 mod tests {
+    /// Fuzz regression (v0.2): percentages on UNBOUNDED components
+    /// (Oklab a/b, Oklch chroma) used to produce NaN via `pct% of INFINITY`.
+    /// The CSS percentage reference for those components is ±0.4.
+    #[test]
+    fn percentage_on_unbounded_components_is_finite() {
+        for s in [
+            "oklab(0% 0% 3)",
+            "   oklab(   0%  \n 0%  \n\n\n\n3  )  ",
+            "oklch(50% 50% 90)",
+        ] {
+            let c = Color::parse(s).unwrap();
+            let [r, g, b, a] = c.to_srgba();
+            assert!(
+                r.is_finite() && g.is_finite() && b.is_finite() && a.is_finite(),
+                "{s} must convert to finite sRGB"
+            );
+        }
+    }
+
     use super::*;
 
     /// Tailwind v4's own palette is the oracle: `oklch(0.637 0.237 25.331)` is
