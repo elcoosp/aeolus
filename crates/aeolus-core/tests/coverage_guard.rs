@@ -319,10 +319,10 @@ fn v02_slots_are_populated() {
         r.plan.base.border_width.as_ref().map(|b| b.right),
         Some(2.0)
     );
-    // ring-inset + outline-offset.
+    // ring-inset + outline-offset (v4 px semantics: offset-2 = 2px).
     let r = resolver.resolve("ring-inset outline-offset-2").unwrap();
     assert_eq!(r.plan.base.ring.map(|r| r.inset), Some(true));
-    assert_eq!(r.plan.base.outline.map(|o| o.offset), Some(8.0));
+    assert_eq!(r.plan.base.outline.map(|o| o.offset), Some(2.0));
 }
 
 /// The theme ships the v4 default scales the plan requires (§3.3).
