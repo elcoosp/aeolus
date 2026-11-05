@@ -67,15 +67,30 @@ impl PropertySupport {
             Slot::MinDimensions => self.min_dimensions,
             Slot::MaxDimensions => self.max_dimensions,
             Slot::Gap => self.gap,
-            Slot::Shadow => self.shadow,
-            Slot::Margin => self.margin,
-            Slot::Layout => self.layout,
+            Slot::Shadow | Slot::ShadowRest | Slot::InsetShadows => self.shadow,
+            Slot::Margin | Slot::MarginAuto => self.margin,
+            Slot::Layout | Slot::FlexBasis | Slot::Order | Slot::AlignContent | Slot::GapAxes => {
+                self.layout
+            }
             Slot::Opacity => self.opacity,
             Slot::Ring(_) => self.ring,
-            Slot::Outline => self.outline,
+            Slot::Outline | Slot::BorderStyle => self.outline,
             Slot::Cursor => self.cursor,
             Slot::PointerEvents => self.pointer_events,
             Slot::Text(_) => self.text,
+            // v0.2 extras have no per-slot capability flags yet; they are
+            // negotiated by the backend lowering (native vs emulated vs
+            // reported — the parity contract, plan §4.1).
+            Slot::Position
+            | Slot::Inset
+            | Slot::ZIndex
+            | Slot::Overflow
+            | Slot::Visibility
+            | Slot::AspectRatio
+            | Slot::Grid
+            | Slot::Transform
+            | Slot::Transition
+            | Slot::Animation => false,
         }
     }
 }
