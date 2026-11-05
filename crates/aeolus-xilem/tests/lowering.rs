@@ -148,9 +148,16 @@ fn unrepresentable_conditions_are_reported() {
         whats.iter().any(|w| w.starts_with("responsive:")),
         "{report:?}"
     );
+    // v0.2: `@lg` routes into `rules` (evaluated by StyledWidget's probe)
+    // instead of the legacy container bucket — nothing is dropped.
+    assert!(!r.plan.container.is_empty() || !r.plan.rules.is_empty());
     assert!(
-        whats.iter().any(|w| w.starts_with("container:")),
-        "{report:?}"
+        r.plan.rules.iter().any(|rule| matches!(
+            rule.when.0.first(),
+            Some(aeolus_core::Atom::Container { .. })
+        )),
+        "the @lg rule must be a Container atom: {:?}",
+        r.plan.rules
     );
 }
 
