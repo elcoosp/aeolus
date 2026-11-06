@@ -103,3 +103,31 @@ fn active_wins_over_hover() {
     let [br, bg_, bb, _] = black.to_srgba();
     assert!((r - br).abs() < 1e-3 && (g - bg_).abs() < 1e-3 && (b - bb).abs() < 1e-3);
 }
+
+/// Arbitrary selector variants (v0.3 §1.2): `[&:hover]:` classifies to the
+/// same typed hover condition the fallback widget's probe answers, so the
+/// existing pre-paint `plan.resolve(&probe)` path styles it with no
+/// backend change (v0.3 §2.4).
+#[test]
+fn arbitrary_self_hover_resolves_through_the_probe() {
+    use aeolus_core::cond::Test;
+    use aeolus_core::eval::Probe;
+    use aeolus_xilem::widget::resolve_full;
+
+    struct Hovered(bool);
+    impl Probe for Hovered {
+        fn test(&self, t: &Test) -> bool {
+            matches!(t, Test::State(aeolus_core::State::Hover)) && self.0
+        }
+    }
+
+    let theme = shadcn_default().unwrap();
+    let resolver = Resolver::new(&theme);
+    let r = resolver.resolve("[&:hover]:bg-red-500").unwrap();
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+
+    let hovered = resolve_full(&r.plan, &Hovered(true));
+    assert!(hovered.background.is_some(), "fires on hover");
+    let idle = resolve_full(&r.plan, &Hovered(false));
+    assert!(idle.background.is_none(), "not at rest");
+}
