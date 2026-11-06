@@ -36,6 +36,7 @@ impl Probe for TableProbe {
             Test::Data(name, _) => name.as_ref() == "state" && self.data_open,
             Test::Aria(_, _) => false,
             Test::Structural(s) => matches!(s, Structural::First) && self.first_child,
+            Test::Tag(_) => false,
         }
     }
 
