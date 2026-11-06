@@ -35,6 +35,7 @@ pub mod eval;
 pub mod parser;
 pub mod plan;
 pub mod resolve;
+pub(crate) mod selector;
 pub mod theme;
 
 pub use ast::{

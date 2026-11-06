@@ -53,6 +53,12 @@ pub enum Test {
     Aria(Box<str>, Option<Box<str>>),
     /// A structural (DOM-position) test.
     Structural(Structural),
+    /// An element-kind test (`[a&]`, `[p]` — v0.3 §1.2): the element "is
+    /// a" tag. Native widgets have no element kind; the default probe
+    /// answer is "no", so the rule simply never fires there — the same
+    /// semantics CSS has when a selector does not match. A backend that
+    /// models element kinds (e.g. a web backend) answers honestly.
+    Tag(Box<str>),
 }
 
 impl Atom {
@@ -65,6 +71,12 @@ impl Atom {
             Atom::On(t) => match t {
                 Test::Structural(_) => 8,
                 Test::State(_) => 10,
+                // Element-kind tests rank with the state band: they are
+                // tests about the element itself, and arbitrary variants
+                // that are byte-identical to named ones ([&:hover] ≡
+                // hover:) must share their band so the cascade order is
+                // stable (v0.3 §1.2; ties keep source order).
+                Test::Tag(_) => 10,
                 // aria/data come after states in v4's variant order.
                 Test::Data(_, _) | Test::Aria(_, _) => 14,
             },

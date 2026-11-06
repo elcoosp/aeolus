@@ -408,8 +408,8 @@ impl<'t> Resolver<'t> {
         let class = t.raw.to_string();
         let mut atoms = Vec::new();
         for v in t.variants.iter() {
-            match self.atom_of(v) {
-                Ok(a) => atoms.push(a),
+            match self.atoms_of(v) {
+                Ok(mut more) => atoms.append(&mut more),
                 Err(reason) => {
                     return Route::Skip(Warning::Unsupported { class, reason });
                 }
@@ -453,10 +453,21 @@ impl<'t> Resolver<'t> {
         ALL.into_iter().find(|b| self.theme.breakpoint_px(*b) == px)
     }
 
-    /// Map one syntactic variant to a semantic [`Atom`] (theme-aware:
+    /// Map one syntactic variant to its semantic [`Atom`]s (theme-aware:
     /// `md` → 768px from `--breakpoint-*`, `@md` → 384px from
     /// `--container-*`, `dark` → `Media::Dark` incl. `@custom-variant`
-    /// registrations; plan §2.1).
+    /// registrations; plan §2.1). Arbitrary selector variants classify
+    /// into a CONJUNCTION (`[&:hover:focus]` → two atoms, v0.3 §1.2), so
+    /// this returns a list.
+    fn atoms_of(&self, v: &Variant<'_>) -> Result<Vec<Atom>, &'static str> {
+        match v {
+            Variant::Arbitrary(raw) => crate::selector::classify(raw),
+            v => Ok(vec![self.atom_of(v)?]),
+        }
+    }
+
+    /// Map one syntactic variant to ONE semantic [`Atom`] (the
+    /// non-arbitrary path of [`Self::atoms_of`]).
     fn atom_of(&self, v: &Variant<'_>) -> Result<Atom, &'static str> {
         Ok(match v {
             Variant::Named(n) => self.named_atom(n)?,
@@ -500,6 +511,9 @@ impl<'t> Resolver<'t> {
                 });
             }
             Variant::Arbitrary(_) => {
+                // Routed through `atoms_of` → `selector::classify` (v0.3
+                // §1.2); this arm stays for direct callers and keeps the
+                // honest report instead of a panic.
                 return Err(
                     "arbitrary/structural selectors ([&…], *, supports-…) have no native equivalent — reported, never silent (plan §7)",
                 );
@@ -602,21 +616,27 @@ impl<'t> Resolver<'t> {
         )
     }
 
-    /// `has-checked` → descendant state; selector forms are reported.
+    /// `has-checked` → descendant state; `has-[:focus]` (v0.3 §1.2) →
+    /// the same typed descendant state; other selector forms are reported.
     fn has_atom(&self, inner: &str) -> Result<Atom, &'static str> {
-        if let Some(st) = state_name(inner) {
+        let sel = inner
+            .strip_prefix('[')
+            .and_then(|s| s.strip_suffix(']'))
+            .unwrap_or(inner);
+        if let Some(st) = state_name(sel.trim_start_matches(':')) {
             return Ok(Atom::Has(st));
         }
         if inner.starts_with('[') || inner.starts_with(':') || inner.starts_with('(') {
             return Err(
-                "has-[selector] has no typed equivalent in the Probe model — reported, never silent (plan §7)",
+                "has-[selector] has no typed equivalent in the Probe model — reported, never silent (v0.3 §1.3)",
             );
         }
         Err("unknown has-<state> variant")
     }
 
     /// The probe-testable `Test` of a simple variant (for `not-*` and
-    /// `group-*`/`peer-*` inners).
+    /// `group-*`/`peer-*` inners). Arbitrary selectors classify to a
+    /// single self test (v0.3 §1.2).
     fn variant_test(&self, v: &Variant<'_>) -> Result<crate::cond::Test, &'static str> {
         Ok(match v {
             Variant::Named(n) => {
@@ -628,6 +648,7 @@ impl<'t> Resolver<'t> {
                     );
                 }
             }
+            Variant::Arbitrary(raw) => return crate::selector::single_test(raw),
             Variant::Attr { kind, name, value } => {
                 let boxed = |s: &str| s.into();
                 match kind {
@@ -680,8 +701,9 @@ fn state_suffix(s: State) -> &'static str {
     }
 }
 
-/// A bare state name → `State` (for `has-*` inners).
-fn state_name(name: &str) -> Option<State> {
+/// A bare state name → `State` (for `has-*` inners and the arbitrary
+/// selector classifier).
+pub(crate) fn state_name(name: &str) -> Option<State> {
     Some(match name {
         "hover" => State::Hover,
         "focus" => State::Focus,
