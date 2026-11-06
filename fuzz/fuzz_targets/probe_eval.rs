@@ -21,6 +21,9 @@ impl Probe for FuzzProbe {
             Test::Data(_, _) => self.bits & 2 != 0,
             Test::Aria(_, _) => self.bits & 4 != 0,
             Test::Structural(_) => self.bits & 8 != 0,
+            // Element-kind tests (v0.3): the fuzz probe "knows" tags too —
+            // a third deterministic answer channel.
+            Test::Tag(_) => self.bits & 128 != 0,
         }
     }
 
