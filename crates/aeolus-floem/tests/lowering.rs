@@ -224,3 +224,47 @@ fn pt_is_logical_pixel_not_css_point() {
         layout.content_size.width
     );
 }
+
+/// Arbitrary selector variants (v0.3 §1.2): `[&:hover]` is byte-identical
+/// CSS to `hover:` in v4.1.17, so it canonicalizes onto the same NATIVE
+/// hover selector map; compound forms land in `rules` and ride the
+/// reactive probe path (`FloemProbe` + `resolve_rules_only`).
+#[test]
+fn arbitrary_self_hover_lowers_native_and_compound_via_probe() {
+    use aeolus_floem::FloemProbe;
+
+    let resolver = resolver();
+
+    // [&:hover] ≡ hover: — the native lane.
+    let r = resolver.resolve("bg-primary [&:hover]:bg-red-500").unwrap();
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert!(
+        r.plan.rules.is_empty(),
+        "[&:hover] canonicalizes onto the hover layer bucket"
+    );
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    let hovered = style.apply_selectors(&[StyleSelector::Hover]);
+    let hover_bg = brush_rgba(hovered.get(Background).as_ref().unwrap()).unwrap();
+    let expected = Color::oklch(0.637, 0.237, 25.331, 1.0).to_rgba8();
+    assert_eq!(hover_bg, expected, "[&:hover]:bg-red-500 resolves on hover");
+
+    // [&:hover:focus] — a conjunction the buckets cannot express: a rule,
+    // emulated through the probe.
+    let r = resolver.resolve("[&:hover:focus]:bg-black").unwrap();
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert_eq!(r.plan.rules.len(), 1, "the compound lands in plan.rules");
+    let both = FloemProbe {
+        hovered: true,
+        focused: true,
+        ..Default::default()
+    };
+    let extra = r.plan.resolve_rules_only(&both);
+    assert_eq!(
+        extra.background.as_ref().unwrap().0.to_rgba8(),
+        [0, 0, 0, 255],
+        "[&:hover:focus] fires when both states hold"
+    );
+    let idle = r.plan.resolve_rules_only(&FloemProbe::default());
+    assert!(idle.background.is_none(), "…and not otherwise");
+}
