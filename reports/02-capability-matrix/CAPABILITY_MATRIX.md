@@ -32,15 +32,17 @@ fallback path). "❌" = not representable; reported via `LoweringReport`.
 | dimensions (fixed) | ✅ `Dim::Fixed` | ✅ `LengthAuto::Pt` | fraction/full dropped+reported |
 | gap / layout (flex) | ✅ gap / ❌ layout slot | ✅ gap / ✅ flex props | Xilem fallback centers via flag |
 | shadow | ✅ (no spread/inset) | ✅ (spread + signed offsets) | Masonry upstream TODO |
-| opacity | ❌ (dropped) | ✅ `opacity` | |
-| ring / outline / cursor / pointer-events | ❌ | ❌ (ring) / ⚠️ | reported |
+| opacity | ⚠️ multiplied into the painted chrome colors (children not faded — documented) | ✅ `opacity` | |
+| ring / outline | ✅ stroked (`border_box.inflate(offset + width/2)`) | ✅ ring → `outline` + `outline_color` | Masonry has no spread; reported |
+| cursor / pointer-events | ❌ (reported) | ✅ `cursor` map / ✅ `pointer-events-none` | |
 | text (font size, weight…) | ❌ parley per-widget | ✅ font_size; ⚠️ others | Q5a gap on Masonry side |
 | hover/focus/focus-visible/active/disabled | ✅ Selector flags | ✅ selector maps | |
 | focus-within | ❌ (reported) | ✅ `focus_within` | Masonry Selector lacks the flag |
-| dark | ❌ (reported; host-level swap) | ✅ `dark_mode` | |
-| responsive sm..2xl | ❌ (reported) | ✅ `min_window_width` | |
-| container (@*) | ❌ | ❌ | both reported |
-| group-*/peer-* | ❌ (patch proposal #1) | ❌ | no ancestor/sibling state anywhere |
+| dark | ✅ via `plan.resolve(&probe)` (`TwEnv.dark`, v0.2) | ✅ `dark_mode` | Masonry lowering is env-fed; host-level swap also works |
+| responsive sm..2xl | ✅ via `plan.resolve(&probe)` (`TwEnv` viewport width, v0.2) | ✅ `min_window_width` | |
+| container (@*) | ✅ via `rules` + `plan.resolve(&probe)` (`TwEnv` container width) | ✅ via the reactive `tw_plan` path | both emulated through the Probe (v0.2) |
+| group-*/peer-* | ✅ via `TwEnv` group/peer scope + probe | ✅ via the reactive `tw_plan` path (group-aware probe at the call site) | no native ancestor/sibling state anywhere |
+| arbitrary selector variants (`[&:hover]`, `[a&]`, `[@media(print)]`) | ✅ typed subset via `rules` + probe (v0.3) | ✅ typed subset; `[&:hover]` ≡ `hover:` lowers NATIVELY into the selector maps (v0.3) | other forms report a per-form precise reason (`selector.rs`) |
 
 ## Theme switching (Q6 summary)
 
