@@ -4,6 +4,9 @@ The code IS the reference (`crates/aeolus-core/`, zero dependencies,
 edition 2024, MSRV 1.88, rust-version pinned in Cargo.toml). This document
 explains the shape and the why, with pointers into the source.
 
+v0.3 note: arbitrary selector variants classify in `selector.rs` (§8
+below, plan of record `AEOLUS_V0.3.md`).
+
 ## 1. Grammar (parser.rs, ast.rs)
 
 Class token grammar (v4 subset, the Shadcn v4 component surface):
@@ -114,3 +117,38 @@ silent zero.
    (audited), so the *fixture files* are the oracle, not the crate API.
    Wire as: for each fixture class string, assert our plan's CSS-equivalent
    (a debug CSS writer) matches the golden output on the supported subset.
+
+## 8. Arbitrary selector classification (selector.rs, v0.3)
+
+`Variant::Arbitrary` stays RAW in the AST (the v0.2 §1.2 rule: syntax in
+the parser, semantics in the resolver); `selector.rs` is that semantics.
+`classify(raw)` maps the v4.1.17 arbitrary-variant grammar (verified
+against `candidate.ts`/`compile.ts`/`variants.ts`, not the docs) onto the
+`Probe` condition model:
+
+- The typed subset is exactly what constrains THE ELEMENT — the only
+  thing a `Probe` answers about. A selector without `&` is wrapped as
+  `&:is(sel)` by v4 itself, so even the implicit forms (`[p]`) are self
+  tests; the classifier reads them as conjunctions of state / data /
+  aria / structural / tag atoms, `:not(...)` as `Atom::Not`, `:has(...)`
+  as `Atom::Has`, and `[@media(...)]` / `[@container(...)]` at-rules as
+  `Media` / `Viewport` / `Container` atoms (underscore-decoded first).
+- `[&:hover]` generates byte-identical CSS to `hover:`, so the
+  single-classic-state form canonicalizes onto the legacy layer buckets —
+  Floem lowers it into the NATIVE hover selector map with zero extra
+  work (pinned by `tests/lowering.rs`).
+- Element-kind tests (`[a&]`, `[a]`) become `Test::Tag` — a question
+  native backends cannot answer, so the rule simply never fires there
+  (the same semantics CSS has when a selector does not match); a backend
+  that models element kinds answers honestly. Tag ranks with the state
+  band in `Atom::order` so arbitrary forms identical to named ones share
+  their cascade position.
+- Everything else fails with a per-form precise reason: selectors
+  styling other elements (`[&_svg]`, `[&>*]`, `*`, `**`), pseudo-elements,
+  class/id self tests, `@supports`, disjunctions (`,` lists, `:is(a,b)`,
+  `or` media — a `Cond` is a conjunction), An+B forms, bare non-data/aria
+  attributes, unknown pseudo-classes and media features, standalone
+  relative selectors, and the deprecated at-rule-with-selector form.
+- `not-*`/`group-*`/`peer-*` inners classify through `single_test`
+  (exactly one self test; nested negation and compounds are reported —
+  the wrappers hold ONE `Test`).
