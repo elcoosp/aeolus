@@ -6,13 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Post-0.2.0 audit round: a full-repo sweep for gaps, panic paths and
-semantic divergences from Tailwind v4.1.17 (verified against the
-`tailwindcss` source, not the docs alone). The v0.2 plan of record now
-ships in-repo as `AEOLUS_V0.2.md` (every `plan §X.Y` code citation
-resolves there).
+## [0.3.0] — 2026-11-06
 
-### Fixed
+The **arbitrary selector variants** release (plan: `AEOLUS_V0.3.md`) — the
+last core-language gap from the 0.2 deferred list, plus the post-0.2.0
+audit round (a full-repo sweep for gaps, panic paths and semantic
+divergences from Tailwind v4.1.17, verified against the `tailwindcss`
+source, not the docs alone). Every v4 arbitrary
+variant form now either resolves to typed probe conditions or fails with a
+per-form precise `Unsupported` reason; the blanket "arbitrary/structural
+selectors have no native equivalent" report is gone. Semantics verified
+against the `tailwindcss` v4.1.17 source (`candidate.ts`, `compile.ts`,
+`variants.ts`), not the docs alone.
+
+### Fixed (post-0.2.0 audit round)
 
 - **Theme parser panics on unbalanced custom-rule blocks**: CSS ending in
   `@utility foo {` or `@custom-variant x {` with no closing brace sliced
@@ -48,6 +55,51 @@ resolves there).
 
 ### Added
 
+- **Arbitrary selector variants classify into typed atoms**
+  (`selector.rs`, v0.3 §1.2): the typed subset is exactly what constrains
+  THE ELEMENT — the only thing the `Probe` model answers about:
+  - self pseudo-classes (`[&:hover]`, `[:hover]`, `[&:hover:focus]`,
+    `[p:hover]`) → `Atom::On(Test::State(_))`; `[&:hover]` generates
+    byte-identical CSS to `hover:` in v4, so it canonicalizes onto the
+    same legacy layer bucket (native selector lowering on Floem for
+    free);
+  - negation (`[&:not(:hover)]`, `not-[&:hover]`) → `Atom::Not(_)`;
+  - self attributes (`[&[data-state=open]]`, `[&[aria-busy=true]]`) →
+    `Test::Data` / `Test::Aria` (identical plans to the named forms);
+  - structural self tests (`[&:nth-child(3)]`, `[&:first-child]`,
+    `[&:empty]`) → `Test::Structural`;
+  - descendant-state selectors (`[&:has(:focus)]`, `has-[:focus]`) →
+    `Atom::Has(_)`;
+  - **element-kind tests** (`[a&]`, `[a]`, `[p&:hover]`) → the new
+    `Test::Tag` — the rule lands typed in `plan.rules`; native backends
+    answer "no" (the rule never fires — the same semantics CSS has when
+    a selector does not match) and a backend that models element kinds
+    answers honestly;
+  - arbitrary at-rules (`[@media(print)]`,
+    `[@media(prefers-color-scheme:dark)]`, `[@media(min-width:900px)]`,
+    the v4 canonical `[@media(width>=900px)]`, orientation/reduced-
+    motion/contrast/forced-colors/pointer features, `and`-conjunctions)
+    → `Atom::Media` / `Atom::Viewport`;
+    `[@container(min-width:400px)]` → `Atom::Container`;
+  - `group-[&:hover]` / `peer-[&:hover]` inners classify like self
+    selectors; `not-*` inners must be a single self test (nested
+    negation and compounds are reported — a `Cond` is a conjunction).
+- **Per-form precise reports** (v0.3 §1.3) for everything the Probe
+  model cannot ask: selectors styling OTHER elements (`[&_svg]`,
+  `[&>*]`, `[&+&]`, `*`, `**`), pseudo-elements (`[&::before]`),
+  class/id self tests (`[.x]`, `[.x&]`), `@supports`, disjunctions
+  (`,` lists, `:is(a,b)`, `or` media), An+B structural forms
+  (`nth-[2n+1]`, `:nth-child(2n+1)`), bare non-data/aria attributes,
+  unknown media features and pseudo-classes, relative selectors
+  (`[>img]` standalone), the deprecated at-rule-with-selector form.
+- Tailwind's underscore decoding inside arbitrary selectors
+  (`decodeArbitraryValue`: `_` → space, `\_` escapes) —
+  `[@media(min-width:900px)_and_(orientation:landscape)]` works.
+- Regression suites: `tests/arbitrary_variants.rs` (30 tests: the typed
+  subset, evaluator equivalence with the named forms, cn() raw-variant
+  keys, per-form precise reports), truth-table `Test::Tag` row, and
+  backend parity tests pinning `[&:hover]` native lowering (Floem
+  selector maps) + compound-rule evaluation through both probes.
 - **Legacy comma color syntax**: `Color::parse` documented
   `rgb(r, g, b, a)` but only the space form parsed — `rgb(251, 44, 54)`
   failed with `bad number "251,"`. Common in arbitrary values
@@ -67,11 +119,33 @@ resolves there).
 
 ### Changed
 
+- **`cond::Test::Tag(Box<str>)`** — additive variant on the public
+  condition enum (0.x minor bump): exhaustive `Test` matches need a new
+  arm (the in-repo probes answer "no", the honest default).
+- The resolver routes arbitrary variants through
+  `Resolver::atoms_of` (a conjunction list) instead of one `atom_of`
+  atom; `variant_test` accepts single-self-test arbitrary inners.
+- `has-[…]` accepts the `[:state]` selector form (`has-[:focus]` ≡
+  `has-focus:`); other selector forms keep the precise report.
+- README's deferred list shrinks to the upstream-blocked items
+  (arbitrary selector variants shipped here); the capability matrix
+  gains the arbitrary-variant row and the stale ring/outline/opacity/
+  cursor rows were refreshed against the actual backends.
 - The `space-*` warning no longer claims the resolver "emulates" it as
   gap — it reports precisely that `gap-*` is the supported equivalent.
 - README's deferred list moved to v0.3 (group/peer layers, structured
   variants, container queries, responsive/dark on Masonry and Floem
   transitions shipped in 0.2.0).
+
+### Deferred to 0.4 (all upstream-blocked, tracked in `AEOLUS_V0.3.md` §4)
+
+- Publishing the backends — needs crates.io releases of the pinned
+  Masonry/Xilem and Floem revs.
+- View-side property-stack registration (retires the fallback widget) —
+  upstream gap #4.
+- Masonry typography via native properties — upstream patch proposal #3.
+- Transitions/animations on the Masonry backend — needs Masonry-side
+  animation machinery (Floem has per-set transitions).
 
 ## [0.2.0] — 2026-11-05
 
