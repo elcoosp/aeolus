@@ -19,12 +19,13 @@ let plan = resolver.resolve("p-4 bg-primary hover:bg-primary/90 rounded-md")?;
 // plan.layers           = [hover layer at 90% alpha]   <- real OKLCH color-mix
 ```
 
-Status (2026-11): **v0.2.0** — the v0.2 plan (`AEOLUS_V0.2.md`) is
-implemented: the F1–F7 silent-mis-style bugs are fixed, the core owns ALL
-variant semantics behind a backend-agnostic `Probe` evaluator, the full v4
-default theme ships in every theme, the v0.2 utility families resolve to
-typed slots, and the hot path is string-key-cached (76 ns warm hits).
-`aeolus-core`/`aeolus-macro` stay publishable; backends stay
+Status (2026-11): **v0.3.0** — the v0.2 plan (`AEOLUS_V0.2.md`) shipped in
+0.2.0; **v0.3** (`AEOLUS_V0.3.md`) closes the last core-language gap:
+arbitrary selector variants (`[&:hover]`, `[a&]`, `[@media(print)]`, …)
+resolve to typed probe conditions or fail with a per-form precise report
+— semantics verified against the tailwindcss v4.1.17 source, plus the
+post-0.2.0 audit fixes (theme order-independence, px semantics, `cn()`
+groups). `aeolus-core`/`aeolus-macro` stay publishable; backends stay
 `publish = false` (git-pinned deps).
 
 ## Crates
@@ -39,11 +40,27 @@ typed slots, and the hot path is string-key-cached (76 ns warm hits).
 
 All crates are `MIT OR Apache-2.0` (`LICENSE-MIT`, `LICENSE-APACHE`).
 
-## What's in v0.2 — honestly
+## What's in v0.3 — honestly
 
-**Done and tested (122 tests, all six fuzz targets clean):**
+**Done and tested (166 tests):**
 
-- Everything listed under v0.1 below, PLUS:
+- Everything listed under v0.2 below, PLUS the post-0.2.0 audit round
+  (theme resolution order-independence, px-vs-spacing semantics for
+  ring/outline widths, canonical state-layer cascade, legacy comma color
+  syntax, missing `cn()` merge groups).
+- **Arbitrary selector variants** (`AEOLUS_V0.3.md`, the last core-language
+  gap): `[&:hover]` ≡ `hover:` (canonicalized onto the same native layer),
+  `[&:hover:focus]` conjunctions, `[&:not(:hover)]`, `[&[data-state=open]]`,
+  `[&:nth-child(3)]`, `[&:has(:focus)]`, `has-[:focus]`, `group-[&:hover]`,
+  `not-[&:hover]`, element-kind tests (`[a&]`, `[a]` → the new
+  `Test::Tag`), and arbitrary at-rules (`[@media(print)]`,
+  `[@media(min-width:900px)]`, `[@media(width>=900px)]`,
+  `[@media(prefers-color-scheme:dark)]`, orientation/motion/contrast/
+  pointer features, `and`-conjunctions, `[@container(min-width:…)]`) —
+  all typed; every other form (`[&_svg]`, `[&>*]`, `[&::before]`, `[.x]`,
+  `@supports`, disjunctions, An+B) reports a PRECISE per-form reason.
+
+<details><summary><b>What was in v0.2</b></summary>
 - **Correctness (F1–F7)**: fractions (`w-1/2` = 50%, not 4px), absolute
   arbitrary lengths (`p-[7px]` = 7px), compound variants (`dark:hover:*`
   and `md:hover:*` keep BOTH conditions — the shipped Shadcn Ghost/Outline
@@ -100,16 +117,18 @@ All crates are `MIT OR Apache-2.0` (`LICENSE-MIT`, `LICENSE-APACHE`).
 
 </details>
 
-**Deferred to v0.3 (tracked in CHANGELOG):** publishing the backends
-(needs upstream releases), view-side property-stack registration (upstream
-gap #4 — retires the fallback widget), Masonry typography via native
-properties (upstream patch proposal #3), transitions/animations on the
-Masonry backend (Floem has per-set transitions; Masonry drops them with
-warnings), and arbitrary selector variants (`[&_svg]`, `[a&]`).
+**Deferred to 0.4 — all upstream-blocked (tracked in `AEOLUS_V0.3.md` §4
+and the CHANGELOG):** publishing the backends (needs upstream crates.io
+releases), view-side property-stack registration (upstream gap #4 —
+retires the fallback widget), Masonry typography via native properties
+(upstream patch proposal #3), and transitions/animations on the Masonry
+backend (Floem has per-set transitions; Masonry drops them with
+warnings).
 
 The full capability matrix per framework lives in
 [`reports/02-capability-matrix/CAPABILITY_MATRIX.md`]; the honest-limitation
-contract (every drop is reported, never silent) in the design report.
+contract (every drop is reported, never silent) in the design report; the
+v0.3 plan of record in [`AEOLUS_V0.3.md`].
 
 ## Building
 
