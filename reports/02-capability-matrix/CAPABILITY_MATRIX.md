@@ -35,7 +35,7 @@ fallback path). "❌" = not representable; reported via `LoweringReport`.
 | opacity | ⚠️ multiplied into the painted chrome colors (children not faded — documented) | ✅ `opacity` | |
 | ring / outline | ✅ stroked (`border_box.inflate(offset + width/2)`) | ✅ ring → `outline` + `outline_color` | Masonry has no spread; reported |
 | cursor / pointer-events | ❌ (reported) | ✅ `cursor` map / ✅ `pointer-events-none` | |
-| text (font size, weight…) | ❌ parley per-widget | ✅ font_size; ⚠️ others | Q5a gap on Masonry side |
+| text (font size, weight…) | ❌ parley per-widget | ✅ font_size; ✅ line-height (v0.5: token leading lowers to the NATIVE `LineHeightValue::Normal` font-size multiplier); ⚠️ others (letter-spacing has no Floem prop — reported) | Q5a gap on Masonry side |
 | hover/focus/focus-visible/active/disabled | ✅ Selector flags | ✅ selector maps | |
 | focus-within | ❌ (reported) | ✅ `focus_within` | Masonry Selector lacks the flag |
 | dark | ✅ via `plan.resolve(&probe)` (`TwEnv.dark`, v0.2) | ✅ `dark_mode` | Masonry lowering is env-fed; host-level swap also works |
