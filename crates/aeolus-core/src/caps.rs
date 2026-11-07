@@ -93,7 +93,10 @@ impl PropertySupport {
             | Slot::Animation
             // v0.6 gradient: negotiated by the backend lowering (masonry
             // native, floem reported — the parity contract, plan §4.1).
-            | Slot::Gradient(_) => false,
+            // v0.7 container containment: same (no backend has a native
+            // container-query surface; the reactive probe path emulates).
+            | Slot::Gradient(_)
+            | Slot::ContainerType => false,
         }
     }
 }
