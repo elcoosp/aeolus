@@ -45,7 +45,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "aeolus-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "divan",
  "proptest",
@@ -53,7 +53,7 @@ dependencies = [
 
 [[package]]
 name = "aeolus-floem"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aeolus-core",
  "floem",
@@ -64,14 +64,14 @@ dependencies = [
 
 [[package]]
 name = "aeolus-macro"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aeolus-core",
 ]
 
 [[package]]
 name = "aeolus-shadcn"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aeolus-core",
  "aeolus-floem",
@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "aeolus-xilem"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aeolus-core",
  "masonry",
