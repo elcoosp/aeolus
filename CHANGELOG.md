@@ -6,6 +6,97 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-11-07
+
+The **upstream-ceiling** release (plan: `AEOLUS_V0.6.md`): a
+reconnaissance of the latest GitHub floem and masonry (`git ls-remote`
+2026-11-07) found that the floem pin `1351ffb` IS latest `main` HEAD,
+and xilem upstream moved `9f504ae → dc49687` with an EMPTY
+`masonry_core`/`xilem_masonry` diff — so every capability below is
+consumed at the pinned revs with ZERO upstream changes. The headline:
+the v0.1–v0.5 audits missed that Masonry has carried a layout-invariant
+`Background::Gradient` all along; gradients lower natively now, and the
+Floem backend wires the native surface it never used.
+
+### Added
+
+- **Gradient backgrounds in the IR** (v0.6 §1): `ResolvedStyle` gains
+  `background_gradient: Option<Gradient>` — the composed
+  `background-image` (`Gradient::Linear { angle_deg, stops }` /
+  `Radial` / `Conic` / `None`), kept SEPARATE from the solid
+  `background` exactly as CSS's `background-color` + `background-image`
+  coexist. Parser: `bg-linear-to-{t,tr,r,br,b,bl,l,tl}` (CSS angles),
+  `bg-linear-<angle>`, arbitrary `bg-linear-[<angle>deg]`, the
+  deprecated `bg-gradient-to-*` alias, `bg-radial`, `bg-conic[-<angle>]`,
+  `bg-none`; stops `from-`/`via-`/`to-` with theme/shadcn tokens,
+  arbitrary values and `/opacity` modifiers (`color-mix(in oklab, …)`,
+  v4's shape), plus `%` position patches (`from-20%` patches ONLY the
+  position). Composition semantics pinned against the REAL tailwindcss
+  4.1.17 output (`tools/capture_gradients.mjs`): stop-position defaults
+  are the `@property` initial values (0%/50%/100%), missing from/to
+  stops are `#0000` (transparent), interpolation is `in oklab`, stops
+  without a shape compose nothing. `Slot::Gradient(GradientPart)` diffs
+  through the cosmetic lane; `cn()` gains the `bg-image` split and
+  per-edge from/via/to color+position groups.
+- **Masonry gradient lowering, native** (v0.6 §1.5): `Background::Gradient`
+  (layout-invariant `GradientShape`, `ColorSpaceTag::Oklab` = v4's
+  default `in oklab`, `Extend::Pad`, sRGB stops at fraction offsets).
+  The linear angle conversion `a = π − θ` is DERIVED from masonry's
+  `get_peniko_linear_for_rect` paint math (its angle 0 points to the
+  BOTTOM) and unit-pinned. Radial lowers as circle-farthest-corner with
+  the documented ellipse→circle note (upstream `#[non_exhaustive]`
+  TODO); conic reports the upstream vello sweep-offset TODO.
+- **The Floem unwired surface** (v0.6 §2, all native at the pinned rev):
+  `overflow-*`/`overflow-x-*`/`overflow-y-*` → taffy
+  `overflow_x`/`overflow_y` (`overflow-auto` → `Scroll`, documented);
+  `select-none`/`select-text` → the inherited `Selectable` prop;
+  `whitespace-normal` → `TextOverflow::Wrap` and `whitespace-nowrap` →
+  floem's default (a documented no-op — floem never wraps by default);
+  `content-*` → `align_content` (`normal` → `Stretch` per CSS, baseline
+  reported — taffy has none); `grid-cols-N`/`grid-rows-N` →
+  `grid_template_*` repeat(N, 1fr), `col/row-span` + `col/row-start` →
+  `grid_column`/`grid_row` placement (`N / span M` composition);
+  `border-dashed`/`border-dotted`/`border-none`/`border-hidden` → kurbo
+  `Stroke` dash patterns/zeroed strokes on the four side borders
+  (`border-double` reports — no double-line primitive). The parity
+  ledger (`slot_coverage`) upgrades Overflow, Select, Whitespace,
+  AlignContent, Grid and BorderStyle Reported → Native.
+- **The verification emitter reproduces v4's per-class gradient shapes**
+  (v0.6 §1.4): the captured `--tw-gradient-*` var machinery
+  (`--tw-gradient-position`, `--tw-gradient-{from,via,to}`,
+  `--tw-gradient-{from,via,to}-position`, the two `--tw-gradient-stops`
+  chains) — unit-pinned against `tools/capture_gradients.mjs` output.
+- `AEOLUS_V0.6.md` — the v0.6 plan of record;
+  `reports/10-tdd-evidence/08-upstream-ceiling.md` — the RED→GREEN
+  evidence.
+- Overflow per-axis merge fix: `overflow-hidden overflow-x-auto` now
+  keeps `y = hidden` (CSS: `overflow-*` sets both axes, `overflow-x-*`
+  patches one) — previously the last class replaced the whole slot.
+
+### Changed
+
+- The golden corpus is UNCHANGED (176 entries): gradient parity needs
+  cross-rule `--tw-gradient-*` var composition (three separate rules per
+  gradient) — a harness model boundary, documented as such (v0.6 §4.3,
+  the v0.5 §2.3 precedent), not a coverage gap.
+- Capability matrix corrections (v0.6 §3): Masonry's gradient row
+  upgrades from "gradients dropped" to native; the uniform-border-width,
+  single-radius and no-spread-shadow claims re-verified against the
+  pinned sources and re-documented.
+
+### Upstream re-verification (§3)
+
+- floem: pin `1351ffb162faeb8be983f1301d718a0d5fb59c27` == latest
+  `main` HEAD (2026-11-07).
+- masonry/xilem: upstream `9f504ae → dc49687` = 3 commits (text-widget
+  tests, example interaction tests, vello dep removal);
+  `git diff 9f504ae..dc49687 -- masonry_core xilem_masonry` is empty —
+  the pin stays.
+- crates.io: `masonry`/`masonry_core`/`masonry_testing` 0.4.0
+  (2025-10-29) and `floem` 0.2.0 (2024-11-14) remain the newest
+  releases — publishing the backends stays blocked, as do the other
+  three upstream deferrals (v0.6 §5).
+
 ## [0.5.0] — 2026-11-07
 
 The **element-relative typography + allocation contract** release (plan:
