@@ -563,3 +563,138 @@ fn slot_coverage_upgrades_are_consistent_with_the_lowering() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// v0.7 (AEOLUS_V0.7.md §4/§5) — grid templates, auto tracks, justify-items:
+// the native taffy surface the pinned rev exposes, now wired.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn grid_arbitrary_templates_lower_to_taffy_tracks() {
+    use floem::taffy::prelude::{
+        FromFr, FromLength, GridTemplateComponent, MaxTrackSizingFunction, MinTrackSizingFunction,
+        TaffyAuto, TrackSizingFunction,
+    };
+
+    // grid-cols-[0_1fr] → [0px, minmax(auto, 1fr)].
+    let r = v4_resolver().resolve("grid grid-cols-[0_1fr]").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    let templates = style.get(floem::style::GridTemplateColumns);
+    assert_eq!(templates.len(), 2, "two single tracks: {templates:?}");
+    assert_eq!(
+        templates[0],
+        GridTemplateComponent::Single(TrackSizingFunction {
+            min: MinTrackSizingFunction::from_length(0.0_f32),
+            max: MaxTrackSizingFunction::from_length(0.0_f32),
+        }),
+        "`0` is a fixed 0px track"
+    );
+    assert_eq!(
+        templates[1],
+        GridTemplateComponent::Single(TrackSizingFunction {
+            min: MinTrackSizingFunction::AUTO,
+            max: MaxTrackSizingFunction::from_fr(1.0_f32),
+        }),
+        "`1fr` is minmax(auto, 1fr)"
+    );
+
+    // repeat(3, minmax(0,1fr)) stays a repeat component.
+    let r = v4_resolver()
+        .resolve("grid-cols-[repeat(3,minmax(0,1fr))]")
+        .unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    let templates = style.get(floem::style::GridTemplateColumns);
+    let floem::taffy::style::GridTemplateComponent::Repeat(rep) = &templates[0] else {
+        panic!("expected repeat: {templates:?}");
+    };
+    assert_eq!(rep.count, floem::taffy::style::RepetitionCount::Count(3));
+}
+
+#[test]
+fn grid_arbitrary_templates_beat_the_numeric_counts() {
+    // The templates are CANONICAL: an arbitrary template after grid-cols-N
+    // must win the lowering.
+    use floem::taffy::prelude::{
+        GridTemplateComponent, MaxTrackSizingFunction, MinTrackSizingFunction, TaffyAuto,
+        TrackSizingFunction,
+    };
+
+    let r = v4_resolver()
+        .resolve("grid grid-cols-4 grid-cols-[auto_auto]")
+        .unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    let templates = style.get(floem::style::GridTemplateColumns);
+    assert_eq!(templates.len(), 2, "two auto tracks, not a repeat(4)");
+    assert!(matches!(
+        templates[0],
+        GridTemplateComponent::Single(TrackSizingFunction {
+            min: MinTrackSizingFunction::AUTO,
+            max: MaxTrackSizingFunction::AUTO,
+        })
+    ));
+}
+
+#[test]
+fn auto_rows_and_cols_lower_to_the_implicit_track_props() {
+    use floem::taffy::prelude::{
+        FromFr, FromLength, MaxTrackSizingFunction, MinTrackSizingFunction, TaffyMaxContent,
+        TaffyMinContent, TrackSizingFunction,
+    };
+
+    let r = v4_resolver().resolve("auto-rows-min").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    let rows = style.get(floem::style::GridAutoRows);
+    assert_eq!(
+        rows.as_slice(),
+        &[TrackSizingFunction {
+            min: MinTrackSizingFunction::MIN_CONTENT,
+            max: MaxTrackSizingFunction::MIN_CONTENT,
+        }],
+        "auto-rows-min → min-content"
+    );
+
+    let r = v4_resolver().resolve("auto-rows-fr").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    let rows = style.get(floem::style::GridAutoRows);
+    assert_eq!(
+        rows.as_slice(),
+        &[TrackSizingFunction {
+            min: MinTrackSizingFunction::from_length(0.0_f32),
+            max: MaxTrackSizingFunction::from_fr(1.0_f32),
+        }],
+        "auto-rows-fr → minmax(0, 1fr) — the v4 keyword form (corpus-pinned)"
+    );
+
+    let r = v4_resolver().resolve("auto-cols-max").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    let cols = style.get(floem::style::GridAutoColumns);
+    assert_eq!(
+        cols.as_slice(),
+        &[TrackSizingFunction {
+            min: MinTrackSizingFunction::MAX_CONTENT,
+            max: MaxTrackSizingFunction::MAX_CONTENT,
+        }],
+        "auto-cols-max → max-content"
+    );
+}
+
+#[test]
+fn justify_items_lowers_to_the_native_prop() {
+    use floem::style::{AlignItems as TaffyAlign, JustifyItemsProp};
+
+    let r = v4_resolver().resolve("justify-items-center").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert_eq!(style.get(JustifyItemsProp), Some(TaffyAlign::Center));
+
+    let r = v4_resolver().resolve("justify-items-start").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert_eq!(style.get(JustifyItemsProp), Some(TaffyAlign::FlexStart));
+}
