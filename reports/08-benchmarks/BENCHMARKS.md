@@ -153,37 +153,31 @@ path (`tw!`) and the dynamic warm path allocate NOTHING per resolve;
 the rebuild path allocates nothing when nothing changed and one `Vec`
 growth when slots actually changed.
 
-## v0.7 portable-plans re-run (rustc 1.99.1, x86_64-linux, release profile)
+## v0.7 run (2026-11-08, 2-core sandbox, release profile, divan 0.1.21)
 
-Same sandbox family as the 2026-11 numbers above (2 shared cores — treat
-absolute numbers as environment-specific; the ratios are the point). The
-v0.7 additions measured with the same 33-class Button string:
+After the variant & grid engine (`AEOLUS_V0.7.md` §8): pseudo-element
+variants, has-attr descendants, named containers, arbitrary grid
+templates, implicit tracks, justify-items. Same sandbox class as the
+v0.5 run; compare RATIOS within a run.
 
-| benchmark | median | notes |
-|---|---|---|
-| `plan_overlay_button` (base + 5-slot override) | **~330 ns** | the plan-level `overlay`: one clone + slot-wise `Some` replaces + layer/bucket merges |
-| `snapshot_write_button` | **~8.8 µs** | canonical JSON of the Button plan (~30 KB artifact) |
-| `snapshot_read_button` | **~170 µs** | strict parse + full IR rebuild; ~175 MB/s incl. allocations |
-| `snapshot_roundtrip_button` | **~180 µs** | write + read |
-| `resolve_button_cold` | ~6.0 µs | v0.6 baseline unchanged within sandbox noise |
-| `resolve_cached_hit` | ~78 ns | v0.6 baseline unchanged (warm path untouched) |
-| `diff_unchanged` | ~147 ns | zero-alloc contract intact (pinned by `tests/alloc_contract.rs`) |
-| `css_write_button` | ~13 µs | v0.4 emitter baseline |
+| benchmark | v0.7 median | vs v0.5 | note |
+|---|---|---|---|
+| `diff_unchanged` | 154.8 ns | ≈ | zero-alloc diff untouched |
+| `resolve_cached_hit` | 79.0 ns | = | |
+| `resolve_button_cold` | 6.19 µs (2.7 Mitem/s) | ≈ | the Button string exercises none of the new surfaces |
+| `parse_button` | 3.32 µs | = | |
+| `intern_hit` | 53.5 ns | = | |
+| `cn_button_merge` | 4.31 µs | = | the new conflict groups classify in the same match |
+| `cn_no_conflicts` | 2.19 µs | = | |
+| `theme_parse_shadcn` | 104.9 µs | ≈ | one-time |
+| `color_mix_opacity` | 0.218 ns | = | |
+| `css_write_button` | 13.2 µs | = | |
+| **`resolve_input_cold`** (new) | **11.5 µs** (2.4 Mitem/s) | — | the 32-class Input table: pseudo-element variants (`selection:`/`placeholder:`/`file:` ×10), responsive, dark |
+| **`resolve_card_header_cold`** (new) | **3.35 µs** (2.7 Mitem/s) | — | named container + arbitrary row template + auto-rows + conditional grid-cols |
 
-CLI pipeline (`cargo bench -p aeolus-cli --bench pipeline`):
-
-| benchmark | median | notes |
-|---|---|---|
-| `extract_1k_lines` | **~64 µs** | heuristic extraction over a 1k-line source buffer (250 real class strings + 250 prose strings) |
-| `lint_button_string` | **~15 µs** | `check_string` on the 33-class Button (resolve + conflict attribution) |
-
-Honesty notes:
-
-- `snapshot_read` is ~20× `snapshot_write`: the reader builds a full
-  intermediate `Json` tree (owned `String`s) before the IR walk, trading
-  speed for strictness and simplicity in v0.7. A zero-copy reader is a
-  possible v0.8 optimization; the artifact FORMAT does not change either
-  way (canonical output is reader-implementation-independent).
-- `plan_overlay_button` at ~330 ns means composing a cached component plan
-  with per-instance overrides is ~23× cheaper than a cold re-resolve
-  (~6.0 µs) and allocation-light — the intended usage pattern.
+Verdict: the variant-engine work did not regress the pinned hot paths
+(the Button string's numbers are unchanged in shape), and the NEW
+surfaces resolve at the same per-class throughput as the old ones
+(~2.4–2.7 Mitem/s cold). The allocation contract's exact-zero pins
+(diff, intern hit, warm cache hit) held unchanged
+(`tests/alloc_contract.rs`, part of the 340-test workspace suite).
