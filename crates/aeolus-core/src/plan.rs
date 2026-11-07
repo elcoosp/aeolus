@@ -107,8 +107,12 @@ pub type PeerId = Box<str>;
 /// so backends can negotiate support via [`crate::caps::BackendCapabilities`].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ResolvedStyle {
-    /// `bg-*` solid fill.
+    /// `bg-{color}` solid fill (the `background-color` declaration).
     pub background: Option<Background>,
+    /// The composed `background-image` gradient (`bg-linear-*`,
+    /// `bg-radial`, `bg-conic*`; v0.6 §1.1). Coexists with `background`
+    /// exactly as CSS's `background-color` + `background-image` do.
+    pub background_gradient: Option<Gradient>,
     /// `text-{color}` / icon color.
     pub content_color: Option<ContentColor>,
     /// `p-*` family.
@@ -270,6 +274,21 @@ pub enum Slot {
     ShadowRest,
     /// Inset shadows.
     InsetShadows,
+    /// `background-image` gradient (with the part that changed).
+    Gradient(GradientPart),
+}
+
+/// Which part of the composed [`Gradient`] changed (v0.6 §1.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GradientPart {
+    /// The shape (`bg-linear-*`/`bg-radial`/`bg-conic*`/`bg-none`).
+    Shape,
+    /// The `from-*` stop (color or position patch).
+    From,
+    /// The `via-*` stop (color or position patch).
+    Via,
+    /// The `to-*` stop (color or position patch).
+    To,
 }
 
 /// Dense slot index for the O(1) diff bitmask (plan §3.4.5).
@@ -314,6 +333,7 @@ impl Slot {
             Slot::GapAxes => 34,
             Slot::ShadowRest => 35,
             Slot::InsetShadows => 36,
+            Slot::Gradient(_) => 37,
         }
     }
 }
@@ -325,6 +345,7 @@ impl Slot {
     pub fn lane(self) -> Lane {
         match self {
             Slot::Background
+            | Slot::Gradient(_)
             | Slot::ContentColor
             | Slot::BorderColor
             | Slot::Opacity
@@ -393,9 +414,115 @@ pub enum RingPart {
 
 // --- slot payloads ---------------------------------------------------------
 
-/// `bg-*` — solid color in v1 (gradients parse but warn as unsupported).
+/// `bg-{color}` — the solid `background-color` fill.
+///
+/// v0.6 keeps the v4 model: a solid background and a `background-image`
+/// gradient are SEPARATE declarations that coexist (CSS layers the image
+/// over the color). The composed image lives in
+/// [`ResolvedStyle::background_gradient`]; backends with a single brush
+/// slot lower the gradient preferentially and record the coexistence.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Background(pub Color);
+
+/// The v4.1.17-pinned default stop positions (the `@property` initial
+/// values: `--tw-gradient-from-position: 0%`, `--tw-gradient-via-position:
+/// 50%`, `--tw-gradient-to-position: 100%` — captured verbatim by
+/// `tools/capture_gradients.mjs`).
+pub const GRADIENT_FROM_POS_PCT: f32 = 0.0;
+/// v4 default via-stop position.
+pub const GRADIENT_VIA_POS_PCT: f32 = 50.0;
+/// v4 default to-stop position.
+pub const GRADIENT_TO_POS_PCT: f32 = 100.0;
+
+/// One gradient color stop. `pos_pct: None` = the v4 `@property` default
+/// for the edge (see [`GRADIENT_FROM_POS_PCT`]/[`GRADIENT_VIA_POS_PCT`]/
+/// [`GRADIENT_TO_POS_PCT`]); `Some(p)` = the `from-{P}%` position patch.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GradientStop {
+    /// The stop color (oklab IR; backends convert per their pipeline).
+    pub color: Color,
+    /// Stop position in percent (0..=100), when patched by a position class.
+    pub pos_pct: Option<f32>,
+}
+
+/// The three composed stops of a v4 gradient
+/// (`from-*`, optional `via-*`, `to-*`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GradientStops {
+    /// `from-{color}` (transparent when absent — v4 `@property` initial
+    /// value `#0000`).
+    pub from: GradientStop,
+    /// `via-{color}` when a via class is in the string.
+    pub via: Option<GradientStop>,
+    /// `to-{color}` (transparent when absent).
+    pub to: GradientStop,
+}
+
+/// A `background-image` gradient (`bg-linear-*`, `bg-radial`,
+/// `bg-conic*`), composed at resolve time (v0.6 §1.1).
+///
+/// Angle conventions are CSS's: `angle_deg` 0 = to top, positive
+/// clockwise (`bg-linear-to-r` = 90). Conic `from_angle_deg` follows the
+/// same convention (`bg-conic-45` = `from 45deg`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Gradient {
+    /// `bg-none` — `background-image: none` (explicitly clears the image;
+    /// overlays like a value, matching the `shadow-none` precedent).
+    None,
+    /// `bg-linear-*` — a linear gradient along the CSS angle.
+    Linear {
+        /// CSS angle in degrees (0 = to top, clockwise; `to-r` = 90).
+        angle_deg: f32,
+        /// The composed from/via/to stops.
+        stops: GradientStops,
+    },
+    /// `bg-radial` — a radial gradient from the box center.
+    ///
+    /// The shape is `circle farthest-corner` (the CSS default is an
+    /// ELLIPSE farthest-corner; Masonry's `RadialGradientShape` has no
+    /// ellipse radii at the pinned rev, so the circle form is the
+    /// documented normalization — v0.6 §1.5).
+    Radial {
+        /// The composed from/via/to stops.
+        stops: GradientStops,
+    },
+    /// `bg-conic-*` — a conic gradient. Carried in the IR for v4
+    /// fidelity; BOTH backends report it (Masonry's sweep paint carries
+    /// an upstream vello angle-offset TODO, Floem has no gradient brush
+    /// support) — v0.6 §1.5.
+    Conic {
+        /// CSS `from <angle>` in degrees (0 = to top, clockwise).
+        from_angle_deg: f32,
+        /// The composed from/via/to stops.
+        stops: GradientStops,
+    },
+}
+
+impl Gradient {
+    /// The composed stops, whichever shape this is (`Gradient::None` has
+    /// none — transparent from/to).
+    pub fn stops(&self) -> &GradientStops {
+        match self {
+            Gradient::None => &NO_STOPS,
+            Gradient::Linear { stops, .. }
+            | Gradient::Radial { stops }
+            | Gradient::Conic { stops, .. } => stops,
+        }
+    }
+}
+
+/// The shared transparent stops behind [`Gradient::None`].
+const NO_STOPS: GradientStops = GradientStops {
+    from: GradientStop {
+        color: Color::TRANSPARENT,
+        pos_pct: None,
+    },
+    via: None,
+    to: GradientStop {
+        color: Color::TRANSPARENT,
+        pos_pct: None,
+    },
+};
 
 /// `text-{color}` / icon color.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1119,6 +1246,9 @@ macro_rules! for_each_present_slot {
         if !e.inset_shadows.is_empty() {
             $push(Slot::InsetShadows);
         }
+        if s.background_gradient.is_some() {
+            $push(Slot::Gradient(GradientPart::Shape));
+        }
     }};
 }
 
@@ -1143,6 +1273,7 @@ impl ResolvedStyle {
         }
         rep!(
             background,
+            background_gradient,
             content_color,
             padding,
             border_color,
@@ -1314,6 +1445,10 @@ fn slot_from_index(idx: u16) -> Option<Slot> {
         Slot::GapAxes,
         Slot::ShadowRest,
         Slot::InsetShadows,
+        Slot::Gradient(GradientPart::Shape),
+        Slot::Gradient(GradientPart::From),
+        Slot::Gradient(GradientPart::Via),
+        Slot::Gradient(GradientPart::To),
     ];
     ALL.iter().copied().find(|s| s.index() == idx).or_else(|| {
         // Text slots: the enum's discriminants start after the variants above
@@ -1387,5 +1522,39 @@ fn slot_differs(slot: Slot, prev: &ResolvedStyle, next: &ResolvedStyle) -> bool 
         Slot::GapAxes => prev.extras.gap_axes != next.extras.gap_axes,
         Slot::ShadowRest => prev.extras.shadow_rest != next.extras.shadow_rest,
         Slot::InsetShadows => prev.extras.inset_shadows != next.extras.inset_shadows,
+        Slot::Gradient(part) => match part {
+            GradientPart::Shape => prev.background_gradient != next.background_gradient,
+            GradientPart::From => gradient_edge_changed(prev, next, GradientEdgeSel::From),
+            GradientPart::Via => gradient_edge_changed(prev, next, GradientEdgeSel::Via),
+            GradientPart::To => gradient_edge_changed(prev, next, GradientEdgeSel::To),
+        },
+    }
+}
+
+/// Which composed stop edge to compare.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GradientEdgeSel {
+    From,
+    Via,
+    To,
+}
+
+/// The stop at `sel` (via is `None` when no via class composed).
+fn gradient_edge_stop(g: &Gradient, sel: GradientEdgeSel) -> Option<GradientStop> {
+    let s = g.stops();
+    match sel {
+        GradientEdgeSel::From => Some(s.from),
+        GradientEdgeSel::Via => s.via,
+        GradientEdgeSel::To => Some(s.to),
+    }
+}
+
+/// Compare ONE gradient edge across two styles (a side without a gradient
+/// means "changed" when the other side carries that edge).
+fn gradient_edge_changed(prev: &ResolvedStyle, next: &ResolvedStyle, sel: GradientEdgeSel) -> bool {
+    match (&prev.background_gradient, &next.background_gradient) {
+        (Some(p), Some(n)) => gradient_edge_stop(p, sel) != gradient_edge_stop(n, sel),
+        (None, None) => false,
+        _ => true,
     }
 }
