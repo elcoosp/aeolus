@@ -40,7 +40,29 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         )
     };
     Some(match els {
-        ["bg", ..] => "bg",
+        // v0.6: v4 keeps `background-color` and `background-image` as
+        // separate declarations that COEXIST (`bg-red-500 bg-linear-to-r`
+        // layers the gradient over the solid) — tw_merge models them as
+        // the separate `bg-color` / `bg-image` groups. The image group is
+        // the gradient shapes (`bg-linear-*`, `bg-radial`, `bg-conic*`,
+        // `bg-none`) plus the deprecated `bg-gradient-to-*` alias.
+        ["bg"] => "bg-color",
+        ["bg", "linear", ..]
+        | ["bg", "radial", ..]
+        | ["bg", "conic", ..]
+        | ["bg", "none"]
+        | ["bg", "gradient", ..] => "bg-image",
+        ["bg", ..] => "bg-color",
+        // Gradient stop edges: color and position are different custom
+        // properties in v4 (`--tw-gradient-from` vs
+        // `--tw-gradient-from-position`) and COMPOSE, so they are separate
+        // groups (`from-red-500 from-20%` keeps both; two colors conflict).
+        ["from", v, ..] if v.ends_with('%') => "from-pos",
+        ["from", ..] => "from-color",
+        ["via", v, ..] if v.ends_with('%') => "via-pos",
+        ["via", ..] => "via-color",
+        ["to", v, ..] if v.ends_with('%') => "to-pos",
+        ["to", ..] => "to-color",
         ["p"] | ["p", ..] => "padding",
         ["px", ..] => "padding-x",
         ["py", ..] => "padding-y",
