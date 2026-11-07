@@ -103,3 +103,46 @@ fn css_write_button(b: Bencher) {
     let r = Resolver::new(&t);
     b.bench(|| r.to_css(divan::black_box(BUTTON)).unwrap());
 }
+
+// v0.7 (AEOLUS_V0.7.md): plan algebra + snapshot artifacts. The compose
+// cost rides on the same diff/overlay slot walk the rebuild path uses; the
+// snapshot costs are the writer/reader pair's own (JSON parse + walk).
+#[divan::bench]
+fn plan_overlay_button(b: Bencher) {
+    let t = theme();
+    let r = Resolver::new(&t);
+    let base = r.resolve(BUTTON).unwrap().plan;
+    let over = r
+        .resolve("px-8 py-8 rounded-full uppercase shadow-2xl ring-4")
+        .unwrap()
+        .plan;
+    b.bench(|| divan::black_box(&base).overlay(divan::black_box(&over)));
+}
+
+#[divan::bench]
+fn snapshot_write_button(b: Bencher) {
+    let t = theme();
+    let plan = Resolver::new(&t).resolve(BUTTON).unwrap().plan;
+    b.bench(|| divan::black_box(&plan).to_snapshot_json());
+}
+
+#[divan::bench]
+fn snapshot_read_button(b: Bencher) {
+    let t = theme();
+    let json = Resolver::new(&t)
+        .resolve(BUTTON)
+        .unwrap()
+        .plan
+        .to_snapshot_json();
+    b.bench(|| StylePlan::from_snapshot_json(divan::black_box(&json)));
+}
+
+#[divan::bench]
+fn snapshot_roundtrip_button(b: Bencher) {
+    let t = theme();
+    let plan = Resolver::new(&t).resolve(BUTTON).unwrap().plan;
+    b.bench(|| {
+        let json = plan.to_snapshot_json();
+        StylePlan::from_snapshot_json(&json).unwrap()
+    });
+}
