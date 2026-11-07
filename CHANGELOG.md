@@ -6,6 +6,89 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-07
+
+The **element-relative typography + allocation contract** release (plan:
+`AEOLUS_V0.5.md`): the last two follow-ups the reports name as open and
+in-repo-doable — the benchmark report's allocation counters ("or the
+project writes its own global allocator counting harness", deliberately
+out of scope for v0.4) and the element-relative typography gap (v0.4
+§2.3 kept `tracking-*`/bare `leading-*` out of the corpus). The four
+upstream-blocked deferrals stay deferred (§5 of the plan, re-verified
+against crates.io 2026-11-07: no published masonry/floem release is
+compatible with the pinned revs).
+
+### Added
+
+- **Element-relative typography in the IR** (v0.5 §1): `TextValue` gains
+  `TrackingEm(f32)` (the `--tracking-*` token em) and
+  `LineHeightRatio(f32)` (the `--leading-*` unitless ratio) — the token
+  forms of `tracking-*` / `leading-*` / `text-*/*`-with-named-leading
+  now carry the RELATIVE unit the class names, exactly what v4's theme
+  tokens hold, instead of a 16px pre-multiplication the element's real
+  font-size cannot use. Absolute forms are unchanged (arbitrary
+  `tracking-[7px]` / `leading-[3px]`, spacing-multiple `leading-6` and
+  `text-sm/6`, token-paired `text-sm` line-heights). Multiplying by an
+  element's font-size is the renderer's cascade duty (v0.5 §1.6).
+- **Corpus: element-relative typography entries** (v0.5 §2): the golden
+  corpus grows 157 → **176 entries** — the six `tracking-*` tokens, the
+  negative form (`-tracking-wide`, v4's `calc(var(--tracking-wide) * -1)`),
+  arbitrary absolutes (`tracking-[7px]`, `leading-[3px]`), the six named
+  `leading-*` tokens + `leading-none`, named text-size leading modifiers
+  (`text-base/tight`, `text-lg/loose`), and two shadcn-theme entries.
+  All 176 at zero-warning parity with the real tailwindcss 4.1.17 output.
+- **The allocation contract** (`tests/alloc_contract.rs`, v0.5 §3): a
+  counting global allocator + mutex-serialized measured sections pin
+  report 08's structural claims as machine-independent numbers —
+  exact-zero claims pinned exactly, clone-shaped claims as measured
+  upper bounds. divan 0.1.21 re-verified as unable to carry
+  per-benchmark alloc counters (`IntoCounter` is a fixed per-iteration
+  value, not a sampled delta) — the contract test IS the harness the
+  report asked for.
+- `AEOLUS_V0.5.md` — the v0.5 plan of record.
+
+### Fixed
+
+- **`diff()` allocated on EVERY call** (caught by the allocation
+  contract on day one — the report-08 claim "no alloc" was wrong):
+  `bits_of`/`diff` routed through `slots()`, whose scratch
+  `Vec::with_capacity(40)` allocated per call, and `slots()` itself was
+  re-walked in the shared-bits compare. Slot presence now walks ONE
+  `for_each_present_slot!` source; `diff` walks shared bits directly.
+  The rebuild path is allocation-free when nothing changed — pinned
+  EXACTLY — and `diff_unchanged` dropped 238.8 → 139.8 ns (report 08).
+- **`-tracking-wide` ignored the negative marker**: the token arm of
+  `tracking` never applied `t.negative` (the arbitrary-px arm did). The
+  token em now negates, matching v4's `calc(var(--tracking-wide) * -1)`
+  shape; pinned by its corpus entry.
+- The parity harness's calc evaluator now folds em-valued calcs
+  unit-preservingly (`calc(0.025em * -1)` → `-0.025em`) and no longer
+  eats a unit-leading `e` as an exponent marker (`0.025em` parsed as
+  `0.025e` before).
+
+### Changed
+
+- **Floem**: the `--leading-*` token form lowers to Floem's NATIVE
+  `LineHeightValue::Normal(multiplier)` — font-size-relative at paint,
+  exactly CSS's unitless line-height (the capability-matrix row upgrades
+  from absolute-pt to element-relative). Absolute forms stay `Pt`.
+  `tracking-*` keeps the honest drop report (no Floem letter-spacing
+  prop at the pinned rev); the relative em stays in the plan.
+- The v0.4 §2.3 corpus scope note is REWRITTEN, not deleted
+  (AEOLUS_V0.5.md §2.3): element-relative values ARE pinned — as the
+  relative units the plan carries; element-level composition remains the
+  renderer's cascade duty, documented as a model boundary.
+
+### Deferred to 0.6 (all upstream-blocked, re-verified 2026-11-07)
+
+Unchanged from 0.4 §6 / 0.3 §4: publishing the backends (crates.io's
+`masonry`/`masonry_core` 0.4.0, published 2025-10-29, predates the
+pinned `linebender/xilem @ 9f504ae` by a year — the `LenReq`/`SizeDef`
+layout model and `layers`/`imaging` surfaces the backends consume exist
+in no release; `floem` 0.2.0, published 2024-11-14, predates the pinned
+`1351ffb` by two years), view-side property-stack registration, Masonry
+typography via native properties, Masonry transitions/animations.
+
 ## [0.4.0] — 2026-11-07
 
 The **parity proof** release (plan: `AEOLUS_V0.4.md`): the pipeline
