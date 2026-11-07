@@ -1334,6 +1334,99 @@ impl ResolvedStyle {
     }
 }
 
+impl StylePlan {
+    /// Compose `over` on top of `self` — the plan-level mirror of `cn()`.
+    ///
+    /// Where [`crate::cn`] merges class STRINGS before resolution (theme
+    /// aware, parse-based), `overlay` merges RESOLVED plans after it:
+    /// a component's cached plan can gain per-instance overrides at runtime
+    /// without re-resolving, re-parsing, or a theme reference.
+    ///
+    /// Semantics (v0.7 §1, every rule later-wins):
+    /// - `base`: [`ResolvedStyle::overlay`] — `Some` slots of `over.base`
+    ///   replace, unset slots keep the base value.
+    /// - `layers`: layers with the SAME [`VariantCondition`] merge per slot;
+    ///   conditions only `over` has are appended. The result stays in
+    ///   ascending [`VariantCondition::rank`] order (the cascade contract).
+    /// - `responsive`/`container`: per-bucket overlay, union of buckets.
+    /// - `dark`: per-slot overlay when both carry a dark bucket.
+    /// - `group`/`peer`: merged by id (label equal), new ids appended.
+    /// - `rules`: merged by [`crate::cond::Cond`] equality (the same conjunction is one
+    ///   rule), new conditions appended in `over` order.
+    /// - `breakpoints`: the override's table wins (it is theme-derived and
+    ///   the override is the later consumer; mixing plans from different
+    ///   theme versions is documented best-effort).
+    ///
+    /// The merged plan is idempotent (`p.overlay(o).overlay(o) == p.overlay(o)`)
+    /// and diff-integrated: `diff(&base.base, &merged.base)` reports exactly
+    /// the slots the override changed, so backends keep their repaint vs
+    /// relayout lanes when composing.
+    pub fn overlay(&self, over: &StylePlan) -> StylePlan {
+        let mut merged = self.clone();
+        merged.base.overlay(&over.base);
+
+        // Layers: merge by condition, keep ascending rank order (stable).
+        for layer in &over.layers {
+            if let Some(slot) = merged
+                .layers
+                .iter_mut()
+                .find(|l| l.condition == layer.condition)
+            {
+                slot.style.overlay(&layer.style);
+            } else {
+                merged.layers.push(layer.clone());
+            }
+        }
+        merged.layers.sort_by_key(|l| l.condition.rank());
+
+        // Responsive / container buckets: per-bucket overlay, union of keys.
+        for (bp, style) in &over.responsive {
+            match merged.responsive.get_mut(bp) {
+                Some(dst) => dst.overlay(style),
+                None => {
+                    merged.responsive.insert(*bp, style.clone());
+                }
+            }
+        }
+        for (bp, style) in &over.container {
+            match merged.container.get_mut(bp) {
+                Some(dst) => dst.overlay(style),
+                None => {
+                    merged.container.insert(*bp, style.clone());
+                }
+            }
+        }
+        // Dark: overlay when both plans carry a dark bucket.
+        match (&mut merged.dark, &over.dark) {
+            (Some(dst), Some(src)) => dst.overlay(src),
+            (None, Some(src)) => merged.dark = Some(src.clone()),
+            _ => {}
+        }
+        // group/peer: merge by id, preserve base-first order.
+        for (id, style) in &over.group {
+            match merged.group.iter_mut().find(|(gid, _)| gid == id) {
+                Some((_, dst)) => dst.overlay(style),
+                None => merged.group.push((id.clone(), style.clone())),
+            }
+        }
+        for (id, style) in &over.peer {
+            match merged.peer.iter_mut().find(|(pid, _)| pid == id) {
+                Some((_, dst)) => dst.overlay(style),
+                None => merged.peer.push((id.clone(), style.clone())),
+            }
+        }
+        // Rules: merge by condition equality (one rule per conjunction).
+        for rule in &over.rules {
+            match merged.rules.iter_mut().find(|r| r.when == rule.when) {
+                Some(dst) => dst.style.overlay(&rule.style),
+                None => merged.rules.push(rule.clone()),
+            }
+        }
+        merged.breakpoints = over.breakpoints;
+        merged
+    }
+}
+
 /// Per-slot diff between two resolved styles.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StyleDiff {
