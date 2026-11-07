@@ -90,7 +90,10 @@ impl PropertySupport {
             | Slot::Grid
             | Slot::Transform
             | Slot::Transition
-            | Slot::Animation => false,
+            | Slot::Animation
+            // v0.6 gradient: negotiated by the backend lowering (masonry
+            // native, floem reported — the parity contract, plan §4.1).
+            | Slot::Gradient(_) => false,
         }
     }
 }
