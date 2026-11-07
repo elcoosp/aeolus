@@ -1,0 +1,942 @@
+{
+  "tailwind": "4.1.17",
+  "themes": {
+    "default": {
+      "root_vars": {
+        "--font-sans": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\",\n      \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+        "--font-mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\",\n      \"Courier New\", monospace",
+        "--color-red-500": "oklch(63.7% 0.237 25.331)",
+        "--color-red-600": "oklch(57.7% 0.245 27.325)",
+        "--color-green-500": "oklch(72.3% 0.219 149.579)",
+        "--color-blue-500": "oklch(62.3% 0.214 259.815)",
+        "--color-purple-500": "oklch(62.7% 0.265 303.9)",
+        "--color-gray-100": "oklch(96.7% 0.003 264.542)",
+        "--color-gray-800": "oklch(27.8% 0.033 256.848)",
+        "--color-gray-900": "oklch(21% 0.034 264.665)",
+        "--color-black": "#000",
+        "--color-white": "#fff",
+        "--spacing": "0.25rem",
+        "--container-md": "28rem",
+        "--text-sm": "0.875rem",
+        "--text-sm--line-height": "calc(1.25 / 0.875)",
+        "--text-lg": "1.125rem",
+        "--text-lg--line-height": "calc(1.75 / 1.125)",
+        "--font-weight-medium": "500",
+        "--font-weight-bold": "700",
+        "--radius-md": "0.375rem",
+        "--radius-lg": "0.5rem",
+        "--radius-xl": "0.75rem",
+        "--ease-in-out": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "--aspect-video": "16 / 9",
+        "--default-transition-duration": "150ms",
+        "--default-transition-timing-function": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "--default-font-family": "var(--font-sans)",
+        "--default-mono-font-family": "var(--font-mono)",
+        "line-height": "1.5",
+        "-webkit-text-size-adjust": "100%",
+        "tab-size": "4",
+        "font-family": "var(--default-font-family, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\")",
+        "font-feature-settings": "var(--default-font-feature-settings, normal)",
+        "font-variation-settings": "var(--default-font-variation-settings, normal)",
+        "-webkit-tap-highlight-color": "transparent"
+      },
+      "property_defaults": {
+        "--tw-translate-x": "0",
+        "--tw-translate-y": "0",
+        "--tw-translate-z": "0",
+        "--tw-scale-x": "1",
+        "--tw-scale-y": "1",
+        "--tw-scale-z": "1",
+        "--tw-border-style": "solid",
+        "--tw-shadow": "0 0 #0000",
+        "--tw-shadow-alpha": "100%",
+        "--tw-inset-shadow": "0 0 #0000",
+        "--tw-inset-shadow-alpha": "100%",
+        "--tw-ring-shadow": "0 0 #0000",
+        "--tw-inset-ring-shadow": "0 0 #0000",
+        "--tw-ring-offset-width": "0px",
+        "--tw-ring-offset-color": "#fff",
+        "--tw-ring-offset-shadow": "0 0 #0000",
+        "--tw-outline-style": "solid"
+      }
+    },
+    "shadcn": {
+      "root_vars": {
+        "--font-sans": "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\",\n      \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+        "--font-mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\",\n      \"Courier New\", monospace",
+        "--color-red-500": "oklch(63.7% 0.237 25.331)",
+        "--color-red-600": "oklch(57.7% 0.245 27.325)",
+        "--color-green-500": "oklch(72.3% 0.219 149.579)",
+        "--color-blue-500": "oklch(62.3% 0.214 259.815)",
+        "--color-purple-500": "oklch(62.7% 0.265 303.9)",
+        "--color-gray-100": "oklch(96.7% 0.003 264.542)",
+        "--color-gray-800": "oklch(27.8% 0.033 256.848)",
+        "--color-gray-900": "oklch(21% 0.034 264.665)",
+        "--color-black": "#000",
+        "--color-white": "#fff",
+        "--spacing": "0.25rem",
+        "--container-md": "28rem",
+        "--text-sm": "0.875rem",
+        "--text-sm--line-height": "calc(1.25 / 0.875)",
+        "--text-lg": "1.125rem",
+        "--text-lg--line-height": "calc(1.75 / 1.125)",
+        "--font-weight-medium": "500",
+        "--font-weight-bold": "700",
+        "--radius-md": "calc(var(--radius) - 2px)",
+        "--radius-lg": "var(--radius)",
+        "--radius-xl": "calc(var(--radius) + 4px)",
+        "--ease-in-out": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "--aspect-video": "16 / 9",
+        "--default-transition-duration": "150ms",
+        "--default-transition-timing-function": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "--default-font-family": "var(--font-sans)",
+        "--default-mono-font-family": "var(--font-mono)",
+        "line-height": "1.5",
+        "-webkit-text-size-adjust": "100%",
+        "tab-size": "4",
+        "font-family": "var(--default-font-family, ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\")",
+        "font-feature-settings": "var(--default-font-feature-settings, normal)",
+        "font-variation-settings": "var(--default-font-variation-settings, normal)",
+        "-webkit-tap-highlight-color": "transparent",
+        "--background": "oklch(1 0 0)",
+        "--foreground": "oklch(0.145 0 0)",
+        "--card": "oklch(1 0 0)",
+        "--card-foreground": "oklch(0.145 0 0)",
+        "--popover": "oklch(1 0 0)",
+        "--popover-foreground": "oklch(0.145 0 0)",
+        "--primary": "oklch(0.205 0 0)",
+        "--primary-foreground": "oklch(0.985 0 0)",
+        "--secondary": "oklch(0.97 0 0)",
+        "--secondary-foreground": "oklch(0.205 0 0)",
+        "--muted": "oklch(0.97 0 0)",
+        "--muted-foreground": "oklch(0.556 0 0)",
+        "--accent": "oklch(0.97 0 0)",
+        "--accent-foreground": "oklch(0.205 0 0)",
+        "--destructive": "oklch(0.577 0.245 27.325)",
+        "--border": "oklch(0.922 0 0)",
+        "--input": "oklch(0.922 0 0)",
+        "--ring": "oklch(0.708 0 0)",
+        "--chart-1": "oklch(0.87 0 0)",
+        "--chart-2": "oklch(0.556 0 0)",
+        "--chart-3": "oklch(0.439 0 0)",
+        "--chart-4": "oklch(0.371 0 0)",
+        "--chart-5": "oklch(0.269 0 0)",
+        "--radius": "0.625rem",
+        "--sidebar": "oklch(0.985 0 0)",
+        "--sidebar-foreground": "oklch(0.145 0 0)",
+        "--sidebar-primary": "oklch(0.205 0 0)",
+        "--sidebar-primary-foreground": "oklch(0.985 0 0)",
+        "--sidebar-accent": "oklch(0.97 0 0)",
+        "--sidebar-accent-foreground": "oklch(0.205 0 0)",
+        "--sidebar-border": "oklch(0.922 0 0)",
+        "--sidebar-ring": "oklch(0.708 0 0)"
+      },
+      "property_defaults": {
+        "--tw-translate-x": "0",
+        "--tw-translate-y": "0",
+        "--tw-translate-z": "0",
+        "--tw-scale-x": "1",
+        "--tw-scale-y": "1",
+        "--tw-scale-z": "1",
+        "--tw-border-style": "solid",
+        "--tw-shadow": "0 0 #0000",
+        "--tw-shadow-alpha": "100%",
+        "--tw-inset-shadow": "0 0 #0000",
+        "--tw-inset-shadow-alpha": "100%",
+        "--tw-ring-shadow": "0 0 #0000",
+        "--tw-inset-ring-shadow": "0 0 #0000",
+        "--tw-ring-offset-width": "0px",
+        "--tw-ring-offset-color": "#fff",
+        "--tw-ring-offset-shadow": "0 0 #0000",
+        "--tw-outline-style": "solid"
+      }
+    }
+  },
+  "entries": [
+    {
+      "theme": "default",
+      "class": "p-4",
+      "css": ".p-4 {\npadding: calc(var(--spacing) * 4);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "px-2",
+      "css": ".px-2 {\npadding-inline: calc(var(--spacing) * 2);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "py-3",
+      "css": ".py-3 {\npadding-block: calc(var(--spacing) * 3);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "pt-1",
+      "css": ".pt-1 {\npadding-top: calc(var(--spacing) * 1);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "pr-0.5",
+      "css": ".pr-0\\.5 {\npadding-right: calc(var(--spacing) * 0.5);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "pb-px",
+      "css": ".pb-px {\npadding-bottom: 1px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "pl-[7px]",
+      "css": ".pl-\\[7px\\] {\npadding-left: 7px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "m-4",
+      "css": ".m-4 {\nmargin: calc(var(--spacing) * 4);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "mx-auto",
+      "css": ".mx-auto {\nmargin-inline: auto;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "-mt-2",
+      "css": ".-mt-2 {\nmargin-top: calc(var(--spacing) * -2);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "w-8",
+      "css": ".w-8 {\nwidth: calc(var(--spacing) * 8);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "w-full",
+      "css": ".w-full {\nwidth: 100%;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "w-1/2",
+      "css": ".w-1\\/2 {\nwidth: calc(1/2 * 100%);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "w-fit",
+      "css": ".w-fit {\nwidth: fit-content;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "w-auto",
+      "css": ".w-auto {\nwidth: auto;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "size-10",
+      "css": ".size-10 {\nwidth: calc(var(--spacing) * 10);\n    height: calc(var(--spacing) * 10);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "max-w-md",
+      "css": ".max-w-md {\nmax-width: var(--container-md);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "min-w-0",
+      "css": ".min-w-0 {\nmin-width: calc(var(--spacing) * 0);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "h-[13px]",
+      "css": ".h-\\[13px\\] {\nheight: 13px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "h-screen",
+      "css": ".h-screen {\nheight: 100vh;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "bg-red-500",
+      "css": ".bg-red-500 {\nbackground-color: var(--color-red-500);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "bg-black",
+      "css": ".bg-black {\nbackground-color: var(--color-black);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "bg-white",
+      "css": ".bg-white {\nbackground-color: var(--color-white);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "bg-transparent",
+      "css": ".bg-transparent {\nbackground-color: transparent;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "text-red-500",
+      "css": ".text-red-500 {\ncolor: var(--color-red-500);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "border-red-500",
+      "css": ".border-red-500 {\nborder-color: var(--color-red-500);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "bg-red-500/50",
+      "css": ".bg-red-500\\/50 {\nbackground-color: color-mix(in srgb, oklch(63.7% 0.237 25.331) 50%, transparent);\n    @supports (color: color-mix(in lab, red, red)) {\n      background-color: color-mix(in oklab, var(--color-red-500) 50%, transparent);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "bg-red-500/[0.37]",
+      "css": ".bg-red-500\\/\\[0\\.37\\] {\nbackground-color: color-mix(in srgb, oklch(63.7% 0.237 25.331) 37%, transparent);\n    @supports (color: color-mix(in lab, red, red)) {\n      background-color: color-mix(in oklab, var(--color-red-500) 37%, transparent);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "bg-[#0ea5e9]",
+      "css": ".bg-\\[\\#0ea5e9\\] {\nbackground-color: #0ea5e9;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "border",
+      "css": ".border {\nborder-style: var(--tw-border-style);\n    border-width: 1px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "border-2",
+      "css": ".border-2 {\nborder-style: var(--tw-border-style);\n    border-width: 2px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "border-t",
+      "css": ".border-t {\nborder-top-style: var(--tw-border-style);\n    border-top-width: 1px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "border-x",
+      "css": ".border-x {\nborder-inline-style: var(--tw-border-style);\n    border-inline-width: 1px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "border-dashed",
+      "css": ".border-dashed {\n--tw-border-style: dashed;\n    border-style: dashed;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "rounded-md",
+      "css": ".rounded-md {\nborder-radius: var(--radius-md);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "rounded-xl",
+      "css": ".rounded-xl {\nborder-radius: var(--radius-xl);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "rounded-s-lg",
+      "css": ".rounded-s-lg {\nborder-start-start-radius: var(--radius-lg);\n    border-end-start-radius: var(--radius-lg);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "rounded-t-full",
+      "css": ".rounded-t-full {\nborder-top-left-radius: calc(infinity * 1px);\n    border-top-right-radius: calc(infinity * 1px);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "rounded-[3px]",
+      "css": ".rounded-\\[3px\\] {\nborder-radius: 3px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "ring",
+      "css": ".ring {\n--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);\n    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "ring-2",
+      "css": ".ring-2 {\n--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);\n    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "ring-[3px]",
+      "css": ".ring-\\[3px\\] {\n--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);\n    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "ring-red-500",
+      "css": ".ring-red-500 {\n--tw-ring-color: var(--color-red-500);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "ring-offset-2",
+      "css": ".ring-offset-2 {\n--tw-ring-offset-width: 2px;\n    --tw-ring-offset-shadow: var(--tw-ring-inset,) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "ring-inset",
+      "css": ".ring-inset {\n--tw-ring-inset: inset;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "outline-2",
+      "css": ".outline-2 {\noutline-style: var(--tw-outline-style);\n    outline-width: 2px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "outline-offset-2",
+      "css": ".outline-offset-2 {\noutline-offset: 2px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "outline-red-500",
+      "css": ".outline-red-500 {\noutline-color: var(--color-red-500);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "outline-none",
+      "css": ".outline-none {\n--tw-outline-style: none;\n    outline-style: none;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "shadow-sm",
+      "css": ".shadow-sm {\n--tw-shadow: 0 1px 3px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 1px 2px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1));\n    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "shadow-lg",
+      "css": ".shadow-lg {\n--tw-shadow: 0 10px 15px -3px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 4px 6px -4px var(--tw-shadow-color, rgb(0 0 0 / 0.1));\n    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "shadow-none",
+      "css": ".shadow-none {\n--tw-shadow: 0 0 #0000;\n    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "shadow-red-500/50",
+      "css": ".shadow-red-500\\/50 {\n--tw-shadow-color: color-mix(in srgb, oklch(63.7% 0.237 25.331) 50%, transparent);\n    @supports (color: color-mix(in lab, red, red)) {\n      --tw-shadow-color: color-mix(in oklab, color-mix(in oklab, var(--color-red-500) 50%, transparent) var(--tw-shadow-alpha), transparent);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "text-sm",
+      "css": ".text-sm {\nfont-size: var(--text-sm);\n    line-height: var(--tw-leading, var(--text-sm--line-height));\n}"
+    },
+    {
+      "theme": "default",
+      "class": "text-lg",
+      "css": ".text-lg {\nfont-size: var(--text-lg);\n    line-height: var(--tw-leading, var(--text-lg--line-height));\n}"
+    },
+    {
+      "theme": "default",
+      "class": "text-sm/6",
+      "css": ".text-sm\\/6 {\nfont-size: var(--text-sm);\n    line-height: calc(var(--spacing) * 6);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "font-medium",
+      "css": ".font-medium {\n--tw-font-weight: var(--font-weight-medium);\n    font-weight: var(--font-weight-medium);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "font-bold",
+      "css": ".font-bold {\n--tw-font-weight: var(--font-weight-bold);\n    font-weight: var(--font-weight-bold);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "italic",
+      "css": ".italic {\nfont-style: italic;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "not-italic",
+      "css": ".not-italic {\nfont-style: normal;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "uppercase",
+      "css": ".uppercase {\ntext-transform: uppercase;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "underline",
+      "css": ".underline {\ntext-decoration-line: underline;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "no-underline",
+      "css": ".no-underline {\ntext-decoration-line: none;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "truncate",
+      "css": ".truncate {\noverflow: hidden;\n    text-overflow: ellipsis;\n    white-space: nowrap;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "text-center",
+      "css": ".text-center {\ntext-align: center;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "whitespace-nowrap",
+      "css": ".whitespace-nowrap {\nwhite-space: nowrap;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "line-clamp-2",
+      "css": ".line-clamp-2 {\noverflow: hidden;\n    display: -webkit-box;\n    -webkit-box-orient: vertical;\n    -webkit-line-clamp: 2;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "tabular-nums",
+      "css": ".tabular-nums {\n--tw-numeric-spacing: tabular-nums;\n    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "underline-offset-2",
+      "css": ".underline-offset-2 {\ntext-underline-offset: 2px;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "flex",
+      "css": ".flex {\ndisplay: flex;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "inline-flex",
+      "css": ".inline-flex {\ndisplay: inline-flex;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "grid",
+      "css": ".grid {\ndisplay: grid;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "grid-cols-3",
+      "css": ".grid-cols-3 {\ngrid-template-columns: repeat(3, minmax(0, 1fr));\n}"
+    },
+    {
+      "theme": "default",
+      "class": "col-span-2",
+      "css": ".col-span-2 {\ngrid-column: span 2 / span 2;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "items-center",
+      "css": ".items-center {\nalign-items: center;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "justify-between",
+      "css": ".justify-between {\njustify-content: space-between;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "gap-4",
+      "css": ".gap-4 {\ngap: calc(var(--spacing) * 4);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "gap-x-2",
+      "css": ".gap-x-2 {\ncolumn-gap: calc(var(--spacing) * 2);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "gap-y-3",
+      "css": ".gap-y-3 {\nrow-gap: calc(var(--spacing) * 3);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "flex-col",
+      "css": ".flex-col {\nflex-direction: column;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "flex-wrap",
+      "css": ".flex-wrap {\nflex-wrap: wrap;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "grow-0",
+      "css": ".grow-0 {\nflex-grow: 0;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "order-3",
+      "css": ".order-3 {\norder: 3;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "content-center",
+      "css": ".content-center {\nalign-content: center;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "basis-1/2",
+      "css": ".basis-1\\/2 {\nflex-basis: calc(1/2 * 100%);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "self-end",
+      "css": ".self-end {\nalign-self: flex-end;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "relative",
+      "css": ".relative {\nposition: relative;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "absolute",
+      "css": ".absolute {\nposition: absolute;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "inset-0",
+      "css": ".inset-0 {\ninset: calc(var(--spacing) * 0);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "top-2",
+      "css": ".top-2 {\ntop: calc(var(--spacing) * 2);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "-top-2",
+      "css": ".-top-2 {\ntop: calc(var(--spacing) * -2);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "z-10",
+      "css": ".z-10 {\nz-index: 10;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "-z-10",
+      "css": ".-z-10 {\nz-index: calc(10 * -1);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "overflow-hidden",
+      "css": ".overflow-hidden {\noverflow: hidden;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "overflow-x-auto",
+      "css": ".overflow-x-auto {\noverflow-x: auto;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "visible",
+      "css": ".visible {\nvisibility: visible;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "invisible",
+      "css": ".invisible {\nvisibility: hidden;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "aspect-video",
+      "css": ".aspect-video {\naspect-ratio: var(--aspect-video);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "scale-95",
+      "css": ".scale-95 {\n--tw-scale-x: 95%;\n    --tw-scale-y: 95%;\n    --tw-scale-z: 95%;\n    scale: var(--tw-scale-x) var(--tw-scale-y);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "scale-x-50",
+      "css": ".scale-x-50 {\n--tw-scale-x: 50%;\n    scale: var(--tw-scale-x) var(--tw-scale-y);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "rotate-45",
+      "css": ".rotate-45 {\nrotate: 45deg;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "translate-x-2",
+      "css": ".translate-x-2 {\n--tw-translate-x: calc(var(--spacing) * 2);\n    translate: var(--tw-translate-x) var(--tw-translate-y);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "-translate-y-1",
+      "css": ".-translate-y-1 {\n--tw-translate-y: calc(var(--spacing) * -1);\n    translate: var(--tw-translate-x) var(--tw-translate-y);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "skew-y-3",
+      "css": ".skew-y-3 {\n--tw-skew-y: skewY(3deg);\n    transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "transition",
+      "css": ".transition {\ntransition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to, opacity, box-shadow, transform, translate, scale, rotate, filter, -webkit-backdrop-filter, backdrop-filter, display, content-visibility, overlay, pointer-events;\n    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));\n    transition-duration: var(--tw-duration, var(--default-transition-duration));\n}"
+    },
+    {
+      "theme": "default",
+      "class": "transition-colors",
+      "css": ".transition-colors {\ntransition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to;\n    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));\n    transition-duration: var(--tw-duration, var(--default-transition-duration));\n}"
+    },
+    {
+      "theme": "default",
+      "class": "transition-none",
+      "css": ".transition-none {\ntransition-property: none;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "duration-300",
+      "css": ".duration-300 {\n--tw-duration: 300ms;\n    transition-duration: 300ms;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "ease-in-out",
+      "css": ".ease-in-out {\n--tw-ease: var(--ease-in-out);\n    transition-timing-function: var(--ease-in-out);\n}"
+    },
+    {
+      "theme": "default",
+      "class": "delay-150",
+      "css": ".delay-150 {\ntransition-delay: 150ms;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "opacity-50",
+      "css": ".opacity-50 {\nopacity: 50%;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "cursor-pointer",
+      "css": ".cursor-pointer {\ncursor: pointer;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "pointer-events-none",
+      "css": ".pointer-events-none {\npointer-events: none;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "select-none",
+      "css": ".select-none {\n-webkit-user-select: none;\n    user-select: none;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "hover:bg-red-600",
+      "css": ".hover\\:bg-red-600 {\n&:hover {\n      @media (hover: hover) {\n        background-color: var(--color-red-600);\n      }\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "focus:ring-2",
+      "css": ".focus\\:ring-2 {\n&:focus {\n      --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);\n      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "focus-visible:outline-2",
+      "css": ".focus-visible\\:outline-2 {\n&:focus-visible {\n      outline-style: var(--tw-outline-style);\n      outline-width: 2px;\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "focus-within:ring-2",
+      "css": ".focus-within\\:ring-2 {\n&:focus-within {\n      --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);\n      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "active:scale-95",
+      "css": ".active\\:scale-95 {\n&:active {\n      --tw-scale-x: 95%;\n      --tw-scale-y: 95%;\n      --tw-scale-z: 95%;\n      scale: var(--tw-scale-x) var(--tw-scale-y);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "disabled:opacity-50",
+      "css": ".disabled\\:opacity-50 {\n&:disabled {\n      opacity: 50%;\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "visited:text-purple-500",
+      "css": ".visited\\:text-purple-500 {\n&:visited {\n      color: var(--color-purple-500);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "target:block",
+      "css": ".target\\:block {\n&:target {\n      display: block;\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "checked:border-red-500",
+      "css": ".checked\\:border-red-500 {\n&:checked {\n      border-color: var(--color-red-500);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "required:border-red-500",
+      "css": ".required\\:border-red-500 {\n&:required {\n      border-color: var(--color-red-500);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "md:text-lg",
+      "css": ".md\\:text-lg {\n@media (width >= 48rem) {\n      font-size: var(--text-lg);\n      line-height: var(--tw-leading, var(--text-lg--line-height));\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "sm:p-8",
+      "css": ".sm\\:p-8 {\n@media (width >= 40rem) {\n      padding: calc(var(--spacing) * 8);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "max-md:p-4",
+      "css": ".max-md\\:p-4 {\n@media (width < 48rem) {\n      padding: calc(var(--spacing) * 4);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "dark:bg-gray-900",
+      "css": ".dark\\:bg-gray-900 {\n@media (prefers-color-scheme: dark) {\n      background-color: var(--color-gray-900);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "group-hover:underline",
+      "css": ".group-hover\\:underline {\n&:is(:where(.group):hover *) {\n      @media (hover: hover) {\n        text-decoration-line: underline;\n      }\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "peer-checked:bg-blue-500",
+      "css": ".peer-checked\\:bg-blue-500 {\n&:is(:where(.peer):checked ~ *) {\n      background-color: var(--color-blue-500);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "group-hover/menu:bg-red-500",
+      "css": ".group-hover\\/menu\\:bg-red-500 {\n&:is(:where(.group\\/menu):hover *) {\n      @media (hover: hover) {\n        background-color: var(--color-red-500);\n      }\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "data-[state=open]:bg-green-500",
+      "css": ".data-\\[state\\=open\\]\\:bg-green-500 {\n&[data-state=\"open\"] {\n      background-color: var(--color-green-500);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "aria-busy:opacity-50",
+      "css": ".aria-busy\\:opacity-50 {\n&[aria-busy=\"true\"] {\n      opacity: 50%;\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "first:pt-0",
+      "css": ".first\\:pt-0 {\n&:first-child {\n      padding-top: calc(var(--spacing) * 0);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "last:pb-0",
+      "css": ".last\\:pb-0 {\n&:last-child {\n      padding-bottom: calc(var(--spacing) * 0);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "odd:bg-gray-100",
+      "css": ".odd\\:bg-gray-100 {\n&:nth-child(odd) {\n      background-color: var(--color-gray-100);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "empty:block",
+      "css": ".empty\\:block {\n&:empty {\n      display: block;\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "nth-3:block",
+      "css": ".nth-3\\:block {\n&:nth-child(3) {\n      display: block;\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "has-focus:ring-2",
+      "css": ".has-focus\\:ring-2 {\n&:has(*:focus) {\n      --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);\n      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "not-hover:opacity-50",
+      "css": ".not-hover\\:opacity-50 {\n&:not(*:hover) {\n      opacity: 50%;\n    }\n    @media not (hover: hover) {\n      opacity: 50%;\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "@md:bg-red-500",
+      "css": ".\\@md\\:bg-red-500 {\n@container (width >= 28rem) {\n      background-color: var(--color-red-500);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "[&:hover]:bg-red-600",
+      "css": ".\\[\\&\\:hover\\]\\:bg-red-600 {\n&:hover {\n      background-color: var(--color-red-600);\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "[@media(print)]:hidden",
+      "css": ".\\[\\@media\\(print\\)\\]\\:hidden {\n@media (print) {\n      display: none;\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "md:hover:bg-red-600",
+      "css": ".md\\:hover\\:bg-red-600 {\n@media (width >= 48rem) {\n      &:hover {\n        @media (hover: hover) {\n          background-color: var(--color-red-600);\n        }\n      }\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "dark:hover:bg-gray-800",
+      "css": ".dark\\:hover\\:bg-gray-800 {\n@media (prefers-color-scheme: dark) {\n      &:hover {\n        @media (hover: hover) {\n          background-color: var(--color-gray-800);\n        }\n      }\n    }\n}"
+    },
+    {
+      "theme": "default",
+      "class": "bg-red-500!",
+      "css": ".bg-red-500\\! {\nbackground-color: var(--color-red-500) !important;\n}"
+    },
+    {
+      "theme": "default",
+      "class": "!p-4",
+      "css": ".\\!p-4 {\npadding: calc(var(--spacing) * 4) !important;\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "bg-primary",
+      "css": ".bg-primary {\nbackground-color: var(--primary);\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "text-primary-foreground",
+      "css": ".text-primary-foreground {\ncolor: var(--primary-foreground);\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "bg-primary/90",
+      "css": ".bg-primary\\/90 {\nbackground-color: var(--primary);\n    @supports (color: color-mix(in lab, red, red)) {\n      background-color: color-mix(in oklab, var(--primary) 90%, transparent);\n    }\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "border-border",
+      "css": ".border-border {\nborder-color: var(--border);\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "ring-ring/50",
+      "css": ".ring-ring\\/50 {\n--tw-ring-color: var(--ring);\n    @supports (color: color-mix(in lab, red, red)) {\n      --tw-ring-color: color-mix(in oklab, var(--ring) 50%, transparent);\n    }\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "rounded-md",
+      "css": ".rounded-md {\nborder-radius: calc(var(--radius) - 2px);\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "bg-destructive",
+      "css": ".bg-destructive {\nbackground-color: var(--destructive);\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "text-muted-foreground",
+      "css": ".text-muted-foreground {\ncolor: var(--muted-foreground);\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "focus-visible:ring-ring/50",
+      "css": ".focus-visible\\:ring-ring\\/50 {\n&:focus-visible {\n      --tw-ring-color: var(--ring);\n      @supports (color: color-mix(in lab, red, red)) {\n        --tw-ring-color: color-mix(in oklab, var(--ring) 50%, transparent);\n      }\n    }\n}"
+    },
+    {
+      "theme": "shadcn",
+      "class": "bg-sidebar",
+      "css": ".bg-sidebar {\nbackground-color: var(--sidebar);\n}"
+    }
+  ]
+}
