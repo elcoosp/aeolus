@@ -176,6 +176,49 @@ pub(crate) enum Applied {
         rest: Vec<BoxShadow>,
     },
     InsetShadows(Vec<BoxShadow>),
+    // ---- v0.6 gradients (AEOLUS_V0.6.md §1) --------------------------------
+    /// `bg-linear-*` / `bg-radial` / `bg-conic*` / `bg-none` — the
+    /// background-image shape (last one in the bucket wins).
+    GradientShape(GradientShapeApplied),
+    /// `from-{color}` / `via-{color}` / `to-{color}` — a stop color.
+    GradientStopColor {
+        /// Which edge of the composed stops.
+        edge: GradientEdge,
+        /// The resolved stop color.
+        color: Color,
+    },
+    /// `from-{P}%` / `via-{P}%` / `to-{P}%` — a stop position patch
+    /// (v4: `--tw-gradient-from-position: 20%`).
+    GradientStopPos {
+        /// Which edge of the composed stops.
+        edge: GradientEdge,
+        /// Position in percent.
+        pct: f32,
+    },
+}
+
+/// The background-image shape classes (v0.6 §1.2).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum GradientShapeApplied {
+    /// `bg-linear-*`: the CSS angle in degrees (0 = to top, clockwise).
+    Linear(f32),
+    /// `bg-radial`.
+    Radial,
+    /// `bg-conic-*`: the CSS `from <angle>` in degrees.
+    Conic(f32),
+    /// `bg-none` — clears the image.
+    None,
+}
+
+/// Which composed stop an `Applied::GradientStop*` targets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GradientEdge {
+    /// `from-*`.
+    From,
+    /// `via-*`.
+    Via,
+    /// `to-*`.
+    To,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1087,7 +1130,6 @@ impl<'t> Resolver<'t> {
             match a {
                 Applied::Position(p) => style.extras.position = Some(*p),
                 Applied::ZIndex(z) => style.extras.z_index = Some(*z),
-                Applied::Overflow(o) => style.extras.overflow = Some(*o),
                 Applied::Visibility(v) => style.extras.visibility = Some(*v),
                 Applied::AspectRatio(r) => style.extras.aspect_ratio = Some(*r),
                 Applied::BorderStyle(b) => style.extras.border_style = Some(*b),
@@ -1105,6 +1147,111 @@ impl<'t> Resolver<'t> {
                 }
                 _ => {}
             }
+        }
+
+        // Per-axis overflow merges (CSS: `overflow-*` sets BOTH axes,
+        // `overflow-x-*`/`overflow-y-*` patch ONE — so
+        // `overflow-hidden overflow-x-auto` keeps y hidden, matching
+        // tw_merge's separate overflow/overflow-x/overflow-y groups).
+        let mut overflow = Overflow::default();
+        let mut saw_overflow = false;
+        for a in &bucket.applied {
+            if let Applied::Overflow(o) = a {
+                if o.x.is_some() {
+                    overflow.x = o.x;
+                }
+                if o.y.is_some() {
+                    overflow.y = o.y;
+                }
+                saw_overflow = true;
+            }
+        }
+        if saw_overflow {
+            style.extras.overflow = Some(overflow);
+        }
+
+        // v0.6 gradient composition (AEOLUS_V0.6.md §1.2): within one
+        // bucket the LAST shape wins (`bg-linear-*` … `bg-none` clears),
+        // the LAST stop color per edge wins, and position patches apply
+        // to the edge they name. Stops without a shape compose nothing
+        // (v4: `--tw-gradient-position` unset → no image).
+        let mut shape = GradientShapeApplied::None;
+        let mut saw_shape = false;
+        let mut from: Option<GradientStop> = None;
+        let mut via: Option<GradientStop> = None;
+        let mut to: Option<GradientStop> = None;
+        for a in &bucket.applied {
+            match a {
+                Applied::GradientShape(s) => {
+                    shape = *s;
+                    saw_shape = true;
+                }
+                Applied::GradientStopColor { edge, color } => {
+                    let stop = GradientStop {
+                        color: *color,
+                        pos_pct: None,
+                    };
+                    match edge {
+                        GradientEdge::From => from = Some(stop),
+                        GradientEdge::Via => via = Some(stop),
+                        GradientEdge::To => to = Some(stop),
+                    }
+                }
+                Applied::GradientStopPos { edge, pct } => {
+                    // A position patch on an edge with no color yet keeps
+                    // the position for the composed default (v4 merges
+                    // `from-20%` into `--tw-gradient-from-position`
+                    // independently of the color var).
+                    let patch = |s: &mut Option<GradientStop>| {
+                        match s {
+                            Some(stop) => stop.pos_pct = Some(*pct),
+                            None => {
+                                *s = Some(GradientStop {
+                                    color: Color::TRANSPARENT,
+                                    pos_pct: Some(*pct),
+                                })
+                            }
+                        };
+                    };
+                    match edge {
+                        GradientEdge::From => patch(&mut from),
+                        GradientEdge::Via => patch(&mut via),
+                        GradientEdge::To => patch(&mut to),
+                    }
+                }
+                _ => {}
+            }
+        }
+        if saw_shape {
+            style.background_gradient = Some(if shape == GradientShapeApplied::None {
+                // `bg-none` clears the image like a value (overlay-correct).
+                Gradient::None
+            } else {
+                let stops = GradientStops {
+                    // Missing edges = the v4 @property initial values:
+                    // `--tw-gradient-from/to: #0000` (transparent).
+                    from: from.unwrap_or(GradientStop {
+                        color: Color::TRANSPARENT,
+                        pos_pct: None,
+                    }),
+                    via,
+                    to: to.unwrap_or(GradientStop {
+                        color: Color::TRANSPARENT,
+                        pos_pct: None,
+                    }),
+                };
+                match shape {
+                    GradientShapeApplied::Linear(angle_deg) => {
+                        Gradient::Linear { angle_deg, stops }
+                    }
+                    GradientShapeApplied::Radial => Gradient::Radial { stops },
+                    GradientShapeApplied::Conic(from_angle_deg) => Gradient::Conic {
+                        from_angle_deg,
+                        stops,
+                    },
+                    GradientShapeApplied::None => unreachable!("checked above"),
+                }
+            });
         }
         style
     }
@@ -1223,9 +1370,18 @@ impl<'t> Resolver<'t> {
         match head {
             // ---------------- colors ----------------
             "bg" => {
+                // v0.6: the background-image shapes come first —
+                // `bg-linear-*`/`bg-radial`/`bg-conic*`/`bg-none` (and the
+                // deprecated v4 alias `bg-gradient-to-*`), including the
+                // arbitrary angle form `bg-linear-[<angle>deg]`.
+                if let Some(applied) = gradient_shape_of(t, value)? {
+                    return Ok(applied);
+                }
                 if let Some(arb) = t.arbitrary {
                     let c = color_from_arbitrary(arb, self.theme).ok_or_else(|| {
-                        unsupported("bg-[...] value is not a color (gradients/images not modeled)")
+                        unsupported(
+                            "bg-[...] value is not a color (arbitrary gradient functions are not modeled — use the bg-linear-*/bg-radial token forms)",
+                        )
                     })?;
                     return Ok(Applied::Replace(
                         Slot::Background,
@@ -1952,6 +2108,42 @@ impl<'t> Resolver<'t> {
                     other => other.parse::<i16>().map_err(|_| unknown(None))?,
                 };
                 Ok(Applied::Order(n * if t.negative { -1 } else { 1 }))
+            }
+            // v0.6 gradient stops (AEOLUS_V0.6.md §1.2): `from-*`/`via-*`/
+            // `to-*`. A trailing `%` patches ONLY the stop position (v4:
+            // `--tw-gradient-from-position`); anything else is the stop
+            // color (theme/shadcn token, arbitrary, `transparent`, plus
+            // the `/opacity` modifier — v4 emits `color-mix(in oklab, …)`,
+            // exactly `with_opacity`'s shape).
+            "from" | "via" | "to" => {
+                let edge = match head {
+                    "from" => GradientEdge::From,
+                    "via" => GradientEdge::Via,
+                    _ => GradientEdge::To,
+                };
+                if let Some(pct_str) = value.strip_suffix('%') {
+                    let pct: f32 = pct_str.parse().map_err(|_| unknown(None))?;
+                    return Ok(Applied::GradientStopPos { edge, pct });
+                }
+                if value == "current" {
+                    return Err(unsupported(
+                        "currentcolor gradient stops are not modeled (no currentColor in the color IR)",
+                    ));
+                }
+                let c = match t.arbitrary {
+                    Some(arb) => color_from_arbitrary(arb, self.theme).ok_or_else(|| {
+                        unsupported("gradient stop arbitrary value is not a parsable color")
+                    })?,
+                    None => match color_of(value)? {
+                        Some(c) => c,
+                        None if value == "transparent" => Color::TRANSPARENT,
+                        None => return Err(unknown(suggest(value, self.theme))),
+                    },
+                };
+                Ok(Applied::GradientStopColor {
+                    edge,
+                    color: with_opacity(c, pct),
+                })
             }
             "content" => {
                 let v = match value_elems {
@@ -2745,6 +2937,93 @@ fn border_style_of(value: &str) -> Option<BorderStyle> {
         "hidden" => BorderStyle::Hidden,
         _ => return None,
     })
+}
+
+/// The v4.1.17 `bg-linear-*` corner directions, as CSS angles (0 = to
+/// top, clockwise). Captured verbatim from the real compiler
+/// (`tools/capture_gradients.mjs`): `to right` = 90, `to bottom right`
+/// = 135, ...
+fn linear_corner_angle(dir: &str) -> Option<f32> {
+    Some(match dir {
+        "to-t" => 0.0,
+        "to-tr" => 45.0,
+        "to-r" => 90.0,
+        "to-br" => 135.0,
+        "to-b" => 180.0,
+        "to-bl" => 225.0,
+        "to-l" => 270.0,
+        "to-tl" => 315.0,
+        _ => return None,
+    })
+}
+
+/// The v0.6 background-image shape classes (AEOLUS_V0.6.md §1.2):
+/// `bg-linear-to-*` / `bg-linear-<angle>` / `bg-linear-[<angle>deg]` /
+/// `bg-gradient-to-*` (the deprecated v4 alias) / `bg-radial` /
+/// `bg-conic[-<angle>]` / `bg-none`. Returns `Ok(None)` when the class
+/// is NOT a shape (the caller falls through to the solid-color lookup).
+fn gradient_shape_of(t: &ClassToken<'_>, value: &str) -> Result<Option<Applied>, Warning> {
+    let unknown = || Warning::Unknown {
+        class: t.raw.to_string(),
+        suggestion: None,
+    };
+    // Arbitrary angle: `bg-linear-[200deg]` (the elements end at
+    // `linear`, the bracket carries the angle). Any OTHER arbitrary bg
+    // value (`bg-[#fff]`, `bg-(--brand)`) is not a shape.
+    if let Some(arb) = t.arbitrary {
+        if !value.starts_with("linear") {
+            return Ok(None);
+        }
+        let angle = arb
+            .value
+            .trim()
+            .trim_end_matches("deg")
+            .trim()
+            .parse::<f32>()
+            .map_err(|_| unknown())?;
+        return Ok(Some(Applied::GradientShape(GradientShapeApplied::Linear(
+            angle,
+        ))));
+    }
+    let applied = |s: GradientShapeApplied| Some(Applied::GradientShape(s));
+    if value == "none" {
+        return Ok(applied(GradientShapeApplied::None));
+    }
+    if value == "radial" {
+        return Ok(applied(GradientShapeApplied::Radial));
+    }
+    // `bg-gradient-to-r` — the deprecated v3-era alias, still emitted
+    // identically by v4.1.17 (captured). The alias carries ONLY the
+    // corner directions (v3 had no angle form).
+    if let Some(dir) = value.strip_prefix("gradient-to-") {
+        let angle = linear_corner_angle(&format!("to-{dir}")).ok_or_else(unknown)?;
+        return Ok(applied(GradientShapeApplied::Linear(angle)));
+    }
+    if let Some(rest) = value.strip_prefix("linear") {
+        if rest.is_empty() {
+            // Bare `bg-linear` is not a v4 utility — a direction or an
+            // angle is required.
+            return Err(unknown());
+        }
+        let rest = rest.strip_prefix('-').ok_or_else(unknown)?;
+        if let Some(angle) = linear_corner_angle(rest) {
+            return Ok(applied(GradientShapeApplied::Linear(angle)));
+        }
+        let angle: f32 = rest.parse().map_err(|_| unknown())?;
+        return Ok(applied(GradientShapeApplied::Linear(angle)));
+    }
+    if let Some(rest) = value.strip_prefix("conic") {
+        let angle = if rest.is_empty() {
+            0.0
+        } else {
+            rest.strip_prefix('-')
+                .ok_or_else(unknown)?
+                .parse::<f32>()
+                .map_err(|_| unknown())?
+        };
+        return Ok(applied(GradientShapeApplied::Conic(angle)));
+    }
+    Ok(None)
 }
 
 fn shadow_applied(
