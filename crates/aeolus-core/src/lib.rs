@@ -53,10 +53,11 @@ pub use eval::{Probe, Rel, in_window, split_group_label};
 pub use plan::{
     AlignItems, Animation, AutoEdges, Background, BorderColor, BorderStyle, BorderWidth, BoxShadow,
     ConditionalLayer, ContentAlign, ContentColor, CornerRadius, Cursor, Dimensions, Display, Ease,
-    Extras, FlexDirection, Gap, GapAxes, Grid, Inset, JustifyContent, Lane, Layout, Margin,
-    Opacity, Outline, Overflow, OverflowKind, Padding, PointerEvents, Position, ResolvedStyle,
-    Ring, RingPart, SizedValue, Slot, StyleDiff, StylePlan, TextProperty, TextValue, Transform,
-    Transition, TransitionSet, VariantCondition, Visibility, diff,
+    Extras, FlexDirection, Gap, GapAxes, Gradient, GradientPart, GradientStop, GradientStops, Grid,
+    Inset, JustifyContent, Lane, Layout, Margin, Opacity, Outline, Overflow, OverflowKind, Padding,
+    PointerEvents, Position, ResolvedStyle, Ring, RingPart, SizedValue, Slot, StyleDiff, StylePlan,
+    TextProperty, TextValue, Transform, Transition, TransitionSet, VariantCondition, Visibility,
+    diff,
 };
 pub use resolve::{Resolution, Resolver, Warning};
 pub use theme::{
