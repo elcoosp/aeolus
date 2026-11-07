@@ -37,6 +37,7 @@ pub mod parser;
 pub mod plan;
 pub mod resolve;
 pub(crate) mod selector;
+pub mod snapshot;
 pub mod theme;
 
 pub use ast::{
@@ -60,6 +61,7 @@ pub use plan::{
     diff,
 };
 pub use resolve::{Resolution, Resolver, Warning};
+pub use snapshot::{PLAN_SNAPSHOT_FORMAT, PLAN_SNAPSHOT_VERSION, SnapshotError};
 pub use theme::{
     AnimationSpec, BoxShadowSpec, CustomUtility, CustomVariant, TAILWIND_DEFAULT_PALETTE,
     TAILWIND_DEFAULT_THEME, TailwindTheme, Token,
