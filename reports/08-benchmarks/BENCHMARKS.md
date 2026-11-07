@@ -93,11 +93,62 @@ paths are unchanged in shape; the sandbox is slower than the 2026-11-03
 | `color_mix_opacity` | 0.185 ns | |
 | **`css_write_button`** (new) | **13.4 µs** | the 33-class Button through the verification emitter: parse + resolve + route + 33 v4-shaped rules. Verification tooling, NOT on the styling hot path (backends consume the plan) |
 
-### The report-08 allocation-counter follow-up
+## v0.5 re-run (2026-11-07, 2-core sandbox, release profile, divan 0.1.21)
+
+After the element-relative typography and the allocation fix
+(`AEOLUS_V0.5.md` §1/§3). Same sandbox class as the v0.4 run; compare
+RATIOS within a run.
+
+| benchmark | v0.5 median | vs v0.4 | note |
+|---|---|---|---|
+| `diff_unchanged` | **139.8 ns** | **−42%** | the zero-alloc diff (v0.5 §3) removed two malloc/free pairs per call |
+| `resolve_cached_hit` | 76.8 ns | = | |
+| `resolve_button_cold` | 5.79 µs (2.9 Mitem/s) | = | typography tokens resolve to stored constants — no added work |
+| `parse_button` | 3.27 µs | = | |
+| `intern_hit` | 53.4 ns | = | |
+| `cn_button_merge` | 4.33 µs | = | |
+| `cn_no_conflicts` | 2.22 µs | = | |
+| `theme_parse_shadcn` | 114.1 µs | ≈ | one-time |
+| `color_mix_opacity` | 0.219 ns | = | |
+| `css_write_button` | 13.4 µs | = | the leading/tracking arms emit the relative unit directly |
+
+Allocation behavior per operation: see the v0.5 allocation table below
+(`tests/alloc_contract.rs` — the report-08 follow-up closed there).
+
+### The report-08 allocation-counter follow-up — CLOSED in v0.5
 
 Re-tested per `AEOLUS_V0.4.md` §4.2: divan **0.1.21 still ships no
-`AllocCount` counter** (`divan::counter::{ItemsCount}` only) — the
-allocation tracker never landed in the 0.1.x line. The structural claims
-in the original allocation note stand; the follow-up stays open until a
-divan release ships the tracker (or the project writes its own global
-allocator counting harness — deliberately out of scope for v0.4).
+`AllocCount` counter** (`divan::counter::{ItemsCount}` only) — and the
+re-verification against the vendored 0.1.21 source settles WHY: an
+`IntoCounter` is a fixed per-iteration VALUE for throughput display,
+not a sampled delta, so a global allocation counter cannot be expressed
+through it. The path the original note named as the alternative —
+"the project writes its own global allocator counting harness" — is what
+v0.5 shipped (`AEOLUS_V0.5.md` §3): `tests/alloc_contract.rs`, a
+counting `GlobalAlloc` + mutex-serialized measured sections, pinning
+the claims as machine-independent numbers. The contract caught a real
+miss on day one: `diff()` allocated on EVERY call (the slot walk routed
+through `slots()`' scratch `Vec`), contradicting this report's
+structural claim — fixed in v0.5 (one `for_each_present_slot!` source;
+`diff` walks shared bits directly), which is also why the
+`diff_unchanged` number above dropped 238.8 → 139.8 ns.
+
+## v0.5 allocation table (rustc 1.99.1, x86_64-linux, debug profile)
+
+From `tests/alloc_contract.rs` (exact pins where marked; bounds absorb
+rustc-version churn):
+
+| operation | allocations | bytes | contract |
+|---|---|---|---|
+| `diff_unchanged` (33-class Button) | **0** | **0** | pinned EXACTLY |
+| `resolve_cached_hit` (warm) | **0** | **0** | pinned EXACTLY (an `Arc` refcount bump — the report's "plan clone" wording was wrong all along) |
+| `intern_hit` (warm) | **0** | **0** | pinned EXACTLY |
+| `diff_changed` (8 slots) | 2 | 24 | the changed-slot `Vec` growth |
+| `cn_button_merge` (33 + 4 classes) | 61 | 46,218 | bounded ≤ 128 / ≤ 64 KiB |
+| `resolve_button_cold` | 82 | 44,112 | bounded ≤ 160 / ≤ 64 KiB |
+| `theme_parse_shadcn` (~270 tokens) | 1,953 | 170,301 | one-time per theme load |
+
+The zero-alloc steady state is the §3.6 claim, now measured: the static
+path (`tw!`) and the dynamic warm path allocate NOTHING per resolve;
+the rebuild path allocates nothing when nothing changed and one `Vec`
+growth when slots actually changed.
