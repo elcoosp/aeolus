@@ -1,0 +1,20 @@
+[package]
+name = "aeolus-egui"
+description = "Aeolus backend: lower Tailwind v4 StylePlans into egui Frames, widget visuals and immediate-mode hints"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.96"
+# Not publishable in v0.1.0: depends on the path dependency to aeolus-core
+# (crates.io rejects path dependencies in published metadata). Follows the
+# aeolus-xilem / aeolus-floem precedent. See reports/09-publishing/PUBLISHING.md.
+publish = false
+
+[dependencies]
+aeolus-core = { path = "../aeolus-core" }
+# The immediate-mode library itself; windowing/frame integration lives in
+# `eframe`/`egui-winit`, which apps depend on — styling needs none of it and
+# everything here compiles headless (Context::default() works without a pass).
+egui = "0.37"
+tracing = "0.1"
