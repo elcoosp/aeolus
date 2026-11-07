@@ -24,14 +24,21 @@ pub mod widget;
 
 use masonry::core::PropertySet;
 use masonry::kurbo::Point;
-use masonry::layout::{Dim, Length};
+use masonry::layout::{Dim, Length, UnitPoint};
+use masonry::peniko::color::{ColorSpaceTag, HueDirection};
+use masonry::peniko::{ColorStops, Extend};
+use masonry::properties::types::{
+    Gradient as MasonryGradient, GradientShape, RadialGradientExtent, RadialGradientShape,
+};
 use masonry::properties::{
     Background, BorderColor, BorderWidth, BoxShadow, ContentColor, CornerRadius, Dimensions, Gap,
     Padding,
 };
 
 use aeolus_core::color::Color;
-use aeolus_core::plan::{ResolvedStyle, SizedValue, StylePlan, VariantCondition};
+use aeolus_core::plan::{
+    Gradient, GradientStops, ResolvedStyle, SizedValue, StylePlan, VariantCondition,
+};
 
 /// Everything the lowering could not express in Masonry properties.
 ///
@@ -76,6 +83,62 @@ pub fn lower_resolved(style: &ResolvedStyle, report: &mut LoweringReport) -> Pro
     let mut set = PropertySet::new();
     if let Some(bg) = &style.background {
         set.insert(Background::Color(to_masonry_color(bg.0)));
+    }
+    // v0.6 §1.5: gradients lower NATIVELY — masonry's layout-invariant
+    // `Background::Gradient` takes angle-based shapes and oklab
+    // interpolation, exactly the CSS model the plan composes. The
+    // single-brush reality: masonry's `Background` is Color|Gradient, so
+    // a solid + gradient coexistence keeps the GRADIENT (CSS layers
+    // background-image over background-color) and records the flattening.
+    if let Some(gradient) = &style.background_gradient {
+        match gradient {
+            Gradient::None => {}
+            Gradient::Conic { .. } => {
+                report.drop(
+                    "bg-conic-*",
+                    "masonry's sweep paint carries an upstream vello angle-offset TODO \
+(angles outside vello's 0..2π cull the gradient)",
+                );
+            }
+            Gradient::Linear { angle_deg, stops } => {
+                if style.background.is_some() {
+                    report.drop(
+                        "background-color under gradient",
+                        "CSS layers background-image over background-color; the single \
+Background property takes the gradient",
+                    );
+                }
+                set.insert(Background::Gradient(linear_gradient(*angle_deg, stops)));
+            }
+            Gradient::Radial { stops } => {
+                if style.background.is_some() {
+                    report.drop(
+                        "background-color under gradient",
+                        "CSS layers background-image over background-color; the single \
+Background property takes the gradient",
+                    );
+                }
+                // Masonry's RadialGradientShape has no ellipse radii
+                // (upstream `#[non_exhaustive]` TODO) — the CSS default
+                // ellipse-farthest-corner lowers as the documented
+                // circle-farthest-corner normalization.
+                report.drop(
+                    "bg-radial shape",
+                    "CSS radial default is an ellipse; masonry has no ellipse radii — \
+lowering as circle farthest-corner",
+                );
+                set.insert(Background::Gradient(MasonryGradient {
+                    shape: GradientShape::Radial {
+                        center: UnitPoint::CENTER,
+                        shape: RadialGradientShape::CircleTo(RadialGradientExtent::FarthestCorner),
+                    },
+                    extend: Extend::Pad,
+                    interpolation_cs: ColorSpaceTag::Oklab,
+                    hue_direction: HueDirection::Shorter,
+                    stops: masonry_stops(stops),
+                }));
+            }
+        }
     }
     if let Some(cc) = &style.content_color {
         set.insert(ContentColor::new(to_masonry_color(cc.0)));
@@ -175,6 +238,69 @@ fn sized_to_dim(v: Option<SizedValue>) -> Option<Dim> {
         SizedValue::Scale(n) => Some(Dim::Fixed(Length::px((n * 4.0) as f64))),
         _ => None,
     }
+}
+
+/// CSS angle (degrees; 0 = to top, clockwise) → masonry's linear-gradient
+/// angle (radians).
+///
+/// DERIVED FROM MASONRY'S PAINT MATH, not its doc comment
+/// (`get_peniko_linear_for_rect`): `x = sin(a)·len/2`, `y = cos(a)·len/2`,
+/// start = center − (x, y), end = center + (x, y) — so angle 0 puts the
+/// END of the gradient line at the BOTTOM (to bottom = CSS 180°), and the
+/// exact CSS-parity conversion is `a = π − θ`:
+/// - CSS 0° (to top)    → a = π   → end at top      ✓
+/// - CSS 90° (to right) → a = π/2 → end at right    ✓
+/// - CSS 180° (to bottom) → a = 0 → end at bottom   ✓
+/// - CSS 45° (to top right) → a = 135° → end up-right ✓
+///
+/// Pinned by `tests/lowering.rs::linear_gradient_angle_conversion`.
+fn css_angle_to_masonry(angle_deg: f32) -> f64 {
+    std::f64::consts::PI - (angle_deg as f64).to_radians()
+}
+
+/// One composed gradient → masonry's layout-invariant `Gradient`.
+fn linear_gradient(angle_deg: f32, stops: &GradientStops) -> MasonryGradient {
+    MasonryGradient {
+        shape: GradientShape::Linear {
+            angle: css_angle_to_masonry(angle_deg),
+        },
+        extend: Extend::Pad,
+        // v4.1.17 interpolates gradients `in oklab` by default (captured:
+        // `--tw-gradient-position: to right in oklab`).
+        interpolation_cs: ColorSpaceTag::Oklab,
+        hue_direction: HueDirection::Shorter,
+        stops: masonry_stops(stops),
+    }
+}
+
+/// The composed from/via/to stops → peniko `ColorStops` with fraction
+/// offsets. Missing positions are the v4 `@property` initial values
+/// (from 0%, via 50%, to 100%).
+fn masonry_stops(stops: &GradientStops) -> ColorStops {
+    use aeolus_core::plan::{GRADIENT_FROM_POS_PCT, GRADIENT_TO_POS_PCT, GRADIENT_VIA_POS_PCT};
+    let pos = |p: Option<f32>, default: f32| p.unwrap_or(default) / 100.0;
+    let mut out: Vec<masonry::peniko::ColorStop> = Vec::with_capacity(3);
+    out.push(masonry::peniko::ColorStop {
+        offset: pos(stops.from.pos_pct, GRADIENT_FROM_POS_PCT),
+        color: masonry::peniko::color::DynamicColor::from_alpha_color(to_masonry_color(
+            stops.from.color,
+        )),
+    });
+    if let Some(via) = stops.via {
+        out.push(masonry::peniko::ColorStop {
+            offset: pos(via.pos_pct, GRADIENT_VIA_POS_PCT),
+            color: masonry::peniko::color::DynamicColor::from_alpha_color(to_masonry_color(
+                via.color,
+            )),
+        });
+    }
+    out.push(masonry::peniko::ColorStop {
+        offset: pos(stops.to.pos_pct, GRADIENT_TO_POS_PCT),
+        color: masonry::peniko::color::DynamicColor::from_alpha_color(to_masonry_color(
+            stops.to.color,
+        )),
+    });
+    ColorStops::from(out.as_slice())
 }
 
 /// Read property `P` from layer `index` of a lowered stack.
