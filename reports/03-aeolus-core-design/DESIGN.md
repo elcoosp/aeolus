@@ -233,3 +233,45 @@ The contract caught `diff()` allocating on every call (the slot walk
 routed through `slots()`' scratch `Vec`) — slot presence now walks one
 `for_each_present_slot!` source, and the rebuild path is
 allocation-free when nothing changed.
+
+## 12. The upstream ceiling (v0.6)
+
+`AEOLUS_V0.6.md` consumes everything the latest GitHub floem and masonry
+expose WITHOUT an upstream change — verified, not assumed: the floem pin
+`1351ffb` IS latest `main` HEAD (`git ls-remote`), and xilem upstream
+moved `9f504ae → dc49687` with an EMPTY `masonry_core`/`xilem_masonry`
+diff (3 commits: tests + a vello dep removal).
+
+- **Gradients, the audit-missed capability.** Masonry has carried a
+  layout-invariant `Background::Gradient` all along
+  (`properties/types/gradient.rs`: angle-based `GradientShape`, oklab
+  `interpolation_cs`, peniko `ColorStops`) — the v0.1–v0.5 audits
+  reported gradients as dropped on BOTH backends; that row was stale.
+  The IR therefore gains the composed `background_gradient`
+  (`Gradient::Linear/Radial/Conic/None`) as a SEPARATE slot from the
+  solid `background`, exactly mirroring CSS's `background-color` +
+  `background-image` coexistence (tw_merge's separate bg-color/bg-image
+  groups; the emitter reproduces v4's per-class `--tw-gradient-*` var
+  shapes verbatim). Composition semantics are pinned against the REAL
+  tailwindcss 4.1.17 (`tools/capture_gradients.mjs`): stop positions
+  default to the `@property` initial values (0/50/100%), missing
+  from/to stops are `#0000`, interpolation is `in oklab`, stops without
+  a shape compose nothing, `bg-none` clears like a value.
+- **Model boundary, not a corpus gap.** Gradient parity needs cross-rule
+  `--tw-gradient-*` var composition (three separate rules per gradient
+  in v4's output); the golden corpus stays at 176 entries and the
+  boundary is documented here — the v0.5 §2.3 precedent (relative units
+  pinned as units, element-resolved composition out).
+- **The unwired Floem surface.** The pinned rev (= HEAD) exposes
+  per-axis `overflow_x`/`overflow_y`, the full grid surface
+  (`grid_template_*`, `grid_column`/`grid_row` placement), `align_content`,
+  the inherited `Selectable` prop, `TextOverflow::Wrap`, and kurbo
+  `Stroke` dashes on the border strokes (`paint_border` strokes with the
+  full `Stroke`). All wired in v0.6; six parity-ledger slots upgrade
+  Reported → Native; every normalization (auto→Scroll, normal→Stretch,
+  ellipse→circle, dash lengths, single-brush solid+gradient) is a
+  documented drop-record or unit-pinned choice, never a silent fail.
+- **The masonry angle conversion** is derived from masonry's paint math,
+  not its doc comments: `get_peniko_linear_for_rect` puts angle 0 at the
+  BOTTOM (`end = center + (sin a, cos a)·len/2`), so CSS angle θ maps to
+  `a = π − θ` — pinned per corner direction.
