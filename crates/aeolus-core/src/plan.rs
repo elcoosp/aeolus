@@ -189,6 +189,8 @@ pub struct Extras {
     pub margin_auto: Option<AutoEdges>,
     /// `gap-x-*`/`gap-y-*` (per-axis gap).
     pub gap_axes: Option<GapAxes>,
+    /// `@container[/name]` — the containment context (v0.7 §3).
+    pub container_type: Option<ContainerType>,
     /// Remaining shadow layers of a multi-layer preset (`shadow-sm`'s
     /// second layer). `shadow` carries the first (dominant) layer.
     pub shadow_rest: Vec<BoxShadow>,
@@ -276,6 +278,8 @@ pub enum Slot {
     InsetShadows,
     /// `background-image` gradient (with the part that changed).
     Gradient(GradientPart),
+    /// `@container[/name]` containment context (v0.7 §3).
+    ContainerType,
 }
 
 /// Which part of the composed [`Gradient`] changed (v0.6 §1.3).
@@ -334,6 +338,7 @@ impl Slot {
             Slot::ShadowRest => 35,
             Slot::InsetShadows => 36,
             Slot::Gradient(_) => 37,
+            Slot::ContainerType => 38,
         }
     }
 }
@@ -385,6 +390,7 @@ impl Slot {
             | Slot::GapAxes
             | Slot::ShadowRest
             | Slot::InsetShadows
+            | Slot::ContainerType
             | Slot::Text(_) => Lane::Geometric,
         }
     }
@@ -639,6 +645,8 @@ pub struct Layout {
     pub align_items: Option<AlignItems>,
     /// `justify-*` (content axis).
     pub justify_content: Option<JustifyContent>,
+    /// `justify-items-*` (the justify axis per item — v0.7 §5).
+    pub justify_items: Option<AlignItems>,
     /// `flex-wrap`.
     pub flex_wrap: Option<bool>,
     /// `grow-*`.
@@ -966,7 +974,7 @@ pub enum Visibility {
 }
 
 /// `grid-cols-*` / `grid-rows-*` / spans / starts.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Grid {
     /// `grid-cols-N`.
     pub cols: Option<u16>,
@@ -980,6 +988,103 @@ pub struct Grid {
     pub col_start: Option<i16>,
     /// `row-start-N`.
     pub row_start: Option<i16>,
+    /// Arbitrary/track templates: `grid-cols-[0_1fr]`,
+    /// `grid-cols-[repeat(3,minmax(0,1fr))]` (v0.7 §4). CANONICAL when
+    /// present: the numeric `cols`/`rows` forms are the v4 shorthand for
+    /// `repeat(N, minmax(0, 1fr))`, so a backend that understands
+    /// templates must prefer them and only fall back to the counts.
+    pub template_cols: Option<Vec<TrackComponent>>,
+    /// `grid-rows-[…]` — see [`Grid::template_cols`].
+    pub template_rows: Option<Vec<TrackComponent>>,
+    /// `auto-rows-*` — the implicit-row track sizing (v0.7 §4).
+    pub auto_rows: Option<Vec<TrackComponent>>,
+    /// `auto-cols-*` — the implicit-column track sizing (v0.7 §4).
+    pub auto_cols: Option<Vec<TrackComponent>>,
+}
+
+/// One component of an arbitrary grid template (v0.7 §4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TrackComponent {
+    /// A single track.
+    Track(GridTrack),
+    /// `repeat(N, <track>)` — a bounded expansion (single inner track;
+    /// multi-track and auto-fill/auto-fit forms report).
+    Repeat {
+        /// The repetition count (≤ 64).
+        count: u16,
+        /// The repeated track.
+        track: GridTrack,
+    },
+}
+
+/// One grid track sizing: a min/max pair mirroring CSS
+/// `minmax()` semantics (v0.7 §4). A plain `1fr` is
+/// `{ min: Auto, max: Fr(1) }` (taffy's `from_fr` semantics), a bare `0`
+/// is a fixed 0px track, `auto`/`min-content`/`max-content` pin both sides.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GridTrack {
+    /// The minimum sizing function.
+    pub min: TrackSizing,
+    /// The maximum sizing function.
+    pub max: TrackSizing,
+}
+
+impl GridTrack {
+    /// A fixed-length track (`0`, `12px`) — min and max pinned.
+    pub fn px(v: f32) -> Self {
+        Self {
+            min: TrackSizing::Px(v),
+            max: TrackSizing::Px(v),
+        }
+    }
+
+    /// An fr track (`1fr`) — `min: Auto, max: Fr(n)` (CSS `minmax(auto, Nfr)`,
+    /// taffy's `from_fr`).
+    pub fn fr(n: f32) -> Self {
+        Self {
+            min: TrackSizing::Auto,
+            max: TrackSizing::Fr(n),
+        }
+    }
+
+    /// An `auto` track — both sides `Auto`.
+    pub fn auto() -> Self {
+        Self {
+            min: TrackSizing::Auto,
+            max: TrackSizing::Auto,
+        }
+    }
+
+    /// A keyword track (`min-content`/`max-content`) — both sides pinned.
+    pub fn keyword(k: TrackSizing) -> Self {
+        Self { min: k, max: k }
+    }
+}
+
+/// One sizing function of a [`GridTrack`] (v0.7 §4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TrackSizing {
+    /// A fixed px length.
+    Px(f32),
+    /// A percentage of the grid container.
+    Percent(f32),
+    /// A fraction of the free space.
+    Fr(f32),
+    /// `auto`.
+    Auto,
+    /// `min-content`.
+    MinContent,
+    /// `max-content`.
+    MaxContent,
+}
+
+/// `@container[/name]` — establishes an inline-size containment context
+/// (v0.7 §3; CSS `container-type: inline-size` + `container-name`). The
+/// named form is what the shadcn Card header ships (`@container/card-header`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ContainerType {
+    /// The container name (`@container/card-header`), when named.
+    pub name: Option<Box<str>>,
 }
 
 /// `scale-*`/`rotate-*`/`translate-*`/`skew-*`.
@@ -1246,6 +1351,9 @@ macro_rules! for_each_present_slot {
         if !e.inset_shadows.is_empty() {
             $push(Slot::InsetShadows);
         }
+        if e.container_type.is_some() {
+            $push(Slot::ContainerType);
+        }
         if s.background_gradient.is_some() {
             $push(Slot::Gradient(GradientPart::Shape));
         }
@@ -1323,7 +1431,8 @@ impl ResolvedStyle {
             order,
             align_content,
             margin_auto,
-            gap_axes
+            gap_axes,
+            container_type
         );
         if !other.extras.shadow_rest.is_empty() {
             self.extras.shadow_rest = other.extras.shadow_rest.clone();
@@ -1331,99 +1440,6 @@ impl ResolvedStyle {
         if !other.extras.inset_shadows.is_empty() {
             self.extras.inset_shadows = other.extras.inset_shadows.clone();
         }
-    }
-}
-
-impl StylePlan {
-    /// Compose `over` on top of `self` — the plan-level mirror of `cn()`.
-    ///
-    /// Where [`crate::cn`] merges class STRINGS before resolution (theme
-    /// aware, parse-based), `overlay` merges RESOLVED plans after it:
-    /// a component's cached plan can gain per-instance overrides at runtime
-    /// without re-resolving, re-parsing, or a theme reference.
-    ///
-    /// Semantics (v0.7 §1, every rule later-wins):
-    /// - `base`: [`ResolvedStyle::overlay`] — `Some` slots of `over.base`
-    ///   replace, unset slots keep the base value.
-    /// - `layers`: layers with the SAME [`VariantCondition`] merge per slot;
-    ///   conditions only `over` has are appended. The result stays in
-    ///   ascending [`VariantCondition::rank`] order (the cascade contract).
-    /// - `responsive`/`container`: per-bucket overlay, union of buckets.
-    /// - `dark`: per-slot overlay when both carry a dark bucket.
-    /// - `group`/`peer`: merged by id (label equal), new ids appended.
-    /// - `rules`: merged by [`crate::cond::Cond`] equality (the same conjunction is one
-    ///   rule), new conditions appended in `over` order.
-    /// - `breakpoints`: the override's table wins (it is theme-derived and
-    ///   the override is the later consumer; mixing plans from different
-    ///   theme versions is documented best-effort).
-    ///
-    /// The merged plan is idempotent (`p.overlay(o).overlay(o) == p.overlay(o)`)
-    /// and diff-integrated: `diff(&base.base, &merged.base)` reports exactly
-    /// the slots the override changed, so backends keep their repaint vs
-    /// relayout lanes when composing.
-    pub fn overlay(&self, over: &StylePlan) -> StylePlan {
-        let mut merged = self.clone();
-        merged.base.overlay(&over.base);
-
-        // Layers: merge by condition, keep ascending rank order (stable).
-        for layer in &over.layers {
-            if let Some(slot) = merged
-                .layers
-                .iter_mut()
-                .find(|l| l.condition == layer.condition)
-            {
-                slot.style.overlay(&layer.style);
-            } else {
-                merged.layers.push(layer.clone());
-            }
-        }
-        merged.layers.sort_by_key(|l| l.condition.rank());
-
-        // Responsive / container buckets: per-bucket overlay, union of keys.
-        for (bp, style) in &over.responsive {
-            match merged.responsive.get_mut(bp) {
-                Some(dst) => dst.overlay(style),
-                None => {
-                    merged.responsive.insert(*bp, style.clone());
-                }
-            }
-        }
-        for (bp, style) in &over.container {
-            match merged.container.get_mut(bp) {
-                Some(dst) => dst.overlay(style),
-                None => {
-                    merged.container.insert(*bp, style.clone());
-                }
-            }
-        }
-        // Dark: overlay when both plans carry a dark bucket.
-        match (&mut merged.dark, &over.dark) {
-            (Some(dst), Some(src)) => dst.overlay(src),
-            (None, Some(src)) => merged.dark = Some(src.clone()),
-            _ => {}
-        }
-        // group/peer: merge by id, preserve base-first order.
-        for (id, style) in &over.group {
-            match merged.group.iter_mut().find(|(gid, _)| gid == id) {
-                Some((_, dst)) => dst.overlay(style),
-                None => merged.group.push((id.clone(), style.clone())),
-            }
-        }
-        for (id, style) in &over.peer {
-            match merged.peer.iter_mut().find(|(pid, _)| pid == id) {
-                Some((_, dst)) => dst.overlay(style),
-                None => merged.peer.push((id.clone(), style.clone())),
-            }
-        }
-        // Rules: merge by condition equality (one rule per conjunction).
-        for rule in &over.rules {
-            match merged.rules.iter_mut().find(|r| r.when == rule.when) {
-                Some(dst) => dst.style.overlay(&rule.style),
-                None => merged.rules.push(rule.clone()),
-            }
-        }
-        merged.breakpoints = over.breakpoints;
-        merged
     }
 }
 
@@ -1542,6 +1558,7 @@ fn slot_from_index(idx: u16) -> Option<Slot> {
         Slot::Gradient(GradientPart::From),
         Slot::Gradient(GradientPart::Via),
         Slot::Gradient(GradientPart::To),
+        Slot::ContainerType,
     ];
     ALL.iter().copied().find(|s| s.index() == idx).or_else(|| {
         // Text slots: the enum's discriminants start after the variants above
@@ -1621,6 +1638,7 @@ fn slot_differs(slot: Slot, prev: &ResolvedStyle, next: &ResolvedStyle) -> bool 
             GradientPart::Via => gradient_edge_changed(prev, next, GradientEdgeSel::Via),
             GradientPart::To => gradient_edge_changed(prev, next, GradientEdgeSel::To),
         },
+        Slot::ContainerType => prev.extras.container_type != next.extras.container_type,
     }
 }
 
