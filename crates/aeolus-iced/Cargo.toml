@@ -1,0 +1,23 @@
+[package]
+name = "aeolus-iced"
+description = "Aeolus backend: lower Tailwind v4 StylePlans into Iced container/button styles and state-closure catalogs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.96"
+# Not publishable in v0.1.0: depends on the path dependency to aeolus-core
+# (crates.io rejects path dependencies in published metadata). Follows the
+# aeolus-xilem / aeolus-floem precedent. See reports/09-publishing/PUBLISHING.md.
+publish = false
+
+[dependencies]
+aeolus-core = { path = "../aeolus-core" }
+iced_core = "0.14"
+# Widget style types (container::Style / button::{Style, Status} / Catalog)
+# live in iced_widget; every renderer feature (wgpu, tiny-skia, image, ...)
+# stays off so this backend is pure type-level lowering and compiles
+# headless. Apps depend on `iced` itself; `iced::widget::container::Style`
+# IS `iced_widget::container::Style`.
+iced_widget = { version = "0.14", default-features = false }
+tracing = "0.1"
