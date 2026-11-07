@@ -7,6 +7,10 @@ explains the shape and the why, with pointers into the source.
 v0.3 note: arbitrary selector variants classify in `selector.rs` (§8
 below, plan of record `AEOLUS_V0.3.md`).
 
+v0.5 note: element-relative typography (§10) and the allocation
+contract (§11) — plan of record `AEOLUS_V0.5.md`; the golden corpus is
+176 entries as of v0.5.
+
 ## 1. Grammar (parser.rs, ast.rs)
 
 Class token grammar (v4 subset, the Shadcn v4 component surface):
@@ -187,3 +191,45 @@ classes the resolver cannot apply keep their warnings.
   `@supports` modern-browser overrides merged, initial
   border/outline-style dropped, unitless line-height × same-rule
   font-size).
+
+## 10. Element-relative typography (v0.5)
+
+`AEOLUS_V0.5.md` §1 reverses the v0.4 §2.3 corpus exclusion: the token
+forms of `tracking-*` / bare `leading-*` / named `text-*/*` leading
+resolve to the RELATIVE unit the class names — `TextValue::TrackingEm`
+(the `--tracking-*` em) and `TextValue::LineHeightRatio` (the
+`--leading-*` unitless ratio) — not a 16px pre-multiplication.
+
+- WHY: `tracking-tight` at the 16px base is −0.4px, but the element's
+  real font-size is whatever the cascade resolved (`text-sm` → 14px →
+  −0.35px). The compiler cannot know which font-size an element ends up
+  with; carrying the em/ratio and letting the renderer multiply is the
+  only exact model — and it is exactly what v4 emits
+  (`letter-spacing: -0.025em`, `line-height: 1.25`).
+- WHAT STAYS ABSOLUTE: arbitrary values (`tracking-[7px]`,
+  `leading-[3px]`), the spacing-multiple number forms (`leading-6` =
+  `calc(var(--spacing) * 6)`, `text-sm/6`) and the token-paired
+  line-heights of bare `text-{size}` (the pairing is part of the size
+  token itself — v0.4 behavior, corpus-pinned).
+- Backends: Floem lowers the ratio to its native
+  `LineHeightValue::Normal(multiplier)` (font-size-relative at paint);
+  letter-spacing keeps its honest drop report there (no property at the
+  pinned rev). The Masonry fallback applies no text properties (the Q5
+  gap) — unchanged.
+- The corpus pins these as relative units (176 entries): both sides emit
+  the same relative text; the harness's only new machinery is folding
+  em-valued `calc()`s unit-preservingly (`calc(0.025em * -1)` →
+  `-0.025em`) and no longer eating a unit-leading `e` as an exponent.
+
+## 11. The allocation contract (v0.5)
+
+`AEOLUS_V0.5.md` §3 closes report 08's follow-up: a counting global
+allocator (`tests/alloc_contract.rs`) pins the hot path's allocation
+behavior as machine-independent numbers. Exact-zero claims (diff of
+equal plans, intern hit, warm cache hit — an `Arc` bump, it turns out,
+not a plan clone) are pinned exactly; clone-shaped claims as measured
+upper bounds; `cn()` and the cold resolve are counted for report 08.
+The contract caught `diff()` allocating on every call (the slot walk
+routed through `slots()`' scratch `Vec`) — slot presence now walks one
+`for_each_present_slot!` source, and the rebuild path is
+allocation-free when nothing changed.
