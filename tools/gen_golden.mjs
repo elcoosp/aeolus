@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/// Golden-corpus generator (v0.4 §2) — AEOLUS_V0.4.md.
+/// Golden-corpus generator (v0.4 §2, extended by v0.5 §2 —
+/// `AEOLUS_V0.4.md`, `AEOLUS_V0.5.md`).
 ///
 /// Runs the REAL tailwindcss v4.1.17 compiler over the corpus class list
 /// (one HTML soup per theme) and writes the verbatim utilities-layer rule
@@ -113,6 +114,26 @@ const CORPUS = [
   { theme: "default", class: "line-clamp-2" },
   { theme: "default", class: "tabular-nums" },
   { theme: "default", class: "underline-offset-2" },
+  // element-relative typography (v0.5 §2): token forms carry their
+  // relative unit (em / unitless ratio); arbitrary + spacing-multiple
+  // forms stay absolute.
+  { theme: "default", class: "tracking-tighter" },
+  { theme: "default", class: "tracking-tight" },
+  { theme: "default", class: "tracking-normal" },
+  { theme: "default", class: "tracking-wide" },
+  { theme: "default", class: "tracking-wider" },
+  { theme: "default", class: "tracking-widest" },
+  { theme: "default", class: "-tracking-wide" },
+  { theme: "default", class: "tracking-[7px]" },
+  { theme: "default", class: "leading-none" },
+  { theme: "default", class: "leading-tight" },
+  { theme: "default", class: "leading-snug" },
+  { theme: "default", class: "leading-normal" },
+  { theme: "default", class: "leading-relaxed" },
+  { theme: "default", class: "leading-loose" },
+  { theme: "default", class: "leading-[3px]" },
+  { theme: "default", class: "text-base/tight" },
+  { theme: "default", class: "text-lg/loose" },
   // layout
   { theme: "default", class: "flex" },
   { theme: "default", class: "inline-flex" },
@@ -217,6 +238,9 @@ const CORPUS = [
   { theme: "shadcn", class: "text-muted-foreground" },
   { theme: "shadcn", class: "focus-visible:ring-ring/50" },
   { theme: "shadcn", class: "bg-sidebar" },
+  // element-relative typography, theme-context independence (v0.5 §2.1)
+  { theme: "shadcn", class: "tracking-normal" },
+  { theme: "shadcn", class: "leading-relaxed" },
 ];
 
 // --- infra -----------------------------------------------------------------
