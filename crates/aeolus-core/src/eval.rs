@@ -45,9 +45,21 @@ pub trait Probe {
         false
     }
 
-    /// Does any descendant satisfy the state (`has-*` variants)?
+    /// Does any descendant satisfy the state (`has-checked:`)?
     fn descendant_state(&self, _s: crate::ast::State) -> bool {
         false
+    }
+
+    /// Does any descendant satisfy the test (`has-*` variants — v0.7 §2
+    /// generalizes them to data/aria/structural inners)? Defaults to
+    /// answering only the state form through [`Probe::descendant_state`];
+    /// a backend that can answer attribute tests of its children overrides
+    /// this.
+    fn descendant(&self, t: &Test) -> bool {
+        match t {
+            Test::State(s) => self.descendant_state(*s),
+            _ => false,
+        }
     }
 
     /// Is the media query active (`dark`, `print`, `motion-reduce`, ...)?
@@ -84,7 +96,7 @@ impl Atom {
             Atom::Not(t) => !p.test(t),
             Atom::Group(t, l) => p.related(Rel::Group, l.as_deref(), t),
             Atom::Peer(t, l) => p.related(Rel::Peer, l.as_deref(), t),
-            Atom::Has(s) => p.descendant_state(*s),
+            Atom::Has(t) => p.descendant(t),
             Atom::Media(m) => p.media(*m),
             Atom::Viewport { min, max } => in_window(p.viewport_width(), *min, *max),
             Atom::Container { min, max, name } => {
