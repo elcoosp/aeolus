@@ -24,15 +24,19 @@ use floem::animate::Bezier;
 use floem::peniko::{Brush, Color as PenikoColor};
 use floem::style::unit::{Angle, Length, LengthAuto, Pct, Pt};
 use floem::style::{CursorStyle, LineHeightValue, Style, Transition};
+use floem::taffy::prelude::{
+    GridPlacement, RepetitionCount, TaffyGridLine, TaffyGridSpan, fr, repeat,
+};
+use floem::taffy::style::Overflow;
 use floem::views::Decorators;
 
 use aeolus_core::Color;
 use aeolus_core::eval::{Probe, Rel};
 use aeolus_core::plan::Transition as TwTransition;
 use aeolus_core::plan::{
-    AlignItems, Animation, ConditionalLayer, ContentColor, Cursor, Ease, FlexDirection,
-    JustifyContent, ResolvedStyle, SizedValue, Slot, StylePlan, TextProperty, TextValue,
-    TransitionSet, VariantCondition,
+    AlignItems, Animation, ConditionalLayer, ContentAlign, ContentColor, Cursor, Ease,
+    FlexDirection, JustifyContent, OverflowKind, ResolvedStyle, SizedValue, Slot, StylePlan,
+    TextProperty, TextValue, TransitionSet, VariantCondition,
 };
 
 /// Everything the lowering could not express in Floem.
@@ -360,6 +364,84 @@ pub fn apply_resolved(mut style: Style, s: &ResolvedStyle, report: &mut Lowering
     if s.pointer_events == Some(aeolus_core::plan::PointerEvents::None) {
         style = style.pointer_events_none();
     }
+    // v0.6 (AEOLUS_V0.6.md §2.1): per-axis overflow → floem's
+    // `overflow_x`/`overflow_y` (taffy `Overflow`). `overflow-auto` lowers
+    // to `Overflow::Scroll` — taffy has no auto; the reserved-scrollbar
+    // difference is the documented normalization, not a drop.
+    if let Some(o) = &e.overflow {
+        let map = |k: OverflowKind| match k {
+            OverflowKind::Visible => Overflow::Visible,
+            OverflowKind::Hidden => Overflow::Hidden,
+            OverflowKind::Clip => Overflow::Clip,
+            OverflowKind::Scroll | OverflowKind::Auto => Overflow::Scroll,
+        };
+        if let Some(x) = o.x {
+            style = style.overflow_x(map(x));
+        }
+        if let Some(y) = o.y {
+            style = style.overflow_y(map(y));
+        }
+    }
+    // v0.6 (§1.5/§2): gradients stay REPORTED on floem — peniko
+    // `Brush::Gradient` needs concrete gradient geometry and `paint_bg`
+    // fills the brush as-is (no rect adaptation), so a "to right" gradient
+    // would need per-view size knowledge the zero-view-work model forbids.
+    if let Some(g) = &s.background_gradient
+        && *g != aeolus_core::plan::Gradient::None
+    {
+        report.drop(
+            "background-image gradient",
+            "peniko Brush::Gradient needs concrete geometry; floem's paint_bg fills \
+the brush as-is with no rect adaptation — resolve the size at the call site",
+        );
+    }
+    // v0.6 (§2.4): `content-*` → floem's `align_content` (taffy). CSS
+    // `align-content: normal` resolves to stretch for flex containers —
+    // mapped explicitly. Baseline is reported (taffy has no baseline
+    // align-content).
+    if let Some(c) = e.align_content {
+        match c {
+            ContentAlign::Start => {
+                style = style.align_content(floem::style::AlignContent::FlexStart)
+            }
+            ContentAlign::Center => style = style.align_content(floem::style::AlignContent::Center),
+            ContentAlign::End => style = style.align_content(floem::style::AlignContent::FlexEnd),
+            ContentAlign::SpaceBetween => {
+                style = style.align_content(floem::style::AlignContent::SpaceBetween)
+            }
+            ContentAlign::SpaceAround => {
+                style = style.align_content(floem::style::AlignContent::SpaceAround)
+            }
+            ContentAlign::SpaceEvenly => {
+                style = style.align_content(floem::style::AlignContent::SpaceEvenly)
+            }
+            ContentAlign::Stretch | ContentAlign::Normal => {
+                style = style.align_content(floem::style::AlignContent::Stretch)
+            }
+            ContentAlign::Baseline => {
+                report.drop("content-baseline", "taffy has no baseline align-content");
+            }
+        }
+    }
+    // v0.6 (§2.5): the grid surface — templates AND item placement, all
+    // native at the pinned rev (floem's to_taffy carries the full surface).
+    if let Some(g) = &e.grid {
+        if let Some(n) = g.cols {
+            style = style
+                .grid_template_columns(vec![repeat(RepetitionCount::Count(n), vec![fr(1.0_f32)])]);
+        }
+        if let Some(n) = g.rows {
+            style = style
+                .grid_template_rows(vec![repeat(RepetitionCount::Count(n), vec![fr(1.0_f32)])]);
+        }
+        // `col-start-N` + `col-span-M` compose as CSS `grid-column: N / span M`.
+        if let Some(line) = grid_placement_line(g.col_start, g.col_span) {
+            style = style.grid_column(line);
+        }
+        if let Some(line) = grid_placement_line(g.row_start, g.row_span) {
+            style = style.grid_row(line);
+        }
+    }
     if let Some(t) = &e.transform {
         if let Some(x) = t.scale_x {
             style = style.scale_x(Pct(x as f64 * 100.0));
@@ -425,15 +507,87 @@ pub fn apply_resolved(mut style: Style, s: &ResolvedStyle, report: &mut Lowering
             report.drop("outline-offset", "Floem outline has no offset");
         }
     }
-    if let Some(bs) = e.border_style
-        && bs != aeolus_core::plan::BorderStyle::Solid
-    {
-        report.drop("border-style", "Floem border strokes have no dash pattern");
+    // v0.6 (§2.6): border STYLE is native at the pinned rev —
+    // `paint_border` strokes with the full kurbo `Stroke`, dashes
+    // included. `border-dashed`/`border-dotted` carry the dash pattern on
+    // the side strokes (the widths come from the border_width slot —
+    // Tailwind preflight keeps unstyled borders at width 0, so a style
+    // class alone stays invisible, exactly as in v4). `border-none`/
+    // `border-hidden` zero the strokes. The dash lengths are a DOCUMENTED
+    // NORMALIZATION (CSS dash patterns are UA-styled).
+    if let Some(bs) = e.border_style {
+        use aeolus_core::plan::BorderStyle;
+        use floem::peniko::kurbo::{Cap, Stroke};
+        let widths = s.border_width.unwrap_or_default();
+        let zero = Stroke::new(0.0);
+        match bs {
+            BorderStyle::Solid => {}
+            BorderStyle::Dashed => {
+                style = style
+                    .border_left(Stroke::new(widths.left as f64).with_dashes(0., [6., 6.]))
+                    .border_top(Stroke::new(widths.top as f64).with_dashes(0., [6., 6.]))
+                    .border_right(Stroke::new(widths.right as f64).with_dashes(0., [6., 6.]))
+                    .border_bottom(Stroke::new(widths.bottom as f64).with_dashes(0., [6., 6.]));
+            }
+            BorderStyle::Dotted => {
+                // CSS dotted ≈ round-cap dots: a ~zero-length dash widened
+                // by the round cap, spaced at twice the width.
+                let dotted = |w: f64| {
+                    Stroke::new(w)
+                        .with_caps(Cap::Round)
+                        .with_dashes(0., [0.01, (w * 2.0).max(0.1)])
+                };
+                style = style
+                    .border_left(dotted(widths.left as f64))
+                    .border_top(dotted(widths.top as f64))
+                    .border_right(dotted(widths.right as f64))
+                    .border_bottom(dotted(widths.bottom as f64));
+            }
+            // CSS `border-style: none/hidden` = width 0: the strokes zero
+            // out even when a width class coexists (later style wins, as
+            // in CSS).
+            BorderStyle::None | BorderStyle::Hidden => {
+                style = style
+                    .border_left(zero.clone())
+                    .border_top(zero.clone())
+                    .border_right(zero.clone())
+                    .border_bottom(zero);
+            }
+            BorderStyle::Double => {
+                report.drop(
+                    "border-double",
+                    "kurbo strokes have no double-line primitive",
+                );
+            }
+        }
     }
     if let Some(anim) = &e.animation {
         report_animation(anim, report);
     }
     style
+}
+
+/// CSS `grid-{row,column}: N / span M` → taffy's `Line<GridPlacement>`.
+fn grid_placement_line(
+    start: Option<i16>,
+    span: Option<u16>,
+) -> Option<floem::taffy::geometry::Line<GridPlacement>> {
+    use floem::taffy::geometry::Line;
+    Some(match (start, span) {
+        (Some(start), Some(span)) => Line {
+            start: GridPlacement::from_line_index(start),
+            end: GridPlacement::from_span(span),
+        },
+        (Some(start), None) => Line {
+            start: GridPlacement::from_line_index(start),
+            end: GridPlacement::Auto,
+        },
+        (None, Some(span)) => Line {
+            start: GridPlacement::from_span(span),
+            end: GridPlacement::Auto,
+        },
+        (None, None) => return None,
+    })
 }
 
 fn shadow_to_floem(
@@ -555,11 +709,45 @@ fn lower_text(
         (TextProperty::TextOverflow, TextValue::Keyword("clip")) => style.text_overflow(
             floem::style::TextOverflow::NoWrap(floem::style::NoWrapOverflow::Clip),
         ),
-        (TextProperty::Whitespace, TextValue::Keyword("nowrap")) => {
-            // whitespace-nowrap is expressed via TextOverflow::NoWrap too,
-            // but without overriding any ellipsis setting.
-            report.drop("whitespace-nowrap", "folded into text-overflow handling");
-            style
+        (TextProperty::Whitespace, TextValue::Keyword(kw)) => {
+            // v0.6 (§2.3): floem's single `TextOverflow` prop carries the
+            // wrap mode. CSS mapping: `whitespace-normal` wraps (floem's
+            // `Wrap { Normal, Normal }`); `whitespace-nowrap` is a NO-OP —
+            // floem's DEFAULT `TextOverflow::NoWrap(Clip)` already means
+            // "never wrap" (documented, not a drop). The `pre*` forms
+            // need whitespace PRESERVATION, which floem does not expose;
+            // their nowrap half is the floem default anyway.
+            match kw {
+                "normal" => style.text_overflow(floem::style::TextOverflow::Wrap {
+                    overflow_wrap: floem::text::OverflowWrap::Normal,
+                    word_break: floem::text::WordBreakStrength::Normal,
+                }),
+                "nowrap" => style,
+                other => {
+                    report.drop(
+                        format!("whitespace-{other}"),
+                        "no whitespace-preservation control in floem (the nowrap half \
+is floem's default)",
+                    );
+                    style
+                }
+            }
+        }
+        (TextProperty::Select, TextValue::Keyword(kw)) => {
+            // v0.6 (§2.2): the inherited `Selectable` style prop — labels
+            // read it (views/label.rs), so `select-none` is a NATIVE
+            // style, not a view-API call.
+            match kw {
+                "select-none" => style.selectable(false),
+                "select-text" => style.selectable(true),
+                other => {
+                    report.drop(
+                        other.to_string(),
+                        "floem has no selection-mode prop (selectable is a bool)",
+                    );
+                    style
+                }
+            }
         }
         (TextProperty::FontFamily, TextValue::Keyword(fam @ ("sans" | "serif" | "mono"))) => {
             report.drop(
@@ -581,13 +769,6 @@ fn lower_text(
         }
         (TextProperty::LineClamp, TextValue::Count(_)) => {
             report.drop("line-clamp", "no Floem multi-line clamp prop");
-            style
-        }
-        (TextProperty::Select, _) => {
-            report.drop(
-                "select",
-                "text selection policy is set via the text view API",
-            );
             style
         }
         (TextProperty::FontVariantNumeric, _) => {
@@ -932,6 +1113,22 @@ pub fn slot_coverage(s: &ResolvedStyle) -> Vec<(Slot, Coverage)> {
     if s.content_color.is_some() {
         push(S::ContentColor, Coverage::Native);
     }
+    if s.background_gradient.is_some() {
+        // v0.6 (§1.5): gradients REPORT on floem (Brush::Gradient needs
+        // concrete geometry; paint_bg fills as-is). Gradient::None is the
+        // explicit clear — a genuine no-op.
+        push(
+            S::Gradient(aeolus_core::plan::GradientPart::Shape),
+            if matches!(
+                s.background_gradient,
+                Some(aeolus_core::plan::Gradient::None)
+            ) {
+                Coverage::Native
+            } else {
+                Coverage::Reported
+            },
+        );
+    }
     if s.padding.is_some() {
         push(S::Padding, Coverage::Native);
     }
@@ -982,7 +1179,10 @@ pub fn slot_coverage(s: &ResolvedStyle) -> Vec<(Slot, Coverage)> {
     }
     for (p, _) in &s.text {
         // Match the actual `lower_text` mapping: the typography props with a
-        // native Floem setter, everything else reported.
+        // native Floem setter, everything else reported. v0.6 (§2.2/§2.3):
+        // Select lowers to the `Selectable` prop and Whitespace maps the
+        // single `TextOverflow` prop (normal wraps natively, nowrap is the
+        // floem default) — both native now.
         let cov = match p {
             TextProperty::FontSize
             | TextProperty::Color
@@ -990,7 +1190,9 @@ pub fn slot_coverage(s: &ResolvedStyle) -> Vec<(Slot, Coverage)> {
             | TextProperty::FontStyle
             | TextProperty::LineHeight
             | TextProperty::TextAlign
-            | TextProperty::TextOverflow => Coverage::Native,
+            | TextProperty::TextOverflow
+            | TextProperty::Select
+            | TextProperty::Whitespace => Coverage::Native,
             _ => Coverage::Reported,
         };
         push(S::Text(*p), cov);
@@ -1006,8 +1208,8 @@ pub fn slot_coverage(s: &ResolvedStyle) -> Vec<(Slot, Coverage)> {
         push(S::ZIndex, Coverage::Native);
     }
     if e.overflow.is_some() {
-        // Floem 0.2 has no overflow prop; reported.
-        push(S::Overflow, Coverage::Reported);
+        // v0.6 (§2.1): `overflow_x`/`overflow_y` are native at the pin.
+        push(S::Overflow, Coverage::Native);
     }
     if e.visibility.is_some() {
         push(S::Visibility, Coverage::Reported);
@@ -1016,7 +1218,9 @@ pub fn slot_coverage(s: &ResolvedStyle) -> Vec<(Slot, Coverage)> {
         push(S::AspectRatio, Coverage::Native);
     }
     if e.grid.is_some() {
-        push(S::Grid, Coverage::Reported);
+        // v0.6 (§2.5): the full grid surface (templates + placement) is
+        // native at the pin.
+        push(S::Grid, Coverage::Native);
     }
     if e.transform.is_some() {
         push(S::Transform, Coverage::Native);
@@ -1028,7 +1232,9 @@ pub fn slot_coverage(s: &ResolvedStyle) -> Vec<(Slot, Coverage)> {
         push(S::Animation, Coverage::Reported);
     }
     if e.border_style.is_some() {
-        push(S::BorderStyle, Coverage::Reported);
+        // v0.6 (§2.6): dashed/dotted/none/hidden lower to kurbo Stroke
+        // patterns; `border-double` reports via the LoweringReport.
+        push(S::BorderStyle, Coverage::Native);
     }
     if e.flex_basis.is_some() {
         push(S::FlexBasis, Coverage::Native);
@@ -1037,7 +1243,9 @@ pub fn slot_coverage(s: &ResolvedStyle) -> Vec<(Slot, Coverage)> {
         push(S::Order, Coverage::Reported);
     }
     if e.align_content.is_some() {
-        push(S::AlignContent, Coverage::Reported);
+        // v0.6 (§2.4): `align_content` is native; content-baseline reports
+        // via the LoweringReport.
+        push(S::AlignContent, Coverage::Native);
     }
     if e.margin_auto.is_some() {
         push(S::MarginAuto, Coverage::Native);
