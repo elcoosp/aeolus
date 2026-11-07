@@ -92,3 +92,14 @@ fn color_mix_opacity(b: Bencher) {
 fn theme_parse_shadcn(b: Bencher) {
     b.bench(|| TailwindTheme::from_theme_css(include_str!("../data/shadcn-light.css")).unwrap());
 }
+
+// v0.4 (AEOLUS_V0.4.md §4): the verification emitter's cost. The report-08
+// allocation-counter follow-up was re-tested: divan 0.1.21 still ships no
+// `AllocCount` counter (the tracker never landed in 0.1.x) — documented in
+// report 08.
+#[divan::bench]
+fn css_write_button(b: Bencher) {
+    let t = theme();
+    let r = Resolver::new(&t);
+    b.bench(|| r.to_css(divan::black_box(BUTTON)).unwrap());
+}
