@@ -13,10 +13,10 @@ publish = false
 
 [dependencies]
 aeolus-core = { path = "../aeolus-core" }
-masonry = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
-xilem_masonry = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
+masonry = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
+xilem_masonry = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
 tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
-masonry_testing = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
+masonry_testing = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
