@@ -1250,14 +1250,13 @@ impl<'t> Resolver<'t> {
                     Some((size, lh)) => {
                         let mut items = vec![(TextProperty::FontSize, TextValue::Px(size))];
                         // F6: `text-sm/6` — the modifier is a line-height
-                        // scale multiple; `text-sm/tight` a leading token.
+                        // scale multiple; `text-sm/tight` a leading token
+                        // (relative ratio, v0.5 §1.2).
                         if let Some(m) = t.modifier {
                             items.push((
                                 TextProperty::LineHeight,
-                                TextValue::Px(
-                                    leading_from_modifier(m, spacing, self.theme)
-                                        .ok_or_else(|| unknown(None))?,
-                                ),
+                                leading_modifier_value(m, spacing, self.theme)
+                                    .ok_or_else(|| unknown(None))?,
                             ));
                         } else if let Some(lh) = lh {
                             items.push((TextProperty::LineHeight, TextValue::Px(lh)));
@@ -2204,8 +2203,12 @@ impl<'t> Resolver<'t> {
                 ))
             }
             "leading" => {
-                if let Some(v) = leading_from_modifier(value, spacing, self.theme) {
-                    return Ok(Applied::Text(TextProperty::LineHeight, TextValue::Px(v)));
+                // v0.5 §1.2: the token form carries the RELATIVE ratio
+                // (v4 emits `var(--leading-tight)` — unitless); the
+                // spacing-multiple number form and arbitrary px stay
+                // absolute (px_semantics rule).
+                if let Some(v) = leading_modifier_value(value, spacing, self.theme) {
+                    return Ok(Applied::Text(TextProperty::LineHeight, v));
                 }
                 if let Some(arb) = t.arbitrary
                     && let Some(v) = sized_from_arbitrary(arb, self.theme, &class)
@@ -2234,9 +2237,13 @@ impl<'t> Resolver<'t> {
                     ["widest"] => 0.1,
                     _ => return Err(missing(format!("--tracking-{value}"))),
                 };
+                // v0.5 §1.2: the token em is carried RELATIVE (v4 emits
+                // `var(--tracking-tight)` = `-0.025em`); the negative
+                // marker negates the token value (v4's
+                // `calc(var(--tracking-wide) * -1)` shape).
                 Ok(Applied::Text(
                     TextProperty::LetterSpacing,
-                    TextValue::Spacing(em * 16.0),
+                    TextValue::TrackingEm(em * if t.negative { -1.0 } else { 1.0 }),
                 ))
             }
             "underline-offset" => {
@@ -2715,16 +2722,17 @@ fn transform_size<'a>(
     })
 }
 
-/// F6 helper: `text-sm/6` → 24px (6 × spacing); `text-sm/tight` → the
-/// `--leading-tight` ratio × 16px base.
-fn leading_from_modifier(m: &str, spacing: f32, theme: &TailwindTheme) -> Option<f32> {
+/// F6 helper: `text-sm/6` → 24px (`6` × spacing, absolute);
+/// `text-sm/tight` → the `--leading-tight` RATIO (v0.5 §1.2: v4 emits
+/// `var(--leading-tight)` — unitless, element-relative). The numeric
+/// form stays a `--spacing` multiple (the px_semantics rule); the named
+/// form is element-relative.
+fn leading_modifier_value(m: &str, spacing: f32, theme: &TailwindTheme) -> Option<TextValue> {
     if let Ok(n) = m.parse::<f32>() {
-        return Some(n * spacing);
+        return Some(TextValue::Px(n * spacing));
     }
-    if let Some(ratio) = theme.leading(m) {
-        return Some(ratio * 16.0);
-    }
-    None
+    let ratio = theme.leading(m)?;
+    Some(TextValue::LineHeightRatio(ratio))
 }
 
 fn border_style_of(value: &str) -> Option<BorderStyle> {
