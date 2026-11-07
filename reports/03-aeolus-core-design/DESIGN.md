@@ -275,3 +275,37 @@ diff (3 commits: tests + a vello dep removal).
   not its doc comments: `get_peniko_linear_for_rect` puts angle 0 at the
   BOTTOM (`end = center + (sin a, cos a)·len/2`), so CSS angle θ maps to
   `a = π − θ` — pinned per corner direction.
+
+## 13. Portable plans (v0.7)
+
+`AEOLUS_V0.7.md` makes the IR a first-class artifact instead of a private
+resolver↔backend contract. Three additions, all zero-dependency:
+
+- **Plan algebra** (`StylePlan::overlay`, plan.rs). `cn()` composes class
+  STRINGS (theme-aware, parse-based); `overlay` composes RESOLVED plans:
+  later-wins per slot, layers merge by condition and stay rank-ordered,
+  responsive/dark/group/peer buckets overlay per key, rules merge by
+  `Cond` equality, the override's breakpoint table wins. Idempotent, and
+  diff-integrated — `diff(base, merged)` reports exactly the override
+  slots, so the repaint/relayout lanes survive composition. The runtime
+  story: a component's cached plan gains per-instance overrides without a
+  theme reference or a re-resolve. The known per-edge layer flattening
+  (`p-4 hover:px-8` zeroes unset edges in the layer) is pinned by tests
+  and deferred (v0.7 §1.4/§6).
+- **Canonical snapshots** (`snapshot.rs`). `to_snapshot_json` emits fixed-
+  schema-order, compact, shortest-round-trip JSON — byte-stable for equal
+  plans. `from_snapshot_json` is STRICT (unknown fields/enum names,
+  duplicate keys, wrong header, truncation, trailing content → typed
+  `SnapshotError` with a dotted path) — no silent defaults, the artifact
+  counterpart of the no-silent-failures rule. The JSON parser is
+  hand-rolled (depth-limited, full escapes incl. surrogate pairs); the
+  non-finite encoding (`"NaN"`/`"inf"`/`"-inf"`) keeps the writer total.
+  The closed `KEYWORDS` table is how `TextValue::Keyword(&'static str)`
+  round-trips soundly.
+- **The headless surface** (`aeolus-cli`). `run(args, out, err) -> code`
+  is the whole program (process-testable): `resolve` emits the snapshot
+  artifact by default, `css` drives the verification emitter, `diff`
+  reports lane-aware base diffs, `cn` merges, `check` lints source files
+  with a documented extractor heuristic (quoted strings kept when ≥ half
+  the tokens resolve warning-free) and cn()-conflict attribution. Exit
+  contract: 0 success, 1 findings, 2 usage/theme/IO.
