@@ -6,6 +6,8 @@ members = [
     "crates/aeolus-shadcn",
     "crates/aeolus-xilem",
     "crates/aeolus-floem",
+    "crates/aeolus-iced",
+    "crates/aeolus-egui",
 ]
 # cargo-fuzz's own workspace lives here; it must not join this one.
 exclude = ["fuzz"]
