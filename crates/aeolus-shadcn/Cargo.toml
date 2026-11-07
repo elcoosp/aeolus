@@ -17,6 +17,7 @@ aeolus-xilem = { path = "../aeolus-xilem" }
 aeolus-floem = { path = "../aeolus-floem" }
 aeolus-iced = { path = "../aeolus-iced" }
 aeolus-egui = { path = "../aeolus-egui" }
+aeolus-slint = { path = "../aeolus-slint" }
 # Widget style types for the Iced wrappers (no renderer features — the
 # aeolus-iced crate comment explains why this is the right dep).
 iced_widget = { version = "0.14", default-features = false }
