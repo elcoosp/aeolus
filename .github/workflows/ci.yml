@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.96
-      - run: cargo check -p aeolus-xilem -p aeolus-floem -p aeolus-iced -p aeolus-egui -p aeolus-shadcn
+      - run: cargo check -p aeolus-xilem -p aeolus-floem -p aeolus-iced -p aeolus-egui -p aeolus-slint -p aeolus-shadcn
 
   fmt:
     runs-on: ubuntu-latest
