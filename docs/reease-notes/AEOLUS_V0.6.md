@@ -1,188 +1,206 @@
-<div align="center">
-  <img src="https://cdn.jsdelivr.net/gh/elcoosp/aeolus@main/docs/logo.png" alt="Aeolus Logo" width="300"/>
-  <p>
-    <strong>Tailwind CSS v4 class styling, compiled to native properties for Xilem and Floem</strong><br/>
-    Aeolus parses Tailwind v4 class strings, resolves theme tokens and variants, and lowers
-    the result into <code>StylePlan</code>, a typed IR that framework backends turn into
-    Masonry property stacks or Floem styles. shadcn/ui's v4 class tables ship verbatim, so
-    components keep their web vocabulary. Semantics are verified against the
-    <code>tailwindcss</code> v4.1.17 source, and every class a backend cannot express is
-    reported through <code>LoweringReport</code> — never dropped silently.
-  </p>
-  <p>
-    <a href="https://github.com/elcoosp/aeolus/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/elcoosp/aeolus/ci.yml?style=flat-square&label=CI" alt="CI"/></a>
-    <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.6.0-blue?style=flat-square" alt="Version 0.6.0"/></a>
-    <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square" alt="License: MIT OR Apache-2.0"/></a>
-    <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/badge/MSRV-1.88_core_%C2%B7_1.96_backends-blue?style=flat-square" alt="MSRV: 1.88 core, 1.96 backends"/></a>
-    <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/badge/tested-Linux_%7C_macOS_%7C_Windows-blue?style=flat-square" alt="Tested on Linux, macOS, and Windows"/></a>
-  </p>
-</div>
+# Aeolus v0.6 Plan (plan of record)
 
-<p align="center">
-  <a href="#quickstart">Quickstart</a> • <a href="#features">Features</a> • <a href="#how-it-works">How it works</a> • <a href="#usage">Usage</a> • <a href="#status">Status</a> • <a href="#learn-more">Learn more</a>
-</p>
+The v0.5 plan (`AEOLUS_V0.5.md`) shipped in 0.5.0. This document is the
+v0.6 plan of record; every `v0.6 §X` citation in code and reports refers
+here.
 
-## Quickstart
+Goal: **consume the upstream ceiling — everything the latest GitHub
+floem and masonry expose, without a single upstream change.** The
+reconnaissance (2026-11-07) checked both pinned frameworks against their
+`main` HEADs and re-audited the vendored sources for capabilities the
+backends report as dropped:
 
-Rust 1.96 or newer for the GUI path; `aeolus-core` alone builds on 1.88. Add the crates from git (backends are git-only for now — see [Status](#status)):
+- **floem**: the pinned rev `1351ffb` **is** latest `main` HEAD
+  (`git ls-remote https://github.com/lapce/floem HEAD` → `1351ffb…`,
+  byte-identical). The vendored source exposes a native surface the
+  backend never wires: per-axis `overflow_x`/`overflow_y` (taffy
+  `Overflow`), a full grid surface (`grid_template_columns`/`rows`,
+  `grid_column`/`grid_row` placement, `grid_auto_flow`), the
+  `AlignContent` prop, the inherited `Selectable` prop, the
+  `TextOverflow::Wrap { overflow_wrap, word_break }` form, and kurbo
+  `Stroke` dashes on the per-side border strokes (`paint_border` strokes
+  with the full `Stroke`, dashes included).
+- **masonry/xilem**: upstream moved `9f504ae → dc49687` — exactly 3
+  commits (`17b8e85` text-widget tests, `f5c6f30` example interaction
+  tests, `dc49687` vello dep removal); `git diff 9f504ae..dc49687 --
+  masonry_core xilem_masonry` is **empty**. The pin stays. But the audit
+  missed a capability the pinned rev has had all along: the
+  layout-invariant `Background::Gradient` (`properties/types/gradient.rs`
+  — angle-based `GradientShape::Linear/Radial/Sweep`,
+  `interpolation_cs: ColorSpaceTag`, `ColorStops`). Linear and radial
+  gradients lower NATIVELY today; the capability matrix's "gradients
+  parse, dropped+reported" row is stale on the masonry side.
 
-```toml
-[dependencies]
-aeolus-core = { git = "https://github.com/elcoosp/aeolus" }
-aeolus-xilem = { git = "https://github.com/elcoosp/aeolus" }
-```
+No backend-manifest changes, no MSRV bump, no upstream patches. The four
+upstream-blocked deferrals (v0.4 §6) stay deferred and are re-verified in
+§5.
 
-Then style any Xilem view with a class string:
+## §1 — Gradient backgrounds (core IR + emitter; masonry native)
 
-```rust
-use aeolus_core::{Resolver, shadcn_default};
-use aeolus_xilem::TwViewExt;
-use xilem_masonry::view::label;
+- §1.1 The IR keeps the v4 model: `background-color` and
+  `background-image` are SEPARATE declarations. `ResolvedStyle.background`
+  stays the solid (`Background::Solid` — the tuple struct becomes an
+  additive enum: `Solid(Color)` | `Linear { … }` | `Radial { … }` is
+  NOT used for the slot; see §1.2) and a new
+  `ResolvedStyle.background_gradient: Option<Gradient>` carries the
+  composed image:
 
-// Once at startup: the embedded shadcn light palette becomes the theme.
-let theme = shadcn_default().unwrap();
-let resolver = Resolver::new(&theme);
+  ```rust
+  pub enum Gradient {
+      Linear { angle_deg: f32, stops: GradientStops }, // CSS convention: 0 = to top, clockwise
+      Radial { stops: GradientStops },                 // center 50%/50%, circle farthest-corner (§1.5)
+      Conic { from_angle_deg: f32, stops: GradientStops },
+  }
+  pub struct GradientStops { pub from: GradientStop, pub via: Option<GradientStop>, pub to: GradientStop }
+  pub struct GradientStop { pub color: Color, pub pos_pct: Option<f32> }
+  ```
 
-// In a view function: classes in, a styled widget out.
-let save = label("Save changes").tw(
-    &resolver,
-    "p-4 bg-primary text-primary-foreground rounded-md hover:bg-primary/90",
-);
-```
+  `pos_pct: None` = the v4 `@property` default (from 0%, via 50%, to
+  100% — captured verbatim from tailwindcss 4.1.17, `tools/capture_gradients.mjs`).
+  Backends with a single background brush lower `background_gradient`
+  preferentially and record the solid coexistence honestly (§1.6).
+- §1.2 Parser (v4.1.17-pinned semantics): `bg-linear-to-{t,tr,r,br,b,bl,l,tl}`
+  → CSS angles 0/45/90/135/180/225/270/315; `bg-linear-<angle>` and
+  arbitrary `bg-linear-[<angle>deg]` → the angle; the deprecated v4 alias
+  `bg-gradient-to-*` resolves identically; `bg-radial` → `Radial`;
+  `bg-conic`/`bg-conic-<angle>` → `Conic { from_angle_deg }`; `bg-none`
+  clears the image. Stops: `from-{color}`, `via-{color}`, `to-{color}`
+  (theme + shadcn tokens + arbitrary + `/opacity` modifiers via the
+  existing `with_opacity` machinery — v4 emits
+  `color-mix(in oklab, var(--color-x) P%, transparent)`, exactly the
+  shape the resolver already produces); `from-{P}%`/`via-{P}%`/`to-{P}%`
+  patch ONLY the stop position (v4: `--tw-gradient-from-position: 20%`);
+  `from-*`/`to-*` keyword colors `transparent` resolve, `current` is
+  reported (no `currentColor` in the color IR). Missing `to` stop =
+  transparent @100%, missing `from` = transparent @0% (v4 `@property`
+  initial values `#0000` — captured). Composition at finalize: shape +
+  stops → `background_gradient`; stops without a shape compose nothing
+  (v4: `--tw-gradient-position` unset → no image).
+- §1.3 Slots/diffs: `Slot::Gradient(GradientPart)` with
+  `GradientPart::{Shape, From, Via, To}` — lane `Cosmetic` (paint-only
+  on both backends); the `slot_diff` arms compare the new extras fields;
+  `cn()` conflict groups: `bg-linear-*`/`bg-radial`/`bg-conic*`/`bg-none`
+  share the background-image group (later wins), `from-*`/`via-*`/`to-*`
+  conflict per edge (later wins); solid `bg-{color}` and a gradient
+  coexist (different CSS properties — matches tw_merge's separate
+  bg-color/bg-image groups).
+- §1.4 The verification emitter (css.rs) emits the composed declaration
+  `background-image: linear-gradient(<angle>deg in oklab, <from> <pos>, [<via>
+  <pos>,] <to> <pos>)` / `radial-gradient(circle farthest-corner in oklab, …)`
+  alongside `background-color` when a solid coexists. DOCUMENTED
+  NORMALIZATION: v4 splits the same information across `--tw-gradient-*`
+  custom properties on three separate rules; the emitter composes at plan
+  time because the IR composes at plan time (the golden corpus stays OUT
+  — §2.3).
+- §1.5 Backends. Masonry (the headline): `Background::Gradient(Gradient)`
+  — `GradientShape::Linear { angle }` takes CSS-convention radians
+  directly (masonry's paint math `get_peniko_linear_for_rect` implements
+  the CSS spec formula; angle 0 = to top, clockwise positive — verified
+  against the source, NOT the doc comment's wording on the Sweep variant);
+  `interpolation_cs: Oklab` (v4's default `in oklab`); `Extend::Pad`;
+  stops in sRGB with fraction offsets (`pos_pct / 100`). Radial lowers to
+  `Radial { center: UnitPoint::CENTER, shape: CircleTo(FarthestCorner) }`
+  with the ellipse→circle normalization recorded (masonry's
+  `RadialGradientShape` has no ellipse radii — upstream `#[non_exhaustive]`
+  TODO). Conic is REPORTED with the precise upstream reason (masonry's
+  sweep paint carries a vello angle-offset TODO — CSS from-angles outside
+  vello's 0..2π cull the gradient). Floem: gradients stay REPORTED, with
+  the sharpened reason (peniko `Brush::Gradient` needs concrete gradient
+  geometry; `paint_bg` fills the brush as-is — no rect adaptation, so a
+  "to right" gradient would need per-view size knowledge, which the
+  zero-view-work model forbids).
+- §1.6 Single-brush reality: when a gradient AND a solid coexist, Masonry
+  lowers the gradient and records
+  `("background-color under gradient", "CSS layers background-image over background-color; the single Background property takes the gradient")`.
+  Gradient-only or solid-only plans are unchanged.
 
-No build step, no CSS file, no browser. The string is parsed, theme-resolved, and lowered into Masonry properties at runtime; `.tw` panics on unparseable classes in debug builds and warns plus drops styling in release — the honest-failure contract, not a silent no-op.
+## §2 — Floem: the unwired native surface (all at the pinned rev = HEAD)
 
-## Features
+- §2.1 `overflow-*` → `overflow_x`/`overflow_y` (`taffy::style::Overflow`):
+  Visible/Hidden/Clip/Scroll map 1:1; `overflow-auto` lowers to
+  `Overflow::Scroll` (taffy has no auto; the reserved-scrollbar difference
+  is recorded in the lowering table, not a drop).
+- §2.2 `select-none`/`select-text` → the inherited `Selectable` prop
+  (`selectable(false)` / `selectable(true)`) — labels read it
+  (`views/label.rs`). `select-all`/`select-auto` keep precise drop
+  reports (no selection-mode prop).
+- §2.3 `whitespace-*` → Floem's single `TextOverflow` prop, by CSS
+  semantics: `whitespace-normal` → `TextOverflow::Wrap { overflow_wrap:
+  Normal, word_break: Normal }` (native); `whitespace-nowrap` is a
+  NO-OP — Floem's default `TextOverflow::NoWrap(Clip)` already means
+  "never wrap" (documented, not a drop); `pre`/`pre-line`/`pre-wrap`
+  keep precise reports (no whitespace-preservation control; the nowrap
+  half is the Floem default). `text-overflow` classes lower as before;
+  when `whitespace-normal` and `text-{ellipsis,clip}` coexist the LAST
+  text slot wins the single prop (mechanical later-wins, documented).
+- §2.4 `content-*` → `align_content` (taffy `AlignContent`): Start→
+  FlexStart, Center, End→FlexEnd, Between/Around/Evenly/Stretch 1:1,
+  Normal→Stretch (CSS `align-content: normal` resolves to stretch for
+  flex containers — taffy's default), Baseline→ reported (taffy has no
+  baseline align-content).
+- §2.5 Grid: `grid-cols-N`/`grid-rows-N` → `grid_template_columns/rows`
+  = `vec![GridTemplateComponent::Repeat(GridTemplateRepetition { count:
+  RepetitionCount::Count(N), tracks: vec![TrackSizingFunction::from_fr(1.0)],
+  line_names: vec![] })]`; `col-span-N`/`row-span-N` →
+  `grid_column`/`grid_row` = `Line { start: GridPlacement::Span(N), end:
+  Auto }`; `col-start-N`/`row-start-N` → `Line { start:
+  GridPlacement::Line(N), end: Auto }`; start+span coexisting →
+  `Line { start: Line(N), end: Span(span) }` (CSS `grid-column: N / span M`).
+  Arbitrary templates (`grid-cols-[…]`) stay reported.
+- §2.6 `border-dashed`/`border-dotted` → kurbo `Stroke` dashes on the
+  four side strokes (`with_dashes(0., [6., 6.])`; dotted =
+  round-cap `[0.01, w]` dot pattern) — `paint_border` strokes with the
+  full `Stroke`, so the pattern is native at the pinned rev. The dash
+  pattern is a DOCUMENTED NORMALIZATION (CSS dash lengths are UA-styled).
+  `border-none`/`border-hidden` → zero-width side strokes (Tailwind
+  preflight keeps border-width 0 — the widths already carry the truth);
+  `border-double` keeps its report (no double-stroke primitive).
+- §2.7 The parity ledger (`slot_coverage`) upgrades: Overflow, Select,
+  Whitespace (normal/nowrap), AlignContent (non-baseline), Grid, and
+  BorderStyle (dashed/dotted/none/hidden) move Reported → Native; the
+  capability matrix rows are rewritten accordingly.
 
-- **Tailwind v4 semantics, checked at the source.** The parser, theme registry, and variant resolver are verified against the `tailwindcss` v4.1.17 source (`candidate.ts`, `compile.ts`, `variants.ts`), not the docs alone. Arbitrary selector variants (`[&:hover]`, `[a&]`, `[@media(print)]`) classify into typed probe conditions or fail with a per-form precise reason.
-- **A typed IR, not CSS text.** `StylePlan` carries base plus conditional layers with typed slots (color, padding, borders, shadows, typography, transitions, gradients). Backends consume it directly; `diff()` with cosmetic/geometric lanes drives repaint-only restyling.
-- **Gradient backgrounds, native on Masonry.** `bg-linear-*` / `bg-radial` / `bg-conic*` / `bg-none` compose at plan time into `ResolvedStyle.background_gradient` (a separate slot from the solid `background`, mirroring CSS's `background-color` + `background-image` coexistence). Masonry lowers them into its layout-invariant `Background::Gradient` with oklab interpolation; Floem reports with a sharpened geometry reason. Semantics pinned against the real tailwindcss 4.1.17 output (`tools/capture_gradients.mjs`).
-- **shadcn/ui class tables, verbatim.** Eight components (Button, Input, Label, Card, Badge, Separator, Skeleton, Alert) copied from the shadcn `new-york-v4` registry; `button()` and `input()` are real interactive widgets on Xilem, the rest are style-only and say so.
-- **`cn()` conflict resolution.** tw_merge-compatible: an audited conflict-group table drives classification (including the v0.6 split of `bg-color`/`bg-image` and per-edge gradient stops), approximate equality handles float ties, and the function is total and idempotent on any input — the user's class, merged last, wins.
-- **Themes from CSS variables.** `@theme` / `:root` / `.dark` CSS with `calc()` at real operator precedence; the verbatim Tailwind v4 default theme and palette plus shadcn light/dark palettes are embedded via `include_str!`; theme swaps are explicit and version-tracked.
-- **A verification emitter + parity harness.** `Resolver::to_css` reproduces v4's per-class declaration shapes (including the `--tw-gradient-*` var machinery); a golden corpus generated by the real `tailwindcss` v4.1.17 pins class → CSS equivalence end-to-end (176 entries). This is a verification and debugging tool — backends still consume `StylePlan` directly.
-- **A hardened hot path.** Six fuzz targets (CI fuzzes four of them for 60s on every push to main), property tests, bounded caches, a counting global allocator that pins the hot-path allocation contract (`diff` of equal plans allocates ZERO — verified), and 221 tests plus doc tests. A cold resolve of the 33-class shadcn Button string takes 4.6 µs; a warm cached hit is ~405 ns (divan, release profile, Linux CI sandbox — method and caveats in `reports/08-benchmarks/BENCHMARKS.md`).
+## §3 — Upstream re-verification (evidence, pins unchanged)
 
-## How it works
+- §3.1 floem: pin `1351ffb` == latest `main` HEAD (2026-11-07,
+  `git ls-remote`); the backend now consumes the surface audited in §2
+  — documented per item with source citations.
+- §3.2 masonry/xilem: upstream `9f504ae..dc49687` = 3 commits, zero
+  `masonry_core`/`xilem_masonry` changes; the pin stays. The stale
+  capability-matrix claim is corrected: `Background::Gradient` exists at
+  the pin and is now consumed (§1.5). `BorderWidth` is still uniform,
+  `CornerRadius` still single-radius, `BoxShadow` still lacks
+  spread/inset — verified against the pinned sources and re-documented.
+- §3.3 crates.io re-check (2026-11-07): `masonry`/`masonry_core`/
+  `masonry_testing` 0.4.0 (2025-10-29) and `floem` 0.2.0 (2024-11-14)
+  remain the newest releases — publishing the backends stays blocked.
 
-`aeolus-core` is the semantic layer: class strings in, tokens resolved against a `TailwindTheme`, conflicts merged by `cn()`, and a `StylePlan` out. Backends lower the plan into their framework's native cascade and negotiate capabilities up front — whatever a backend cannot express lands in a `LoweringReport` with a reason, per the no-silent-failures rule.
+## §4 — Quality gates
 
-```mermaid
-flowchart LR
-    A["class string<br/>p-4 bg-primary hover:bg-primary/90"] --> B["aeolus-core parser"]
-    B --> C["Resolver + TailwindTheme<br/>tokens, variants, cn()"]
-    C --> D["StylePlan IR<br/>base + conditional layers<br/>(colors, gradients, layout, text)"]
-    D --> E["aeolus-xilem<br/>Masonry PropertyStack / StyledWidget"]
-    D --> F["aeolus-floem<br/>programmatic Style, selector maps"]
-    D --> G["LoweringReport<br/>unexpressible classes, with reasons"]
-    E -.-> G
-    F -.-> G
-```
+- §4.1 The full battery stays green: `cargo test --workspace`,
+  `clippy -D warnings`, `fmt --check`, `doc -D warnings`,
+  `cargo package -p aeolus-core -p aeolus-macro`, `cargo deny check licenses`.
+- §4.2 New tests (RED→GREEN, captured in
+  `reports/10-tdd-evidence/08-upstream-ceiling.md`): gradient
+  parse/composition unit tests (the v4.1.17-captured semantics of §1.2),
+  emitter shape tests, the masonry angle-conversion + stop-offset tests,
+  the floem overflow/grid/selectable/whitespace/content/border-dash
+  lowering tests, and the slot_coverage upgrades.
+- §4.3 The golden corpus (176 entries) is UNCHANGED: gradient parity
+  needs cross-rule `--tw-gradient-*` var composition (three separate
+  rules per gradient), which is a harness model boundary, not a coverage
+  gap — same precedent as v0.5 §2.3, now documented in DESIGN §12. The
+  captured real-compiler output lives in
+  `tools/capture_gradients.mjs` (evidence, re-runnable).
+- §4.4 No manifest/MSRV changes; version → 0.6.0; docs: README status,
+  CHANGELOG, DESIGN §12, capability matrix gradient/overflow/grid rows,
+  `AEOLUS_V0.6.md` (this file).
 
-| Crate           | Role                                                                                                                                                                                                         | Publishes |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
-| `aeolus-core`   | parser, theme registry, `StylePlan` IR, `cn()`, verification CSS emitter, bounded caches — zero dependencies                                                                                                 | ready     |
-| `aeolus-macro`  | `tw!` / `tw_cn!` compile-time class validation and merging (syn-free)                                                                                                                                        | ready     |
-| `aeolus-xilem`  | Masonry/Xilem backend: `PropertyStack` lowering, native gradients, fallback `StyledWidget`, interactive `StyledButton`                                                                                       | git-only  |
-| `aeolus-floem`  | Floem backend: nested selector maps, transitions, responsive and dark, the full pinned-rev taffy surface (overflow, grid, align-content, selectable, whitespace, border stroke dashes) — zero view-side code | git-only  |
-| `aeolus-shadcn` | shadcn v4 class tables shared by every backend, plus Xilem/Floem wrappers                                                                                                                                    | git-only  |
+## §5 — Upstream-blocked (stay deferred, re-documented)
 
-`crates/muda-stub` is a dev-sandbox patch crate wired through `[patch.crates-io]`; it is not a workspace member and is never a dependency of a publishable crate.
-
-## Usage
-
-### Resolve classes without a widget
-
-```rust
-let resolution = resolver.resolve("p-4 bg-primary hover:bg-primary/90 rounded-md")?;
-assert!(resolution.plan.base.background.is_some());
-assert_eq!(resolution.plan.layers.len(), 1); // the hover layer
-assert!(resolution.warnings.is_empty());
-```
-
-`Resolver::resolve` returns the plan plus `Warning`s; unsupported classes come back as precise `Unsupported` reasons rather than blanket failures.
-
-### Compose shadcn components
-
-```rust
-use aeolus_shadcn::xilem::button;
-use aeolus_shadcn::classes::{ButtonSize, ButtonVariant};
-
-button(
-    &resolver,
-    "save",
-    "Save",
-    ButtonVariant::Default,
-    ButtonSize::Default,
-    "shadow-lg", // your class merges last and wins via cn()
-    |state: &mut AppState| state.save(),
-)
-```
-
-On Floem, the same class tables lower into `Style` values with nested selector maps — hover and focus flips restyle one element without rebuilding widgets, and `transition-*` maps to native Floem transitions.
-
-### Swap or extend themes
-
-```rust
-let mut theme = TailwindTheme::from_theme_css(custom_brand_css)?;
-theme.absorb_css(dark_mode_overrides)?; // bumps the theme version; drop the PlanCache
-```
-
-`shadcn_default()` and `shadcn_dark()` build the standard shadcn light and dark themes from the embedded palettes; any CSS you pass is resolved on top of the full Tailwind v4 default theme.
-
-> [!TIP]
-> For static class lists, `aeolus-macro`'s `tw!("p-4 bg-primary")` validates the string against the v4 grammar at compile time and `tw_cn!` merges at compile time — typos become build errors.
-
-### Supported backends
-
-| Backend         | Crate          | Lowering target                                                                             | Notes                                                                                                                                                                                                                                                                                                |
-| --------------- | -------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Xilem / Masonry | `aeolus-xilem` | `PropertyStack` + `Selector` flags; `StyledWidget` fallback resolves per state at pre-paint | hover/active/focus/disabled native; **gradient backgrounds native** (`Background::Gradient` — linear exact, radial = documented circle-farthest-corner normalization, conic reported: upstream vello sweep TODO); dark, responsive, container, group/peer through the plan resolver                  |
-| Floem           | `aeolus-floem` | programmatic `Style` with nested selector maps                                              | transitions, responsive, dark mode native; ring lowers to outline; **the full pinned-rev taffy surface is now wired** — per-axis overflow, grid templates + placement, `align_content`, `selectable`, whitespace wrap, kurbo border-stroke dashes; gradients report with a sharpened geometry reason |
-
-Per-slot support for each backend is tabulated in `reports/02-capability-matrix/CAPABILITY_MATRIX.md`; the design rationale lives in `reports/03-aeolus-core-design/DESIGN.md`.
-
-## Status
-
-> [!NOTE]
-> Aeolus is at **v0.6.0** (2026-11). The **upstream-ceiling** release: a 2026-11-07 reconnaissance found that the floem pin `1351ffb` **is** latest `main` HEAD, and xilem upstream moved `9f504ae → dc49687` with an EMPTY `masonry_core`/`xilem_masonry` diff — so every capability v0.6 consumes is at the pinned revs with ZERO upstream changes. The headline: the v0.1–v0.5 audits missed that Masonry has carried a layout-invariant `Background::Gradient` all along; gradients lower natively now, and the Floem backend wires the native surface it never used. `aeolus-core` and `aeolus-macro` are publish-ready (`cargo package` is a CI gate), while the three backend crates carry `publish = false` until upstream Masonry/Xilem and Floem cut crates.io releases of the pinned revisions — consume all crates from git for now. Toolchains: Rust 1.88 gates `aeolus-core`/`aeolus-macro`, 1.96 gates the backends, both enforced in CI; Linux, macOS, and Windows run the full suite. Known upstream-blocked gaps: view-side property-stack registration, native Masonry typography, Masonry transitions, and publishing the backends — each is documented, and everything a backend cannot express is reported, never ignored.
-
-### What's in v0.6 — honestly
-
-**Done and tested (221 tests):**
-
-- Everything listed under v0.5 below.
-- **Upstream reconnaissance, verifiable** (`AEOLUS_V0.6.md` §3): the floem pin `1351ffb` IS latest `main` HEAD (`git ls-remote`); xilem upstream moved `9f504ae → dc49687` — exactly 3 commits with an EMPTY `masonry_core`/`xilem_masonry` diff, so the pin stays. Every capability below is consumed at the pinned revs with ZERO upstream changes.
-- **Gradient backgrounds** (v0.6 §1): the plan IR gains the composed `background-image` (`bg-linear-to-*`/`bg-linear-<angle>`/`bg-radial`/`bg-conic*`, the deprecated `bg-gradient-to-*` alias, `from-`/`via-`/`to-*` stops with `/opacity` modifiers and `%` position patches, `bg-none`) — semantics pinned against the REAL tailwindcss 4.1.17 output captured by `tools/capture_gradients.mjs` (stop-position defaults 0/50/100%, missing stops = `#0000`, oklab interpolation). Masonry lowers gradients NATIVELY into its layout-invariant `Background::Gradient` (`GradientShape::Linear` takes the CSS angle; `a = π − θ` derived from masonry's paint math and unit-pinned) — the capability matrix's "gradients dropped" row was stale. Floem keeps the honest report with a sharpened reason (peniko needs concrete geometry; `paint_bg` fills as-is). Single-brush reality: a solid + gradient coexistence keeps the gradient and records the flattening.
-- **The Floem unwired surface** (v0.6 §2): `overflow-*` → taffy `overflow_x`/`overflow_y` (auto → Scroll documented); `select-none`/`select-text` → the inherited `Selectable` prop; `whitespace-normal` → `TextOverflow::Wrap` and `whitespace-nowrap` → floem's default (a documented no-op); `content-*` → `align_content` (normal → stretch, baseline reported); `grid-cols-N`/`grid-rows-N`/`col/row-span`/`col/row-start` → the native grid template + placement surface; `border-dashed`/`border-dotted`/`border-none` → kurbo `Stroke` dash patterns on the side strokes. The parity ledger upgrades six slots Reported → Native.
-
-<details><summary><b>What was in v0.5 — honestly</b></summary>
-
-**Done and tested (185 tests):**
-
-- **Element-relative typography** (`AEOLUS_V0.5.md` §1, reverses the v0.4 §2.3 exclusion): the plan IR now carries the relative unit the class names — `TextValue::TrackingEm(f32)` for `tracking-*` tokens and `TextValue::LineHeightRatio(f32)` for bare `leading-*`. Absolute forms (px, spacing multiples, the paired line-height of a bare `text-{size}`) stay exactly as they were. Floem lowers `LineHeightRatio` to its NATIVE `LineHeightValue::Normal(ratio)` (font-size relative); `TrackingEm` keeps the honest drop report (no letter-spacing property at the pin). The golden corpus grows (176 entries total) and pins the relative units against the real compiler.
-- **The allocation contract** (`AEOLUS_V0.5.md` §3): a counting global allocator (`std::alloc::GlobalAlloc` over `System`, zero dependencies) turns report 08's structural claims into measured numbers. `diff` of equal plans allocates ZERO (pinned exactly); the interning hit path and the warm cache hit are pinned as upper bounds. divan 0.1.21 cannot carry per-benchmark allocation counters (re-verified and documented); the contract test IS the deliverable the report asked for.
-- Benchmarks re-run; the report-08 numbers updated with the honesty caveats unchanged.
-
-What was in v0.4 (`AEOLUS_V0.4.md`, 157-entry corpus at that point):
-
-- **The verification CSS emitter** — `Resolver::to_css(classes) -> Result<Vec<CssRule>, …>` reproduces v4's per-class declaration shapes. This is a VERIFICATION and debugging tool, not a styling target — backends consume `StylePlan` directly.
-- **The golden corpus** (`tools/gen_golden.mjs` + `crates/aeolus-core/tests/fixtures/golden/`) generated by the real `tailwindcss` v4.1.17 — class → CSS equivalence pinned end-to-end.
-- **The parity harness** with a test-only normalizer (var substitution, calc evaluation, rem→px, shadow composition, color-mix numeric comparison).
-- `css_write_button` benchmark added; the allocation-counter follow-up deferred to v0.5.
-
-</details>
-
-## Learn more
-
-- [`docs/release-noets/AEOLUS_V0.6.md`](AEOLUS_V0.6.md) — the v0.6 plan of record: the upstream ceiling, gradient backgrounds (native on Masonry), the wired Floem surface, and the 2026-11-07 upstream re-verification
-- [`docs/release-noets/AEOLUS_V0.5.md`](AEOLUS_V0.5.md) — the v0.5 plan of record: element-relative typography, the allocation contract, and the divan re-test
-- [`docs/release-noets/AEOLUS_V0.4.md`](AEOLUS_V0.4.md) — the v0.4 plan of record: the verification CSS emitter, the golden corpus, and the parity harness
-- [`docs/release-noets/AEOLUS_V0.3.md`](AEOLUS_V0.3.md) — the v0.3 plan of record: arbitrary selector variants and the typed probe subset
-- [`docs/release-noets/AEOLUS_V0.2.md`](AEOLUS_V0.2.md) — the v0.2 plan (shipped in 0.2.0): correctness fixes, the parity engine, MSRV split
-- [`reports/03-aeolus-core-design/DESIGN.md`](reports/03-aeolus-core-design/DESIGN.md) — architecture, the `Probe` parity model, and the honesty contract (see §12 for the v0.6 upstream ceiling)
-- [`reports/02-capability-matrix/CAPABILITY_MATRIX.md`](reports/02-capability-matrix/CAPABILITY_MATRIX.md) — cascade models and per-slot support for every backend (gradient/overflow/grid rows updated for v0.6)
-- [`reports/08-benchmarks/BENCHMARKS.md`](reports/08-benchmarks/BENCHMARKS.md) — hot-path numbers with the benchmark method and the allocation contract
-- [`reports/10-tdd-evidence/08-upstream-ceiling.md`](reports/10-tdd-evidence/08-upstream-ceiling.md) — RED→GREEN evidence for v0.6
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — TDD-first workflow and the no-silent-failures bar
-- [`docs/`](docs/) — brand assets
+Re-verified 2026-11-07 (§3): publishing the backends (no compatible
+crates.io release), view-side property-stack registration (no
+`Pod::with_property_stack` at `dc49687`), Masonry typography via native
+properties (no `FontSize`/`FontWeight` property upstream; the Q5 parley
+per-widget gap), Masonry transitions/animations (no property-animation
+infrastructure). Unchanged from v0.4 §6 / v0.3 §4 / v0.5 §5.
