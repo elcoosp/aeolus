@@ -162,3 +162,89 @@ impl Probe for BothStatesProbe {
         false
     }
 }
+
+/// v0.5 §1 (AEOLUS_V0.5.md): element-relative typography. The token forms
+/// carry their RELATIVE unit (v4.1.17 `--tracking-*` em values,
+/// `--leading-*` unitless ratios) instead of a 16px pre-multiplication;
+/// absolute forms (arbitrary px, spacing-multiple modifiers) stay px.
+/// Verified shapes against the real tailwindcss 4.1.17 output (golden
+/// corpus, v0.5 §2).
+#[test]
+fn tracking_tokens_are_element_relative_em() {
+    let t = theme();
+    for (class, em) in [
+        ("tracking-tighter", -0.05),
+        ("tracking-tight", -0.025),
+        ("tracking-normal", 0.0),
+        ("tracking-wide", 0.025),
+        ("tracking-wider", 0.05),
+        ("tracking-widest", 0.1),
+    ] {
+        let r = Resolver::new(&t).resolve(class).unwrap();
+        assert!(r.warnings.is_empty(), "{class}: {:?}", r.warnings);
+        assert!(
+            r.plan
+                .base
+                .text
+                .contains(&(TextProperty::LetterSpacing, TextValue::TrackingEm(em))),
+            "{class} must carry the token em: {:?}",
+            r.plan.base.text
+        );
+    }
+    // v4's negative-utility marker negates the token value.
+    let r = Resolver::new(&t).resolve("-tracking-wide").unwrap();
+    assert!(
+        r.plan
+            .base
+            .text
+            .contains(&(TextProperty::LetterSpacing, TextValue::TrackingEm(-0.025)))
+    );
+    // Arbitrary px letter-spacing stays absolute.
+    let r = Resolver::new(&t).resolve("tracking-[7px]").unwrap();
+    assert!(
+        r.plan
+            .base
+            .text
+            .contains(&(TextProperty::LetterSpacing, TextValue::Spacing(7.0)))
+    );
+}
+
+#[test]
+fn named_leading_tokens_are_unitless_ratios() {
+    let t = theme();
+    for (class, ratio) in [
+        ("leading-none", 1.0),
+        ("leading-tight", 1.25),
+        ("leading-snug", 1.375),
+        ("leading-normal", 1.5),
+        ("leading-relaxed", 1.625),
+        ("leading-loose", 2.0),
+    ] {
+        let r = Resolver::new(&t).resolve(class).unwrap();
+        assert!(r.warnings.is_empty(), "{class}: {:?}", r.warnings);
+        assert!(
+            r.plan
+                .base
+                .text
+                .contains(&(TextProperty::LineHeight, TextValue::LineHeightRatio(ratio))),
+            "{class} must carry the token ratio: {:?}",
+            r.plan.base.text
+        );
+    }
+    // Arbitrary px line-height stays absolute; spacing-multiple
+    // `leading-<number>` stays a --spacing multiple (px_semantics rule).
+    let r = Resolver::new(&t).resolve("leading-[3px]").unwrap();
+    assert!(
+        r.plan
+            .base
+            .text
+            .contains(&(TextProperty::LineHeight, TextValue::Px(3.0)))
+    );
+    let r = Resolver::new(&t).resolve("leading-6").unwrap();
+    assert!(
+        r.plan
+            .base
+            .text
+            .contains(&(TextProperty::LineHeight, TextValue::Px(24.0)))
+    );
+}
