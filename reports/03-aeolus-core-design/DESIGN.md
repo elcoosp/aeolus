@@ -276,36 +276,42 @@ diff (3 commits: tests + a vello dep removal).
   BOTTOM (`end = center + (sin a, cos a)·len/2`), so CSS angle θ maps to
   `a = π − θ` — pinned per corner direction.
 
-## 13. Portable plans (v0.7)
+## 13. Oracle fidelity — the variant & grid engine (v0.7)
 
-`AEOLUS_V0.7.md` makes the IR a first-class artifact instead of a private
-resolver↔backend contract. Three additions, all zero-dependency:
+`AEOLUS_V0.7.md` closes every parser/IR gap the shipped shadcn oracle
+tables expose: a 2026-11-08 audit counted 40 warnings across the tables;
+after v0.7 the count is 13 and every one is the documented v0.3 §1.3
+Probe-model boundary (selectors styling OTHER elements). The headline
+contract lives in `crates/aeolus-shadcn/tests/oracle_fidelity.rs`.
 
-- **Plan algebra** (`StylePlan::overlay`, plan.rs). `cn()` composes class
-  STRINGS (theme-aware, parse-based); `overlay` composes RESOLVED plans:
-  later-wins per slot, layers merge by condition and stay rank-ordered,
-  responsive/dark/group/peer buckets overlay per key, rules merge by
-  `Cond` equality, the override's breakpoint table wins. Idempotent, and
-  diff-integrated — `diff(base, merged)` reports exactly the override
-  slots, so the repaint/relayout lanes survive composition. The runtime
-  story: a component's cached plan gains per-instance overrides without a
-  theme reference or a re-resolve. The known per-edge layer flattening
-  (`p-4 hover:px-8` zeroes unset edges in the layer) is pinned by tests
-  and deferred (v0.7 §1.4/§6).
-- **Canonical snapshots** (`snapshot.rs`). `to_snapshot_json` emits fixed-
-  schema-order, compact, shortest-round-trip JSON — byte-stable for equal
-  plans. `from_snapshot_json` is STRICT (unknown fields/enum names,
-  duplicate keys, wrong header, truncation, trailing content → typed
-  `SnapshotError` with a dotted path) — no silent defaults, the artifact
-  counterpart of the no-silent-failures rule. The JSON parser is
-  hand-rolled (depth-limited, full escapes incl. surrogate pairs); the
-  non-finite encoding (`"NaN"`/`"inf"`/`"-inf"`) keeps the writer total.
-  The closed `KEYWORDS` table is how `TextValue::Keyword(&'static str)`
-  round-trips soundly.
-- **The headless surface** (`aeolus-cli`). `run(args, out, err) -> code`
-  is the whole program (process-testable): `resolve` emits the snapshot
-  artifact by default, `css` drives the verification emitter, `diff`
-  reports lane-aware base diffs, `cn` merges, `check` lints source files
-  with a documented extractor heuristic (quoted strings kept when ≥ half
-  the tokens resolve warning-free) and cn()-conflict attribution. Exit
-  contract: 0 success, 1 findings, 2 usage/theme/IO.
+- **Pseudo-element variants** (`selection:`, `placeholder:`, `file:` —
+  §1) are typed `Test::Pseudo(PseudoElement)` conditions, NOT runtime
+  states: they style a sub-rendering of the element. `Probe::test`
+  answers them (default "no" — the rule never fires where the rendering
+  does not exist, the same semantics CSS has when a selector does not
+  match), so `selection:bg-primary` rides the `rules` path with zero new
+  bucket machinery. The real 4.1.17 emits BOTH `&::selection` and the
+  descendant `& *::selection`; the self half is corpus-pinned, the
+  descendant half is outside the Probe model by construction.
+- **`Atom::Has` generalizes to `Has(Test)`** (§2): `has-data-[…]`/
+  `has-aria-[…]`/`has-first:` classify through the same `variant_test`
+  the `group-*` wrappers use; `Probe::descendant(&Test)` (default:
+  state-only) keeps old trait impls compiling. Combinator forms
+  (`has-[>svg]`) keep the precise report — the child-edge is real
+  information the typed descendant question does not carry.
+- **Named containers** (§3): `@container[/name]` is a UTILITY in v4 —
+  `Extras.container_type` carries `container-type: inline-size` + the
+  optional name; conditions already carried names since v0.2.
+- **Track templates** (§4): `GridTrack { min, max }` mirrors CSS
+  `minmax()`; a bare `1fr` is `minmax(auto, 1fr)` (taffy's `from_fr`),
+  but the `auto-rows-fr` KEYWORD is `minmax(0, 1fr)` (v4's blowout guard
+  — the first capture proved CSS intuition wrong, so it is pinned).
+  Templates are CANONICAL over the v0.6 numeric counts; the template
+  families are `cn()` conflict groups that evict across the
+  numeric/arbitrary boundary. Floem lowers everything natively
+  (`GridTemplateComponent::Single/Repeat`, `grid_auto_rows/columns`).
+- **`justify-items-*`** (§5): one resolver arm the cn() tables already
+  anticipated; `normal` → stretch (CSS), Floem native.
+- **Corpus 193** (§6): every new shape is single-rule and IN; the
+  selection descendant half is a documented harness normalization, as is
+  comma-spacing (v4 emits arbitrary values verbatim and keywords pretty).
