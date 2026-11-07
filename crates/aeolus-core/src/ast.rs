@@ -432,6 +432,49 @@ pub enum Structural {
     NthLast(i32),
 }
 
+/// The element's own pseudo-element renderings that v4 names as plain
+/// variants (v0.7 §1, plan `AEOLUS_V0.7.md`): `selection:` → `&::selection`,
+/// `placeholder:` → `&::placeholder`, `file:` → `&::file-selector-button`.
+///
+/// These are NOT runtime states (there is no "selected" flag on a widget the
+/// way `hover` is): they style a SUB-RENDERING of the element. The typed
+/// model keeps them distinguishable from [`State`]s — a backend answers them
+/// through `Probe::test(&Test::Pseudo(…))`, and the default probe answer is
+/// "no" (the rule never fires where the rendering does not exist — the same
+/// semantics CSS has when a selector does not match).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PseudoElement {
+    /// `selection:` — `::selection`, the selected-text rendering.
+    Selection,
+    /// `placeholder:` — `::placeholder`, the placeholder rendering.
+    Placeholder,
+    /// `file:` — `::file-selector-button` (the `<input type=file>` button
+    /// part). No native GUI toolkit has a file-selector sub-widget; the
+    /// typed condition exists so the class parses, merges and emits, and
+    /// the rule simply never fires natively.
+    FileSelectorButton,
+}
+
+impl PseudoElement {
+    /// The canonical variant name (merge keys and diagnostics).
+    pub fn name(self) -> &'static str {
+        match self {
+            PseudoElement::Selection => "selection",
+            PseudoElement::Placeholder => "placeholder",
+            PseudoElement::FileSelectorButton => "file",
+        }
+    }
+
+    /// The CSS selector suffix (`::selection`, ...).
+    pub fn css(self) -> &'static str {
+        match self {
+            PseudoElement::Selection => "::selection",
+            PseudoElement::Placeholder => "::placeholder",
+            PseudoElement::FileSelectorButton => "::file-selector-button",
+        }
+    }
+}
+
 impl Structural {
     /// The canonical variant text (for merge keys and diagnostics).
     pub fn canonical(self) -> &'static str {
@@ -489,6 +532,8 @@ pub enum NamedVariant<'a> {
     UserInvalid,
     /// `placeholder-shown`.
     PlaceholderShown,
+    /// `selection:` — the element's own `::selection` rendering (v0.7 §1).
+    Pseudo(PseudoElement),
     /// `autofill`.
     Autofill,
     /// `read-only`.
@@ -574,6 +619,7 @@ impl NamedVariant<'_> {
             NamedVariant::UserValid => "user-valid".into(),
             NamedVariant::UserInvalid => "user-invalid".into(),
             NamedVariant::PlaceholderShown => "placeholder-shown".into(),
+            NamedVariant::Pseudo(p) => p.name().into(),
             NamedVariant::Autofill => "autofill".into(),
             NamedVariant::ReadOnly => "read-only".into(),
             NamedVariant::InRange => "in-range".into(),
