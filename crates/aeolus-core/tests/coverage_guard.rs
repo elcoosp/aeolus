@@ -355,11 +355,13 @@ fn custom_utilities_expand() {
         TextProperty::FontVariantNumeric,
         TextValue::Keyword("tabular-nums")
     )));
+    // v0.5 §1.1: the tracking token carries its RELATIVE em (v4's
+    // `--tracking-tight: -0.025em`), not a 16px pre-multiplication.
     assert!(
         r.plan
             .base
             .text
-            .contains(&(TextProperty::LetterSpacing, TextValue::Spacing(-0.4)))
+            .contains(&(TextProperty::LetterSpacing, TextValue::TrackingEm(-0.025)))
     );
     // Two-level expansion (double → tab-nums → tabular-nums) + uppercase.
     let r = Resolver::new(&theme).resolve("double").unwrap();
