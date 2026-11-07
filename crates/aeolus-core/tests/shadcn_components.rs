@@ -292,13 +292,14 @@ fn text_size_line_height_modifier() {
         text.contains(&(TextProperty::LineHeight, TextValue::Px(24.0))),
         "6 * 4px = 24px: {text:?}"
     );
-    // Named leading tokens work too.
+    // Named leading tokens resolve to the RELATIVE ratio (v0.5 §1.2):
+    // v4 emits `var(--leading-tight)` — unitless, element-relative.
     let r = Resolver::new(&theme()).resolve("text-sm/tight").unwrap();
     assert!(
         r.plan
             .base
             .text
-            .contains(&(TextProperty::LineHeight, TextValue::Px(20.0)))
+            .contains(&(TextProperty::LineHeight, TextValue::LineHeightRatio(1.25)))
     );
 }
 
