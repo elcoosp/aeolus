@@ -307,3 +307,259 @@ fn leading_tokens_lower_to_native_multipliers() {
         "tracking-tight must be reported, never silent: {report:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// v0.6 (AEOLUS_V0.6.md §2) — the unwired native surface at the pinned rev
+// (which IS latest floem main): overflow, selectable, whitespace,
+// align_content, grid, border dashes.
+// ---------------------------------------------------------------------------
+
+use aeolus_core::TailwindTheme;
+
+fn v4_resolver() -> Resolver<'static> {
+    let theme = TailwindTheme::default();
+    Resolver::new(Box::leak(Box::new(theme)))
+}
+
+#[test]
+fn overflow_lowers_to_per_axis_taffy_props() {
+    use floem::style::{OverflowX, OverflowY};
+    use floem::taffy::style::Overflow;
+
+    let r = v4_resolver()
+        .resolve("overflow-hidden overflow-x-auto")
+        .unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert_eq!(
+        style.get(OverflowX),
+        Overflow::Scroll,
+        "overflow-auto → Scroll (documented)"
+    );
+    assert_eq!(
+        style.get(OverflowY),
+        Overflow::Hidden,
+        "overflow-hidden keeps y"
+    );
+}
+
+#[test]
+fn select_none_lowers_to_the_selectable_prop() {
+    use floem::style::Selectable;
+
+    let r = v4_resolver().resolve("select-none").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert!(!style.get(Selectable));
+
+    let r = v4_resolver().resolve("select-text").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert!(style.get(Selectable));
+
+    // No selection-mode prop: precise report, not silence.
+    let r = v4_resolver().resolve("select-all").unwrap();
+    let (_style, report) = lower(&r.plan);
+    assert!(
+        report
+            .dropped
+            .iter()
+            .any(|(w, rsn)| w.contains("select-all") && rsn.contains("selection-mode")),
+        "{report:?}"
+    );
+}
+
+#[test]
+fn whitespace_maps_the_single_text_overflow_prop() {
+    use floem::style::{TextOverflow, TextOverflowProp};
+
+    // normal → the native Wrap form.
+    let r = v4_resolver().resolve("whitespace-normal").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert_eq!(
+        style.get(TextOverflowProp),
+        TextOverflow::Wrap {
+            overflow_wrap: floem::text::OverflowWrap::Normal,
+            word_break: floem::text::WordBreakStrength::Normal,
+        }
+    );
+
+    // nowrap is floem's DEFAULT text flow — a genuine no-op (no drop).
+    let r = v4_resolver().resolve("whitespace-nowrap").unwrap();
+    let (_style, report) = lower(&r.plan);
+    assert!(
+        report.is_empty(),
+        "nowrap must be a documented no-op: {report:?}"
+    );
+
+    // pre* needs whitespace preservation — precise report.
+    let r = v4_resolver().resolve("whitespace-pre").unwrap();
+    let (_style, report) = lower(&r.plan);
+    assert!(
+        report
+            .dropped
+            .iter()
+            .any(|(w, rsn)| w.contains("whitespace-pre") && rsn.contains("preservation")),
+        "{report:?}"
+    );
+}
+
+#[test]
+fn content_align_lowers_to_taffy_align_content() {
+    use floem::style::AlignContentProp;
+
+    let r = v4_resolver().resolve("content-between").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert_eq!(
+        style.get(AlignContentProp),
+        Some(floem::style::AlignContent::SpaceBetween)
+    );
+
+    // CSS `align-content: normal` resolves to stretch for flex containers.
+    let r = v4_resolver().resolve("content-normal").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert_eq!(
+        style.get(AlignContentProp),
+        Some(floem::style::AlignContent::Stretch)
+    );
+
+    // taffy has no baseline align-content — reported.
+    let r = v4_resolver().resolve("content-baseline").unwrap();
+    let (_style, report) = lower(&r.plan);
+    assert!(
+        report
+            .dropped
+            .iter()
+            .any(|(w, _)| w.contains("content-baseline")),
+        "{report:?}"
+    );
+}
+
+#[test]
+fn grid_lowers_templates_and_placement_natively() {
+    use floem::style::{GridColumn, GridTemplateColumns};
+
+    let r = v4_resolver().resolve("grid grid-cols-4").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    let templates = style.get(GridTemplateColumns);
+    assert_eq!(templates.len(), 1, "one repeat() component");
+    let floem::taffy::style::GridTemplateComponent::Repeat(rep) = &templates[0] else {
+        panic!("expected a repeat component: {templates:?}");
+    };
+    assert_eq!(rep.count, floem::taffy::style::RepetitionCount::Count(4));
+    assert_eq!(rep.tracks.len(), 1, "one 1fr track");
+
+    // Item placement: col-span-2 col-start-3 → Line { start: Line(3), end: Span(2) }.
+    let r = v4_resolver().resolve("col-span-2 col-start-3").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    use floem::taffy::prelude::{TaffyGridLine, TaffyGridSpan};
+    let placement = style.get(GridColumn);
+    assert_eq!(
+        placement.start,
+        floem::taffy::style::GridPlacement::from_line_index(3)
+    );
+    assert_eq!(
+        placement.end,
+        floem::taffy::style::GridPlacement::from_span(2)
+    );
+
+    // Bare span → Line { start: Span(2), end: Auto }.
+    let r = v4_resolver().resolve("col-span-2").unwrap();
+    let (style, _) = lower(&r.plan);
+    let placement = style.get(GridColumn);
+    assert_eq!(
+        placement.start,
+        floem::taffy::style::GridPlacement::from_span(2)
+    );
+    assert_eq!(placement.end, floem::taffy::style::GridPlacement::Auto);
+}
+
+#[test]
+fn border_style_lowers_to_kurbo_stroke_patterns() {
+    use floem::style::{BorderLeft, BorderTop};
+
+    // border-2 border-dashed → dashed strokes at 2px.
+    let r = v4_resolver().resolve("border-2 border-dashed").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    let stroke = style.get(BorderLeft);
+    assert_eq!(stroke.width, 2.0);
+    assert_eq!(
+        stroke.dash_pattern.as_ref(),
+        &vec![6.0, 6.0],
+        "the documented dash pattern"
+    );
+    let top = style.get(BorderTop);
+    assert_eq!(top.dash_pattern.as_ref(), &vec![6.0, 6.0]);
+
+    // border-dotted → round-cap dot pattern.
+    let r = v4_resolver().resolve("border-2 border-dotted").unwrap();
+    let (style, _) = lower(&r.plan);
+    let stroke = style.get(BorderLeft);
+    assert_eq!(stroke.dash_pattern.as_ref(), &vec![0.01, 4.0]);
+    assert_eq!(stroke.start_cap, floem::peniko::kurbo::Cap::Round);
+
+    // border-none zeroes the strokes even with a width class (CSS semantics).
+    let r = v4_resolver().resolve("border-2 border-none").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert_eq!(style.get(BorderLeft).width, 0.0);
+
+    // double has no kurbo primitive — reported.
+    let r = v4_resolver().resolve("border-double").unwrap();
+    let (_style, report) = lower(&r.plan);
+    assert!(
+        report
+            .dropped
+            .iter()
+            .any(|(w, _)| w.contains("border-double")),
+        "{report:?}"
+    );
+}
+
+#[test]
+fn gradients_report_with_the_sharpened_reason() {
+    let r = v4_resolver()
+        .resolve("bg-linear-to-r from-red-500 to-blue-500")
+        .unwrap();
+    let (_style, report) = lower(&r.plan);
+    assert!(
+        report
+            .dropped
+            .iter()
+            .any(|(w, rsn)| w.contains("gradient") && rsn.contains("geometry")),
+        "the drop must carry the precise geometry reason: {report:?}"
+    );
+    // bg-none lowers to nothing, silently-correctly (the CSS `none` value).
+    let r = v4_resolver().resolve("bg-none").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+    assert!(style.get(Background).is_none());
+}
+
+#[test]
+fn slot_coverage_upgrades_are_consistent_with_the_lowering() {
+    use aeolus_core::Slot;
+    use aeolus_floem::{Coverage, slot_coverage};
+
+    let r = v4_resolver().resolve("overflow-hidden select-none whitespace-normal grid grid-cols-2 content-between border-dashed").unwrap();
+    let cov = slot_coverage(&r.plan.base);
+    for (slot, coverage) in cov {
+        match slot {
+            Slot::Overflow
+            | Slot::Grid
+            | Slot::AlignContent
+            | Slot::BorderStyle
+            | Slot::Text(aeolus_core::TextProperty::Select)
+            | Slot::Text(aeolus_core::TextProperty::Whitespace) => {
+                assert_eq!(coverage, Coverage::Native, "{slot:?}");
+            }
+            _ => {}
+        }
+    }
+}
