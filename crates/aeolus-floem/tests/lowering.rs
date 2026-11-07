@@ -7,7 +7,9 @@
 
 use floem::peniko::{Brush, Color as PenikoColor};
 use floem::style::unit::Length;
-use floem::style::{Background, PaddingLeft, StyleSelector, TextColor};
+use floem::style::{
+    Background, LineHeight, LineHeightValue, PaddingLeft, StyleSelector, TextColor,
+};
 
 use aeolus_core::color::Color;
 use aeolus_core::{Resolver, shadcn_default};
@@ -267,4 +269,41 @@ fn arbitrary_self_hover_lowers_native_and_compound_via_probe() {
     );
     let idle = r.plan.resolve_rules_only(&FloemProbe::default());
     assert!(idle.background.is_none(), "…and not otherwise");
+}
+
+/// v0.5 §1.4 (AEOLUS_V0.5.md): the `--leading-*` token form is
+/// font-size-RELATIVE — Floem lowers it to the NATIVE
+/// `LineHeightValue::Normal(multiplier)` (resolved against the element's
+/// font-size at paint, exactly CSS's unitless line-height); absolute
+/// forms stay `Pt`. Letter-spacing keeps its honest drop report.
+#[test]
+fn leading_tokens_lower_to_native_multipliers() {
+    let r = resolver().resolve("leading-tight").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert_eq!(
+        style.get(LineHeight),
+        LineHeightValue::Normal(1.25),
+        "leading-tight must reach Floem as the font-size-relative multiplier"
+    );
+    assert!(report.dropped.is_empty(), "{report:?}");
+
+    // Absolute forms stay absolute.
+    let r = resolver().resolve("leading-6").unwrap();
+    let (style, _) = lower(&r.plan);
+    assert_eq!(style.get(LineHeight), LineHeightValue::Pt(24.0));
+    let r = resolver().resolve("leading-[3px]").unwrap();
+    let (style, _) = lower(&r.plan);
+    assert_eq!(style.get(LineHeight), LineHeightValue::Pt(3.0));
+
+    // `tracking-*` keeps the honest drop (no Floem letter-spacing prop);
+    // the relative em stays in the plan.
+    let r = resolver().resolve("tracking-tight").unwrap();
+    let (_style, report) = lower(&r.plan);
+    assert!(
+        report
+            .dropped
+            .iter()
+            .any(|(what, _)| what.contains("letter-spacing")),
+        "tracking-tight must be reported, never silent: {report:?}"
+    );
 }
