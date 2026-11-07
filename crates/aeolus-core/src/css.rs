@@ -1113,6 +1113,16 @@ fn text_decls(prop: TextProperty, val: TextValue) -> Vec<(String, String)> {
         (TextProperty::LineHeight, TextValue::Px(px)) => {
             one("line-height", format!("{}px", trim_f32(px)))
         }
+        // v0.5 §1.3: the token form emits v4's unitless shape
+        // (`line-height: 1.25` — element-relative at render time).
+        (TextProperty::LineHeight, TextValue::LineHeightRatio(r)) => {
+            one("line-height", trim_f32(r))
+        }
+        // v0.5 §1.3: the token form emits v4's em shape
+        // (`letter-spacing: -0.025em`).
+        (TextProperty::LetterSpacing, TextValue::TrackingEm(e)) => {
+            one("letter-spacing", format!("{}em", trim_f32(e)))
+        }
         (TextProperty::FontWeight, TextValue::Weight(w)) => one("font-weight", w.to_string()),
         (TextProperty::LetterSpacing, TextValue::Spacing(px)) => {
             one("letter-spacing", format!("{}px", trim_f32(px)))
