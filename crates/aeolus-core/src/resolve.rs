@@ -80,7 +80,7 @@ pub struct Resolver<'t> {
 
 /// Where a token's utility lands (plan §2.1 `Route`).
 #[derive(Clone, Debug)]
-enum Route {
+pub(crate) enum Route {
     /// No variants — the base style.
     Base,
     /// Exactly one classic state variant — the v0.1 layer bucket.
@@ -102,7 +102,7 @@ enum Route {
 
 /// A single utility's effect on a bucket.
 #[derive(Clone, Debug, PartialEq)]
-enum Applied {
+pub(crate) enum Applied {
     Replace(Slot, PartialValue),
     /// Per-edge families accumulate (`p-4` then `px-2` keeps top/bottom).
     Padding {
@@ -179,7 +179,7 @@ enum Applied {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum PartialValue {
+pub(crate) enum PartialValue {
     Background(Background),
     ContentColor(ContentColor),
     BorderColor(BorderColor),
@@ -232,7 +232,7 @@ impl<'t> Resolver<'t> {
     /// Inline `@utility` expansions at the class-string level (plan §3.3):
     /// each token whose utility body matches a registered `@utility` is
     /// replaced by `variants:@apply-classes`, depth-limited to 4.
-    fn expand_utilities(&self, classes: &str, depth: u8) -> String {
+    pub(crate) fn expand_utilities(&self, classes: &str, depth: u8) -> String {
         if depth > 4 {
             return classes.to_string();
         }
@@ -404,7 +404,7 @@ impl<'t> Resolver<'t> {
     // ------------------------------------------------------------------
     // routing: the WHOLE variant stack decides where the utility lands
     // ------------------------------------------------------------------
-    fn route(&self, t: &ClassToken<'_>) -> Route {
+    pub(crate) fn route(&self, t: &ClassToken<'_>) -> Route {
         let class = t.raw.to_string();
         let mut atoms = Vec::new();
         for v in t.variants.iter() {
@@ -1114,7 +1114,7 @@ impl<'t> Resolver<'t> {
     // ------------------------------------------------------------------
     // utility table
     // ------------------------------------------------------------------
-    fn apply_utility(&self, t: &ClassToken<'_>) -> Result<Applied, Warning> {
+    pub(crate) fn apply_utility(&self, t: &ClassToken<'_>) -> Result<Applied, Warning> {
         let class = t.raw.to_string();
         let unknown = |suggestion: Option<String>| Warning::Unknown {
             class: class.clone(),
@@ -1631,6 +1631,13 @@ impl<'t> Resolver<'t> {
                 let px = match full {
                     Some(v) => v,
                     _ => match token {
+                        // `rounded-t-full` etc. — the same infinity sentinel
+                        // v4 encodes as `--radius-full` (the plan keeps the
+                        // finite 9999px stand-in, parity-pinned in the
+                        // golden corpus).
+                        Some("full") => 9999.0,
+                        // `rounded-t-none` resets to 0.
+                        Some("none") => 0.0,
                         Some(tok) => self
                             .theme
                             .radius(tok)
@@ -2639,13 +2646,14 @@ fn inset_value<'a>(
     if let Some(f) = frac {
         return Ok(SizedValue::Fraction(f));
     }
+    let sign = if t.negative { -1.0 } else { 1.0 };
     Ok(match value {
         "auto" => SizedValue::Auto,
         "full" => SizedValue::Full,
-        "px" => SizedValue::Px(1.0),
+        "px" => SizedValue::Px(sign),
         other => {
             if let Ok(n) = other.parse::<f32>() {
-                SizedValue::Px(n * spacing)
+                SizedValue::Px(n * spacing * sign)
             } else {
                 return Err(unknown(None));
             }
@@ -2690,13 +2698,14 @@ fn transform_size<'a>(
             f * if t.negative { -1.0 } else { 1.0 },
         ));
     }
+    let sign = if t.negative { -1.0 } else { 1.0 };
     Ok(match value {
-        "full" => SizedValue::Fraction(1.0),
-        "px" => SizedValue::Px(1.0),
+        "full" => SizedValue::Fraction(sign),
+        "px" => SizedValue::Px(sign),
         "auto" => SizedValue::Auto,
         other => {
             if let Ok(n) = other.parse::<f32>() {
-                SizedValue::Px(n * spacing)
+                SizedValue::Px(n * spacing * sign)
             } else if let Some(c) = theme.container_px(other) {
                 SizedValue::Px(c)
             } else {
