@@ -411,12 +411,10 @@ fn pseudo_atoms(name: &str, args: Option<&str>) -> Result<Vec<Atom>, &'static st
         }
         // `:not(:hover)` — one simple inner test.
         ("not", Some(inner)) => simple_test(inner).map(|t| vec![Atom::Not(t)]),
-        // `:has(:focus)` — descendant STATE only (`:has(> svg)` has no
-        // typed question beyond states).
-        ("has", Some(inner)) => simple_test(inner).and_then(|t| match t {
-            Test::State(s) => Ok(vec![Atom::Has(s)]),
-            _ => Err(COMPOUND_INNER),
-        }),
+        // `:has(:focus)` — descendant tests (v0.7 §2 generalizes the typed
+        // inner from states to any single self test: states, data/aria
+        // attributes, structural position, element kind).
+        ("has", Some(inner)) => simple_test(inner).map(|t| vec![Atom::Has(t)]),
         // `:is(...)` / `:where(...)` — pure wrappers; a LIST is a
         // disjunction, a single inner classifies recursively.
         ("is" | "where", Some(inner)) => {
