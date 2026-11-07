@@ -29,7 +29,9 @@ use crate::plan::{
     JustifyContent, OverflowKind, PointerEvents, Position, Ring, SizedValue, TextProperty,
     TextValue, TransitionSet, VariantCondition, Visibility,
 };
-use crate::resolve::{Applied, PartialValue, Resolver, Route, Warning};
+use crate::resolve::{
+    Applied, GradientEdge, GradientShapeApplied, PartialValue, Resolver, Route, Warning,
+};
 
 /// One emitted CSS rule: `.selector` under optional `@media`/`@container`
 /// conditions with an ordered declaration list.
@@ -528,6 +530,75 @@ impl<'t> Resolver<'t> {
                 shadow_decls(refs)
             }
             Applied::InsetShadows(shadows) => shadow_decls(shadows.iter().collect()),
+            // v0.6 gradients (AEOLUS_V0.6.md §1.4): the emitter reproduces
+            // v4.1.17's VERBATIM per-class declaration shapes (captured by
+            // `tools/capture_gradients.mjs`) — the `--tw-gradient-*` var
+            // machinery on the classes that set it. The COMPOSED
+            // `background-image` lives in the plan
+            // (`ResolvedStyle::background_gradient`); the corpus does not
+            // pin these (cross-rule var composition is a documented model
+            // boundary), so the shapes below are unit-tested, not
+            // corpus-tested.
+            Applied::GradientShape(GradientShapeApplied::None) => {
+                vec![("background-image".into(), "none".into())]
+            }
+            Applied::GradientShape(GradientShapeApplied::Linear(angle_deg)) => {
+                let angle = format_position_angle(*angle_deg);
+                vec![
+                    ("--tw-gradient-position".into(), format!("{angle} in oklab")),
+                    (
+                        "background-image".into(),
+                        "linear-gradient(var(--tw-gradient-stops))".into(),
+                    ),
+                ]
+            }
+            Applied::GradientShape(GradientShapeApplied::Radial) => vec![
+                ("--tw-gradient-position".into(), "in oklab".into()),
+                (
+                    "background-image".into(),
+                    "radial-gradient(var(--tw-gradient-stops))".into(),
+                ),
+            ],
+            Applied::GradientShape(GradientShapeApplied::Conic(from_deg)) => {
+                let angle = format_position_angle(*from_deg);
+                vec![
+                    (
+                        "--tw-gradient-position".into(),
+                        format!("from {angle} in oklab"),
+                    ),
+                    (
+                        "background-image".into(),
+                        "conic-gradient(var(--tw-gradient-stops))".into(),
+                    ),
+                ]
+            }
+            Applied::GradientStopColor { edge, color } => {
+                let edge = gradient_edge_name(*edge);
+                let mut out = vec![(
+                    format!("--tw-gradient-{edge}"),
+                    self.color_text(token, color),
+                )];
+                // v4's stops chain: via routes through `--tw-gradient-via-stops`.
+                if edge == "via" {
+                    out.push((
+                        "--tw-gradient-via-stops".into(),
+                        GRADIENT_VIA_STOPS_CHAIN.into(),
+                    ));
+                    out.push((
+                        "--tw-gradient-stops".into(),
+                        "var(--tw-gradient-via-stops)".into(),
+                    ));
+                } else {
+                    out.push(("--tw-gradient-stops".into(), GRADIENT_STOPS_CHAIN.into()));
+                }
+                out
+            }
+            Applied::GradientStopPos { edge, pct } => {
+                vec![(
+                    format!("--tw-gradient-{}-position", gradient_edge_name(*edge)),
+                    format!("{pct}%"),
+                )]
+            }
         }
     }
 
@@ -688,6 +759,39 @@ impl<'t> Resolver<'t> {
 
 fn non_empty(s: String) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
+}
+
+// v0.6 gradient emitter helpers (AEOLUS_V0.6.md §1.4). The chains below are
+// the v4.1.17 var machinery captured verbatim by `tools/capture_gradients.mjs`
+// (the emitter's color values resolve like every other color declaration;
+// v4's `var(--color-*)` references compare equal after the parity
+// normalizer's var substitution — the same documented normalization the
+// corpus already relies on).
+
+/// The `--tw-gradient-stops` chain a `from-*`/`to-*` class sets.
+const GRADIENT_STOPS_CHAIN: &str = "var(--tw-gradient-via-stops, var(--tw-gradient-position), \
+var(--tw-gradient-from) var(--tw-gradient-from-position), \
+var(--tw-gradient-to) var(--tw-gradient-to-position))";
+
+/// The `--tw-gradient-via-stops` chain a `via-*` class sets.
+const GRADIENT_VIA_STOPS_CHAIN: &str = "var(--tw-gradient-position), \
+var(--tw-gradient-from) var(--tw-gradient-from-position), \
+var(--tw-gradient-via) var(--tw-gradient-via-position), \
+var(--tw-gradient-to) var(--tw-gradient-to-position)";
+
+/// `from`/`via`/`to` edge name for the `--tw-gradient-*` custom properties.
+fn gradient_edge_name(e: GradientEdge) -> &'static str {
+    match e {
+        GradientEdge::From => "from",
+        GradientEdge::Via => "via",
+        GradientEdge::To => "to",
+    }
+}
+
+/// The CSS angle text of a gradient position (`90` → `90deg` — Rust's f32
+/// Display drops the trailing `.0`).
+fn format_position_angle(deg: f32) -> String {
+    format!("{deg}deg")
 }
 
 /// Escape a class name the way tailwind escapes selectors: everything
