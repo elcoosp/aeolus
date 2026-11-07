@@ -812,6 +812,14 @@ fn value_eq(a: &str, b: &str) -> bool {
     if a == b {
         return true;
     }
+    // v0.7 normalization: serializer comma spacing. v4 emits arbitrary
+    // values verbatim (`repeat(3,minmax(0,1fr))`) but keyword forms pretty
+    // (`minmax(0, 1fr)`) — spacing after commas is not semantic.
+    let a = a.replace(", ", ",");
+    let b = b.replace(", ", ",");
+    if a == b {
+        return true;
+    }
     // Colors (approximate Oklab equality).
     if let (Ok(ca), Ok(cb)) = (aeolus_core::Color::parse(&a), aeolus_core::Color::parse(&b))
         && ca == cb
@@ -905,6 +913,16 @@ fn golden_corpus_parity() {
         // Normalize golden: substitute vars + compose the --tw machinery.
         let mut normalized: Vec<(String, String, BTreeMap<String, String>)> = Vec::new();
         for r in &golden_rules {
+            // v0.7 normalization (AEOLUS_V0.7.md §6): v4's `selection:`
+            // emits TWO nested rules — `& *::selection` (descendants) and
+            // `&::selection` (self). The descendant half styles OTHER
+            // elements, which is outside the Probe model by construction
+            // (v0.3 §1.3), so it is skipped — the same boundary the
+            // `[&_svg]` warnings document. Detected by the descendant
+            // combinator before the pseudo-element (`… *::selection`).
+            if r.selector.contains(" *::") {
+                continue;
+            }
             let local: BTreeMap<String, String> = r
                 .decls
                 .iter()
