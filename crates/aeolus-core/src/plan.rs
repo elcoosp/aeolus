@@ -742,6 +742,14 @@ pub enum TextProperty {
 }
 
 /// The value of one [`TextProperty`].
+///
+/// Element-relative units (v0.5 §1, `AEOLUS_V0.5.md`): the token forms of
+/// `tracking-*` and `leading-*` carry the RELATIVE unit the class names
+/// (em, unitless ratio) — exactly what v4's `--tracking-*`/`--leading-*`
+/// tokens hold. Multiplying by an element's font-size is the renderer's
+/// cascade duty (CSS `em` semantics; Floem resolves the multiplier at
+/// paint), not the compiler's: the compiler cannot know which font-size
+/// the element ends up with.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TextValue {
     /// px (resolved from `--text-*` tokens).
@@ -750,6 +758,12 @@ pub enum TextValue {
     Weight(u16),
     /// letter-spacing px (negative for `tracking-tighter`).
     Spacing(f32),
+    /// letter-spacing in em (the `--tracking-*` token form:
+    /// `tracking-tight` = −0.025em). Element-relative — v0.5 §1.1.
+    TrackingEm(f32),
+    /// unitless line-height ratio (the `--leading-*` token form:
+    /// `leading-tight` = 1.25). Element-relative — v0.5 §1.1.
+    LineHeightRatio(f32),
     /// `whitespace-nowrap`, `select-none`, `italic`, `uppercase`,
     /// `underline`, `sans`, `ellipsis`, `tabular-nums`... keywords.
     Keyword(&'static str),
@@ -986,125 +1000,137 @@ pub struct GapAxes {
 // slots(), overlay(), diff
 // ---------------------------------------------------------------------------
 
+// Walk every present slot. ONE source of truth for slot presence,
+// shared by `slots()` (the public Vec API) and `bits_of` (the diff
+// fast path — which must NOT allocate, per the rebuild-path contract
+// pinned by tests/alloc_contract.rs, v0.5 §3).
+macro_rules! for_each_present_slot {
+    ($s:expr, $push:expr) => {{
+        let s = $s;
+        if s.background.is_some() {
+            $push(Slot::Background);
+        }
+        if s.content_color.is_some() {
+            $push(Slot::ContentColor);
+        }
+        if s.padding.is_some() {
+            $push(Slot::Padding);
+        }
+        if s.border_color.is_some() {
+            $push(Slot::BorderColor);
+        }
+        if s.border_width.is_some() {
+            $push(Slot::BorderWidth);
+        }
+        if s.corner_radius.is_some() {
+            $push(Slot::CornerRadius);
+        }
+        if s.dimensions.is_some() {
+            $push(Slot::Dimensions);
+        }
+        if s.min_dimensions.is_some() {
+            $push(Slot::MinDimensions);
+        }
+        if s.max_dimensions.is_some() {
+            $push(Slot::MaxDimensions);
+        }
+        if s.gap.is_some() {
+            $push(Slot::Gap);
+        }
+        if s.shadow.is_some() {
+            $push(Slot::Shadow);
+        }
+        if s.margin.is_some() {
+            $push(Slot::Margin);
+        }
+        if s.layout.is_some() {
+            $push(Slot::Layout);
+        }
+        if s.opacity.is_some() {
+            $push(Slot::Opacity);
+        }
+        if s.ring.is_some() {
+            $push(Slot::Ring(RingPart::Width));
+        }
+        if s.outline.is_some() {
+            $push(Slot::Outline);
+        }
+        if s.cursor.is_some() {
+            $push(Slot::Cursor);
+        }
+        if s.pointer_events.is_some() {
+            $push(Slot::PointerEvents);
+        }
+        for (p, _) in &s.text {
+            $push(Slot::Text(*p));
+        }
+        let e = &s.extras;
+        if e.position.is_some() {
+            $push(Slot::Position);
+        }
+        if e.inset.is_some() {
+            $push(Slot::Inset);
+        }
+        if e.z_index.is_some() {
+            $push(Slot::ZIndex);
+        }
+        if e.overflow.is_some() {
+            $push(Slot::Overflow);
+        }
+        if e.visibility.is_some() {
+            $push(Slot::Visibility);
+        }
+        if e.aspect_ratio.is_some() {
+            $push(Slot::AspectRatio);
+        }
+        if e.grid.is_some() {
+            $push(Slot::Grid);
+        }
+        if e.transform.is_some() {
+            $push(Slot::Transform);
+        }
+        if e.transition.is_some() {
+            $push(Slot::Transition);
+        }
+        if e.animation.is_some() {
+            $push(Slot::Animation);
+        }
+        if e.border_style.is_some() {
+            $push(Slot::BorderStyle);
+        }
+        if e.flex_basis.is_some() {
+            $push(Slot::FlexBasis);
+        }
+        if e.order.is_some() {
+            $push(Slot::Order);
+        }
+        if e.align_content.is_some() {
+            $push(Slot::AlignContent);
+        }
+        if e.margin_auto.is_some() {
+            $push(Slot::MarginAuto);
+        }
+        if e.gap_axes.is_some() {
+            $push(Slot::GapAxes);
+        }
+        if !e.shadow_rest.is_empty() {
+            $push(Slot::ShadowRest);
+        }
+        if !e.inset_shadows.is_empty() {
+            $push(Slot::InsetShadows);
+        }
+    }};
+}
+
 impl ResolvedStyle {
     /// Iterate over set slots (for diffing / capability checks).
     pub fn slots(&self) -> Vec<Slot> {
         let mut v = Vec::with_capacity(40);
-        if self.background.is_some() {
-            v.push(Slot::Background);
-        }
-        if self.content_color.is_some() {
-            v.push(Slot::ContentColor);
-        }
-        if self.padding.is_some() {
-            v.push(Slot::Padding);
-        }
-        if self.border_color.is_some() {
-            v.push(Slot::BorderColor);
-        }
-        if self.border_width.is_some() {
-            v.push(Slot::BorderWidth);
-        }
-        if self.corner_radius.is_some() {
-            v.push(Slot::CornerRadius);
-        }
-        if self.dimensions.is_some() {
-            v.push(Slot::Dimensions);
-        }
-        if self.min_dimensions.is_some() {
-            v.push(Slot::MinDimensions);
-        }
-        if self.max_dimensions.is_some() {
-            v.push(Slot::MaxDimensions);
-        }
-        if self.gap.is_some() {
-            v.push(Slot::Gap);
-        }
-        if self.shadow.is_some() {
-            v.push(Slot::Shadow);
-        }
-        if self.margin.is_some() {
-            v.push(Slot::Margin);
-        }
-        if self.layout.is_some() {
-            v.push(Slot::Layout);
-        }
-        if self.opacity.is_some() {
-            v.push(Slot::Opacity);
-        }
-        if self.ring.is_some() {
-            v.push(Slot::Ring(RingPart::Width));
-        }
-        if self.outline.is_some() {
-            v.push(Slot::Outline);
-        }
-        if self.cursor.is_some() {
-            v.push(Slot::Cursor);
-        }
-        if self.pointer_events.is_some() {
-            v.push(Slot::PointerEvents);
-        }
-        for (p, _) in &self.text {
-            let s = Slot::Text(*p);
-            if !v.contains(&s) {
-                v.push(s);
+        for_each_present_slot!(self, |sl: Slot| {
+            if !v.contains(&sl) {
+                v.push(sl);
             }
-        }
-        let e = &self.extras;
-        if e.position.is_some() {
-            v.push(Slot::Position);
-        }
-        if e.inset.is_some() {
-            v.push(Slot::Inset);
-        }
-        if e.z_index.is_some() {
-            v.push(Slot::ZIndex);
-        }
-        if e.overflow.is_some() {
-            v.push(Slot::Overflow);
-        }
-        if e.visibility.is_some() {
-            v.push(Slot::Visibility);
-        }
-        if e.aspect_ratio.is_some() {
-            v.push(Slot::AspectRatio);
-        }
-        if e.grid.is_some() {
-            v.push(Slot::Grid);
-        }
-        if e.transform.is_some() {
-            v.push(Slot::Transform);
-        }
-        if e.transition.is_some() {
-            v.push(Slot::Transition);
-        }
-        if e.animation.is_some() {
-            v.push(Slot::Animation);
-        }
-        if e.border_style.is_some() {
-            v.push(Slot::BorderStyle);
-        }
-        if e.flex_basis.is_some() {
-            v.push(Slot::FlexBasis);
-        }
-        if e.order.is_some() {
-            v.push(Slot::Order);
-        }
-        if e.align_content.is_some() {
-            v.push(Slot::AlignContent);
-        }
-        if e.margin_auto.is_some() {
-            v.push(Slot::MarginAuto);
-        }
-        if e.gap_axes.is_some() {
-            v.push(Slot::GapAxes);
-        }
-        if !e.shadow_rest.is_empty() {
-            v.push(Slot::ShadowRest);
-        }
-        if !e.inset_shadows.is_empty() {
-            v.push(Slot::InsetShadows);
-        }
+        });
         v
     }
 
@@ -1201,9 +1227,10 @@ type SlotBits = u128;
 
 fn bits_of(style: &ResolvedStyle) -> SlotBits {
     let mut bits: SlotBits = 0;
-    for s in style.slots() {
-        bits |= 1u128 << s.index();
-    }
+    // Zero-allocation walk (v0.5 §3): the diff path runs per rebuild —
+    // routing it through `slots()`' scratch Vec broke the
+    // allocates-nothing-on-unchanged contract.
+    for_each_present_slot!(style, |sl: Slot| bits |= 1u128 << sl.index());
     bits
 }
 
@@ -1225,9 +1252,18 @@ pub fn diff(prev: &ResolvedStyle, next: &ResolvedStyle) -> StyleDiff {
     }
     // Same-slot-set but different values (e.g. width changed, slot present
     // on both sides): fall back to the per-field compare for the shared bits.
+    // The shared bits are walked directly (set-bit order = index order) —
+    // NOT through `next.slots()`, whose scratch `Vec` allocated on every
+    // diff, breaking the rebuild path's zero-alloc-on-unchanged contract
+    // (pinned exactly by tests/alloc_contract.rs, v0.5 §3).
     let shared = pb & nb;
-    for slot in next.slots() {
-        if shared & (1u128 << slot.index()) != 0 && slot_differs(slot, prev, next) {
+    let mut s = shared;
+    while s != 0 {
+        let idx = s.trailing_zeros() as u16;
+        s &= s - 1;
+        if let Some(slot) = slot_from_index(idx)
+            && slot_differs(slot, prev, next)
+        {
             changed.push(slot);
         }
     }
