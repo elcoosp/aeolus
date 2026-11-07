@@ -28,9 +28,19 @@ allow = [
     "0BSD",                                       # 1 crate
     "MPL-2.0",                                    # weak copyleft, file-scoped (see note)
     "BlueOak-1.0.0",                              # 1 crate (rustls-pemfile lineage)
+    "GPL-3.0-only",                               # slint stack (aeolus-slint only, see note)
+    "LicenseRef-Slint-Royalty-free-2.0",          # slint's royalty-free grant (see note)
+    "LicenseRef-Slint-Software-3.0",              # slint's software grant (see note)
 ]
 # MPL-2.0 note: file-level copyleft only; it never forces the crate using it
 # to change license. It appears in the graph via transitive font/db glue.
+#
+# Slint note: the aeolus-slint backend (git-only, `publish = false`)
+# depends on the slint stack, whose license is a three-way disjunction
+# (GPL-3.0-only OR royalty-free OR software license); cargo-deny sees the
+# GPL branch. Aeolus itself stays MIT OR Apache-2.0 — slint is a
+# dependency, not part of this workspace, and the royalty-free branch
+# grants the use/redistribution the git-only backend needs.
 confidence-threshold = 0.93
 
 [bans]
