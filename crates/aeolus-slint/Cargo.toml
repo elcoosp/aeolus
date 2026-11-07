@@ -1,0 +1,41 @@
+[package]
+name = "aeolus-slint"
+description = "Aeolus backend: lower Tailwind v4 StylePlans into Slint brushes, element properties and .slint states snippets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.96"
+# Not publishable in v0.1.0: depends on the path dependency to aeolus-core
+# (crates.io rejects path dependencies in published metadata). Follows the
+# aeolus-xilem / aeolus-floem / aeolus-iced / aeolus-egui precedent. See
+# reports/09-publishing/PUBLISHING.md.
+publish = false
+
+[dependencies]
+aeolus-core = { path = "../aeolus-core" }
+# The framework's stable facade (`Brush`/`Color` at the crate root), with
+# every windowing backend and renderer feature off: this backend is pure
+# type-level lowering and compiles headless. Apps depend on `slint`
+# themselves with whichever backend/renderer they use; the value types are
+# the very same `i-slint-core` types, so the lowered values transfer.
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2"] }
+# Same version lockstep as `slint` (the facade re-exports these types).
+# Carries what the facade does not re-export: the gradient brush
+# constructors (`LinearGradientBrush::new`, `RadialGradientBrush::new_circle`,
+# `ConicGradientBrush::new`) and the generated element enums
+# (`items::TextWrap`, `items::BuiltInMouseCursor`, ...) the facade keeps
+# behind `private_unstable_api`.
+i-slint-core = "1.18"
+tracing = "0.1"
+
+[dev-dependencies]
+# The generated snippets are REAL slint code: the interpreter compiles them
+# headless (no backend features needed for compilation — instantiation is
+# never attempted) so the tests prove the emitted `.slint` is valid.
+slint-interpreter = { version = "1.18", default-features = false, features = [
+    "std",
+    "compat-1-2",
+] }
+# `Compiler::build_from_source` is async; the tests block on it.
+futures = "0.3"
