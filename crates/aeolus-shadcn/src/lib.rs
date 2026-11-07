@@ -9,7 +9,7 @@
 //! apps/v4/registry/new-york-v4/ui/{button,input,label,card,badge,separator,skeleton,alert}.tsx
 //! ```
 //!
-//! Three consumption layers:
+//! Four consumption layers:
 //! - **[`classes`]** — pure `&str` tables + variant enums; backend-agnostic,
 //!   suitable for `cn()` merging and for the `tw!` macro.
 //! - **[`xilem`] interactive** — `button` (a real `StyledButton` widget:
@@ -19,6 +19,12 @@
 //! - **[`xilem`] / [`floem`] style-only** — badge, label, card family and
 //!   alert are styled boxes around labels; they are NOT interactive and do
 //!   not pretend to be.
+//! - **egui/iced interactive** — the egui `button` wrapper lowers the book
+//!   onto egui's `WidgetVisuals` cascade so a plain `egui::widgets::Button`
+//!   restyles on hover/press by itself, and the iced `button_book` hands
+//!   out the Catalog closures Iced resolves per `button::Status`/`&Theme`;
+//!   the rest of the egui/iced wrappers are style-only frames and books,
+//!   honestly labelled.
 //!
 //! ## Capability notes (honest per-briefing §3)
 //!
@@ -37,7 +43,9 @@
 //! consumed by the *wrappers* (centered box), not the plan's layout slot.
 
 pub mod classes;
+pub mod egui;
 pub mod floem;
+pub mod iced;
 pub mod xilem;
 
 /// Re-export for callers building their own variants.
