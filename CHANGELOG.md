@@ -6,6 +6,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The Slint backend** (`crates/aeolus-slint`): the fifth framework
+  backend, chosen from the capability audit's candidate list (vizia's
+  skia toolchain and GTK-family system dependencies being out of reach
+  for headless sandboxes; Slint 1.18 is the most-used remaining
+  pure-Rust framework). The lowering targets Slint's own value types
+  and the generated-code path the audit prescribes for frameworks
+  without runtime rule injection:
+  - Native paint parity — the strongest of the five backends:
+    gradients as real `Brush` values
+    (`LinearGradientBrush`/`RadialGradientBrush::new_circle`/
+    `ConicGradientBrush`; slint's angle convention matches CSS),
+    per-corner radii (`border-top-left-radius` …), drop shadows WITH
+    spread, and inset shadows via the `inner-shadow-*` surface.
+  - `SlintStyle`/`SlintText` — typed element-property payload
+    (`Brush` fills, `SlintLength` px/percent geometry, `clip`,
+    `visible`, `opacity`, `mouse-cursor` via `BuiltInMouseCursor`).
+  - Generated `.slint` code: `SlintStyle::snippet` (property
+    bindings), `SlintText::snippet` (the `Text`-item block),
+    `StyleBook::to_states_snippet` / `_focused` (`states [ … ]` gated
+    on `TouchArea` `has-hover`/`pressed`/`enabled` and — with a named
+    `FocusScope` — `has-focus`).
+  - `StyleBook` + `SlintProbe`: the book keeps every state layer
+    natively (hover/active/disabled/focus all resolve from probe
+    flags), `resolve_at` keeps the full group/peer/responsive/
+    container parity path, and the honest `LoweringReport` covers the
+    rest (ring, layout structure, transforms, transitions, margins…).
+  - 36 tests: lowering (19), parity (8), and snippet suites (9) whose
+    generated `.slint` is compiled by slint's own interpreter
+    headless — every emitted property name, keyword and gradient
+    grammar is proven valid against Slint 1.18 itself. Clippy clean.
+  - Licensing: the slint stack's `GPL-3.0-only` /
+    `LicenseRef-Slint-Royalty-free-2.0` / `LicenseRef-Slint-Software-3.0`
+    branches are allow-listed in `deny.toml` for the git-only,
+    `publish = false` backend crate (slint's royalty-free grant covers
+    use/redistribution; the workspace itself stays MIT OR Apache-2.0).
+- **`aeolus-shadcn::slint`** — the Slint wrapper module mirroring the
+  iced/egui shape: `button_book` and the style-only books
+  (`badge_book`, `label_book`, the card family, `alert_book`) handing
+  out `Arc<StyleBook>`s whose snippets assemble real interactive
+  shadcn Buttons in `.slint`.
+
+### Changed
+
+- README, the how-it-works diagram and the capability table now list
+  five backends; CI's `cargo check -p` gate includes `aeolus-slint`.
+
 ## [0.6.0] — 2026-11-07
 
 The **upstream-ceiling** release (plan: `AEOLUS_V0.6.md`): a
