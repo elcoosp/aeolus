@@ -15,11 +15,17 @@ publish = false
 aeolus-core = { path = "../aeolus-core" }
 aeolus-xilem = { path = "../aeolus-xilem" }
 aeolus-floem = { path = "../aeolus-floem" }
-masonry = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
-xilem_masonry = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
+aeolus-iced = { path = "../aeolus-iced" }
+aeolus-egui = { path = "../aeolus-egui" }
+# Widget style types for the Iced wrappers (no renderer features — the
+# aeolus-iced crate comment explains why this is the right dep).
+iced_widget = { version = "0.14", default-features = false }
+egui = "0.37"
+masonry = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
+xilem_masonry = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
 floem = { git = "https://github.com/lapce/floem", rev = "1351ffb162faeb8be983f1301d718a0d5fb59c27" }
 tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
-masonry_testing = { git = "https://github.com/linebender/xilem", rev = "9f504ae71aa2db1f64c2ecb7ee10cc877d9fc405" }
+masonry_testing = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
