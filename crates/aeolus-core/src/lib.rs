@@ -31,6 +31,7 @@ pub mod caps;
 pub mod color;
 pub mod cond;
 pub mod conflict;
+pub mod css;
 pub mod eval;
 pub mod parser;
 pub mod plan;
@@ -47,6 +48,7 @@ pub use caps::{Backend, BackendCapabilities, CascadeModel, PropertySupport, Them
 pub use color::{Color, ParseError};
 pub use cond::{Atom, Cond, Rule, Test};
 pub use conflict::{cn, cn_opt};
+pub use css::{CssOutput, CssRule, format_rules};
 pub use eval::{Probe, Rel, in_window, split_group_label};
 pub use plan::{
     AlignItems, Animation, AutoEdges, Background, BorderColor, BorderStyle, BorderWidth, BoxShadow,
