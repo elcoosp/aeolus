@@ -152,3 +152,38 @@ The zero-alloc steady state is the §3.6 claim, now measured: the static
 path (`tw!`) and the dynamic warm path allocate NOTHING per resolve;
 the rebuild path allocates nothing when nothing changed and one `Vec`
 growth when slots actually changed.
+
+## v0.7 portable-plans re-run (rustc 1.99.1, x86_64-linux, release profile)
+
+Same sandbox family as the 2026-11 numbers above (2 shared cores — treat
+absolute numbers as environment-specific; the ratios are the point). The
+v0.7 additions measured with the same 33-class Button string:
+
+| benchmark | median | notes |
+|---|---|---|
+| `plan_overlay_button` (base + 5-slot override) | **~330 ns** | the plan-level `overlay`: one clone + slot-wise `Some` replaces + layer/bucket merges |
+| `snapshot_write_button` | **~8.8 µs** | canonical JSON of the Button plan (~30 KB artifact) |
+| `snapshot_read_button` | **~170 µs** | strict parse + full IR rebuild; ~175 MB/s incl. allocations |
+| `snapshot_roundtrip_button` | **~180 µs** | write + read |
+| `resolve_button_cold` | ~6.0 µs | v0.6 baseline unchanged within sandbox noise |
+| `resolve_cached_hit` | ~78 ns | v0.6 baseline unchanged (warm path untouched) |
+| `diff_unchanged` | ~147 ns | zero-alloc contract intact (pinned by `tests/alloc_contract.rs`) |
+| `css_write_button` | ~13 µs | v0.4 emitter baseline |
+
+CLI pipeline (`cargo bench -p aeolus-cli --bench pipeline`):
+
+| benchmark | median | notes |
+|---|---|---|
+| `extract_1k_lines` | **~64 µs** | heuristic extraction over a 1k-line source buffer (250 real class strings + 250 prose strings) |
+| `lint_button_string` | **~15 µs** | `check_string` on the 33-class Button (resolve + conflict attribution) |
+
+Honesty notes:
+
+- `snapshot_read` is ~20× `snapshot_write`: the reader builds a full
+  intermediate `Json` tree (owned `String`s) before the IR walk, trading
+  speed for strictness and simplicity in v0.7. A zero-copy reader is a
+  possible v0.8 optimization; the artifact FORMAT does not change either
+  way (canonical output is reader-implementation-independent).
+- `plan_overlay_button` at ~330 ns means composing a cached component plan
+  with per-instance overrides is ~23× cheaper than a cold re-resolve
+  (~6.0 µs) and allocation-light — the intended usage pattern.
