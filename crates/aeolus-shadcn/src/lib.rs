@@ -25,6 +25,13 @@
 //!   out the Catalog closures Iced resolves per `button::Status`/`&Theme`;
 //!   the rest of the egui/iced wrappers are style-only frames and books,
 //!   honestly labelled.
+//! - **[`slint`] generated-code** — Slint has no runtime rule injection,
+//!   so the `slint` wrappers hand out books whose
+//!   `base_snippet()`/`to_states_snippet*()` emit the property bindings
+//!   and `states [ … ]` blocks a `TouchArea`-driven element restyles
+//!   itself from (hover/press/disabled/focus are the element's own state
+//!   machinery); the emitted code is compiled by slint's own interpreter
+//!   in the aeolus-slint test suite.
 //!
 //! ## Capability notes (honest per-briefing §3)
 //!
@@ -46,6 +53,7 @@ pub mod classes;
 pub mod egui;
 pub mod floem;
 pub mod iced;
+pub mod slint;
 pub mod xilem;
 
 /// Re-export for callers building their own variants.
