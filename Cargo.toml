@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/aeolus-core",
     "crates/aeolus-macro",
-    "crates/aeolus-cli",
     "crates/aeolus-shadcn",
     "crates/aeolus-xilem",
     "crates/aeolus-floem",
