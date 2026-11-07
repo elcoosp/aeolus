@@ -262,6 +262,12 @@ pub fn parse_named_variant(name: &str) -> NamedVariant<'_> {
         "user-valid" => NamedVariant::UserValid,
         "user-invalid" => NamedVariant::UserInvalid,
         "placeholder-shown" => NamedVariant::PlaceholderShown,
+        // v0.7 §1: pseudo-element variants v4 names as plain variants
+        // (`selection:` → `&::selection`, ...). They classify onto
+        // `Test::Pseudo`, not runtime states.
+        "selection" => NamedVariant::Pseudo(crate::ast::PseudoElement::Selection),
+        "placeholder" => NamedVariant::Pseudo(crate::ast::PseudoElement::Placeholder),
+        "file" => NamedVariant::Pseudo(crate::ast::PseudoElement::FileSelectorButton),
         "autofill" => NamedVariant::Autofill,
         "read-only" => NamedVariant::ReadOnly,
         "in-range" => NamedVariant::InRange,
