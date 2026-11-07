@@ -9,8 +9,8 @@ fallback path). "❌" = not representable; reported via `LoweringReport`.
 
 | framework | cascade primitive | hover/focus/active/disabled | responsive | dark | container queries | group/peer | theme hot-swap | typography |
 |---|---|---|---|---|---|---|---|---|
-| **Masonry/Xilem** `9f504ae` | 4-level: local props → `PropertyStack`(+`Selector`) → `DefaultProperties` → static default; relevance-gated cache | ✅ `Selector` flags (hover/active/disabled/focus) | ❌ no viewport signal (resize_observer only) | ❌ per-widget; host `set_default_properties` | ❌ | ❌ (has_hovered exists but not class-scoped) | ✅ `RenderRoot::set_default_properties` | ⚠️ parley `StyleSet` per widget; no FontSize/FontWeight properties |
-| **Floem** `1351ffb` | style stack → class rules → inherited; nested selector maps; disabled > active > focus > hover | ✅ 10 `StyleSelector`s incl. focus-visible/focus-within/selected/drag | ✅ `min_window_width`/responsive selectors | ✅ `dark_mode` selector + OS theme events | ❌ | ❌ | ✅ reactive class rules + `set_global_theme` | ✅ font size/weight/family props |
+| **Masonry/Xilem** `9f504ae` (= upstream `dc49687` core, v0.6 §3.2) | 4-level: local props → `PropertyStack`(+`Selector`) → `DefaultProperties` → static default; relevance-gated cache | ✅ `Selector` flags (hover/active/disabled/focus) | ❌ no viewport signal (resize_observer only) | ❌ per-widget; host `set_default_properties` | ❌ | ❌ (has_hovered exists but not class-scoped) | ✅ `RenderRoot::set_default_properties` | ⚠️ parley `StyleSet` per widget; no FontSize/FontWeight properties |
+| **Floem** `1351ffb` (= latest `main` HEAD, v0.6 §3.1) | style stack → class rules → inherited; nested selector maps; disabled > active > focus > hover | ✅ 10 `StyleSelector`s incl. focus-visible/focus-within/selected/drag | ✅ `min_window_width`/responsive selectors | ✅ `dark_mode` selector + OS theme events | ❌ | ❌ | ✅ reactive class rules + `set_global_theme` | ✅ font size/weight/family props |
 | **Iced** `8ff48c4` (0.15.0-dev) | `Catalog` per widget family: (class, `Status`) → `Style`; **no cascade** | ⚠️ Status enums (button lacks Focused) | ❌ | ⚠️ closed Theme enum + `Custom(Seed)` | ❌ | ❌ | ✅ `Program::theme()` re-queried per update | ⚠️ font is a widget construction prop, outside Catalog |
 | **Vizia** (see sections) | real CSS engine (cssparser/selectors), specificity-sorted | ✅ 20+ pseudo-classes | ⚠️ | ✅ | ❌ | ❌ | ✅ `add_stylesheet` live | ✅ |
 | **Slint** | DSL property bindings; `states when`; no cascade | ⚠️ states | ⚠️ via globals | ✅ `Palette.color-scheme` | ❌ | ❌ | ✅ global swap | ✅ (DSL) |
@@ -24,7 +24,8 @@ fallback path). "❌" = not representable; reported via `LoweringReport`.
 
 | StylePlan slot | aeolus-xilem (fallback widget) | aeolus-floem | notes |
 |---|---|---|---|
-| background | ✅ `Background::Color` | ✅ `Brush::Solid` | gradients parse, dropped+reported |
+| background | ✅ `Background::Color` | ✅ `Brush::Solid` | v0.6: the solid is the `background-color` declaration; gradients are a separate slot |
+| background_gradient (v0.6) | ✅ `Background::Gradient` — NATIVE (layout-invariant `GradientShape`, oklab interpolation; linear exact, radial = documented circle normalization, conic reported: upstream vello sweep TODO) | ❌ reported — peniko `Brush::Gradient` needs concrete geometry; `paint_bg` fills as-is (no rect adaptation) | the v0.1–v0.5 audits missed the property at the pin; linear angle conversion `a = π − θ` unit-pinned |
 | content_color / text colors | ✅ `ContentColor` | ✅ `TextColor` | |
 | padding / margin | ✅ per-side Padding / ❌ margin | ✅ per-side both | Masonry has no margin property |
 | border_width / border_color | ✅ (uniform width) / ✅ | ✅ per-side both | |
@@ -35,6 +36,12 @@ fallback path). "❌" = not representable; reported via `LoweringReport`.
 | opacity | ⚠️ multiplied into the painted chrome colors (children not faded — documented) | ✅ `opacity` | |
 | ring / outline | ✅ stroked (`border_box.inflate(offset + width/2)`) | ✅ ring → `outline` + `outline_color` | Masonry has no spread; reported |
 | cursor / pointer-events | ❌ (reported) | ✅ `cursor` map / ✅ `pointer-events-none` | |
+| overflow (v0.6) | ✅ via `plan.resolve(&probe)` (no property) | ✅ `overflow_x`/`overflow_y` (v0.6 §2.1; auto → Scroll documented) | Masonry has no overflow property |
+| grid template/placement (v0.6) | ✅ via `plan.resolve(&probe)` | ✅ `grid_template_*` + `grid_column`/`grid_row` (v0.6 §2.5) | floem's full grid surface was unwired before v0.6 |
+| align-content (v0.6) | ✅ via `plan.resolve(&probe)` | ✅ `align_content` (v0.6 §2.4; baseline reported) | |
+| select-none/text (v0.6) | ❌ (reported) | ✅ the inherited `Selectable` prop (v0.6 §2.2) | Masonry: no selection property |
+| whitespace (v0.6) | ❌ parley per-widget | ✅ via the single `TextOverflow` prop (normal → `Wrap`, nowrap = floem default no-op, `pre*` reported — v0.6 §2.3) | |
+| border-style (v0.6) | ❌ (reported) | ✅ dashed/dotted/none/hidden → kurbo `Stroke` patterns (v0.6 §2.6; double reported) | dash lengths are a documented normalization |
 | text (font size, weight…) | ❌ parley per-widget | ✅ font_size; ✅ line-height (v0.5: token leading lowers to the NATIVE `LineHeightValue::Normal` font-size multiplier); ⚠️ others (letter-spacing has no Floem prop — reported) | Q5a gap on Masonry side |
 | hover/focus/focus-visible/active/disabled | ✅ Selector flags | ✅ selector maps | |
 | focus-within | ❌ (reported) | ✅ `focus_within` | Masonry Selector lacks the flag |
