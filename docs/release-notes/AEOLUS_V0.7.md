@@ -1,178 +1,216 @@
 # Aeolus v0.7 Plan (plan of record)
 
-The v0.6 plan (`AEOLUS_V0.6.md`) shipped in 0.6.0. This document is the
-v0.7 plan of record; every `v0.7 §X` citation in code and reports refers
-here.
+The v0.6 plan (`AEOLUS_V0.6.md`) shipped in 0.6.0; the Slint backend
+landed on top of it (the `Unreleased` section of `CHANGELOG.md`). This
+document is the v0.7 plan of record; every `v0.7 §X` citation in code and
+reports refers here.
 
-Goal: **make the `StylePlan` IR portable and composable, and give the
-project a headless consumption surface.** Through v0.6 the IR was the
-private contract between the resolver and the five GUI backends; this
-release turns it into a first-class artifact:
+Goal: **oracle fidelity — the shipped shadcn v4 class tables resolve
+warning-free.** A 2026-11-08 fidelity audit resolved every shipped table
+string (Button, Input, Label, Card family, Badge, Separator, Skeleton,
+Alert) against the v0.6 resolver and counted **40 warnings**. Every one
+was a parser/IR gap, not a documented boundary:
 
-1. `StylePlan` values COMPOSE (`overlay`) — plan-level algebra that mirrors
-   `cn()` but works on RESOLVED plans, theme-independent.
-2. `StylePlan` values PERSIST (`to_snapshot_json` / `from_snapshot_json`) —
-   a canonical, byte-stable, dependency-free JSON artifact with a STRICT
-   reader (unknown fields are errors, never defaults).
-3. A new crate, `aeolus-cli`, consumes all of it headlessly: resolve class
-   strings into plan snapshots, emit verification CSS, diff two resolutions
-   across the cosmetic/geometric lanes, merge with `cn()`, and LINT class
-   strings inside source files.
+| gap | count | example from the tables |
+|---|---|---|
+| pseudo-element variants unknown to the parser | 10 | `selection:bg-primary`, `placeholder:text-muted-foreground`, `file:text-sm` |
+| arbitrary grid templates outside the typed IR | 4 | `grid-cols-[0_1fr]`, `grid-rows-[auto_auto]`, `auto-rows-min` |
+| `has-data-[…]` routing missing | 1 | `has-data-[slot=card-action]:grid-cols-[1fr_auto]` |
+| named container declarations | 1 | `@container/card-header` |
+| `justify-items-*` unapplied | 1 | `justify-items-start` (cn() classified it; the resolver had no arm) |
 
-No backend changes, no parser changes, no MSRV change, no new
-dependencies anywhere — `aeolus-cli` keeps the core's zero-dependency
-discipline (hand-rolled arg parsing, std I/O only), and `snapshot.rs` is
-a hand-rolled canonical JSON writer/reader.
+v0.7 closes all five. After v0.7 the same tables produce **13 warnings,
+all of them the documented v0.3 §1.3 Probe-model boundary** — arbitrary
+selectors that style OTHER elements (`[&_svg]`, `[&>svg]`,
+`*:data-[slot=…]`) and class-identity self-tests (`[.border-b]`), plus
+the `has-[>svg]` combinator form. The headline contract is pinned by
+`crates/aeolus-shadcn/tests/oracle_fidelity.rs`.
 
-## §1 — Plan algebra (`StylePlan::overlay`)
+No backend-manifest changes, no MSRV bump, no upstream changes
+(both pins remain: floem `1351ffb` = `main` HEAD, xilem `dc49687`).
 
-- §1.1 `StylePlan::overlay(&self, over: &StylePlan) -> StylePlan` composes
-  two resolved plans, later-wins per slot — the IR-level mirror of `cn()`:
-  - `base`: [`ResolvedStyle::overlay`] — `Some` slots of `over.base`
-    replace, unset slots keep the base value (the v0.2 slot semantics).
-  - `layers`: SAME [`VariantCondition`] merges per slot; conditions only
-    the override has are appended; the result stays in ascending
-    [`VariantCondition::rank`] order (the cascade contract).
-  - `responsive`/`container`: per-bucket overlay, union of buckets.
-  - `dark`: per-slot overlay when both plans carry a dark bucket.
-  - `group`/`peer`: merged by id, new ids appended (base-first order).
-  - `rules`: merged by [`Cond`] equality — the same conjunction is ONE
-    rule; new conditions append in override order.
-  - `breakpoints`: the override's table wins (theme-derived; mixing plans
-    from different theme versions is documented best-effort).
-- §1.2 Why: composition today happens on class STRINGS (`cn()` before
-  resolve), which needs the theme and the parser at the merge site.
-  Plan-level overlay works AFTER resolve: a component's cached plan can
-  gain per-instance overrides at runtime without re-resolving, re-parsing,
-  or holding a theme reference. It is also the natural primitive for
-  theming wrappers (base plan + dark-plan overlays).
-- §1.3 Contracts pinned by `tests/plan_algebra.rs` (8 tests): later-wins
-  per slot; layer merge by condition; rank-ordered layers after merge;
-  responsive/dark/group/peer/rules bucket composition; breakpoint-table
-  override; `overlay` is idempotent (`p.overlay(o).overlay(o) ==
-  p.overlay(o)`); and the DIFF integration —
-  `diff(&base.base, &merged.base)` reports exactly the override's slots,
-  so backends keep their repaint-vs-relayout lanes when composing.
-- §1.4 Discovered and DOCUMENTED, not fixed (the v0.6 pattern for honest
-  deferrals): while pinning layer-merge semantics we confirmed that
-  per-edge families (`p-*`, `m-*`, `border-*`) materialize unset edges as
-  `0.0` at finalize, so a `hover:px-8` layer carries
-  `Padding { top: 0, right: 32, bottom: 0, left: 32 }`. Applied as a
-  layer, the zeroed edges REPLACE the base's edges — CSS would keep
-  `padding-top: 16px` for `p-4 hover:px-8`. The per-edge set-mask needed
-  to fix this is an IR model change that ripples through every backend's
-  lowering; it stays out of v0.7 and is recorded as the first item of
-  §6 (deferred). The behavior is now PINNED by tests instead of unknown.
+## §1 — Pseudo-element variants (`selection:`, `placeholder:`, `file:`)
 
-## §2 — Canonical plan snapshots (`snapshot.rs`)
+v4 names three pseudo-element renderings as plain variants. They are NOT
+runtime states — `selection:` styles the element's own selected-text
+rendering, `placeholder:` the placeholder rendering, `file:` the
+`<input type=file>` button part. The typed model keeps them
+distinguishable from `State`s:
 
-- §2.1 `StylePlan::to_snapshot_json()` — canonical JSON: fixed field order
-  (the schema order IS the compatibility contract), compact separators,
-  Rust's shortest round-trip float formatting, no map-order drift
-  (`responsive` is a `BTreeMap`, `layers`/`rules` are `Vec`s). Equal plans
-  produce byte-identical documents.
-- §2.2 `StylePlan::from_snapshot_json(&str) -> Result<StylePlan,
-  SnapshotError>` — STRICT: unknown fields, unknown enum names, duplicate
-  keys, wrong `format`/`version` headers, truncated documents and trailing
-  content are all typed errors with a dotted path
-  (`$.base.extras.grid.cols`). A reader never silently drops or defaults
-  a field — the no-silent-failures rule, applied to the artifact format.
-- §2.3 Header: `{"format":"aeolus-plan","version":1,...}`. Other versions
-  fail with `SnapshotError::UnsupportedVersion(n)` — new IR fields bump
-  the schema version, old readers fail LOUDLY.
-- §2.4 Every IR type is covered: all `ResolvedStyle` slots (including
-  `background_gradient` with composed stops, multi-layer shadows, the
-  full text table), all extras, and the v0.2 rules IR (`Atom`/`Cond`/
-  `Test` — states, data/aria, structural, tag, media, viewport/container
-  windows, group/peer labels). `TextValue::Keyword(&'static str)` maps
-  through a closed keyword table (the exact set `resolve.rs` produces).
-- §2.5 Non-finite floats (never produced by the resolver — `rounded-full`
-  is the finite 9999px sentinel) are encoded as `"NaN"`/`"inf"`/`"-inf"`
-  strings and decode symmetrically: the writer is total, no panics on
-  hand-built plans.
-- §2.6 The parser is a hand-rolled recursive-descent JSON subset with a
-  depth limit (hostile-input guard), full string escapes including
-  surrogate pairs, and exact duplicate-key detection. `from_snapshot_json`
-  is a natural fuzz target (see §5).
-- §2.7 Contracts pinned by `tests/snapshot_roundtrip.rs` (9 tests,
-  including a deterministic pseudo-random round-trip over 256 class
-  strings and a kitchen-sink plan that touches every bucket and most slot
-  payloads): `from(to(p)) == p`; byte-stability across resolutions; header
-  shape; malformed-input totality (no panics); gradient round-trips;
-  cache-vs-resolver snapshot agreement.
+- `ast::PseudoElement { Selection, Placeholder, FileSelectorButton }`
+  with `name()` (merge keys) and `css()` (`::selection`, ...).
+- `NamedVariant::Pseudo(PseudoElement)` — the parser table gains the
+  three names (they were `Custom` before, i.e. compile errors for `tw!`
+  and runtime warnings).
+- `Test::Pseudo(PseudoElement)` — a new `cond::Test` arm ranking with the
+  state band (`Atom::order` = 10, the state band — v4 sorts them in the
+  same variant order).
+- Routing: single-`Pseudo` conditions land in `rules` (they are not
+  classic bucket states), evaluated by `Probe::test(&Test::Pseudo(…))`.
+  The DEFAULT probe answer is "no" — the rule never fires where the
+  rendering does not exist, exactly the semantics CSS has when a selector
+  does not match. A backend with the surface (text-selection colors on a
+  text-input wrapper) answers honestly and the rule applies.
+- `cn()`: the canonical name rides the existing variant-key machinery —
+  `selection:bg-a selection:bg-b` merges correctly with zero new table
+  entries.
 
-## §3 — `aeolus-cli`, the headless surface
+Semantics pinned against the REAL tailwindcss 4.1.17 output (captured
+2026-11-08 with the `tools/gen_golden.mjs` method): `selection:bg-red-500`
+emits BOTH `&::selection` (self) and `& *::selection` (descendants). The
+self half is corpus-pinned; the descendant half is outside the Probe
+model (v0.3 §1.3) and is a DOCUMENTED NORMALIZATION in the parity harness
+(§6).
 
-- §3.1 New workspace crate `crates/aeolus-cli` (binary `aeolus`,
-  `publish = false` alongside the backends). Zero dependencies beyond
-  `aeolus-core`; the whole program is the library `run(args, out, err) ->
-  exit_code`, so the suite drives it without spawning processes.
-- §3.2 Subcommands:
-  - `resolve [--theme <spec>] [--summary] <classes...>` — the DEFAULT
-    output is the plan snapshot JSON (§2 is the artifact); `--summary`
-    prints the human slot/layers/responsive/dark digest; warnings print to
-    stderr and stay non-fatal (exit 0).
-  - `css [--theme <spec>] <classes...>` — the v0.4 verification emitter's
-    output (v4 per-class declaration shapes).
-  - `diff [--json] <A> <B>` — resolve both strings, diff the base layers,
-    report changed slots WITH their lanes (cosmetic vs geometric) and the
-    resulting invalidation (`repaint-only` vs `relayout`).
-  - `cn <groups...>` — the conflict merge.
-  - `check [--theme <spec>] [--fail-on unknown|unsupported|conflict|any|
-    none] [--json] <files...>` — the linter: extracts quoted strings
-    (single/double/Rust raw `r#"…"#`), keeps a string as a candidate when
-    at least half of its tokens resolve warning-free (the documented
-    "looks like Tailwind" heuristic), and reports every remaining warning
-    as a finding plus `cn()` conflicts (token dropped, with the winning
-    token attributed). Exit 1 when findings match `--fail-on` (default
-    `unknown` — typos fail CI), exit 2 on usage/theme/IO errors.
-- §3.3 `--theme` accepts `shadcn` (default), `shadcn-dark`, `default`
-  (the verbatim Tailwind v4 default theme), or a path to theme CSS.
-- §3.4 Contracts pinned by `crates/aeolus-cli/tests/cli.rs` (12 tests):
-  snapshot-artifact output parses back; `--summary` shape; warnings on
-  stderr with exit 0; theme specs and precise theme errors; CSS shapes;
-  lane-aware diff (human + JSON); cn() eviction semantics; the check
-  pipeline (findings, fail-on modes, JSON output, prose immunity);
-  usage/version/exit-code contract.
+## §2 — `has-data-[…]` / `has-aria-[…]` / `has-<structural>`
 
-## §4 — Quality gates
+`Atom::Has` generalizes from `Has(State)` to `Has(Test)`: the inner of a
+`has-*` wrapper is parsed as a variant and mapped through the existing
+`variant_test` — so `has-data-[slot=card-action]` becomes
+`Has(Test::Data("slot", Some("card-action")))`, `has-aria-invalid`
+becomes `Has(Test::Aria("invalid", None))`, `has-first` becomes
+`Has(Test::Structural(First))`, and the state forms are unchanged.
 
-- §4.1 The full battery stays green: `cargo test --workspace`,
-  `clippy --workspace --all-targets -D warnings`, `fmt --check`,
-  `doc -D warnings`, `cargo package -p aeolus-core -p aeolus-macro`,
-  `cargo deny check licenses`.
-- §4.2 Benchmarks (divan): the core `benches/hot.rs` gains
-  `plan_overlay_button`, `snapshot_write_button`, `snapshot_read_button`,
-  `snapshot_roundtrip_button`; the CLI crate gains `benches/pipeline.rs`
-  (extraction over a 1k-line source buffer, lint of the 33-class Button
-  string, snapshot read/write/round-trip). Numbers in
-  `reports/08-benchmarks/BENCHMARKS.md`.
-- §4.3 Version → 0.7.0 (workspace manifest + the two publish-ready crates'
-  version refs); docs: README (crate table + usage + features),
-  CHANGELOG, DESIGN §13, `AEOLUS_V0.7.md` (this file), TDD evidence in
-  `reports/10-tdd-evidence/09-portable-plans.md`.
+- `Probe::descendant(&Test)` (new, default impl) answers the general
+  form; it delegates to the existing `descendant_state` for state tests,
+  so v0.x trait implementations keep compiling. The arbitrary-selector
+  classifier (`selector.rs`) maps `:has(...)` inners onto the same typed
+  set (previously states only).
+- Combinator selectors (`has-[>svg]`) KEEP their precise report — the
+  child-edge is real information the typed descendant question does not
+  carry, and the shadcn tables' `has-[>svg]:px-3` stays honestly
+  reported.
+- The emitter reproduces v4's star form exactly (captured):
+  `:has(*[data-slot="card-action"])`, `:not(*[data-state="open"])`.
 
-## §5 — Fuzz targets (recommended follow-up)
+## §3 — Named container declarations (`@container[/name]`)
 
-`from_snapshot_json` and the extractor are the two new untrusted-input
-surfaces. The `fuzz/` workspace should gain `plan_snapshot` (writer→reader
-round-trip invariant: either it parses back equal, or it errors — never a
-panic) and `extract` (no panics on arbitrary bytes). Not wired in v0.7 —
-the fuzz workspace pins its own toolchain — but the invariants are already
-pinned by `snapshot_never_panics_on_fuzzish_input` and the depth-limit
-test.
+`@container` (bare) and `@container/name` are UTILITY classes in v4:
+they establish an inline-size containment context (the named form adds
+`container-name`). The IR gains `Extras.container_type:
+Option<ContainerType { name: Option<Box<str>> }>` (slot
+`Slot::ContainerType`, lane Geometric — containment constrains layout);
+the parser routes the class through the `/modifier` slot the body split
+already produces. The emitter emits `container-type: inline-size` +
+`container-name` when named — byte-matching the captured v4 output.
+`cn()` classifies the family as one `container-type` group (later wins).
+CONDITIONS (`@md/name:`) already carried names since v0.2 (`Atom::
+Container { name }`); nothing changes for them.
 
-## §6 — Deferred (recorded honestly)
+## §4 — Arbitrary grid templates + implicit tracks
 
-- **Per-edge layer semantics** (§1.4): `p-4 hover:px-8` layers carry
-  zeroed unset edges; the correct model is a per-edge set-mask in
-  `Padding`/`Margin`/`BorderWidth` (or per-edge `Option<f32>`), which
-  ripples through every backend. Deferred with a pinned test.
-- **`justify-items-*`/`justify-self-*`/`place-*`/`grid-flow-*`/`auto-rows-
-  *`/`auto-cols-*`**: recognized-but-unsupported in the resolver today
-  (precise reasons, per the coverage guard). Taffy exposes the native
-  surface at the floem pin; wiring it is a v0.8-scale backend milestone,
-  not part of the v0.7 portable-plan goal.
-- **Snapshot → `PlanCache` persistence**: the artifact format is ready
-  (canonical, versioned, strict); a `PlanCache::load_snapshot` API needs
-  the cache's generation semantics designed against multi-theme apps.
+`Grid` gains the CANONICAL template slots (the numeric `cols`/`rows`
+counts stay for v0.6 consumers; backends MUST prefer templates when
+present — the numeric form is v4's `repeat(N, minmax(0, 1fr))`
+shorthand):
+
+```rust
+pub struct GridTrack { pub min: TrackSizing, pub max: TrackSizing } // minmax() pair
+pub enum TrackSizing { Px(f32), Percent(f32), Fr(f32), Auto, MinContent, MaxContent }
+pub enum TrackComponent { Track(GridTrack), Repeat { count: u16, track: GridTrack } }
+// Grid: template_cols/template_rows/auto_rows/auto_cols: Option<Vec<TrackComponent>>
+```
+
+- Parser semantics (bounded: ≤ 16 tracks, repeat count ≤ 64):
+  `grid-cols-[0_1fr]` → `[0px, minmax(auto, 1fr)]` (a bare `1fr` is the
+  CSS shorthand `minmax(auto, 1fr)`; bare unitless lengths must be `0`);
+  `auto_auto` → keywords; `minmax(a,b)` pairs; `repeat(N, <single
+  track>)` stays a bounded component (1:1 with taffy's
+  `GridTemplateComponent::Repeat`); junk tracks report precisely.
+  `auto-rows-min|max|fr|auto` map to min-content/max-content/
+  **minmax(0, 1fr)**/auto — the `fr` KEYWORD is the blowout-guard
+  `minmax(0, 1fr)`, NOT the `1fr` shorthand (pinned against the real
+  compiler after the first capture disagreed with CSS intuition);
+  `auto-cols-*` symmetric; arbitrary templates accepted for both.
+- Floem lowers all of it NATIVELY at the pin (taffy 0.10 surface:
+  `grid_template_columns/rows` take `Vec<GridTemplateComponent>` with
+  `Single(TrackSizingFunction)`/`Repeat(GridTemplateRepetition)`, and
+  `grid_auto_rows/columns` take plain `Vec<TrackSizingFunction>`).
+  Templates are canonical in the lowering: `grid-cols-4
+  grid-cols-[auto_auto]` lowers the two auto tracks.
+- `cn()`: the template families become conflict groups
+  (`grid-template-columns`/`rows`, `grid-auto-rows`/`columns`) — the
+  later template evicts the earlier ACROSS the numeric/arbitrary
+  boundary (`grid-cols-3` + `grid-cols-[0_1fr]` keeps only the
+  arbitrary). Rows/cols/placement never collide.
+- Emitter: templates emit v4's verbatim serializer (`0 1fr`,
+  `repeat(3,minmax(0,1fr))` — no space after commas, the raw `0`), the
+  keyword forms emit pretty (`minmax(0, 1fr)`); the parity harness
+  normalizes comma spacing (§6).
+
+## §5 — `justify-items-*`
+
+`Layout.justify_items: Option<AlignItems>` (slot `Layout`, lane
+Geometric). Values: start/center/end/stretch/baseline,
+`first|last-baseline` → baseline, and `normal` → stretch (CSS resolves
+`normal` to stretch for grid/flex containers, same choice as
+`content-normal`). Floem lowers to the native taffy `justify_items`
+(present at the pin); Masonry/egui/iced/slint report (no property).
+`cn()` already classified the family (a v0.2-era fix); only the
+resolver arm was missing.
+
+## §6 — Emitter + golden corpus (193 entries)
+
+- New selector shapes, all pinned against the real 4.1.17:
+  `&::selection` / `&::placeholder` / `&::file-selector-button` suffixes,
+  `:has(*[data-slot="…"])` star forms for `has-data-*`/`has-aria-*`
+  (and the matching `:not(*…)`), the container declarations.
+- New declaration shapes: `container-type`/`container-name`,
+  `grid-template-columns/rows` from tracks, `grid-auto-rows/columns`,
+  `justify-items`.
+- Corpus: 176 → **193 entries** — the v0.6 §4.3 gradient exclusion
+  precedent stays (cross-rule `--tw-gradient-*` composition remains a
+  harness model boundary), but every v0.7 class shape is single-rule and
+  IN: pseudo-element variants (self half), has-attr descendants, named
+  containers, arbitrary templates, implicit tracks, justify-items, the
+  compound `md:selection:bg-*`. One new documented normalization:
+  v4's `selection:` descendant rule (`& *::selection`) is skipped
+  (Probe-model boundary), and comma spacing normalizes (serializer, not
+  semantics).
+
+## §7 — The oracle-fidelity contract (the release's own test)
+
+`crates/aeolus-shadcn/tests/oracle_fidelity.rs`: every shipped table
+string AND every component composition (base + variant + size + user
+classes) resolves with warnings ONLY from the documented boundary set
+(element-targeting selectors, class-identity tests, `has-[>svg]`). The
+ledger: **40 → 13, all 13 boundary.** `new_rules_carry_the_requested_styles`
+additionally asserts the styles the tables asked for actually landed
+(the Input's selection/placeholder colors as rules, the Card header's
+row template, auto-rows, container name).
+
+## §8 — Benchmarks
+
+divan, release profile, Linux sandbox (2-core shared — compare RATIOS
+within a run, not across runs). The hot paths are UNCHANGED in shape:
+
+| benchmark | v0.7 median | vs v0.5 |
+|---|---|---|
+| `resolve_cached_hit` | 79.0 ns | = (76.8 ns) |
+| `diff_unchanged` | 154.8 ns | ≈ (139.8 ns) |
+| `resolve_button_cold` | 6.19 µs (2.7 Mitem/s) | ≈ (5.79 µs) |
+| `parse_button` | 3.32 µs | = |
+| `intern_hit` | 53.5 ns | = |
+| `cn_button_merge` | 4.31 µs | = |
+| `theme_parse_shadcn` | 104.9 µs | ≈ |
+| **`resolve_input_cold`** (new) | **11.5 µs** (2.4 Mitem/s) | the 32-class Input table incl. pseudo-element variants |
+| **`resolve_card_header_cold`** (new) | **3.35 µs** (2.7 Mitem/s) | container + templates + has-data |
+
+The allocation contract (`tests/alloc_contract.rs`) holds unchanged —
+the exact-zero pins (diff, intern hit, warm cache hit) are untouched by
+the new surfaces.
+
+## §9 — Quality gates
+
+`cargo test --workspace` (340 tests), `clippy -D warnings`, `fmt
+--check`, `doc -D warnings`, `cargo package -p aeolus-core
+-p aeolus-macro` all green. RED→GREEN evidence captured in
+`reports/10-tdd-evidence/09-variant-engine.md`.
+
+## §10 — Upstream-blocked (unchanged, re-documented)
+
+The four deferrals stay: publishing the backends (no compatible
+crates.io releases), view-side property-stack registration, native
+Masonry typography, Masonry transitions — re-verified against the pins
+(2026-11-08): floem `1351ffb` is still `main` HEAD; xilem still
+`dc49687`.
