@@ -554,8 +554,8 @@ fn skeleton_resolves() {
     assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
 }
 
-/// Alert (alert.tsx) — relative/grid/gap-y all RESOLVE in v0.2; only the
-/// arbitrary grid template is reported.
+/// Alert (alert.tsx) — relative/grid/gap-y all RESOLVE in v0.2; v0.7 §4
+/// resolves the arbitrary grid template into the canonical track slots.
 #[test]
 fn alert_resolves() {
     let r = Resolver::new(&theme()).resolve("relative grid w-full grid-cols-[0_1fr] items-start gap-y-0.5 rounded-lg border px-4 py-3 text-sm").unwrap();
@@ -602,15 +602,19 @@ fn alert_resolves() {
             row: Some(2.0)
         })
     );
-    // Only the arbitrary grid template is reported (precisely).
-    assert_eq!(r.warnings.len(), 1, "warnings={:?}", r.warnings);
-    assert!(
-        matches!(
-            &r.warnings[0],
-            Warning::Unsupported { class, .. } if class == "grid-cols-[0_1fr]"
-        ),
-        "warnings={:?}",
-        r.warnings
+    // v0.7 §4: the arbitrary template lands in the canonical track slots —
+    // `0` = a fixed 0px track, `1fr` = minmax(auto, 1fr) — with zero
+    // warnings (the v0.6 report became a capability).
+    assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
+    let g = base.extras.grid.as_ref().expect("grid slot");
+    assert_eq!(
+        g.template_cols.as_deref(),
+        Some(
+            &[
+                plan::TrackComponent::Track(plan::GridTrack::px(0.0)),
+                plan::TrackComponent::Track(plan::GridTrack::fr(1.0)),
+            ][..]
+        )
     );
 }
 
