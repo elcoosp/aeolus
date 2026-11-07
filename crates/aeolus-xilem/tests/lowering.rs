@@ -213,3 +213,168 @@ fn per_side_border_width_is_reported_not_silently_dropped() {
         "expected a border-width:per-side drop entry, got {report:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// v0.6 gradients (AEOLUS_V0.6.md §1.5) — masonry's layout-invariant
+// `Background::Gradient` consumed natively, no upstream change.
+// ---------------------------------------------------------------------------
+
+use aeolus_core::TailwindTheme;
+use aeolus_core::plan::GRADIENT_FROM_POS_PCT;
+use aeolus_xilem::{LoweringReport, lower_resolved};
+use masonry::layout::UnitPoint;
+use masonry::peniko::color::ColorSpaceTag;
+use masonry::properties::types::{GradientShape, RadialGradientShape};
+
+fn v4_theme() -> TailwindTheme {
+    TailwindTheme::default()
+}
+
+fn plan_of(classes: &str) -> aeolus_core::StylePlan {
+    let theme = v4_theme();
+    let resolver = Resolver::new(&theme);
+    let resolution = resolver.resolve(classes).unwrap();
+    assert!(
+        resolution.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        resolution.warnings
+    );
+    resolution.plan
+}
+
+#[test]
+fn linear_gradient_angle_conversion() {
+    // `a = π − θ` (derived from masonry's `get_peniko_linear_for_rect`;
+    // see the fn docs). bg-linear-to-r = CSS 90° → π/2 (end at right).
+    let theme = v4_theme();
+    let resolver = Resolver::new(&theme);
+    for (class, rad) in [
+        ("bg-linear-to-t", std::f64::consts::PI),
+        ("bg-linear-to-r", std::f64::consts::FRAC_PI_2),
+        ("bg-linear-to-b", 0.0),
+        ("bg-linear-45", std::f64::consts::PI - 45f64.to_radians()),
+    ] {
+        let resolution = resolver.resolve(class).unwrap();
+        let mut report = LoweringReport::default();
+        let set = lower_resolved(&resolution.plan.base, &mut report);
+        let bg = set.get::<Background>().expect("gradient background");
+        let masonry::properties::Background::Gradient(g) = bg else {
+            panic!("{class} did not lower to Background::Gradient");
+        };
+        let masonry::properties::types::GradientShape::Linear { angle } = g.shape else {
+            panic!("{class} is not a linear shape");
+        };
+        assert!((angle - rad).abs() < 1e-9, "{class}: {angle} vs {rad}");
+        assert_eq!(
+            g.interpolation_cs,
+            ColorSpaceTag::Oklab,
+            "v4 default in oklab"
+        );
+        assert_eq!(g.extend, masonry::peniko::Extend::Pad);
+    }
+}
+
+#[test]
+fn gradient_lowers_natively_with_v4_stop_defaults() {
+    let plan = plan_of("bg-linear-to-r from-red-500 to-blue-500");
+    let (stack, report) = lower(&plan);
+    assert!(
+        report.dropped.is_empty(),
+        "gradients are native at the pin; got {report:?}"
+    );
+    let bg = stack.get_layers()[0].1.get::<Background>().unwrap();
+    let Background::Gradient(g) = bg else {
+        panic!("not a gradient");
+    };
+    let stops = &g.stops.0;
+    assert_eq!(stops.len(), 2);
+    assert!((stops[0].offset - GRADIENT_FROM_POS_PCT / 100.0).abs() < 1e-6);
+    assert!((stops[1].offset - 1.0).abs() < 1e-6, "to default = 100%");
+    // The stops carry the resolved sRGB colors.
+    let red = to_masonry_color(plan.base.background_gradient.unwrap().stops().from.color);
+    assert_eq!(
+        stops[0]
+            .color
+            .to_alpha_color::<masonry::peniko::color::Srgb>(),
+        red
+    );
+}
+
+#[test]
+fn via_and_position_patches_land_in_the_stop_offsets() {
+    let plan = plan_of("bg-linear-to-b from-red-500 via-yellow-400 from-20% to-blue-500 to-80%");
+    let mut report = LoweringReport::default();
+    let set = lower_resolved(&plan.base, &mut report);
+    let Background::Gradient(g) = set.get::<Background>().unwrap() else {
+        panic!("not a gradient");
+    };
+    let stops = &g.stops.0;
+    assert_eq!(stops.len(), 3, "from + via + to");
+    assert!((stops[0].offset - 0.2).abs() < 1e-6, "from-20% patch");
+    assert!((stops[1].offset - 0.5).abs() < 1e-6, "via default 50%");
+    assert!((stops[2].offset - 0.8).abs() < 1e-6, "to-80% patch");
+}
+
+#[test]
+fn gradient_wins_over_solid_in_the_single_brush() {
+    // CSS layers background-image over background-color; masonry's single
+    // Background property takes the gradient and the coexistence is recorded.
+    let plan = plan_of("bg-red-500 bg-linear-to-r from-red-500 to-blue-500");
+    let mut report = LoweringReport::default();
+    let set = lower_resolved(&plan.base, &mut report);
+    let bg = set.get::<Background>().unwrap();
+    assert!(matches!(bg, Background::Gradient(_)), "{bg:?}");
+    assert!(
+        report
+            .dropped
+            .iter()
+            .any(|(w, r)| w == "background-color under gradient" && r.contains("layers")),
+        "expected the single-brush note, got {report:?}"
+    );
+}
+
+#[test]
+fn radial_lowers_as_documented_circle() {
+    let plan = plan_of("bg-radial from-red-500 to-blue-500");
+    let mut report = LoweringReport::default();
+    let set = lower_resolved(&plan.base, &mut report);
+    let Background::Gradient(g) = set.get::<Background>().unwrap() else {
+        panic!("not a gradient");
+    };
+    assert!(matches!(
+        g.shape,
+        GradientShape::Radial { shape: RadialGradientShape::CircleTo(_), center }
+            if center == UnitPoint::CENTER
+    ));
+    assert!(
+        report
+            .dropped
+            .iter()
+            .any(|(w, r)| w == "bg-radial shape" && r.contains("ellipse")),
+        "expected the ellipse→circle normalization note, got {report:?}"
+    );
+}
+
+#[test]
+fn conic_reports_the_upstream_sweep_todo() {
+    let plan = plan_of("bg-conic-45 from-red-500 to-blue-500");
+    let mut report = LoweringReport::default();
+    let set = lower_resolved(&plan.base, &mut report);
+    assert!(set.get::<Background>().is_none(), "conic does not lower");
+    assert!(
+        report
+            .dropped
+            .iter()
+            .any(|(w, r)| w == "bg-conic-*" && r.contains("vello")),
+        "expected the vello sweep TODO reason, got {report:?}"
+    );
+}
+
+#[test]
+fn bg_none_lowers_to_no_gradient_property() {
+    let plan = plan_of("bg-none");
+    let mut report = LoweringReport::default();
+    let set = lower_resolved(&plan.base, &mut report);
+    assert!(set.get::<Background>().is_none());
+    assert!(report.dropped.is_empty());
+}
