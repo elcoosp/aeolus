@@ -73,3 +73,31 @@ actually changed (`Vec<Slot>` empty case = no alloc), and `cn()` allocates
 one output `String`. A follow-up should wire divan's alloc counters
 (`#[divan::bench(counters = [AllocCount])]`) once the tracker compiles
 cleanly in this toolchain.
+
+## v0.4 re-run (2026-11-07, 1-core sandbox, release profile, divan 0.1.21)
+
+After the verification emitter landed (`AEOLUS_V0.4.md` §4). The hot
+paths are unchanged in shape; the sandbox is slower than the 2026-11-03
+2-core shared runner, so compare RATIOS within a run, not across runs.
+
+| benchmark | v0.4 median | note |
+|---|---|---|
+| `resolve_cached_hit` | **78.6 ns** | steady state unchanged |
+| `diff_unchanged` | **238.8 ns** | |
+| `resolve_button_cold` | **5.76 µs** (2.9 Mitem/s) | 3 corpus-caught resolver fixes (negative insets/translations, full-radius) did not regress the path |
+| `parse_button` | 3.25 µs | |
+| `intern_hit` | 54.8 ns | |
+| `cn_button_merge` | 4.58 µs | |
+| `cn_no_conflicts` | 2.41 µs | |
+| `theme_parse_shadcn` | 99.0 µs | one-time |
+| `color_mix_opacity` | 0.185 ns | |
+| **`css_write_button`** (new) | **13.4 µs** | the 33-class Button through the verification emitter: parse + resolve + route + 33 v4-shaped rules. Verification tooling, NOT on the styling hot path (backends consume the plan) |
+
+### The report-08 allocation-counter follow-up
+
+Re-tested per `AEOLUS_V0.4.md` §4.2: divan **0.1.21 still ships no
+`AllocCount` counter** (`divan::counter::{ItemsCount}` only) — the
+allocation tracker never landed in the 0.1.x line. The structural claims
+in the original allocation note stand; the follow-up stays open until a
+divan release ships the tracker (or the project writes its own global
+allocator counting harness — deliberately out of scope for v0.4).
