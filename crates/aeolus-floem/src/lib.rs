@@ -511,13 +511,29 @@ fn lower_text(
             style.font_style(floem::text::FontStyle::Normal)
         }
         (TextProperty::LineHeight, TextValue::Px(px)) => {
-            // The resolver has already multiplied the ratio by the 16px
-            // base — keep the absolute px semantics.
+            // The resolver resolved an absolute line-height (arbitrary px
+            // or a spacing-multiple modifier) — keep the px semantics.
             style.line_height(LineHeightValue::Pt(px))
+        }
+        // v0.5 §1.4: the token form is font-size-RELATIVE — Floem's native
+        // `Normal(multiplier)` resolves it against the element's font-size
+        // at paint, exactly CSS's unitless line-height semantics.
+        (TextProperty::LineHeight, TextValue::LineHeightRatio(r)) => {
+            style.line_height(LineHeightValue::Normal(r))
         }
         (TextProperty::LetterSpacing, TextValue::Spacing(_px)) => {
             // No letter-spacing prop at the pinned rev.
             report.drop("letter-spacing", "no Floem letter-spacing prop");
+            style
+        }
+        (TextProperty::LetterSpacing, TextValue::TrackingEm(_)) => {
+            // No letter-spacing prop at the pinned rev; the relative em
+            // stays in the plan (the verification emitter pins it) and the
+            // drop stays honest.
+            report.drop(
+                "letter-spacing",
+                "no Floem letter-spacing prop (relative em kept in the plan)",
+            );
             style
         }
         (TextProperty::TextAlign, TextValue::Keyword(kw)) => {
