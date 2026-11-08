@@ -64,8 +64,10 @@ fn diff_text_only_change(b: Bencher) {
     // The regression path: two styles differing ONLY in a non-first text
     // property — the case the old single-bit text family mis-reported.
     let mut a = ResolvedStyle::default();
-    a.text.push((plan::TextProperty::FontSize, plan::TextValue::Px(14.0)));
-    a.text.push((plan::TextProperty::FontWeight, plan::TextValue::Weight(500)));
+    a.text
+        .push((plan::TextProperty::FontSize, plan::TextValue::Px(14.0)));
+    a.text
+        .push((plan::TextProperty::FontWeight, plan::TextValue::Weight(500)));
     let mut c = a.clone();
     c.text[1] = (plan::TextProperty::FontWeight, plan::TextValue::Weight(700));
     b.bench(|| plan::diff(&a, &c));
