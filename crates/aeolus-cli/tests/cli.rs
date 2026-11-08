@@ -10,7 +10,7 @@ fn theme() -> TailwindTheme {
 }
 
 fn run_cmd(args: &[&str]) -> (i32, String, String) {
-    let owned: Vec<String> = args.iter().map(std::string::ToString::to_string).collect();
+    let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
     let code = run(owned, &mut out, &mut err);
@@ -190,7 +190,7 @@ fn check_json_output() {
     std::fs::write(&file, r#"let s = "bg-typosaurus";"#).unwrap();
     let (code, out, _) = run_cmd(&["check", "--json", &file.to_string_lossy()]);
     assert_eq!(code, 1, "{out}");
-    assert!(out.starts_with('['), "{out}");
+    assert!(out.starts_with("["), "{out}");
     assert!(out.contains("\"file\""), "{out}");
     assert!(out.contains("\"token\":\"bg-typosaurus\""), "{out}");
     let _ = std::fs::remove_dir_all(&dir);
@@ -229,16 +229,10 @@ fn extractor_finds_quoted_and_raw_strings() {
     // Prose is pre-filtered out of the extraction (the linter's input is
     // extractor output, so prose never reaches check_string).
     assert!(!found.iter().any(|s| s.contains("quick")), "{found:?}");
-    assert_eq!(
-        extract_candidate_strings("The quick brown fox jumps over the lazy dog"),
-        [] as [std::string::String; 0]
-    );
+    assert!(extract_candidate_strings("The quick brown fox jumps over the lazy dog").is_empty());
     // ...the extractor output feeds check_string; a real class string is
     // clean, and check_string is documented to take EXTRACTOR output only
     // (raw prose linted directly would flag every word as unknown).
     let t = theme();
-    assert_eq!(
-        check_string("p-4 bg-primary", &t),
-        [] as [aeolus_cli::Finding; 0]
-    );
+    assert!(check_string("p-4 bg-primary", &t).is_empty());
 }
