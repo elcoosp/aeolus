@@ -107,9 +107,14 @@ silent zero.
 
 ## 7. Test plan (tests/)
 
-1. **Unit**: color round-trips, opacity premultiplication, theme parsing
-   (shadcn tokens incl. percentage-lightness oklch), breakpoint tokens,
-   spacing default (21 lib tests).
+1. **Unit**: every core module carries an in-src suite (the v0.7
+   test-pyramid hardening rebuilt the base: parser/plan/eval/selector/
+   cond/ast/caps were integration-only before). Pinned at the type level:
+   the `Atom::order` band table, the named-variant table, the selector
+   boundary error strings, `supports()` routing, per-slot overlay and
+   per-property diff bits. Color round-trips, opacity premultiplication,
+   theme parsing (shadcn tokens incl. percentage-lightness oklch),
+   breakpoint tokens, spacing default.
 2. **Component parity**: the 8 v1 Shadcn class tables must parse, land their
    essential slots, merge with user classes last-wins
    (`tests/shadcn_components.rs`, 14 tests + aeolus-shadcn's 6).
@@ -276,7 +281,51 @@ diff (3 commits: tests + a vello dep removal).
   BOTTOM (`end = center + (sin a, cos a)·len/2`), so CSS angle θ maps to
   `a = π − θ` — pinned per corner direction.
 
-## 13. Portable plans (v0.7)
+## 13. Oracle fidelity — the variant & grid engine (v0.7)
+
+`AEOLUS_V0.7.md` closes every parser/IR gap the shipped shadcn oracle
+tables expose: a 2026-11-08 audit counted 40 warnings across the tables;
+after v0.7 the count is 13 and every one is the documented v0.3 §1.3
+Probe-model boundary (selectors styling OTHER elements). The headline
+contract lives in `crates/aeolus-shadcn/tests/oracle_fidelity.rs`.
+
+- **Pseudo-element variants** (`selection:`, `placeholder:`, `file:` —
+  §1) are typed `Test::Pseudo(PseudoElement)` conditions, NOT runtime
+  states: they style a sub-rendering of the element. `Probe::test`
+  answers them (default "no" — the rule never fires where the rendering
+  does not exist, the same semantics CSS has when a selector does not
+  match), so `selection:bg-primary` rides the `rules` path with zero new
+  bucket machinery. The real 4.1.17 emits BOTH `&::selection` and the
+  descendant `& *::selection`; the self half is corpus-pinned, the
+  descendant half is outside the Probe model by construction.
+- **`Atom::Has` generalizes to `Has(Test)`** (§2): `has-data-[…]`/
+  `has-aria-[…]`/`has-first:` classify through the same `variant_test`
+  the `group-*` wrappers use; `Probe::descendant(&Test)` (default:
+  state-only) keeps old trait impls compiling. Combinator forms
+  (`has-[>svg]`) keep the precise report — the child-edge is real
+  information the typed descendant question does not carry.
+- **Named containers** (§3): `@container[/name]` is a UTILITY in v4 —
+  `Extras.container_type` carries `container-type: inline-size` + the
+  optional name; conditions already carried names since v0.2.
+- **Track templates** (§4): `GridTrack { min, max }` mirrors CSS
+  `minmax()`; a bare `1fr` is `minmax(auto, 1fr)` (taffy's `from_fr`),
+  but the `auto-rows-fr` KEYWORD is `minmax(0, 1fr)` (v4's blowout guard
+  — the first capture proved CSS intuition wrong, so it is pinned).
+  Templates are CANONICAL over the v0.6 numeric counts; the template
+  families are `cn()` conflict groups that evict across the
+  numeric/arbitrary boundary. Floem lowers everything natively
+  (`GridTemplateComponent::Single/Repeat`, `grid_auto_rows/columns`).
+- **`justify-items-*`** (§5): one resolver arm the cn() tables already
+  anticipated; `normal` → stretch (CSS), Floem native.
+- **Corpus 193** (§6): every new shape is single-rule and IN; the
+  selection descendant half is a documented harness normalization, as is
+  comma-spacing (v4 emits arbitrary values verbatim and keywords pretty).
+
+## 14. Portable plans (v0.7)
+
+> Restored §13 of the portable-plans design note (it was lost
+> when the v0.7 oracle-fidelity sync replaced this file); the
+> variant & grid engine section above is now §13.
 
 `AEOLUS_V0.7.md` makes the IR a first-class artifact instead of a private
 resolver↔backend contract. Three additions, all zero-dependency:
@@ -289,8 +338,9 @@ resolver↔backend contract. Three additions, all zero-dependency:
   diff-integrated — `diff(base, merged)` reports exactly the override
   slots, so the repaint/relayout lanes survive composition. The runtime
   story: a component's cached plan gains per-instance overrides without a
-  theme reference or a re-resolve. The per-edge layer flattening that
-  v0.7 pinned and deferred (§1.4/§6) is FIXED by v0.8 §1 (see §14).
+  theme reference or a re-resolve. The known per-edge layer flattening
+  (`p-4 hover:px-8` zeroes unset edges in the layer) is pinned by tests
+  and deferred (v0.7 §1.4/§6).
 - **Canonical snapshots** (`snapshot.rs`). `to_snapshot_json` emits fixed-
   schema-order, compact, shortest-round-trip JSON — byte-stable for equal
   plans. `from_snapshot_json` is STRICT (unknown fields/enum names,
@@ -308,37 +358,3 @@ resolver↔backend contract. Three additions, all zero-dependency:
   with a documented extractor heuristic (quoted strings kept when ≥ half
   the tokens resolve warning-free) and cn()-conflict attribution. Exit
   contract: 0 success, 1 findings, 2 usage/theme/IO.
-
-## 14. The per-edge set-mask (v0.8)
-
-The four per-edge families (`Padding`/`Margin`, `BorderWidth`,
-`CornerRadius`) carry a set-mask (`EdgeSet`/`CornerSet`) beside their
-`f32` values: `false` = "the class string never named this edge" — the
-0.0 is a placeholder, never a cascade input. The v0.7 finalize destroyed
-that information (every edge materialized as 0.0), which made a
-`hover:px-8` layer wipe the base's top/bottom on every backend and made
-`p-4 ⊕ px-8` compose to `{0, 32, 0, 32}`.
-
-Semantics, all in the core so every consumer shares one model:
-
-- `finalize` records the mask from its `Option`-per-edge accumulation.
-- `ResolvedStyle::overlay` merges the four families EDGE-WISE (an edge
-  the override addresses wins; otherwise the destination keeps its
-  value) — `StylePlan::overlay` and the probe flatten
-  (`StylePlan::resolve`) route through it, fixing composition and the
-  runtime cascade with one primitive. Idempotence and the
-  diff-integration contract survive with partial edges.
-- `ResolvedStyle::materialize_unset_edges_from(&base)` fills a partial
-  layer's masked-off edges from the base — the primitive for cascades
-  that replace whole properties. Xilem's stack builder and Slint's book
-  builder call it; Floem applies per-field gated by the mask; Iced and
-  egui carry the mask in their lowered payload bookkeeping and merge
-  edge/corner-wise in `overlay`.
-- The snapshot schema bumps to v2: masks serialize as required `"set"`
-  objects, the strict reader rejects malformed ones with dotted paths,
-  v1 documents fail with `UnsupportedVersion(1)` (loudly, by design).
-
-Pinned by `tests/per_edge_layers.rs` (11 tests) plus the per-backend
-partial-edge tests; evidence in
-`reports/10-tdd-evidence/10-per-edge-set-mask.md`; the plan of record is
-`AEOLUS_V0.8.md` §1.

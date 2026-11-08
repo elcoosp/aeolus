@@ -4,114 +4,124 @@ All notable changes to Aeolus are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — v0.8 §1 (per-edge set-mask)
+## [Unreleased]
 
 ### Fixed
 
-- **Per-edge cascade semantics** (v0.8 §1, `AEOLUS_V0.8.md`): the four
-  per-edge families (`Padding`/`Margin`, `BorderWidth`, `CornerRadius`)
-  now carry a set-mask (`EdgeSet`/`CornerSet`) recording WHICH edges the
-  class string addressed. The v0.7 finalize materialized unset edges as
-  `0.0`, so `p-4 hover:px-8` lost `padding-top: 16px` on hover (every
-  backend applied the layer's slot wholesale) and plan algebra composed
-  `p-4 ⊕ px-8` to `{0, 32, 0, 32}`. The mask rides through `finalize`,
-  `ResolvedStyle::overlay` (EDGE-WISE merge for the four families —
-  `p-4 ⊕ px-8` → `{16, 32, 16, 32}`), the probe flatten
-  (`StylePlan::resolve`), the new
-  `ResolvedStyle::materialize_unset_edges_from(&base)` (xilem stack
-  entries and slint state blocks materialize before lowering), floem's
-  per-field application (gated by the mask), and iced/egui's overlay
-  bookkeeping (`padding_set`, `corner_set`, margin sets).
+- **The test-pyramid property suite caught four real defects** (all
+  RED → GREEN, evidence in `reports/10-tdd-evidence/10-test-pyramid.md`):
+  - `diff` collapsed the text family onto one bitset bit — a
+    `FontWeight`-only change was reported as `Text(FontSize)` or missed
+    entirely. Every text property now has its own bit
+    (`Slot::Text(p) => 18 + p.index()`).
+  - Plan snapshots silently dropped the v0.7 grid templates
+    (`template_cols/rows`, `auto_rows/cols`), `Layout.justify_items` and
+    `Extras.container_type`. All four serialize strictly now (track /
+    repeat components, sizing keywords, named containers).
+- The restored `aeolus-cli` member and `snapshot` module wiring
+  (workspace members, `pub mod snapshot`, re-exports, `DESIGN.md` §14)
+  after the bad v0.7 sync removed them upstream.
 
 ### Changed
 
-- **Snapshot schema v2** (`PLAN_SNAPSHOT_VERSION` 1 → 2): the masks are
-  part of the artifact — `padding`/`border_width`/`margin` carry a
-  required `"set"` object, `corner_radius` a corner `"set"`. v1
-  documents fail with `SnapshotError::UnsupportedVersion(1)` (loudly, by
-  design); the strict reader rejects malformed masks with dotted paths
-  (`$.base.padding.set.left`). Costs unchanged (Button plan: write
-  ~8.4 µs, read ~166 µs).
-- **Pedantic clippy, workspace-wide**: `[workspace.lints.clippy]`
-  arms `pedantic = warn` with per-lint exceptions (each with its
-  rationale, in the root manifest); every member opts in via
-  `[lints] workspace = true`; ZERO `#[allow]` attributes remain in the
-  workspace crates (the two pre-existing clippy allows were converted).
+- `PLAN_SNAPSHOT_VERSION` 1 → 2: `has` conditions are full test objects
+  now (`Atom::Has(Test)`, v0.7 §2) and `pseudo` joined the test grammar;
+  a v2 reader rejects v1 `has` shapes with a typed error instead of
+  misreading them.
 
 ### Added
 
-- `EdgeSet`/`CornerSet` in the IR and the public API;
-  `ResolvedStyle::materialize_unset_edges_from`.
-- `tests/per_edge_layers.rs` (11 tests) pinning finalize masks, edge-wise
-  composition (base + layers + corners + margins/borders), materialize,
-  diff exactness, idempotence, and the v2 snapshot round-trip/strictness;
-  per-backend partial-edge tests in all five lowering suites.
-- `plan_overlay_partial_edges` bench (~318 ns median — the mask walk is
-  free against the whole-slot overlay).
-- `reports/10-tdd-evidence/10-per-edge-set-mask.md` (RED→GREEN evidence,
-  including the stashed-impl backend runs and what the cycle caught).
+- **Unit suites for the hollow modules** (parser, plan, eval, selector,
+  cond, ast, caps — 33 new tests): the cascade band table, the
+  named-variant table, the selector boundary, `supports()` routing,
+  per-slot overlay, per-property diff, `[min,max)` windows and the
+  longest-suffix group labels are pinned at the type level.
+- **Plan-algebra property laws** (`tests/pyramid_properties.rs`,
+  proptest, 256 cases/law): overlay idempotence, change containment and
+  snapshot round-trip identity, generated through the REAL pipeline
+  (class strings → resolver → plan).
+- **Process-level CLI e2e** (`crates/aeolus-cli/tests/process.rs`, 9
+  tests): the real binary, real exit codes, byte-determinism, stdout-
+  is-artifact / stderr-is-diagnostics discipline, the 0/1/2 exit
+  contract.
+- **`benches/snapshot.rs`**: the artifact path (write 15.7 µs / read
+  422 µs / round-trip 433 µs on the rich Button plan) and the plan
+  overlay (649 ns) — report 08.
 
-## [0.7.0] — 2026-11
+## [0.7.0] — 2026-11-08
+
+The **oracle-fidelity** release (plan: `AEOLUS_V0.7.md`): a fidelity
+audit resolved every shipped shadcn v4 class table against the v0.6
+resolver and counted **40 warnings — every one a parser/IR gap**. v0.7
+closes them: the same tables now produce **13 warnings, all the
+documented v0.3 §1.3 Probe-model boundary** (selectors styling OTHER
+elements), pinned by `crates/aeolus-shadcn/tests/oracle_fidelity.rs`.
 
 ### Added
 
-- **Plan algebra** (`crates/aeolus-core/src/plan.rs`):
-  `StylePlan::overlay(&self, over: &StylePlan) -> StylePlan` composes two
-  RESOLVED plans later-wins-per-slot — the IR-level mirror of `cn()`.
-  Layers merge by `VariantCondition` and stay rank-ordered;
-  `responsive`/`container` buckets overlay per breakpoint;
-  `dark` overlays per slot; `group`/`peer` merge by id; `rules` merge by
-  `Cond` equality (one rule per conjunction); the override's breakpoint
-  table wins. Idempotent, and diff-integrated: `diff(&base.base,
-  &merged.base)` reports exactly the override's slots, so backends keep
-  their repaint-vs-relayout lanes across composition. Pinned by 8 tests
-  (`tests/plan_algebra.rs`).
-- **Canonical plan snapshots** (`crates/aeolus-core/src/snapshot.rs`):
-  `StylePlan::to_snapshot_json()` — canonical, byte-stable, dependency-free
-  JSON (fixed schema order, compact, shortest round-trip floats) — and
-  `StylePlan::from_snapshot_json(&str)` — a STRICT reader: unknown fields,
-  unknown enum names, duplicate keys, wrong `format`/`version` headers,
-  truncation and trailing content are typed `SnapshotError`s with dotted
-  paths (`$.base.extras.grid.cols`), never silent defaults. The JSON
-  parser is hand-rolled (depth-limited, full escapes incl. surrogate
-  pairs); non-finite floats encode as `"NaN"`/`"inf"`/`"-inf"` so the
-  writer is total; a closed keyword table keeps
-  `TextValue::Keyword(&'static str)` sound. Pinned by 9 tests
-  (`tests/snapshot_roundtrip.rs`), including a 256-string deterministic
-  random round-trip.
-- **The headless CLI** (`crates/aeolus-cli`, binary `aeolus`,
-  `publish = false`): `resolve` (the plan snapshot JSON is the default
-  output; `--summary` for a human digest; warnings non-fatal on stderr),
-  `css` (the verification emitter), `diff` (base-layer diff with
-  cosmetic/geometric lanes, `--json`), `cn` (conflict merge), and `check`
-  — the class-string linter: documented extractor heuristic (quoted
-  strings kept when ≥ half the tokens resolve warning-free), warning
-  findings, `cn()` conflict attribution (dropped token + winning token),
-  `--fail-on unknown|unsupported|conflict|any|none` exit codes for CI,
-  `--json` output. `--theme shadcn|shadcn-dark|default|<path>`. Zero
-  dependencies beyond `aeolus-core`; the whole program is the library
-  `run(args, out, err) -> code` (process-free testing). Pinned by 12
-  tests (`crates/aeolus-cli/tests/cli.rs`).
-- **Benchmarks**: `plan_overlay_button`, `snapshot_write_button`,
-  `snapshot_read_button`, `snapshot_roundtrip_button` (core
-  `benches/hot.rs`); `extract_1k_lines`, `lint_button_string`,
-  snapshot read/write/round-trip, `plan_overlay_button`
-  (`crates/aeolus-cli/benches/pipeline.rs`).
-- `reports/10-tdd-evidence/09-portable-plans.md` — the RED→GREEN evidence
-  for all of the above, including what the cycle caught (see Fixed).
+- **Pseudo-element variants** (v0.7 §1): `selection:`, `placeholder:`,
+  `file:` parse as `NamedVariant::Pseudo` and classify onto the typed
+  `Test::Pseudo(PseudoElement)` condition — NOT runtime states but the
+  element's own `::selection`/`::placeholder`/`::file-selector-button`
+  renderings, answered via `Probe::test` (default "no": the rule never
+  fires where the rendering does not exist). The shadcn Input table's
+  ten unknown-variant warnings are gone; `tw!` accepts the three names.
+- **`has-data-[…]:`/`has-aria-[…]:`/`has-<structural>:` descendants**
+  (v0.7 §2): `Atom::Has` generalizes from `Has(State)` to `Has(Test)`;
+  `Probe::descendant(&Test)` (default: state-only) keeps old trait
+  impls compiling; the arbitrary-selector classifier maps `:has(...)`
+  onto the same typed set. Combinator forms (`has-[>svg]`) keep their
+  precise report.
+- **Named container declarations** (v0.7 §3): `@container[/name]` —
+  `Extras.container_type: Option<ContainerType>` (slot
+  `ContainerType`, lane Geometric), emitter reproduces v4's
+  `container-type: inline-size` + `container-name` verbatim.
+- **Arbitrary grid templates + implicit tracks** (v0.7 §4):
+  `GridTrack { min, max }` / `TrackSizing` / `TrackComponent` —
+  `grid-cols-[0_1fr]` (bare `1fr` = `minmax(auto, 1fr)`, bare `0` = the
+  raw length), `grid-rows-[auto_auto]`, `minmax()`, bounded
+  `repeat(N, <track>)`, and the `auto-rows-*`/`auto-cols-*` keywords
+  (`auto-rows-fr` is `minmax(0, 1fr)` — v4's blowout guard, pinned
+  against the real compiler). Templates are CANONICAL over the v0.6
+  numeric counts; Floem lowers everything NATIVELY
+  (`GridTemplateComponent::Single/Repeat`, `grid_auto_rows/columns`).
+- **`justify-items-*`** (v0.7 §5): `Layout.justify_items`
+  (start/center/end/stretch/baseline, `normal` → stretch); Floem
+  native, others report.
+- **New benchmarks**: `resolve_input_cold` (11.5 µs, the 32-class Input
+  table with its pseudo-element variants) and
+  `resolve_card_header_cold` (3.35 µs, container + templates +
+  has-data); the pinned hot paths are unchanged in shape and the
+  exact-zero allocation pins hold.
 
-### Documented (discovered, pinned, deferred)
+### Changed
 
-- **Per-edge layer semantics** (v0.7 §1.4): per-edge families materialize
-  unset edges as 0.0 at finalize, so a `hover:px-8` layer carries
-  `Padding { top: 0, right: 32, bottom: 0, left: 32 }` and the zeroed
-  edges REPLACE the base's edges when the layer applies (CSS would keep
-  `p-4`'s top/bottom). The per-edge set-mask fix ripples through every
-  backend lowering — deferred (v0.7 §6), with the behavior pinned by
-  `tests/plan_algebra.rs::layer_merge_by_condition` instead of unknown.
+- **cn() gains the grid-template conflict groups** (v0.7 §4):
+  `grid-template-columns/rows`, `grid-auto-rows/columns` and
+  `container-type` — the later template evicts the earlier ACROSS the
+  numeric/arbitrary boundary (`grid-cols-3` + `grid-cols-[0_1fr]` keeps
+  only the arbitrary; previously BOTH were kept — a tw_merge-parity gap
+  the milestone's own tests caught).
+- The verification emitter reproduces v4's star forms for
+  `:has()`/`:not()` inners (`:has(*[data-slot="x"])`,
+  `:not(*[data-state="open"])` — the bare-attr `:not` shape was never
+  corpus-pinned and was wrong); new declaration shapes for tracks,
+  auto-tracks, justify-items, container declarations; verbatim
+  arbitrary-value serialization (`0`, `repeat(3,minmax(0,1fr))`).
+- **The golden corpus grows 176 → 193 entries**, all generated by the
+  REAL tailwindcss 4.1.17 (`tools/gen_golden.mjs`): pseudo-element
+  variants (self half — v4's `& *::selection` descendant rule is a
+  documented Probe-model normalization), has-attr descendants, named
+  containers, arbitrary templates, implicit tracks, justify-items,
+  `md:selection:bg-*`.
+- Version → 0.7.0; README/capability-matrix/benchmark report updated;
+  TDD evidence in `reports/10-tdd-evidence/09-variant-engine.md`.
 
-- **The Slint backend** (`crates/aeolus-slint`, unreleased 0.6-tree work
-  shipping in this version): the fifth framework
+## [Unreleased]
+
+### Added
+
+- **The Slint backend** (`crates/aeolus-slint`): the fifth framework
   backend, chosen from the capability audit's candidate list (vizia's
   skia toolchain and GTK-family system dependencies being out of reach
   for headless sandboxes; Slint 1.18 is the most-used remaining
@@ -152,7 +162,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   out `Arc<StyleBook>`s whose snippets assemble real interactive
   shadcn Buttons in `.slint`.
 
-### Changed (from the 0.6 tree, shipping here)
+### Changed
 
 - README, the how-it-works diagram and the capability table now list
   five backends; CI's `cargo check -p` gate includes `aeolus-slint`.
