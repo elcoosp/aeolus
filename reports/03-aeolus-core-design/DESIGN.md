@@ -283,7 +283,7 @@ diff (3 commits: tests + a vello dep removal).
 
 ## 13. Oracle fidelity — the variant & grid engine (v0.7)
 
-`AEOLUS_V0.7.md` closes every parser/IR gap the shipped shadcn oracle
+`AEOLUS_V0.9.md` closes every parser/IR gap the shipped shadcn oracle
 tables expose: a 2026-11-08 audit counted 40 warnings across the tables;
 after v0.7 the count is 13 and every one is the documented v0.3 §1.3
 Probe-model boundary (selectors styling OTHER elements). The headline
@@ -323,10 +323,6 @@ contract lives in `crates/aeolus-shadcn/tests/oracle_fidelity.rs`.
 
 ## 14. Portable plans (v0.7)
 
-> Restored §13 of the portable-plans design note (it was lost
-> when the v0.7 oracle-fidelity sync replaced this file); the
-> variant & grid engine section above is now §13.
-
 `AEOLUS_V0.7.md` makes the IR a first-class artifact instead of a private
 resolver↔backend contract. Three additions, all zero-dependency:
 
@@ -338,9 +334,8 @@ resolver↔backend contract. Three additions, all zero-dependency:
   diff-integrated — `diff(base, merged)` reports exactly the override
   slots, so the repaint/relayout lanes survive composition. The runtime
   story: a component's cached plan gains per-instance overrides without a
-  theme reference or a re-resolve. The known per-edge layer flattening
-  (`p-4 hover:px-8` zeroes unset edges in the layer) is pinned by tests
-  and deferred (v0.7 §1.4/§6).
+  theme reference or a re-resolve. The per-edge layer flattening that
+  v0.7 pinned and deferred (§1.4/§6) is FIXED by v0.8 §1 (see §15).
 - **Canonical snapshots** (`snapshot.rs`). `to_snapshot_json` emits fixed-
   schema-order, compact, shortest-round-trip JSON — byte-stable for equal
   plans. `from_snapshot_json` is STRICT (unknown fields/enum names,
@@ -358,3 +353,40 @@ resolver↔backend contract. Three additions, all zero-dependency:
   with a documented extractor heuristic (quoted strings kept when ≥ half
   the tokens resolve warning-free) and cn()-conflict attribution. Exit
   contract: 0 success, 1 findings, 2 usage/theme/IO.
+
+## 15. The per-edge set-mask (v0.8)
+
+The four per-edge families (`Padding`/`Margin`, `BorderWidth`,
+`CornerRadius`) carry a set-mask (`EdgeSet`/`CornerSet`) beside their
+`f32` values: `false` = "the class string never named this edge" — the
+0.0 is a placeholder, never a cascade input. The v0.7 finalize destroyed
+that information (every edge materialized as 0.0), which made a
+`hover:px-8` layer wipe the base's top/bottom on every backend and made
+`p-4 ⊕ px-8` compose to `{0, 32, 0, 32}`.
+
+Semantics, all in the core so every consumer shares one model:
+
+- `finalize` records the mask from its `Option`-per-edge accumulation.
+- `ResolvedStyle::overlay` merges the four families EDGE-WISE (an edge
+  the override addresses wins; otherwise the destination keeps its
+  value) — `StylePlan::overlay` and the probe flatten
+  (`StylePlan::resolve`) route through it, fixing composition and the
+  runtime cascade with one primitive. Idempotence and the
+  diff-integration contract survive with partial edges.
+- `ResolvedStyle::materialize_unset_edges_from(&base)` fills a partial
+  layer's masked-off edges from the base — the primitive for cascades
+  that replace whole properties. Xilem's stack builder and Slint's book
+  builder call it; Floem applies per-field gated by the mask; Iced and
+  egui carry the mask in their lowered payload bookkeeping and merge
+  edge/corner-wise in `overlay`.
+- The snapshot schema bumps to v2: masks serialize as required `"set"`
+  objects, the strict reader rejects malformed ones with dotted paths,
+  v1 documents fail with `UnsupportedVersion(1)` (loudly, by design).
+  (The variant-engine merge later bumps v2 → v3 for the track templates,
+  `container_type`, `justify_items` and the `pseudo`/`has` test shapes —
+  a strict superset of the v2 payload; see §13.)
+
+Pinned by `tests/per_edge_layers.rs` (11 tests) plus the per-backend
+partial-edge tests; evidence in
+`reports/10-tdd-evidence/10-per-edge-set-mask.md`; the plan of record is
+`AEOLUS_V0.8.md` §1.
