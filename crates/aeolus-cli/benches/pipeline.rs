@@ -5,7 +5,6 @@
 use aeolus_cli::{check_string, extract_candidate_strings};
 use aeolus_core::{Resolver, StylePlan, TailwindTheme, shadcn_css};
 use divan::Bencher;
-use std::fmt::Write as _;
 
 fn theme() -> TailwindTheme {
     TailwindTheme::from_theme_css(shadcn_css::LIGHT).unwrap()
@@ -18,10 +17,9 @@ const BUTTON: &str = "inline-flex shrink-0 items-center justify-center gap-2 rou
 fn source_buffer() -> String {
     let mut s = String::with_capacity(64 * 1024);
     for i in 0..250 {
-        let _ = writeln!(
-            s,
-            "fn comp{i}() {{ let cls = \"{BUTTON}\"; let note = \"renders the thing number {i}\"; }}"
-        );
+        s.push_str(&format!(
+            "fn comp{i}() {{ let cls = \"{BUTTON}\"; let note = \"renders the thing number {i}\"; }}\n"
+        ));
     }
     s
 }
