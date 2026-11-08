@@ -16,7 +16,11 @@ struct Run {
 }
 
 fn run(args: &[&str]) -> Run {
-    let Output { status, stdout, stderr } = Command::new(env!("CARGO_BIN_EXE_aeolus"))
+    let Output {
+        status,
+        stdout,
+        stderr,
+    } = Command::new(env!("CARGO_BIN_EXE_aeolus"))
         .args(args)
         .output()
         .expect("spawn the aeolus binary");
@@ -38,8 +42,11 @@ fn resolve_stdout_is_a_current_schema_snapshot() {
         "warnings go to stderr; a clean class list must print none"
     );
     assert!(
-        r.stdout.starts_with("{\"format\":\"aeolus-plan\",\"version\":2,"),
-        "stdout must be the v2 snapshot artifact, got: {}",
+        // v3: the variant-engine merge bumped the schema (tracks, container
+        // type, justify-items, pseudo tests) — the writer's header reflects it.
+        r.stdout
+            .starts_with("{\"format\":\"aeolus-plan\",\"version\":3,"),
+        "stdout must be the current snapshot artifact, got: {}",
         &r.stdout[..r.stdout.len().min(60)]
     );
     // The artifact parses back through the STRICT reader — the same
@@ -47,7 +54,10 @@ fn resolve_stdout_is_a_current_schema_snapshot() {
     // (Cheap structural check here; the strict parse is covered by
     // tests/cli.rs against run() — this pins the BYTES match that path.)
     assert!(r.stdout.contains("\"base\""));
-    assert!(r.stdout.contains("\"breakpoints\":[640,768,1024,1280,1536]"));
+    assert!(
+        r.stdout
+            .contains("\"breakpoints\":[640,768,1024,1280,1536]")
+    );
 }
 
 /// The CLI is deterministic: the same arguments produce byte-identical
@@ -177,6 +187,9 @@ fn large_class_list_resolves_completely() {
     assert!(r.stdout.contains("\"focus_visible\""));
     assert!(r.stdout.contains("\"disabled\""));
     // The v0.7 shapes survive the process boundary.
-    assert!(r.stdout.contains("\"pseudo\""), "selection: pseudo-element test");
+    assert!(
+        r.stdout.contains("\"pseudo\""),
+        "selection: pseudo-element test"
+    );
     assert!(r.stdout.contains("\"has\""), "has-checked rule");
 }
