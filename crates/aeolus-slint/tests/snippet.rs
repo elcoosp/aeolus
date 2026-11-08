@@ -11,17 +11,6 @@
 
 use aeolus_core::{Resolver, cn, shadcn_default};
 use aeolus_slint::{StyleBook, brush_snippet, color_snippet};
-use std::fmt::Write as _;
-
-/// Indent a generated block by `n` spaces (the expected-component builder).
-fn indent_block(snippet: &str, n: usize) -> String {
-    let pad = " ".repeat(n);
-    let mut out = String::new();
-    for l in snippet.lines() {
-        let _ = writeln!(out, "{pad}{l}");
-    }
-    out
-}
 
 fn resolver() -> Resolver<'static> {
     let theme = shadcn_default().unwrap();
@@ -81,7 +70,7 @@ fn gradient_brushes_render_as_at_gradient_calls() {
         snippet.starts_with("@linear-gradient(90deg,"),
         "got {snippet}"
     );
-    assert!(snippet.contains('%'), "stops carry percent positions");
+    assert!(snippet.contains("%"), "stops carry percent positions");
 
     let book = StyleBook::tw(&r, "bg-radial from-white to-black");
     let snippet = brush_snippet(book.base.background_gradient.as_ref().unwrap());
@@ -158,7 +147,10 @@ fn states_snippet_gates_on_touch_area_properties() {
     assert!(focused.contains("focused when fs.has-focus"), "{focused}");
     assert_compiles(&format!(
         "export component AeolusFocusTest {{\n    Rectangle {{\n        ta := TouchArea {{ }}\n        fs := FocusScope {{ }}\n{states}\n    }}\n}}",
-        states = indent_block(&focused, 8),
+        states = focused
+            .lines()
+            .map(|l| format!("        {l}\n"))
+            .collect::<String>(),
     ));
 }
 
@@ -172,9 +164,20 @@ fn generated_button_component_compiles_with_slint() {
     let text_block = book.base.text.snippet();
     let source = format!(
         "export component AeolusButtonTest {{\n    width: 160px;\n    height: 40px;\n    Rectangle {{\n{base}        ta := TouchArea {{ }}\n        fs := FocusScope {{ }}\n        Text {{\n            text: \"Save changes\";\n{text}        }}\n{states}\n    }}\n}}",
-        base = indent_block(&book.base_snippet(), 8),
-        text = indent_block(&text_block, 12),
-        states = indent_block(&book.to_states_snippet_focused("ta", "fs"), 8),
+        base = book
+            .base_snippet()
+            .lines()
+            .map(|l| format!("        {l}\n"))
+            .collect::<String>(),
+        text = text_block
+            .lines()
+            .map(|l| format!("            {l}\n"))
+            .collect::<String>(),
+        states = book
+            .to_states_snippet_focused("ta", "fs")
+            .lines()
+            .map(|l| format!("        {l}\n"))
+            .collect::<String>(),
     );
     assert_compiles(&source);
 }
@@ -188,7 +191,11 @@ fn generated_gradient_and_geometry_component_compiles_with_slint() {
     );
     let source = format!(
         "export component AeolusGradientTest {{\n    width: 200px;\n    height: 60px;\n    Rectangle {{\n        {body}\n    }}\n}}",
-        body = indent_block(&book.base_snippet(), 8),
+        body = book
+            .base_snippet()
+            .lines()
+            .map(|l| format!("        {l}\n"))
+            .collect::<String>(),
     );
     assert_compiles(&source);
 }
@@ -211,7 +218,10 @@ fn typography_snippet_compiles_on_a_text_element() {
     );
     let source = format!(
         "export component AeolusTextTest {{\n    Rectangle {{\n        Text {{\n            {body}\n        }}\n    }}\n}}",
-        body = indent_block(&text_block, 12),
+        body = text_block
+            .lines()
+            .map(|l| format!("            {l}\n"))
+            .collect::<String>(),
     );
     assert_compiles(&source);
 }
@@ -225,7 +235,10 @@ fn inner_shadow_and_visibility_compiles_with_slint() {
     assert!(body.contains("visible: false;"), "{body}");
     let source = format!(
         "export component AeolusInnerTest {{\n    Rectangle {{\n        {body}\n    }}\n}}",
-        body = indent_block(&body, 8),
+        body = body
+            .lines()
+            .map(|l| format!("        {l}\n"))
+            .collect::<String>(),
     );
     assert_compiles(&source);
 }
