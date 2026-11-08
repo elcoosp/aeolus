@@ -48,7 +48,7 @@ fn button_style_fn_satisfies_iced_button_catalog() {
     let disabled = style_fn(&light, Status::Disabled);
     let bg = match disabled.background.unwrap() {
         iced_core::Background::Color(c) => c,
-        iced_core::Background::Gradient(g) => panic!("{g:?}"),
+        other => panic!("{other:?}"),
     };
     assert!((bg.a - 0.5).abs() < 1e-3, "opacity-50 bakes: {}", bg.a);
 }
@@ -66,11 +66,11 @@ whitespace-nowrap bg-primary text-primary-foreground hover:bg-primary/90";
     let hovered = book.button_style(Status::Hovered, &light);
     let idle_bg = match idle.background.unwrap() {
         iced_core::Background::Color(c) => c,
-        iced_core::Background::Gradient(g) => panic!("{g:?}"),
+        other => panic!("{other:?}"),
     };
     let hovered_bg = match hovered.background.unwrap() {
         iced_core::Background::Color(c) => c,
-        iced_core::Background::Gradient(g) => panic!("{g:?}"),
+        other => panic!("{other:?}"),
     };
     // hover:bg-primary/90 is the SAME hue at 90% opacity (v4 color-mix
     // with transparent), so the full RGBA must differ — alpha included.
