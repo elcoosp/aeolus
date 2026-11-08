@@ -84,7 +84,7 @@ fn linear_corners_are_css_angles() {
             Some(Gradient::Linear { angle_deg, .. }) => {
                 assert_eq!(angle_deg, deg, "{class}");
             }
-            other => panic!("{class} → {other:?}, want Linear"),
+            other => panic!("{class} → {:?}, want Linear", other),
         }
     }
 }
@@ -138,7 +138,7 @@ fn bg_none_clears_like_a_value() {
     let r = resolver
         .resolve("bg-linear-to-r from-red-500 to-blue-500 dark:bg-none")
         .unwrap();
-    assert_eq!(r.warnings, [] as [aeolus_core::Warning; 0]);
+    assert!(r.warnings.is_empty());
     assert!(matches!(
         r.plan.base.background_gradient,
         Some(Gradient::Linear { .. })
@@ -200,7 +200,7 @@ fn missing_to_stop_is_transparent() {
     let t = themed_theme(RED_500);
     let resolver = Resolver::new(&t);
     let r = resolver.resolve("bg-linear-to-r from-red-500").unwrap();
-    assert_eq!(r.warnings, [] as [aeolus_core::Warning; 0]);
+    assert!(r.warnings.is_empty());
     match r.plan.base.background_gradient {
         Some(Gradient::Linear { stops, .. }) => {
             assert_eq!(stops.to.color, Color::TRANSPARENT, "missing to = #0000");
@@ -217,7 +217,7 @@ fn via_composes_between_from_and_to() {
     let r = resolver
         .resolve("bg-linear-to-r from-red-500 via-yellow-400 to-blue-500")
         .unwrap();
-    assert_eq!(r.warnings, [] as [aeolus_core::Warning; 0]);
+    assert!(r.warnings.is_empty());
     match r.plan.base.background_gradient {
         Some(Gradient::Linear { stops, .. }) => {
             let via = stops.via.expect("via composed");
@@ -265,7 +265,7 @@ fn stop_opacity_modifier_uses_the_v4_color_mix_shape() {
     let t = themed_theme(RED_500);
     let resolver = Resolver::new(&t);
     let r = resolver.resolve("bg-linear-to-r from-red-500/50").unwrap();
-    assert_eq!(r.warnings, [] as [aeolus_core::Warning; 0]);
+    assert!(r.warnings.is_empty());
     match r.plan.base.background_gradient {
         Some(Gradient::Linear { stops, .. }) => {
             assert!(
