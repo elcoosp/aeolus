@@ -23,7 +23,3 @@ path = "src/main.rs"
 [[bench]]
 name = "pipeline"
 harness = false
-
-# Pedantic clippy, inherited from the workspace (v0.8 §4).
-[lints]
-workspace = true

@@ -39,7 +39,3 @@ slint-interpreter = { version = "1.18", default-features = false, features = [
 ] }
 # `Compiler::build_from_source` is async; the tests block on it.
 futures = "0.3"
-
-# Pedantic clippy, inherited from the workspace (v0.8 §4).
-[lints]
-workspace = true
