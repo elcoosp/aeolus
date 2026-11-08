@@ -87,7 +87,8 @@ fn write_variant(s: &mut String, v: &Variant<'_>) {
             });
             s.push_str(name);
             if let Some(v) = value {
-                s.push_str(&format!("={v}"));
+                s.push('=');
+                s.push_str(v);
             }
         }
         Variant::Structural(st) => s.push_str(st.canonical()),
