@@ -66,7 +66,7 @@ fn snapshot_header_and_shape() {
     assert!(json.contains("\"format\":\"aeolus-plan\""), "{json}");
     assert!(json.contains("\"version\":2"), "{json}");
     // Compact (no whitespace outside strings) — diff-friendly.
-    assert!(!json.contains('\n'), "snapshot is compact JSON");
+    assert!(!json.contains("\n"), "snapshot is compact JSON");
 }
 
 #[test]
@@ -81,13 +81,13 @@ fn empty_plan_round_trips() {
 fn rejects_malformed_snapshots() {
     // Not JSON.
     let err = StylePlan::from_snapshot_json("not json at all").unwrap_err();
-    assert_ne!(err.to_string(), "");
+    assert!(!err.to_string().is_empty());
     // JSON but wrong shape (an array instead of an object).
     assert!(StylePlan::from_snapshot_json("[]").is_err());
     // A JSON object without the header.
     assert!(StylePlan::from_snapshot_json("{}").is_err());
     // Wrong format tag.
-    assert!(StylePlan::from_snapshot_json("{\"format\":\"other\",\"version\":1}").is_err());
+    assert!(StylePlan::from_snapshot_json("{\"format\":\"other\",\"version\":2}").is_err());
     // Unsupported version → precise, matchable error.
     let err =
         StylePlan::from_snapshot_json("{\"format\":\"aeolus-plan\",\"version\":99}").unwrap_err();
@@ -97,7 +97,7 @@ fn rejects_malformed_snapshots() {
     );
     // Unknown fields are rejected (strictness is the compat contract).
     assert!(
-        StylePlan::from_snapshot_json("{\"format\":\"aeolus-plan\",\"version\":1,\"bogus\":1}")
+        StylePlan::from_snapshot_json("{\"format\":\"aeolus-plan\",\"version\":2,\"bogus\":1}")
             .is_err()
     );
     // Trailing garbage after a complete document is rejected.
@@ -118,11 +118,11 @@ fn snapshot_never_panics_on_fuzzish_input() {
         "null",
         "123",
         "\"str\"",
-        "{\"format\":\"aeolus-plan\",\"version\":1,\"base\":null}",
-        "{\"format\":\"aeolus-plan\",\"version\":1,\"base\":{\"padding\":{\"top\":\"x\"}}}",
-        "{\"format\":\"aeolus-plan\",\"version\":1,\"breakpoints\":[1,2,3]}",
-        "{\"format\":\"aeolus-plan\",\"version\":1,\"layers\":[{\"condition\":42}]}",
-        "{\"format\":\"aeolus-plan\",\"version\":1e999}",
+        "{\"format\":\"aeolus-plan\",\"version\":2,\"base\":null}",
+        "{\"format\":\"aeolus-plan\",\"version\":2,\"base\":{\"padding\":{\"top\":\"x\"}}}",
+        "{\"format\":\"aeolus-plan\",\"version\":2,\"breakpoints\":[1,2,3]}",
+        "{\"format\":\"aeolus-plan\",\"version\":2,\"layers\":[{\"condition\":42}]}",
+        "{\"format\":\"aeolus-plan\",\"version\":2e999}",
     ];
     for input in inputs {
         let _ = StylePlan::from_snapshot_json(input); // must not panic
@@ -238,7 +238,7 @@ fn proptest_random_plans_round_trip() {
     ];
     // A deterministic pseudo-random sampler (xorshift) keeps the test stable
     // while covering thousands of combinations across runs.
-    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut state: u64 = 0x9E3779B97F4A7C15;
     let mut next = move || {
         state ^= state << 13;
         state ^= state >> 7;
