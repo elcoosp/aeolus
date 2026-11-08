@@ -37,6 +37,9 @@ impl Probe for TableProbe {
             Test::Aria(_, _) => false,
             Test::Structural(s) => matches!(s, Structural::First) && self.first_child,
             Test::Tag(_) => false,
+            // v0.7 §1: pseudo-element renderings — the table probe does
+            // not answer them (default "no").
+            Test::Pseudo(_) => false,
         }
     }
 
