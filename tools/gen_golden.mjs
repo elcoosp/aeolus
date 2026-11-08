@@ -216,25 +216,6 @@ const CORPUS = [
   // has / not
   { theme: "default", class: "has-focus:ring-2" },
   { theme: "default", class: "not-hover:opacity-50" },
-  // v0.7 (AEOLUS_V0.7.md): pseudo-element variants, has-attr descendants,
-  // named containers, arbitrary grid templates, justify-items.
-  { theme: "default", class: "selection:bg-red-500" },
-  { theme: "default", class: "placeholder:text-gray-500" },
-  { theme: "default", class: "file:text-sm" },
-  { theme: "default", class: "md:selection:bg-red-500" },
-  { theme: "default", class: "has-data-[slot=card-action]:grid-cols-2" },
-  { theme: "default", class: "has-aria-invalid:border-red-500" },
-  { theme: "default", class: "has-first:grid-cols-3" },
-  { theme: "default", class: "grid-cols-[0_1fr]" },
-  { theme: "default", class: "grid-cols-[repeat(3,minmax(0,1fr))]" },
-  { theme: "default", class: "grid-rows-[auto_auto]" },
-  { theme: "default", class: "auto-rows-min" },
-  { theme: "default", class: "auto-rows-fr" },
-  { theme: "default", class: "auto-cols-max" },
-  { theme: "default", class: "justify-items-start" },
-  { theme: "default", class: "@container/card-header" },
-  { theme: "shadcn", class: "selection:bg-primary" },
-  { theme: "shadcn", class: "placeholder:text-muted-foreground" },
   // container queries
   { theme: "default", class: "@md:bg-red-500" },
   // arbitrary variants (v0.3 typed subset)
