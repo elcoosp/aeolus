@@ -21,7 +21,7 @@ pub enum Atom {
     /// A `.peer[/label]` sibling matches `Test`.
     Peer(Test, Option<Box<str>>),
     /// A descendant of the element matches the test (`has-checked:`,
-    /// and — v0.7 §2 — `has-data-[…]:`/`has-aria-[…]:`/`has-first:`).
+    /// and — v0.9 §2 — `has-data-[…]:`/`has-aria-[…]:`/`has-first:`).
     Has(Test),
     /// A media query (`dark:`, `print:`, `motion-reduce:`, ...).
     Media(Media),
@@ -61,7 +61,7 @@ pub enum Test {
     /// models element kinds (e.g. a web backend) answers honestly.
     Tag(Box<str>),
     /// The element's own pseudo-element rendering (`selection:`,
-    /// `placeholder:`, `file:` — v0.7 §1): the style applies to that
+    /// `placeholder:`, `file:` — v0.9 §1): the style applies to that
     /// rendering while it exists. Not a runtime state — the default probe
     /// answer is "no", so the rule never fires on a backend that does not
     /// model the rendering (the same semantics CSS has when a selector
@@ -153,17 +153,51 @@ mod tests {
         assert_eq!(Atom::Group(Test::State(State::Hover), None).order(), 10);
         assert_eq!(Atom::Peer(Test::State(State::Hover), None).order(), 10);
         assert_eq!(Atom::Has(Test::State(State::Hover)).order(), 10);
-        assert_eq!(Atom::Container { min: None, max: None, name: None }.order(), 108);
-        assert_eq!(Atom::Viewport { min: None, max: None }.order(), 110);
+        assert_eq!(
+            Atom::Container {
+                min: None,
+                max: None,
+                name: None
+            }
+            .order(),
+            108
+        );
+        assert_eq!(
+            Atom::Viewport {
+                min: None,
+                max: None
+            }
+            .order(),
+            110
+        );
         assert_eq!(Atom::Media(Media::MotionReduce).order(), 130);
         assert_eq!(Atom::Media(Media::Dark).order(), 140);
         assert_eq!(Atom::Media(Media::Print).order(), 150);
         // Band ordering itself (the contract, not just the numbers).
         assert!(structural.order() < state.order());
         assert!(state.order() < data.order());
-        assert!(data.order() < Atom::Container { min: None, max: None, name: None }.order());
-        assert!(Atom::Container { min: None, max: None, name: None }.order()
-            < Atom::Viewport { min: None, max: None }.order());
+        assert!(
+            data.order()
+                < Atom::Container {
+                    min: None,
+                    max: None,
+                    name: None
+                }
+                .order()
+        );
+        assert!(
+            Atom::Container {
+                min: None,
+                max: None,
+                name: None
+            }
+            .order()
+                < Atom::Viewport {
+                    min: None,
+                    max: None
+                }
+                .order()
+        );
         assert!(Atom::Media(Media::MotionReduce).order() < Atom::Media(Media::Dark).order());
         assert!(Atom::Media(Media::Dark).order() < Atom::Media(Media::Print).order());
     }
