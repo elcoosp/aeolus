@@ -21,6 +21,8 @@
 //! * [`ClassToken::body`] keeps the raw utility head+value slice so the
 //!   resolver can slice instead of `join("-")` (hot path, plan §3.4.1).
 
+use core::fmt::Write as _;
+
 /// The sentinel capacity of [`ClassToken::variants`]. More than 8 stacked
 /// variants on one class is pathological; such a class parses as
 /// `Unparseable` (a per-class warning, never a panic).
@@ -149,8 +151,7 @@ fn write_variant(s: &mut String, v: &Variant<'_>) {
             });
             s.push_str(name);
             if let Some(v) = value {
-                s.push('=');
-                s.push_str(v);
+                let _ = write!(s, "={v}");
             }
         }
         Variant::Structural(st) => s.push_str(st.canonical()),
@@ -248,7 +249,7 @@ impl<T: Clone + std::fmt::Debug, const N: usize> std::fmt::Debug for Inline<T, N
 }
 
 /// Stack-inlined `&'a str` segments (`["rounded", "t", "lg"]`).
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Segments<'a, const N: usize> {
     items: [&'a str; N],
     len: u8,
@@ -299,6 +300,8 @@ impl<'a, const N: usize> std::ops::Deref for Segments<'a, N> {
         &self.items[..self.len as usize]
     }
 }
+
+impl<const N: usize> Copy for Segments<'_, N> {}
 
 impl<const N: usize> PartialEq for Segments<'_, N> {
     fn eq(&self, other: &Self) -> bool {
@@ -426,6 +429,49 @@ pub enum Structural {
     NthLast(i32),
 }
 
+/// The element's own pseudo-element renderings that v4 names as plain
+/// variants (v0.9 §1, plan `AEOLUS_V0.9.md`): `selection:` → `&::selection`,
+/// `placeholder:` → `&::placeholder`, `file:` → `&::file-selector-button`.
+///
+/// These are NOT runtime states (there is no "selected" flag on a widget the
+/// way `hover` is): they style a SUB-RENDERING of the element. The typed
+/// model keeps them distinguishable from [`State`]s — a backend answers them
+/// through `Probe::test(&Test::Pseudo(…))`, and the default probe answer is
+/// "no" (the rule never fires where the rendering does not exist — the same
+/// semantics CSS has when a selector does not match).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PseudoElement {
+    /// `selection:` — `::selection`, the selected-text rendering.
+    Selection,
+    /// `placeholder:` — `::placeholder`, the placeholder rendering.
+    Placeholder,
+    /// `file:` — `::file-selector-button` (the `<input type=file>` button
+    /// part). No native GUI toolkit has a file-selector sub-widget; the
+    /// typed condition exists so the class parses, merges and emits, and
+    /// the rule simply never fires natively.
+    FileSelectorButton,
+}
+
+impl PseudoElement {
+    /// The canonical variant name (merge keys and diagnostics).
+    pub fn name(self) -> &'static str {
+        match self {
+            PseudoElement::Selection => "selection",
+            PseudoElement::Placeholder => "placeholder",
+            PseudoElement::FileSelectorButton => "file",
+        }
+    }
+
+    /// The CSS selector suffix (`::selection`, ...).
+    pub fn css(self) -> &'static str {
+        match self {
+            PseudoElement::Selection => "::selection",
+            PseudoElement::Placeholder => "::placeholder",
+            PseudoElement::FileSelectorButton => "::file-selector-button",
+        }
+    }
+}
+
 impl Structural {
     /// The canonical variant text (for merge keys and diagnostics).
     pub fn canonical(self) -> &'static str {
@@ -483,6 +529,8 @@ pub enum NamedVariant<'a> {
     UserInvalid,
     /// `placeholder-shown`.
     PlaceholderShown,
+    /// `selection:` — the element's own `::selection` rendering (v0.9 §1).
+    Pseudo(PseudoElement),
     /// `autofill`.
     Autofill,
     /// `read-only`.
@@ -568,6 +616,7 @@ impl NamedVariant<'_> {
             NamedVariant::UserValid => "user-valid".into(),
             NamedVariant::UserInvalid => "user-invalid".into(),
             NamedVariant::PlaceholderShown => "placeholder-shown".into(),
+            NamedVariant::Pseudo(p) => p.name().into(),
             NamedVariant::Autofill => "autofill".into(),
             NamedVariant::ReadOnly => "read-only".into(),
             NamedVariant::InRange => "in-range".into(),
@@ -816,5 +865,59 @@ impl Breakpoint {
             Breakpoint::Xl => 3,
             Breakpoint::Xxl => 4,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The v0.7 pseudo-element surface: canonical variant names (merge keys,
+    /// diagnostics, snapshot reader) and the CSS suffixes the emitter
+    /// reproduces verbatim.
+    #[test]
+    fn pseudo_element_names_and_css_suffixes() {
+        assert_eq!(PseudoElement::Selection.name(), "selection");
+        assert_eq!(PseudoElement::Placeholder.name(), "placeholder");
+        assert_eq!(PseudoElement::FileSelectorButton.name(), "file");
+        assert_eq!(PseudoElement::Selection.css(), "::selection");
+        assert_eq!(PseudoElement::Placeholder.css(), "::placeholder");
+        assert_eq!(
+            PseudoElement::FileSelectorButton.css(),
+            "::file-selector-button"
+        );
+    }
+
+    /// Structural canonical names feed merge keys; the Nth forms canonicalize
+    /// to the family name (the number is part of `Segments`, not the key).
+    #[test]
+    fn structural_canonical_names() {
+        assert_eq!(Structural::First.canonical(), "first");
+        assert_eq!(Structural::Last.canonical(), "last");
+        assert_eq!(Structural::Odd.canonical(), "odd");
+        assert_eq!(Structural::Even.canonical(), "even");
+        assert_eq!(Structural::Only.canonical(), "only");
+        assert_eq!(Structural::Empty.canonical(), "empty");
+        assert_eq!(Structural::Nth(3).canonical(), "nth");
+        assert_eq!(Structural::NthLast(2).canonical(), "nth-last");
+    }
+
+    /// Breakpoint names and indices stay in lockstep — `index()` indexes
+    /// `StylePlan::breakpoints` (a 5-slot table), so any drift breaks the
+    /// responsive lowering silently.
+    #[test]
+    fn breakpoint_indices_are_dense_and_ordered() {
+        let all = [
+            Breakpoint::Sm,
+            Breakpoint::Md,
+            Breakpoint::Lg,
+            Breakpoint::Xl,
+            Breakpoint::Xxl,
+        ];
+        for (i, bp) in all.iter().enumerate() {
+            assert_eq!(bp.index(), i, "{bp:?} index drifted");
+        }
+        assert_eq!(Breakpoint::Sm.name(), "sm");
+        assert_eq!(Breakpoint::Xxl.name(), "2xl");
     }
 }

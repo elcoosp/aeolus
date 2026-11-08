@@ -1,4 +1,4 @@
-//! Canonical plan snapshots (v0.7, plan of record `AEOLUS_V0.7.md` §2).
+//! Canonical plan snapshots (v0.7, plan of record `AEOLUS_V0.9.md` §2).
 //!
 //! The `StylePlan` IR is the project's central artifact — v0.7 makes it a
 //! PORTABLE one: [`StylePlan::to_snapshot_json`] serializes a plan into a
@@ -32,21 +32,26 @@
 //! defaults a field it does not understand — the no-silent-failures rule,
 //! applied to the artifact format.
 
-use crate::ast::{Breakpoint, Media, State, Structural};
+use crate::ast::{Breakpoint, Media, PseudoElement, State, Structural};
 use crate::color::Color;
 use crate::cond::{Atom, Cond, Rule, Test};
 use crate::plan::*;
-use core::fmt::Write as _;
 use std::fmt;
+use std::fmt::Write as _;
 
 /// The snapshot format tag (the `format` header field).
 pub const PLAN_SNAPSHOT_FORMAT: &str = "aeolus-plan";
 /// The current snapshot schema version. Readers reject other versions with
 /// [`SnapshotError::UnsupportedVersion`] — new IR fields bump this.
-/// v2 (v0.8 §1) adds the per-edge set-mask (`"set"` objects) to
-/// `padding`/`border_width`/`margin`/`corner_radius`; v1 documents fail
-/// loudly — old readers never guess.
-pub const PLAN_SNAPSHOT_VERSION: u32 = 2;
+///
+/// History: v2 (v0.8 §1) added the per-edge set-mask (`"set"` objects on
+/// `padding`/`margin`/`border_width`/`corner_radius`, REQUIRED on read —
+/// readers never guess). v3 (the variant-engine merge) adds the grid
+/// track templates (`template_cols`/`template_rows`/`auto_rows`/
+/// `auto_cols`), `container_type`, `layout.justify_items`, the
+/// `pseudo` test kind and the generalized `"has"` test object — a strict
+/// superset of the v2 payload.
+pub const PLAN_SNAPSHOT_VERSION: u32 = 3;
 
 /// Why a snapshot failed to parse. `Display` renders a precise,
 /// path-qualified message (the no-silent-failures rule for artifacts).
@@ -699,10 +704,10 @@ fn write_atom(w: &mut W, atom: &Atom) {
             write_labeled_test(w, t, label.as_deref());
             w.raw("}");
         }
-        Atom::Has(state) => {
+        Atom::Has(test) => {
             w.raw("{");
             w.key("has");
-            w.str_val(state_name(*state));
+            write_test(w, test);
             w.raw("}");
         }
         Atom::Media(media) => {
@@ -806,6 +811,88 @@ fn write_test(w: &mut W, t: &Test) {
             w.str_val(tag);
             w.raw("}");
         }
+        Test::Pseudo(pe) => {
+            w.raw("{");
+            w.key("pseudo");
+            w.str_val(pe.name());
+            w.raw("}");
+        }
+    }
+}
+
+/// The v0.9 §4 arbitrary grid templates. `None` writes `null` (the field
+/// is always present — fixed schema order); a template is an array of
+/// single-key components (`track` / `repeat`).
+fn write_tracks(w: &mut W, tracks: Option<&[TrackComponent]>) {
+    match tracks {
+        None => w.raw("null"),
+        Some(ts) => {
+            w.raw("[");
+            for (i, t) in ts.iter().enumerate() {
+                if i > 0 {
+                    w.raw(",");
+                }
+                write_track_component(w, t);
+            }
+            w.raw("]");
+        }
+    }
+}
+
+fn write_track_component(w: &mut W, t: &TrackComponent) {
+    w.raw("{");
+    match t {
+        TrackComponent::Track(tr) => {
+            w.key("track");
+            write_grid_track(w, tr);
+        }
+        TrackComponent::Repeat { count, track } => {
+            w.key("repeat");
+            w.raw("{");
+            w.key("count");
+            w.raw(&count.to_string());
+            w.sep();
+            w.key("track");
+            write_grid_track(w, track);
+            w.raw("}");
+        }
+    }
+    w.raw("}");
+}
+
+fn write_grid_track(w: &mut W, t: &GridTrack) {
+    w.raw("{");
+    w.key("min");
+    write_track_sizing(w, t.min);
+    w.sep();
+    w.key("max");
+    write_track_sizing(w, t.max);
+    w.raw("}");
+}
+
+fn write_track_sizing(w: &mut W, s: TrackSizing) {
+    match s {
+        TrackSizing::Px(v) => {
+            w.raw("{");
+            w.key("px");
+            w.f32(v);
+            w.raw("}");
+        }
+        TrackSizing::Percent(v) => {
+            w.raw("{");
+            w.key("percent");
+            w.f32(v);
+            w.raw("}");
+        }
+        TrackSizing::Fr(v) => {
+            w.raw("{");
+            w.key("fr");
+            w.f32(v);
+            w.raw("}");
+        }
+        TrackSizing::Auto => w.str_val("auto"),
+        TrackSizing::MinContent => w.str_val("min_content"),
+        TrackSizing::MaxContent => w.str_val("max_content"),
     }
 }
 
@@ -888,6 +975,9 @@ fn write_style(w: &mut W, s: &ResolvedStyle) {
             w.sep();
             w.key("justify_content");
             write_enum_opt(w, l.justify_content, justify_content_name);
+            w.sep();
+            w.key("justify_items");
+            write_enum_opt(w, l.justify_items, align_items_name);
             w.sep();
             w.key("flex_wrap");
             match l.flex_wrap {
@@ -1054,6 +1144,18 @@ fn write_extras(w: &mut W, e: &Extras) {
             w.sep();
             w.key("row_start");
             write_opt_i16(w, g.row_start);
+            w.sep();
+            w.key("template_cols");
+            write_tracks(w, g.template_cols.as_deref());
+            w.sep();
+            w.key("template_rows");
+            write_tracks(w, g.template_rows.as_deref());
+            w.sep();
+            w.key("auto_rows");
+            write_tracks(w, g.auto_rows.as_deref());
+            w.sep();
+            w.key("auto_cols");
+            write_tracks(w, g.auto_cols.as_deref());
             w.raw("}");
         }
         None => w.raw("null"),
@@ -1132,8 +1234,8 @@ fn write_extras(w: &mut W, e: &Extras) {
     write_enum_opt(w, e.border_style, border_style_name);
     w.sep();
     w.key("flex_basis");
-    match e.flex_basis {
-        Some(v) => write_sized(w, v),
+    match &e.flex_basis {
+        Some(v) => write_sized(w, *v),
         None => w.raw("null"),
     }
     w.sep();
@@ -1175,6 +1277,20 @@ fn write_extras(w: &mut W, e: &Extras) {
             w.sep();
             w.key("row");
             w.opt_f32(g.row);
+            w.raw("}");
+        }
+        None => w.raw("null"),
+    }
+    w.sep();
+    w.key("container_type");
+    match &e.container_type {
+        Some(c) => {
+            w.raw("{");
+            w.key("name");
+            match &c.name {
+                Some(n) => w.str_val(n),
+                None => w.raw("null"),
+            }
             w.raw("}");
         }
         None => w.raw("null"),
@@ -1555,7 +1671,7 @@ impl StylePlan {
         if format != PLAN_SNAPSHOT_FORMAT {
             return Err(SnapshotError::WrongFormat(format));
         }
-        if version != u64::from(PLAN_SNAPSHOT_VERSION) {
+        if version != PLAN_SNAPSHOT_VERSION as u64 {
             return Err(SnapshotError::UnsupportedVersion(
                 u32::try_from(version).unwrap_or(u32::MAX),
             ));
@@ -1838,15 +1954,7 @@ fn read_atom(j: &Json, path: &str) -> Result<Atom, SnapshotError> {
                 Ok(Atom::Peer(test, label))
             }
         }
-        "has" => {
-            let state = parse_state(&read_string(value, &child)?).ok_or_else(|| {
-                SnapshotError::InvalidValue {
-                    path: child.clone(),
-                    msg: "unknown state".to_string(),
-                }
-            })?;
-            Ok(Atom::Has(state))
-        }
+        "has" => Ok(Atom::Has(read_test(value, &child)?)),
         "media" => {
             let media = parse_media(&read_string(value, &child)?).ok_or_else(|| {
                 SnapshotError::InvalidValue {
@@ -1896,6 +2004,138 @@ fn read_atom(j: &Json, path: &str) -> Result<Atom, SnapshotError> {
     }
 }
 
+/// The v0.9 §4 grid templates: `null` or an array of single-key
+/// components (`track` / `repeat{count,track}`). Strict: unknown keys,
+/// missing fields and non-canonical shapes are typed errors.
+fn read_tracks(j: &Json, path: &str) -> Result<Option<Vec<TrackComponent>>, SnapshotError> {
+    if matches!(j, Json::Null) {
+        return Ok(None);
+    }
+    let Json::Arr(items) = j else {
+        return Err(SnapshotError::InvalidValue {
+            path: path.to_string(),
+            msg: "expected an array or null".to_string(),
+        });
+    };
+    let mut tracks = Vec::with_capacity(items.len());
+    for item in items {
+        let Json::Obj(fields) = item else {
+            return Err(SnapshotError::InvalidValue {
+                path: path.to_string(),
+                msg: "expected a single-key object".to_string(),
+            });
+        };
+        if fields.len() != 1 {
+            return Err(SnapshotError::InvalidValue {
+                path: path.to_string(),
+                msg: "a track component is a single-key object (track/repeat)".to_string(),
+            });
+        }
+        let (key, value) = &fields[0];
+        let child = join_path(path, key);
+        match key.as_str() {
+            "track" => tracks.push(TrackComponent::Track(read_grid_track(value, &child)?)),
+            "repeat" => {
+                let Json::Obj(inner) = value else {
+                    return Err(SnapshotError::InvalidValue {
+                        path: child,
+                        msg: "expected an object".to_string(),
+                    });
+                };
+                let mut count: Option<u16> = None;
+                let mut track: Option<GridTrack> = None;
+                for (k, v) in inner {
+                    let ip = join_path(&child, k);
+                    match k.as_str() {
+                        "count" => count = Some(read_u16(v, &ip)?),
+                        "track" => track = Some(read_grid_track(v, &ip)?),
+                        _ => return Err(SnapshotError::UnknownField { path: ip }),
+                    }
+                }
+                let Some(count) = count else {
+                    return Err(SnapshotError::InvalidValue {
+                        path: child,
+                        msg: "missing `count`".to_string(),
+                    });
+                };
+                let Some(track) = track else {
+                    return Err(SnapshotError::InvalidValue {
+                        path: child,
+                        msg: "missing `track`".to_string(),
+                    });
+                };
+                tracks.push(TrackComponent::Repeat { count, track });
+            }
+            _ => {
+                return Err(SnapshotError::UnknownField {
+                    path: path.to_string(),
+                });
+            }
+        }
+    }
+    Ok(Some(tracks))
+}
+
+fn read_grid_track(j: &Json, path: &str) -> Result<GridTrack, SnapshotError> {
+    let Json::Obj(fields) = j else {
+        return Err(SnapshotError::InvalidValue {
+            path: path.to_string(),
+            msg: "expected an object".to_string(),
+        });
+    };
+    let mut min: Option<TrackSizing> = None;
+    let mut max: Option<TrackSizing> = None;
+    for (k, v) in fields {
+        let ip = join_path(path, k);
+        match k.as_str() {
+            "min" => min = Some(read_track_sizing(v, &ip)?),
+            "max" => max = Some(read_track_sizing(v, &ip)?),
+            _ => return Err(SnapshotError::UnknownField { path: ip }),
+        }
+    }
+    let Some(min) = min else {
+        return Err(SnapshotError::InvalidValue {
+            path: path.to_string(),
+            msg: "missing `min`".to_string(),
+        });
+    };
+    let Some(max) = max else {
+        return Err(SnapshotError::InvalidValue {
+            path: path.to_string(),
+            msg: "missing `max`".to_string(),
+        });
+    };
+    Ok(GridTrack { min, max })
+}
+
+fn read_track_sizing(j: &Json, path: &str) -> Result<TrackSizing, SnapshotError> {
+    match j {
+        Json::Str(s) => match s.as_str() {
+            "auto" => Ok(TrackSizing::Auto),
+            "min_content" => Ok(TrackSizing::MinContent),
+            "max_content" => Ok(TrackSizing::MaxContent),
+            _ => Err(SnapshotError::InvalidValue {
+                path: path.to_string(),
+                msg: "unknown track sizing keyword".to_string(),
+            }),
+        },
+        Json::Obj(fields) if fields.len() == 1 => {
+            let (key, value) = &fields[0];
+            let child = join_path(path, key);
+            match key.as_str() {
+                "px" => Ok(TrackSizing::Px(read_f32(value, &child)?)),
+                "percent" => Ok(TrackSizing::Percent(read_f32(value, &child)?)),
+                "fr" => Ok(TrackSizing::Fr(read_f32(value, &child)?)),
+                _ => Err(SnapshotError::UnknownField { path: child }),
+            }
+        }
+        _ => Err(SnapshotError::InvalidValue {
+            path: path.to_string(),
+            msg: "expected a keyword or single-key object".to_string(),
+        }),
+    }
+}
+
 fn read_min_max(j: &Json, path: &str) -> Result<(Option<f32>, Option<f32>), SnapshotError> {
     let Json::Obj(fields) = j else {
         return Err(SnapshotError::InvalidValue {
@@ -1929,7 +2169,8 @@ fn read_test(j: &Json, path: &str) -> Result<Test, SnapshotError> {
     if fields.len() != 1 {
         return Err(SnapshotError::InvalidValue {
             path: path.to_string(),
-            msg: "a test is a single-key object (state/data/aria/structural/tag)".to_string(),
+            msg: "a test is a single-key object (state/data/aria/structural/tag/pseudo)"
+                .to_string(),
         });
     }
     let (key, value) = &fields[0];
@@ -1987,6 +2228,14 @@ fn read_test(j: &Json, path: &str) -> Result<Test, SnapshotError> {
             Ok(Test::Structural(s))
         }
         "tag" => Ok(Test::Tag(read_string(value, &child)?.into())),
+        "pseudo" => {
+            let name = read_string(value, &child)?;
+            let pe = parse_pseudo(&name).ok_or_else(|| SnapshotError::InvalidValue {
+                path: child.clone(),
+                msg: "unknown pseudo-element".to_string(),
+            })?;
+            Ok(Test::Pseudo(pe))
+        }
         _ => Err(SnapshotError::UnknownField {
             path: path.to_string(),
         }),
@@ -2258,6 +2507,10 @@ fn read_extras(j: &Json, path: &str, e: &mut Extras) -> Result<(), SnapshotError
                                 "row_span" => g.row_span = read_opt_u16(val, &ip)?,
                                 "col_start" => g.col_start = read_opt_i16(val, &ip)?,
                                 "row_start" => g.row_start = read_opt_i16(val, &ip)?,
+                                "template_cols" => g.template_cols = read_tracks(val, &ip)?,
+                                "template_rows" => g.template_rows = read_tracks(val, &ip)?,
+                                "auto_rows" => g.auto_rows = read_tracks(val, &ip)?,
+                                "auto_cols" => g.auto_cols = read_tracks(val, &ip)?,
                                 _ => return Err(SnapshotError::UnknownField { path: ip }),
                             }
                         }
@@ -2496,6 +2749,35 @@ fn read_extras(j: &Json, path: &str, e: &mut Extras) -> Result<(), SnapshotError
             }
             "shadow_rest" => e.shadow_rest = read_arr(value, &p, read_shadow)?,
             "inset_shadows" => e.inset_shadows = read_arr(value, &p, read_shadow)?,
+            "container_type" => {
+                e.container_type = match value {
+                    Json::Null => None,
+                    v => {
+                        let Json::Obj(inner) = v else {
+                            return Err(SnapshotError::InvalidValue {
+                                path: p.clone(),
+                                msg: "expected an object".to_string(),
+                            });
+                        };
+                        let mut name: Option<Option<Box<str>>> = None;
+                        for (k, val) in inner {
+                            let ip = join_path(&p, k);
+                            match k.as_str() {
+                                "name" => {
+                                    name = Some(match val {
+                                        Json::Null => None,
+                                        _ => Some(read_string(val, &ip)?.into()),
+                                    });
+                                }
+                                _ => return Err(SnapshotError::UnknownField { path: ip }),
+                            }
+                        }
+                        Some(ContainerType {
+                            name: name.unwrap_or(None),
+                        })
+                    }
+                }
+            }
             _ => return Err(SnapshotError::UnknownField { path: p }),
         }
     }
@@ -2724,6 +3006,9 @@ fn read_opt_layout(j: &Json, path: &str) -> Result<Option<Layout>, SnapshotError
                     "justify_content" => {
                         l.justify_content = read_named_opt(value, &p, parse_justify_content)?;
                     }
+                    "justify_items" => {
+                        l.justify_items = read_named_opt(value, &p, parse_align_items)?;
+                    }
                     "flex_wrap" => l.flex_wrap = read_opt_bool(value, &p)?,
                     "flex_grow" => l.flex_grow = read_opt_f32(value, &p)?,
                     "flex_shrink" => l.flex_shrink = read_opt_f32(value, &p)?,
@@ -2939,7 +3224,7 @@ fn read_opt_f32(j: &Json, path: &str) -> Result<Option<f32>, SnapshotError> {
 
 fn read_u64(j: &Json, path: &str) -> Result<u64, SnapshotError> {
     match j {
-        Json::Num(n) if *n >= 0.0 && n.fract() == 0.0 && *n <= f64::from(u32::MAX) => Ok(*n as u64),
+        Json::Num(n) if *n >= 0.0 && n.fract() == 0.0 && *n <= u32::MAX as f64 => Ok(*n as u64),
         _ => Err(SnapshotError::InvalidValue {
             path: path.to_string(),
             msg: "expected a non-negative integer".to_string(),
@@ -2949,9 +3234,7 @@ fn read_u64(j: &Json, path: &str) -> Result<u64, SnapshotError> {
 
 fn read_i32(j: &Json, path: &str) -> Result<i32, SnapshotError> {
     match j {
-        Json::Num(n)
-            if n.fract() == 0.0 && *n >= f64::from(i32::MIN) && *n <= f64::from(i32::MAX) =>
-        {
+        Json::Num(n) if n.fract() == 0.0 && *n >= i32::MIN as f64 && *n <= i32::MAX as f64 => {
             Ok(*n as i32)
         }
         _ => Err(SnapshotError::InvalidValue {
@@ -2970,7 +3253,7 @@ fn read_opt_i32(j: &Json, path: &str) -> Result<Option<i32>, SnapshotError> {
 
 fn read_u16(j: &Json, path: &str) -> Result<u16, SnapshotError> {
     match j {
-        Json::Num(n) if n.fract() == 0.0 && *n >= 0.0 && *n <= f64::from(u16::MAX) => Ok(*n as u16),
+        Json::Num(n) if n.fract() == 0.0 && *n >= 0.0 && *n <= u16::MAX as f64 => Ok(*n as u16),
         _ => Err(SnapshotError::InvalidValue {
             path: path.to_string(),
             msg: "expected an integer in 0..=65535".to_string(),
@@ -2987,9 +3270,7 @@ fn read_opt_u16(j: &Json, path: &str) -> Result<Option<u16>, SnapshotError> {
 
 fn read_i16(j: &Json, path: &str) -> Result<i16, SnapshotError> {
     match j {
-        Json::Num(n)
-            if n.fract() == 0.0 && *n >= f64::from(i16::MIN) && *n <= f64::from(i16::MAX) =>
-        {
+        Json::Num(n) if n.fract() == 0.0 && *n >= i16::MIN as f64 && *n <= i16::MAX as f64 => {
             Ok(*n as i16)
         }
         _ => Err(SnapshotError::InvalidValue {
@@ -3069,7 +3350,7 @@ fn read_opt_edges<T>(
                     _ => return Err(SnapshotError::UnknownField { path: p }),
                 }
             }
-            // The mask is REQUIRED in v2: a document without it is a
+            // The mask is REQUIRED from v2 on: a document without it is a
             // different schema version, and readers never guess.
             let Some(set) = set else {
                 return Err(SnapshotError::InvalidValue {
@@ -3302,6 +3583,17 @@ fn media_name(m: Media) -> &'static str {
         Media::AnyPointerCoarse => "any_pointer_coarse",
         Media::AnyPointerNone => "any_pointer_none",
     }
+}
+
+/// The pseudo-element variant names (v0.9 §1) as accepted by the reader —
+/// the same names the parser registers for `selection:`/`placeholder:`/`file:`.
+fn parse_pseudo(s: &str) -> Option<PseudoElement> {
+    Some(match s {
+        "selection" => PseudoElement::Selection,
+        "placeholder" => PseudoElement::Placeholder,
+        "file" => PseudoElement::FileSelectorButton,
+        _ => return None,
+    })
 }
 
 fn parse_media(s: &str) -> Option<Media> {
@@ -3865,7 +4157,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             e.to_string(),
-            "snapshot schema version 7 is not supported (this build reads version 2)"
+            "snapshot schema version 7 is not supported (this build reads version 3)"
         );
     }
 

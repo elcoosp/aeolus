@@ -20,8 +20,9 @@ pub enum Atom {
     Group(Test, Option<Box<str>>),
     /// A `.peer[/label]` sibling matches `Test`.
     Peer(Test, Option<Box<str>>),
-    /// A descendant of the element matches the state (`has-checked:`).
-    Has(State),
+    /// A descendant of the element matches the test (`has-checked:`,
+    /// and — v0.9 §2 — `has-data-[…]:`/`has-aria-[…]:`/`has-first:`).
+    Has(Test),
     /// A media query (`dark:`, `print:`, `motion-reduce:`, ...).
     Media(Media),
     /// Viewport width window (`sm:`–`2xl:`, `min-*`, `max-*`).
@@ -59,6 +60,14 @@ pub enum Test {
     /// semantics CSS has when a selector does not match. A backend that
     /// models element kinds (e.g. a web backend) answers honestly.
     Tag(Box<str>),
+    /// The element's own pseudo-element rendering (`selection:`,
+    /// `placeholder:`, `file:` — v0.9 §1): the style applies to that
+    /// rendering while it exists. Not a runtime state — the default probe
+    /// answer is "no", so the rule never fires on a backend that does not
+    /// model the rendering (the same semantics CSS has when a selector
+    /// does not match). Backends with the surface (e.g. text-selection
+    /// colors on a text-input wrapper) answer honestly via `Probe::test`.
+    Pseudo(crate::ast::PseudoElement),
 }
 
 impl Atom {
@@ -77,6 +86,9 @@ impl Atom {
                 // hover:) must share their band so the cascade order is
                 // stable (v0.3 §1.2; ties keep source order).
                 Test::Tag(_) => 10,
+                // Pseudo-element renderings rank with the state band too:
+                // v4 emits them in the same variant order.
+                Test::Pseudo(_) => 10,
                 // aria/data come after states in v4's variant order.
                 Test::Data(_, _) | Test::Aria(_, _) => 14,
             },
@@ -111,4 +123,113 @@ pub struct Rule {
     pub when: Cond,
     /// The style to overlay while the condition holds.
     pub style: crate::plan::ResolvedStyle,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{Media, PseudoElement, State, Structural};
+
+    /// The `Atom::order` band table is the cascade contract (v4 variant
+    /// order): structural < states/tag/pseudo < data-aria < container <
+    /// viewport < media < dark < print. Pin every band so a reorder is a
+    /// deliberate, reviewed decision — the evaluator, the CSS emitter and
+    /// every stack lowering depend on these exact numbers.
+    #[test]
+    fn order_bands_match_the_v4_cascade_contract() {
+        let structural = Atom::On(Test::Structural(Structural::First));
+        let state = Atom::On(Test::State(State::Hover));
+        let tag = Atom::On(Test::Tag("a".into()));
+        let pseudo = Atom::On(Test::Pseudo(PseudoElement::Selection));
+        let data = Atom::On(Test::Data("state".into(), Some("open".into())));
+        let aria = Atom::On(Test::Aria("expanded".into(), None));
+        assert_eq!(structural.order(), 8);
+        assert_eq!(state.order(), 10);
+        assert_eq!(tag.order(), 10);
+        assert_eq!(pseudo.order(), 10);
+        assert_eq!(data.order(), 14);
+        assert_eq!(aria.order(), 14);
+        assert_eq!(Atom::Not(Test::State(State::Hover)).order(), 10);
+        assert_eq!(Atom::Group(Test::State(State::Hover), None).order(), 10);
+        assert_eq!(Atom::Peer(Test::State(State::Hover), None).order(), 10);
+        assert_eq!(Atom::Has(Test::State(State::Hover)).order(), 10);
+        assert_eq!(
+            Atom::Container {
+                min: None,
+                max: None,
+                name: None
+            }
+            .order(),
+            108
+        );
+        assert_eq!(
+            Atom::Viewport {
+                min: None,
+                max: None
+            }
+            .order(),
+            110
+        );
+        assert_eq!(Atom::Media(Media::MotionReduce).order(), 130);
+        assert_eq!(Atom::Media(Media::Dark).order(), 140);
+        assert_eq!(Atom::Media(Media::Print).order(), 150);
+        // Band ordering itself (the contract, not just the numbers).
+        assert!(structural.order() < state.order());
+        assert!(state.order() < data.order());
+        assert!(
+            data.order()
+                < Atom::Container {
+                    min: None,
+                    max: None,
+                    name: None
+                }
+                .order()
+        );
+        assert!(
+            Atom::Container {
+                min: None,
+                max: None,
+                name: None
+            }
+            .order()
+                < Atom::Viewport {
+                    min: None,
+                    max: None
+                }
+                .order()
+        );
+        assert!(Atom::Media(Media::MotionReduce).order() < Atom::Media(Media::Dark).order());
+        assert!(Atom::Media(Media::Dark).order() < Atom::Media(Media::Print).order());
+    }
+
+    /// `Cond::rank` is `(max atom order, atom count)` — the max wins so a
+    /// `dark:hover:` conjunction sorts with dark, not with hover.
+    #[test]
+    fn cond_rank_takes_the_max_atom_order() {
+        let dark_hover = Cond(vec![
+            Atom::Media(Media::Dark),
+            Atom::On(Test::State(State::Hover)),
+        ]);
+        assert_eq!(dark_hover.rank(), (140, 2));
+        let single = Cond(vec![Atom::On(Test::State(State::Hover))]);
+        assert_eq!(single.rank(), (10, 1));
+        // The empty conjunction ranks at 0 — it can never occur from the
+        // parser (a rule always has ≥1 atom), but it must not panic.
+        assert_eq!(Cond(vec![]).rank(), (0, 0));
+    }
+
+    /// Pseudo-element tests are distinguishable from states with the same
+    /// display name (`selection:` vs a hypothetical `selection` state) —
+    /// the merge-key machinery relies on the typed distinction.
+    #[test]
+    fn pseudo_tests_are_their_own_arms() {
+        let pseudo = Test::Pseudo(PseudoElement::Selection);
+        assert_ne!(pseudo, Test::State(State::Hover));
+        assert_eq!(pseudo, Test::Pseudo(PseudoElement::Selection));
+        // All three v0.7 pseudo-elements construct and differ.
+        assert_ne!(
+            Test::Pseudo(PseudoElement::Placeholder),
+            Test::Pseudo(PseudoElement::FileSelectorButton)
+        );
+    }
 }

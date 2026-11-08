@@ -205,6 +205,19 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["row", "span", ..] => "row-span",
         ["row", "start", ..] => "row-start",
         ["row", "end", ..] => "row-end",
+        // v0.9 §4: the grid TEMPLATE families are conflict groups — the
+        // numeric and arbitrary forms set the same CSS property
+        // (`grid-template-columns`), so the later one evicts the earlier
+        // across the numeric/arbitrary boundary. The parser strips the
+        // arbitrary value, so `grid-cols-[0_1fr]` and `grid-cols-3` share
+        // the `["grid", "cols"]` elements.
+        ["grid", "cols", ..] => "grid-template-columns",
+        ["grid", "rows", ..] => "grid-template-rows",
+        ["auto", "rows", ..] => "grid-auto-rows",
+        ["auto", "cols", ..] => "grid-auto-columns",
+        // v0.9 §3: `@container[/name]` — every form establishes the same
+        // `container-type` declaration; the later one wins.
+        ["@container", ..] => "container-type",
         ["visible" | "invisible"] => "visibility",
         ["isolate" | "isolation-auto"] => "isolation",
         ["resize", ..] => "resize",
@@ -618,6 +631,33 @@ mod tests {
         assert_eq!(cn(&["row-span-2", "row-start-1"]), "row-span-2 row-start-1");
         // col and row families never collide.
         assert_eq!(cn(&["col-span-2", "row-span-2"]), "col-span-2 row-span-2");
+    }
+
+    /// v0.9 §4: the grid TEMPLATE families are conflict groups — the later
+    /// template (numeric or arbitrary) evicts the earlier one, across the
+    /// numeric/arbitrary boundary (both set the same CSS property).
+    #[test]
+    fn grid_template_families_conflict() {
+        assert_eq!(cn(&["grid-cols-3", "grid-cols-2"]), "grid-cols-2");
+        assert_eq!(
+            cn(&["grid-cols-3", "grid-cols-[0_1fr]"]),
+            "grid-cols-[0_1fr]"
+        );
+        assert_eq!(cn(&["grid-cols-[0_1fr]", "grid-cols-3"]), "grid-cols-3");
+        assert_eq!(
+            cn(&["grid-rows-2", "grid-rows-[auto_auto]"]),
+            "grid-rows-[auto_auto]"
+        );
+        assert_eq!(cn(&["auto-rows-min", "auto-rows-fr"]), "auto-rows-fr");
+        assert_eq!(cn(&["auto-cols-min", "auto-cols-max"]), "auto-cols-max");
+        // Rows and cols never collide; templates and placement never collide.
+        assert_eq!(
+            cn(&["grid-cols-3", "grid-rows-2"]),
+            "grid-cols-3 grid-rows-2"
+        );
+        assert_eq!(cn(&["grid-cols-3", "col-span-2"]), "grid-cols-3 col-span-2");
+        // v0.9 §3: named container declarations evict each other.
+        assert_eq!(cn(&["@container/a", "@container/b"]), "@container/b");
     }
 
     #[test]

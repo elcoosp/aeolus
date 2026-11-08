@@ -411,12 +411,10 @@ fn pseudo_atoms(name: &str, args: Option<&str>) -> Result<Vec<Atom>, &'static st
         }
         // `:not(:hover)` — one simple inner test.
         ("not", Some(inner)) => simple_test(inner).map(|t| vec![Atom::Not(t)]),
-        // `:has(:focus)` — descendant STATE only (`:has(> svg)` has no
-        // typed question beyond states).
-        ("has", Some(inner)) => simple_test(inner).and_then(|t| match t {
-            Test::State(s) => Ok(vec![Atom::Has(s)]),
-            _ => Err(COMPOUND_INNER),
-        }),
+        // `:has(:focus)` — descendant tests (v0.9 §2 generalizes the typed
+        // inner from states to any single self test: states, data/aria
+        // attributes, structural position, element kind).
+        ("has", Some(inner)) => simple_test(inner).map(|t| vec![Atom::Has(t)]),
         // `:is(...)` / `:where(...)` — pure wrappers; a LIST is a
         // disjunction, a single inner classifies recursively.
         ("is" | "where", Some(inner)) => {
@@ -508,3 +506,108 @@ fn decode_underscores(s: &str) -> String {
 }
 
 use crate::resolve::state_name;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::State;
+    use crate::cond::Test;
+
+    /// The named boundary (v0.3 §1.3): v4 lateral variants and capability
+    /// queries style OTHER elements or ask questions the Probe model cannot
+    /// ask — the classifier reports them with the typed reason strings,
+    /// never silently.
+    #[test]
+    fn the_documented_boundary_reports_instead_of_parsing() {
+        // Lateral variants (`*` = `:is(& > *)`): other elements.
+        assert_eq!(classify("*"), Err(OTHER_ELEMENTS));
+        assert_eq!(classify("**"), Err(OTHER_ELEMENTS));
+        // Capability queries.
+        assert_eq!(classify("supports-[display:grid]"), Err(SUPPORTS));
+        // An+B structural selectors (plain `nth-3` is the typed form).
+        assert_eq!(classify("nth-[2n+1]"), Err(ANB));
+        // Relative selectors outside has-*/group-*/peer-*.
+        assert_eq!(classify("[>svg]"), Err(RELATIVE));
+        // Descendant combinator (`& svg`): whitespace after `&` = other
+        // elements.
+        assert_eq!(classify("[& svg]"), Err(OTHER_ELEMENTS));
+        // Class/id selectors: no typed equivalent.
+        assert_eq!(classify("[.border-b]"), Err(CLASS_SEL));
+        // Ancestor selectors.
+        assert_eq!(classify("[a &]"), Err(ANCESTOR));
+        // Bare `&`: adds no condition.
+        assert_eq!(classify("[&]"), Err(BARE_AMP));
+    }
+
+    /// The self-test forms the classifier DOES express — pinned at the
+    /// type level (these feed `has-*`/`not-*`/`group-*` inners and the
+    /// snapshot IR).
+    #[test]
+    fn self_tests_classify_onto_the_typed_arms() {
+        // Byte-identical arbitrary form ≡ the named variant (v0.3 §1.2):
+        // same band, same test.
+        assert_eq!(
+            classify("[&:hover]"),
+            Ok(vec![Atom::On(Test::State(State::Hover))])
+        );
+        // Implicit-self compound: `p:hover` (no `&` → `&:is(p:hover)`).
+        assert_eq!(
+            classify("[p:hover]"),
+            Ok(vec![
+                Atom::On(Test::Tag("p".into())),
+                Atom::On(Test::State(State::Hover))
+            ])
+        );
+        // data/aria attribute tests (the `&[attr]` compound form — the
+        // bare `data-state=open` form reads `data-state` as a tag).
+        assert_eq!(
+            classify("[&[data-state=open]]"),
+            Ok(vec![Atom::On(Test::Data(
+                "state".into(),
+                Some("open".into())
+            ))])
+        );
+        assert_eq!(
+            classify("[&[aria-expanded]]"),
+            Ok(vec![Atom::On(Test::Aria("expanded".into(), None))])
+        );
+        // Structural pseudo-classes.
+        assert_eq!(
+            classify("[&:first-child]"),
+            Ok(vec![Atom::On(Test::Structural(
+                crate::ast::Structural::First
+            ))])
+        );
+    }
+
+    /// `single_test` unwraps exactly one self test; compound inners and
+    /// nested negations are rejected (they cannot be expressed honestly).
+    #[test]
+    fn single_test_needs_exactly_one_self_test() {
+        assert_eq!(single_test("[&:hover]"), Ok(Test::State(State::Hover)));
+        // A compound is a conjunction — the inner model is a single test.
+        assert_eq!(single_test("[p:hover]"), Err(COMPOUND_INNER));
+        // Nested negation: `not-[&:not(:hover)]` would double-negate.
+        assert_eq!(single_test("[&:not(:hover)]"), Err(NESTED_NOT));
+        // The boundary errors propagate unchanged.
+        assert_eq!(single_test("[& svg]"), Err(OTHER_ELEMENTS));
+    }
+
+    /// Structural Nth forms: `nth-3` is the typed `Structural::Nth(3)`; the
+    /// arbitrary `[&:nth-child(3)]` form classifies onto the same arm.
+    #[test]
+    fn nth_forms_classify_to_the_structural_arm() {
+        assert_eq!(
+            classify("[&:nth-child(3)]"),
+            Ok(vec![Atom::On(Test::Structural(
+                crate::ast::Structural::Nth(3)
+            ))])
+        );
+        assert_eq!(
+            classify("[&:nth-last-child(2)]"),
+            Ok(vec![Atom::On(Test::Structural(
+                crate::ast::Structural::NthLast(2)
+            ))])
+        );
+    }
+}

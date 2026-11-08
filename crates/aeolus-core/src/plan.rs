@@ -189,6 +189,8 @@ pub struct Extras {
     pub margin_auto: Option<AutoEdges>,
     /// `gap-x-*`/`gap-y-*` (per-axis gap).
     pub gap_axes: Option<GapAxes>,
+    /// `@container[/name]` — the containment context (v0.9 §3).
+    pub container_type: Option<ContainerType>,
     /// Remaining shadow layers of a multi-layer preset (`shadow-sm`'s
     /// second layer). `shadow` carries the first (dominant) layer.
     pub shadow_rest: Vec<BoxShadow>,
@@ -276,6 +278,8 @@ pub enum Slot {
     InsetShadows,
     /// `background-image` gradient (with the part that changed).
     Gradient(GradientPart),
+    /// `@container[/name]` containment context (v0.9 §3).
+    ContainerType,
 }
 
 /// Which part of the composed [`Gradient`] changed (v0.6 §1.3).
@@ -314,26 +318,33 @@ impl Slot {
             Slot::Outline => 15,
             Slot::Cursor => 16,
             Slot::PointerEvents => 17,
-            Slot::Text(_) => 18,
-            Slot::Position => 19,
-            Slot::Inset => 20,
-            Slot::ZIndex => 21,
-            Slot::Overflow => 22,
-            Slot::Visibility => 23,
-            Slot::AspectRatio => 24,
-            Slot::Grid => 25,
-            Slot::Transform => 26,
-            Slot::Transition => 27,
-            Slot::Animation => 28,
-            Slot::BorderStyle => 29,
-            Slot::FlexBasis => 30,
-            Slot::Order => 31,
-            Slot::AlignContent => 32,
-            Slot::MarginAuto => 33,
-            Slot::GapAxes => 34,
-            Slot::ShadowRest => 35,
-            Slot::InsetShadows => 36,
-            Slot::Gradient(_) => 37,
+            // Every text property gets its OWN bit — the per-property
+            // `slot_differs` walk must reach each of them, otherwise a
+            // font-weight-only change is invisible to the diff (found by
+            // the v0.7 test-pyramid property suite: `Slot::Text(_)` used to
+            // collapse the whole family onto bit 18, so a shared-bit
+            // FontWeight change was reported as FontSize — or missed).
+            Slot::Text(p) => 18 + p.index() as u16,
+            Slot::Position => 34,
+            Slot::Inset => 35,
+            Slot::ZIndex => 36,
+            Slot::Overflow => 37,
+            Slot::Visibility => 38,
+            Slot::AspectRatio => 39,
+            Slot::Grid => 40,
+            Slot::Transform => 41,
+            Slot::Transition => 42,
+            Slot::Animation => 43,
+            Slot::BorderStyle => 44,
+            Slot::FlexBasis => 45,
+            Slot::Order => 46,
+            Slot::AlignContent => 47,
+            Slot::MarginAuto => 48,
+            Slot::GapAxes => 49,
+            Slot::ShadowRest => 50,
+            Slot::InsetShadows => 51,
+            Slot::Gradient(_) => 52,
+            Slot::ContainerType => 53,
         }
     }
 }
@@ -384,6 +395,7 @@ impl Slot {
             | Slot::GapAxes
             | Slot::ShadowRest
             | Slot::InsetShadows
+            | Slot::ContainerType
             | Slot::Text(_) => Lane::Geometric,
         }
     }
@@ -720,6 +732,8 @@ pub struct Layout {
     pub align_items: Option<AlignItems>,
     /// `justify-*` (content axis).
     pub justify_content: Option<JustifyContent>,
+    /// `justify-items-*` (the justify axis per item — v0.9 §5).
+    pub justify_items: Option<AlignItems>,
     /// `flex-wrap`.
     pub flex_wrap: Option<bool>,
     /// `grow-*`.
@@ -949,6 +963,32 @@ pub enum TextProperty {
     FontVariantNumeric,
 }
 
+impl TextProperty {
+    /// The canonical v4 order as a dense index — the diff bitset gives
+    /// every text property its own bit (see [`Slot::index`]). MUST stay in
+    /// declaration order (= the `TEXT_PROPS` table order, pinned by tests).
+    pub fn index(self) -> usize {
+        match self {
+            TextProperty::FontSize => 0,
+            TextProperty::LineHeight => 1,
+            TextProperty::FontWeight => 2,
+            TextProperty::LetterSpacing => 3,
+            TextProperty::Color => 4,
+            TextProperty::UnderlineOffset => 5,
+            TextProperty::Whitespace => 6,
+            TextProperty::TextAlign => 7,
+            TextProperty::Select => 8,
+            TextProperty::FontStyle => 9,
+            TextProperty::TextTransform => 10,
+            TextProperty::TextDecoration => 11,
+            TextProperty::FontFamily => 12,
+            TextProperty::TextOverflow => 13,
+            TextProperty::LineClamp => 14,
+            TextProperty::FontVariantNumeric => 15,
+        }
+    }
+}
+
 /// The value of one [`TextProperty`].
 ///
 /// Element-relative units (v0.5 §1, `AEOLUS_V0.5.md`): the token forms of
@@ -1047,7 +1087,7 @@ pub enum Visibility {
 }
 
 /// `grid-cols-*` / `grid-rows-*` / spans / starts.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Grid {
     /// `grid-cols-N`.
     pub cols: Option<u16>,
@@ -1061,6 +1101,103 @@ pub struct Grid {
     pub col_start: Option<i16>,
     /// `row-start-N`.
     pub row_start: Option<i16>,
+    /// Arbitrary/track templates: `grid-cols-[0_1fr]`,
+    /// `grid-cols-[repeat(3,minmax(0,1fr))]` (v0.9 §4). CANONICAL when
+    /// present: the numeric `cols`/`rows` forms are the v4 shorthand for
+    /// `repeat(N, minmax(0, 1fr))`, so a backend that understands
+    /// templates must prefer them and only fall back to the counts.
+    pub template_cols: Option<Vec<TrackComponent>>,
+    /// `grid-rows-[…]` — see [`Grid::template_cols`].
+    pub template_rows: Option<Vec<TrackComponent>>,
+    /// `auto-rows-*` — the implicit-row track sizing (v0.9 §4).
+    pub auto_rows: Option<Vec<TrackComponent>>,
+    /// `auto-cols-*` — the implicit-column track sizing (v0.9 §4).
+    pub auto_cols: Option<Vec<TrackComponent>>,
+}
+
+/// One component of an arbitrary grid template (v0.9 §4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TrackComponent {
+    /// A single track.
+    Track(GridTrack),
+    /// `repeat(N, <track>)` — a bounded expansion (single inner track;
+    /// multi-track and auto-fill/auto-fit forms report).
+    Repeat {
+        /// The repetition count (≤ 64).
+        count: u16,
+        /// The repeated track.
+        track: GridTrack,
+    },
+}
+
+/// One grid track sizing: a min/max pair mirroring CSS
+/// `minmax()` semantics (v0.9 §4). A plain `1fr` is
+/// `{ min: Auto, max: Fr(1) }` (taffy's `from_fr` semantics), a bare `0`
+/// is a fixed 0px track, `auto`/`min-content`/`max-content` pin both sides.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GridTrack {
+    /// The minimum sizing function.
+    pub min: TrackSizing,
+    /// The maximum sizing function.
+    pub max: TrackSizing,
+}
+
+impl GridTrack {
+    /// A fixed-length track (`0`, `12px`) — min and max pinned.
+    pub fn px(v: f32) -> Self {
+        Self {
+            min: TrackSizing::Px(v),
+            max: TrackSizing::Px(v),
+        }
+    }
+
+    /// An fr track (`1fr`) — `min: Auto, max: Fr(n)` (CSS `minmax(auto, Nfr)`,
+    /// taffy's `from_fr`).
+    pub fn fr(n: f32) -> Self {
+        Self {
+            min: TrackSizing::Auto,
+            max: TrackSizing::Fr(n),
+        }
+    }
+
+    /// An `auto` track — both sides `Auto`.
+    pub fn auto() -> Self {
+        Self {
+            min: TrackSizing::Auto,
+            max: TrackSizing::Auto,
+        }
+    }
+
+    /// A keyword track (`min-content`/`max-content`) — both sides pinned.
+    pub fn keyword(k: TrackSizing) -> Self {
+        Self { min: k, max: k }
+    }
+}
+
+/// One sizing function of a [`GridTrack`] (v0.9 §4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TrackSizing {
+    /// A fixed px length.
+    Px(f32),
+    /// A percentage of the grid container.
+    Percent(f32),
+    /// A fraction of the free space.
+    Fr(f32),
+    /// `auto`.
+    Auto,
+    /// `min-content`.
+    MinContent,
+    /// `max-content`.
+    MaxContent,
+}
+
+/// `@container[/name]` — establishes an inline-size containment context
+/// (v0.9 §3; CSS `container-type: inline-size` + `container-name`). The
+/// named form is what the shadcn Card header ships (`@container/card-header`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ContainerType {
+    /// The container name (`@container/card-header`), when named.
+    pub name: Option<Box<str>>,
 }
 
 /// `scale-*`/`rotate-*`/`translate-*`/`skew-*`.
@@ -1327,6 +1464,9 @@ macro_rules! for_each_present_slot {
         if !e.inset_shadows.is_empty() {
             $push(Slot::InsetShadows);
         }
+        if e.container_type.is_some() {
+            $push(Slot::ContainerType);
+        }
         if s.background_gradient.is_some() {
             $push(Slot::Gradient(GradientPart::Shape));
         }
@@ -1518,7 +1658,8 @@ impl ResolvedStyle {
             order,
             align_content,
             margin_auto,
-            gap_axes
+            gap_axes,
+            container_type
         );
         if !other.extras.shadow_rest.is_empty() {
             self.extras
@@ -1559,7 +1700,7 @@ impl StylePlan {
     /// a component's cached plan can gain per-instance overrides at runtime
     /// without re-resolving, re-parsing, or a theme reference.
     ///
-    /// Semantics (v0.7 §1, every rule later-wins):
+    /// Semantics (`09-portable-plans.md` §1, every rule later-wins):
     /// - `base`: [`ResolvedStyle::overlay`] — `Some` slots of `over.base`
     ///   replace, unset slots keep the base value.
     /// - `layers`: layers with the SAME [`VariantCondition`] merge per slot;
@@ -1759,6 +1900,7 @@ fn slot_from_index(idx: u16) -> Option<Slot> {
         Slot::Gradient(GradientPart::From),
         Slot::Gradient(GradientPart::Via),
         Slot::Gradient(GradientPart::To),
+        Slot::ContainerType,
     ];
     ALL.iter().copied().find(|s| s.index() == idx).or_else(|| {
         // Text slots: the enum's discriminants start after the variants above
@@ -1838,6 +1980,7 @@ fn slot_differs(slot: Slot, prev: &ResolvedStyle, next: &ResolvedStyle) -> bool 
             GradientPart::Via => gradient_edge_changed(prev, next, GradientEdgeSel::Via),
             GradientPart::To => gradient_edge_changed(prev, next, GradientEdgeSel::To),
         },
+        Slot::ContainerType => prev.extras.container_type != next.extras.container_type,
     }
 }
 
@@ -1866,5 +2009,316 @@ fn gradient_edge_changed(prev: &ResolvedStyle, next: &ResolvedStyle, sel: Gradie
         (Some(p), Some(n)) => gradient_edge_stop(p, sel) != gradient_edge_stop(n, sel),
         (None, None) => false,
         _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::Breakpoint;
+
+    fn bg(c: [f32; 4]) -> Background {
+        Background(crate::color::Color {
+            l: c[0],
+            a: c[1],
+            b: c[2],
+            alpha: c[3],
+        })
+    }
+
+    /// `ResolvedStyle::overlay` per-slot semantics: `Some` slots of the
+    /// override replace, unset slots keep the base value — later-wins per
+    /// slot, never per whole-style.
+    #[test]
+    fn resolved_overlay_is_per_slot_later_wins() {
+        let mut base = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            opacity: Some(Opacity(1.0)),
+            ..Default::default()
+        };
+
+        let over = ResolvedStyle {
+            background: Some(bg([1.0, 0.0, 0.0, 1.0])),
+            ..Default::default()
+        };
+
+        base.overlay(&over);
+        assert_eq!(
+            base.background,
+            Some(bg([1.0, 0.0, 0.0, 1.0])),
+            "set slot replaced"
+        );
+        assert_eq!(base.opacity, Some(Opacity(1.0)), "unset slot kept");
+    }
+
+    /// Text slots merge per property (a partial typography override does
+    /// not wipe the base's other text properties).
+    #[test]
+    fn resolved_overlay_merges_text_per_property() {
+        let mut base = ResolvedStyle::default();
+        base.text
+            .push((TextProperty::FontSize, TextValue::Px(14.0)));
+        base.text
+            .push((TextProperty::FontWeight, TextValue::Weight(500)));
+        let mut over = ResolvedStyle::default();
+        over.text
+            .push((TextProperty::FontWeight, TextValue::Weight(700)));
+        base.overlay(&over);
+        assert_eq!(base.text.len(), 2, "no property lost");
+        assert_eq!(
+            base.text[1],
+            (TextProperty::FontWeight, TextValue::Weight(700))
+        );
+    }
+
+    /// Plan-level overlay: layers with the same condition merge per slot;
+    /// conditions only the override has are appended.
+    #[test]
+    fn plan_overlay_merges_layers_by_condition() {
+        let mut base = StylePlan::default();
+        let l1 = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            ..Default::default()
+        };
+
+        base.layers.push(ConditionalLayer {
+            condition: VariantCondition::Hover,
+            style: l1,
+        });
+        let mut over = StylePlan::default();
+        let l2 = ResolvedStyle {
+            opacity: Some(Opacity(0.5)),
+            ..Default::default()
+        };
+
+        over.layers.push(ConditionalLayer {
+            condition: VariantCondition::Hover,
+            style: l2,
+        });
+        let merged = base.overlay(&over);
+        assert_eq!(
+            merged.layers.len(),
+            1,
+            "same condition merged, not appended"
+        );
+        assert_eq!(
+            merged.layers[0].style.background,
+            Some(bg([0.0, 0.0, 0.0, 1.0]))
+        );
+        assert_eq!(merged.layers[0].style.opacity, Some(Opacity(0.5)));
+        // A new condition is appended.
+        let mut over2 = StylePlan::default();
+        over2.layers.push(ConditionalLayer {
+            condition: VariantCondition::Focus,
+            style: ResolvedStyle::default(),
+        });
+        assert_eq!(base.overlay(&over2).layers.len(), 2);
+    }
+
+    /// Responsive buckets overlay per breakpoint (union of buckets); dark
+    /// overlays when both sides carry one.
+    #[test]
+    fn plan_overlay_unions_responsive_and_dark() {
+        let mut base = StylePlan::default();
+        let sm = ResolvedStyle {
+            opacity: Some(Opacity(0.5)),
+            ..Default::default()
+        };
+
+        base.responsive.insert(Breakpoint::Sm, sm);
+        let base_dark = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            ..Default::default()
+        };
+
+        base.dark = Some(base_dark);
+
+        let mut over = StylePlan::default();
+        let md = ResolvedStyle {
+            cursor: Some(Cursor::Pointer),
+            ..Default::default()
+        };
+
+        over.responsive.insert(Breakpoint::Md, md);
+        let over_dark = ResolvedStyle {
+            opacity: Some(Opacity(0.25)),
+            ..Default::default()
+        };
+
+        over.dark = Some(over_dark);
+
+        let merged = base.overlay(&over);
+        assert_eq!(merged.responsive.len(), 2, "union of buckets");
+        assert_eq!(
+            merged.responsive[&Breakpoint::Sm].opacity,
+            Some(Opacity(0.5))
+        );
+        assert_eq!(
+            merged.responsive[&Breakpoint::Md].cursor,
+            Some(Cursor::Pointer)
+        );
+        assert_eq!(
+            merged.dark.as_ref().unwrap().background,
+            Some(bg([0.0, 0.0, 0.0, 1.0])),
+            "dark merged per slot"
+        );
+        assert_eq!(merged.dark.as_ref().unwrap().opacity, Some(Opacity(0.25)));
+    }
+
+    /// The override's breakpoint table wins (theme-derived; the override is
+    /// the later consumer) and overlay is IDEMPOTENT —
+    /// `p.overlay(o).overlay(o) == p.overlay(o)` (the composition law the
+    /// runtime override story relies on).
+    #[test]
+    fn plan_overlay_breakpoints_win_and_is_idempotent() {
+        let base = StylePlan {
+            breakpoints: [600.0, 700.0, 1000.0, 1200.0, 1500.0],
+            ..Default::default()
+        };
+
+        let over = StylePlan {
+            breakpoints: [640.0, 768.0, 1024.0, 1280.0, 1536.0],
+            ..Default::default()
+        };
+
+        let once = base.overlay(&over);
+        assert_eq!(once.breakpoints, [640.0, 768.0, 1024.0, 1280.0, 1536.0]);
+        let twice = once.overlay(&over);
+        assert_eq!(once, twice, "idempotence");
+        // Overlaying with the DEFAULT plan (no breakpoints set — all zeros)
+        // is the degenerate "wrong theme" case: the zeros win by contract.
+        // The property test suite documents this with same-theme plans.
+    }
+
+    /// Rules merge by condition equality (the same conjunction is ONE rule);
+    /// new conditions append in override order.
+    #[test]
+    fn plan_overlay_merges_rules_by_condition() {
+        let mut base = StylePlan::default();
+        base.rules.push(Rule {
+            when: crate::cond::Cond(vec![crate::cond::Atom::On(crate::cond::Test::State(
+                crate::ast::State::Hover,
+            ))]),
+            style: {
+                ResolvedStyle {
+                    background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+                    ..Default::default()
+                }
+            },
+        });
+        let mut over = StylePlan::default();
+        over.rules.push(Rule {
+            when: crate::cond::Cond(vec![crate::cond::Atom::On(crate::cond::Test::State(
+                crate::ast::State::Hover,
+            ))]),
+            style: {
+                ResolvedStyle {
+                    opacity: Some(Opacity(0.5)),
+                    ..Default::default()
+                }
+            },
+        });
+        let merged = base.overlay(&over);
+        assert_eq!(merged.rules.len(), 1, "same conjunction is one rule");
+        assert_eq!(
+            merged.rules[0].style.background,
+            Some(bg([0.0, 0.0, 0.0, 1.0]))
+        );
+        assert_eq!(merged.rules[0].style.opacity, Some(Opacity(0.5)));
+    }
+
+    /// `diff` reports exactly the changed slots and lanes: a geometric
+    /// change needs relayout, a paint-only change does not.
+    #[test]
+    fn diff_reports_changed_slots_and_lanes() {
+        let prev = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            padding: Some(Padding {
+                top: 8.0,
+                right: 8.0,
+                bottom: 8.0,
+                left: 8.0,
+                set: EdgeSet::ALL,
+            }),
+            ..Default::default()
+        };
+
+        let mut next = prev.clone();
+        assert!(diff(&prev, &next).is_empty(), "identical styles diff empty");
+
+        next.background = Some(bg([1.0, 0.0, 0.0, 1.0]));
+        let d = diff(&prev, &next);
+        assert_eq!(d.changed, vec![Slot::Background]);
+        assert!(!d.needs_layout(), "color is a paint lane");
+
+        next.padding = Some(Padding {
+            top: 16.0,
+            right: 16.0,
+            bottom: 16.0,
+            left: 16.0,
+            set: EdgeSet::ALL,
+        });
+        let d = diff(&prev, &next);
+        assert_eq!(d.changed.len(), 2);
+        assert!(d.needs_layout(), "padding is geometric");
+    }
+
+    /// REGRESSION (test-pyramid property suite): a FontWeight-only change
+    /// between two styles must be reported AS `Text(FontWeight)`. The old
+    /// single-bit text family reported it as `Text(FontSize)` — or missed
+    /// it entirely when neither side carried a FontSize.
+    #[test]
+    fn diff_reports_the_actual_text_property_changed() {
+        let mut prev = ResolvedStyle::default();
+        prev.text
+            .push((TextProperty::FontWeight, TextValue::Weight(500)));
+        let mut next = ResolvedStyle::default();
+        next.text
+            .push((TextProperty::FontWeight, TextValue::Weight(700)));
+        let d = diff(&prev, &next);
+        assert_eq!(d.changed, vec![Slot::Text(TextProperty::FontWeight)]);
+
+        // Dense text vecs (the resolver's canonical shape) report the
+        // changed property, not the family's first member.
+        let mut prev = ResolvedStyle::default();
+        prev.text
+            .push((TextProperty::FontSize, TextValue::Px(14.0)));
+        prev.text
+            .push((TextProperty::FontWeight, TextValue::Weight(500)));
+        let mut next = ResolvedStyle::default();
+        next.text
+            .push((TextProperty::FontSize, TextValue::Px(14.0)));
+        next.text
+            .push((TextProperty::FontWeight, TextValue::Weight(700)));
+        assert_eq!(
+            diff(&prev, &next).changed,
+            vec![Slot::Text(TextProperty::FontWeight)]
+        );
+    }
+
+    /// `TextProperty::index` and the `TEXT_PROPS` table stay in lockstep —
+    /// the diff bitset arithmetic depends on both.
+    #[test]
+    fn text_property_indices_match_the_canonical_table() {
+        for (i, p) in TEXT_PROPS.iter().enumerate() {
+            assert_eq!(p.index(), i, "{p:?} drifted from TEXT_PROPS order");
+            assert_eq!(Slot::Text(*p).index(), 18 + i as u16);
+        }
+    }
+
+    /// The bitset diff walks present slots; three populated slots must
+    /// produce exactly three set bits (the diff fast path relies on the
+    /// bitset staying within u128).
+    #[test]
+    fn slot_indices_fit_the_bitset() {
+        let full = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            opacity: Some(Opacity(1.0)),
+            cursor: Some(Cursor::Pointer),
+            ..Default::default()
+        };
+
+        let bits = super::bits_of(&full);
+        assert_eq!(bits.count_ones(), 3);
     }
 }

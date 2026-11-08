@@ -1,4 +1,4 @@
-//! CLI behavior contract (v0.7 §3, TDD: these were written FIRST — the RED
+//! CLI behavior contract (v0.9 §3, TDD: these were written FIRST — the RED
 //! capture is the initial "no such crate" compile failure, recorded in
 //! `reports/10-tdd-evidence/09-portable-plans.md`).
 

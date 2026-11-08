@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3538710453e3185a9db86c50c64e1a5d6dbcc70fc4943052ce3e03914a58a98c # shrinks to base_classes = "", over_classes = "font-medium"
+cc 8d27a5b9e57845d6a3944c4ff28644bc7c5cd031d30fa797c1a1c1c1e74289a2 # shrinks to classes = "justify-items-start"
+cc 234a1bade0ed4d08b2e2edde26e38c31bfa4e46827593295abadb76ca134cb0c # shrinks to classes = "@container/card-header"

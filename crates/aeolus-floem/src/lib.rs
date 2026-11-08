@@ -25,7 +25,9 @@ use floem::peniko::{Brush, Color as PenikoColor};
 use floem::style::unit::{Angle, Length, LengthAuto, Pct, Pt};
 use floem::style::{CursorStyle, LineHeightValue, Style, Transition};
 use floem::taffy::prelude::{
-    GridPlacement, RepetitionCount, TaffyGridLine, TaffyGridSpan, fr, repeat,
+    FromFr, FromLength, FromPercent, GridPlacement, GridTemplateComponent, MaxTrackSizingFunction,
+    MinTrackSizingFunction, RepetitionCount, TaffyAuto, TaffyGridLine, TaffyGridSpan,
+    TaffyMaxContent, TaffyMinContent, TrackSizingFunction, fr, repeat,
 };
 use floem::taffy::style::Overflow;
 use floem::views::Decorators;
@@ -297,6 +299,10 @@ pub fn apply_resolved(mut style: Style, s: &ResolvedStyle, report: &mut Lowering
         if let Some(a) = &layout.align_items {
             style = style.align_items(map_align(*a));
         }
+        // v0.7 (§5): `justify-items-*` → the native taffy `justify_items`.
+        if let Some(j) = &layout.justify_items {
+            style = style.justify_items(map_align(*j));
+        }
         if let Some(a) = &layout.align_self {
             style = style.align_self(map_align(*a));
         }
@@ -452,16 +458,28 @@ the brush as-is with no rect adaptation — resolve the size at the call site",
             }
         }
     }
-    // v0.6 (§2.5): the grid surface — templates AND item placement, all
-    // native at the pinned rev (floem's to_taffy carries the full surface).
+    // v0.6 (§2.5) + v0.7 (§4): the grid surface — item placement, the v0.6
+    // numeric templates, and the v0.7 arbitrary track templates (CANONICAL
+    // when present: the numeric counts are v4's repeat shorthand).
     if let Some(g) = &e.grid {
-        if let Some(n) = g.cols {
+        if let Some(tracks) = &g.template_cols {
+            style = style.grid_template_columns(to_taffy_template(tracks));
+        } else if let Some(n) = g.cols {
             style = style
                 .grid_template_columns(vec![repeat(RepetitionCount::Count(n), vec![fr(1.0_f32)])]);
         }
-        if let Some(n) = g.rows {
+        if let Some(tracks) = &g.template_rows {
+            style = style.grid_template_rows(to_taffy_template(tracks));
+        } else if let Some(n) = g.rows {
             style = style
                 .grid_template_rows(vec![repeat(RepetitionCount::Count(n), vec![fr(1.0_f32)])]);
+        }
+        // v0.9 §4: the implicit tracks (auto-rows-* / auto-cols-*).
+        if let Some(tracks) = &g.auto_rows {
+            style = style.grid_auto_rows(to_taffy_tracks(tracks));
+        }
+        if let Some(tracks) = &g.auto_cols {
+            style = style.grid_auto_columns(to_taffy_tracks(tracks));
         }
         // `col-start-N` + `col-span-M` compose as CSS `grid-column: N / span M`.
         if let Some(line) = grid_placement_line(g.col_start, g.col_span) {
@@ -617,6 +635,82 @@ fn grid_placement_line(
         },
         (None, None) => return None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// v0.7 (§4): the arbitrary track templates → taffy's grid surface.
+// ---------------------------------------------------------------------------
+
+/// One IR [`TrackSizing`] → the taffy min-side function.
+fn to_taffy_min(s: aeolus_core::plan::TrackSizing) -> MinTrackSizingFunction {
+    use aeolus_core::plan::TrackSizing as T;
+    match s {
+        T::Px(v) => MinTrackSizingFunction::from_length(v),
+        T::Percent(v) => MinTrackSizingFunction::from_percent(v),
+        // `fr` is not valid as a min in CSS; the resolver never produces it
+        // here (parse_sizing allows it in a minmax pair — clamp to auto is
+        // WRONG, so map to AUTO the way taffy's `from_fr` does).
+        T::Fr(_) => MinTrackSizingFunction::AUTO,
+        T::Auto => MinTrackSizingFunction::AUTO,
+        T::MinContent => MinTrackSizingFunction::MIN_CONTENT,
+        T::MaxContent => MinTrackSizingFunction::MAX_CONTENT,
+    }
+}
+
+/// One IR [`TrackSizing`] → the taffy max-side function.
+fn to_taffy_max(s: aeolus_core::plan::TrackSizing) -> MaxTrackSizingFunction {
+    use aeolus_core::plan::TrackSizing as T;
+    match s {
+        T::Px(v) => MaxTrackSizingFunction::from_length(v),
+        T::Percent(v) => MaxTrackSizingFunction::from_percent(v),
+        T::Fr(v) => MaxTrackSizingFunction::from_fr(v),
+        T::Auto => MaxTrackSizingFunction::AUTO,
+        T::MinContent => MaxTrackSizingFunction::MIN_CONTENT,
+        T::MaxContent => MaxTrackSizingFunction::MAX_CONTENT,
+    }
+}
+
+/// One IR [`GridTrack`] → a taffy [`TrackSizingFunction`] (a min/max pair).
+fn to_taffy_track(t: aeolus_core::plan::GridTrack) -> TrackSizingFunction {
+    TrackSizingFunction {
+        min: to_taffy_min(t.min),
+        max: to_taffy_max(t.max),
+    }
+}
+
+/// An IR template (`Vec<TrackComponent>`) → taffy template components
+/// (single tracks and bounded `repeat(N, <track>)`s, 1:1).
+fn to_taffy_template(
+    tracks: &[aeolus_core::plan::TrackComponent],
+) -> Vec<GridTemplateComponent<String>> {
+    use aeolus_core::plan::TrackComponent;
+    tracks
+        .iter()
+        .map(|c| match *c {
+            TrackComponent::Track(t) => GridTemplateComponent::Single(to_taffy_track(t)),
+            TrackComponent::Repeat { count, track } => {
+                GridTemplateComponent::Repeat(floem::taffy::style::GridTemplateRepetition {
+                    count: RepetitionCount::Count(count),
+                    tracks: vec![to_taffy_track(track)],
+                    line_names: vec![],
+                })
+            }
+        })
+        .collect()
+}
+
+/// An IR implicit-track list → taffy's `grid_auto_rows`/`grid_auto_columns`.
+fn to_taffy_tracks(tracks: &[aeolus_core::plan::TrackComponent]) -> Vec<TrackSizingFunction> {
+    tracks
+        .iter()
+        .filter_map(|c| match *c {
+            aeolus_core::plan::TrackComponent::Track(t) => Some(to_taffy_track(t)),
+            // CSS grid-auto-rows accepts repeat(); the implicit surface in
+            // taffy takes plain tracks — the resolver only produces the
+            // keyword/arbitrary single-track forms here, a repeat reports.
+            aeolus_core::plan::TrackComponent::Repeat { .. } => None,
+        })
+        .collect()
 }
 
 fn shadow_to_floem(

@@ -157,3 +157,31 @@ fn snapshot_roundtrip_button(b: Bencher) {
         StylePlan::from_snapshot_json(&json).unwrap()
     });
 }
+
+// v0.7 (AEOLUS_V0.7.md §8): the variant-engine surfaces. The Input table
+// carries the pseudo-element variants (selection:/placeholder:/file:) that
+// v0.7 taught the parser; the Card header carries the named container +
+// arbitrary row template + auto-rows + conditional grid-cols.
+const INPUT: &str = "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30";
+
+const CARD_HEADER: &str = "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6";
+
+#[divan::bench]
+fn resolve_input_cold(b: Bencher) {
+    let t = theme();
+    b.counter(ItemsCount::new(INPUT.split_ascii_whitespace().count()))
+        .bench(|| Resolver::new(&t).resolve(divan::black_box(INPUT)).unwrap());
+}
+
+#[divan::bench]
+fn resolve_card_header_cold(b: Bencher) {
+    let t = theme();
+    b.counter(ItemsCount::new(
+        CARD_HEADER.split_ascii_whitespace().count(),
+    ))
+    .bench(|| {
+        Resolver::new(&t)
+            .resolve(divan::black_box(CARD_HEADER))
+            .unwrap()
+    });
+}

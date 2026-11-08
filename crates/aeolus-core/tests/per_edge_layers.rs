@@ -286,15 +286,17 @@ fn corner_radius_composes_corner_wise() {
 
 /// Masks round-trip: a partial layer written to the canonical JSON reads
 /// back equal — `from(to(p)) == p` for partial edges, and the document
-/// says schema version 2.
+/// says schema version 3 (v3 = the variant-engine merge; the v2 set-mask
+/// payload is unchanged — the bump keeps old readers failing loudly, which
+/// is the point of the version header).
 #[test]
-fn snapshot_v2_roundtrips_partial_edge_masks() {
+fn snapshot_v3_roundtrips_partial_edge_masks() {
     let t = theme();
     let r = Resolver::new(&t);
     let p = r.resolve("p-4 hover:px-8 rounded-t-md").unwrap().plan;
     let json = p.to_snapshot_json();
     assert!(
-        json.contains("\"version\":2"),
+        json.contains("\"version\":3"),
         "the schema version must bump so old readers fail loudly: {json}"
     );
     let back = StylePlan::from_snapshot_json(&json).expect("round-trips");

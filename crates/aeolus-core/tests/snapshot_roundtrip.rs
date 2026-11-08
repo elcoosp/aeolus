@@ -62,9 +62,11 @@ fn round_trip_is_byte_stable() {
 fn snapshot_header_and_shape() {
     let plan = kitchen_sink();
     let json = plan.to_snapshot_json();
-    // The header is the compatibility contract.
+    // The header is the compatibility contract. v3 = the variant-engine
+    // merge (tracks / container_type / justify_items / pseudo tests on top
+    // of the v2 set-mask payload).
     assert!(json.contains("\"format\":\"aeolus-plan\""), "{json}");
-    assert!(json.contains("\"version\":2"), "{json}");
+    assert!(json.contains("\"version\":3"), "{json}");
     // Compact (no whitespace outside strings) — diff-friendly.
     assert!(!json.contains('\n'), "snapshot is compact JSON");
 }

@@ -571,8 +571,9 @@ fn skeleton_resolves() {
     assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
 }
 
-/// Alert (alert.tsx) — relative/grid/gap-y all RESOLVE in v0.2; only the
-/// arbitrary grid template is reported.
+/// Alert (alert.tsx) — relative/grid/gap-y all RESOLVE in v0.2; the
+/// arbitrary grid template used to be reported, and since the variant
+/// engine (v0.9 §4) it RESOLVES to a typed track template.
 #[test]
 fn alert_resolves() {
     let r = Resolver::new(&theme()).resolve("relative grid w-full grid-cols-[0_1fr] items-start gap-y-0.5 rounded-lg border px-4 py-3 text-sm").unwrap();
@@ -621,16 +622,14 @@ fn alert_resolves() {
             row: Some(2.0)
         })
     );
-    // Only the arbitrary grid template is reported (precisely).
-    assert_eq!(r.warnings.len(), 1, "warnings={:?}", r.warnings);
-    assert!(
-        matches!(
-            &r.warnings[0],
-            Warning::Unsupported { class, .. } if class == "grid-cols-[0_1fr]"
-        ),
-        "warnings={:?}",
-        r.warnings
-    );
+    // The arbitrary grid template now resolves to a typed track template
+    // (variant engine, v0.9 §4) — nothing is reported.
+    assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
+    let grid = base.extras.grid.as_ref().expect("grid slot");
+    let cols = grid.template_cols.as_deref().expect("template_cols");
+    assert_eq!(cols.len(), 2, "{cols:?}");
+    assert!(matches!(cols[0], TrackComponent::Track(t) if t.min == TrackSizing::Px(0.0)));
+    assert!(matches!(cols[1], TrackComponent::Track(t) if t.max == TrackSizing::Fr(1.0)));
 }
 
 /// `cn()` conflict resolution composes with shadcn usage: user classes win.

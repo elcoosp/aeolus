@@ -42,7 +42,7 @@ pub mod theme;
 
 pub use ast::{
     ArbForm, Arbitrary, AttrKind, Breakpoint, ClassToken, INLINE_ELEMENTS, INLINE_VARIANTS, Inline,
-    Media, NamedVariant, ParentKind, Segments, State, Structural, Variant,
+    Media, NamedVariant, ParentKind, PseudoElement, Segments, State, Structural, Variant,
 };
 pub use cache::{CachedPlan, Interner, PlanCache, hash_classes};
 pub use caps::{Backend, BackendCapabilities, CascadeModel, PropertySupport, ThemeSwap};
@@ -53,12 +53,13 @@ pub use css::{CssOutput, CssRule, format_rules};
 pub use eval::{Probe, Rel, in_window, split_group_label};
 pub use plan::{
     AlignItems, Animation, AutoEdges, Background, BorderColor, BorderStyle, BorderWidth, BoxShadow,
-    ConditionalLayer, ContentAlign, ContentColor, CornerRadius, CornerSet, Cursor, Dimensions,
-    Display, Ease, EdgeSet, Extras, FlexDirection, Gap, GapAxes, Gradient, GradientPart,
-    GradientStop, GradientStops, Grid, Inset, JustifyContent, Lane, Layout, Margin, Opacity,
-    Outline, Overflow, OverflowKind, Padding, PointerEvents, Position, ResolvedStyle, Ring,
-    RingPart, SizedValue, Slot, StyleDiff, StylePlan, TextProperty, TextValue, Transform,
-    Transition, TransitionSet, VariantCondition, Visibility, diff,
+    ConditionalLayer, ContainerType, ContentAlign, ContentColor, CornerRadius, CornerSet, Cursor,
+    Dimensions, Display, Ease, EdgeSet, Extras, FlexDirection, Gap, GapAxes, Gradient,
+    GradientPart, GradientStop, GradientStops, Grid, GridTrack, Inset, JustifyContent, Lane,
+    Layout, Margin, Opacity, Outline, Overflow, OverflowKind, Padding, PointerEvents, Position,
+    ResolvedStyle, Ring, RingPart, SizedValue, Slot, StyleDiff, StylePlan, TextProperty, TextValue,
+    TrackComponent, TrackSizing, Transform, Transition, TransitionSet, VariantCondition,
+    Visibility, diff,
 };
 pub use resolve::{Resolution, Resolver, Warning};
 pub use snapshot::{PLAN_SNAPSHOT_FORMAT, PLAN_SNAPSHOT_VERSION, SnapshotError};

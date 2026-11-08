@@ -20,6 +20,10 @@ proptest = "1"
 name = "hot"
 harness = false
 
+[[bench]]
+name = "snapshot"
+harness = false
+
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true

@@ -1,5 +1,5 @@
 //! `aeolus` — the headless Aeolus CLI (v0.7, plan of record
-//! `AEOLUS_V0.7.md` §3).
+//! `AEOLUS_V0.9.md` §3).
 //!
 //! The project's consumption paths were all GUI backends; the CLI is the
 //! headless surface: resolve class strings into portable plan snapshots,

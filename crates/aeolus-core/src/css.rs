@@ -21,19 +21,19 @@
 //! become px, `rounded-full` becomes the finite 9999px sentinel), the
 //! token text restores the v4 shape.
 
-use core::fmt::Write as _;
-
 use crate::ast::{ClassToken, Media, State, Structural};
 use crate::color::Color;
 use crate::cond::Test;
 use crate::plan::{
     AlignItems, AutoEdges, BoxShadow, ContentAlign, Cursor, Display, Ease, FlexDirection,
-    JustifyContent, OverflowKind, PointerEvents, Position, Ring, SizedValue, TextProperty,
-    TextValue, TransitionSet, VariantCondition, Visibility,
+    GridTrack, JustifyContent, OverflowKind, PointerEvents, Position, Ring, SizedValue,
+    TextProperty, TextValue, TrackComponent, TrackSizing, TransitionSet, VariantCondition,
+    Visibility,
 };
 use crate::resolve::{
     Applied, GradientEdge, GradientShapeApplied, PartialValue, Resolver, Route, Warning,
 };
+use std::fmt::Write as _;
 
 /// One emitted CSS rule: `.selector` under optional `@media`/`@container`
 /// conditions with an ordered declaration list.
@@ -197,11 +197,17 @@ impl Resolver<'_> {
                             // v4 emits the tag as a selector PREFIX: `a.\[a\&\]`.
                             tag = Some(t.to_string());
                         }
+                        crate::cond::Atom::On(Test::Pseudo(p)) => {
+                            // v0.9 §1: pseudo-element renderings append the
+                            // `::selection`-style suffix (v4's shape:
+                            // `.selection\:bg-primary::selection`).
+                            rule.selector.push_str(p.css());
+                        }
                         crate::cond::Atom::Not(inner) => {
                             rule.selector.push_str(&not_test(inner));
                         }
-                        crate::cond::Atom::Has(s) => {
-                            let _ = write!(rule.selector, ":has(*{})", state_pseudo(*s));
+                        crate::cond::Atom::Has(t) => {
+                            let _ = write!(rule.selector, ":has({})", has_inner(t));
                         }
                         crate::cond::Atom::Group(test, label) => {
                             let state = match test {
@@ -437,17 +443,29 @@ impl Resolver<'_> {
             }
             Applied::Grid(g) => {
                 let mut out = Vec::new();
-                if let Some(c) = g.cols {
+                // v0.9 §4: track templates are CANONICAL — emitted instead
+                // of the numeric repeat form when present.
+                if let Some(tracks) = &g.template_cols {
+                    out.push(("grid-template-columns".into(), tracks_text(tracks)));
+                } else if let Some(c) = g.cols {
                     out.push((
                         "grid-template-columns".into(),
                         format!("repeat({c}, minmax(0, 1fr))"),
                     ));
                 }
-                if let Some(r) = g.rows {
+                if let Some(tracks) = &g.template_rows {
+                    out.push(("grid-template-rows".into(), tracks_text(tracks)));
+                } else if let Some(r) = g.rows {
                     out.push((
                         "grid-template-rows".into(),
                         format!("repeat({r}, minmax(0, 1fr))"),
                     ));
+                }
+                if let Some(tracks) = &g.auto_rows {
+                    out.push(("grid-auto-rows".into(), tracks_text(tracks)));
+                }
+                if let Some(tracks) = &g.auto_cols {
+                    out.push(("grid-auto-columns".into(), tracks_text(tracks)));
                 }
                 if let Some(n) = g.col_span {
                     out.push(("grid-column".into(), format!("span {n} / span {n}")));
@@ -460,6 +478,14 @@ impl Resolver<'_> {
                 }
                 if let Some(n) = g.row_start {
                     out.push(("grid-row".into(), n.to_string()));
+                }
+                out
+            }
+            // v0.9 §3: `@container[/name]` — the containment declarations.
+            Applied::ContainerType(ct) => {
+                let mut out = vec![("container-type".into(), "inline-size".into())];
+                if let Some(n) = &ct.name {
+                    out.push(("container-name".into(), n.to_string()));
                 }
                 out
             }
@@ -869,14 +895,30 @@ fn attr_test(kind: &str, name: &str, value: Option<&str>) -> String {
 }
 
 fn not_test(inner: &Test) -> String {
-    let inner_text = match inner {
-        Test::State(s) => format!("*{}", state_pseudo(*s)),
-        Test::Structural(s) => format!("*{}", structural_pseudo(*s)),
+    format!(":not({})", has_inner(inner))
+}
+
+/// The inner text of a `:has(...)`/`:not(...)` selector. The real v4.1.17
+/// output star-prefixes every inner (`:has(*:focus)`,
+/// `:has(*[data-slot="x"])`, `:not(*[data-state="open"])` — captured with
+/// `tools/capture_gradients.mjs`' method); only element-kind tests stay
+/// bare (they are selector prefixes, not inner tests).
+fn has_inner(t: &Test) -> String {
+    match t {
+        Test::Tag(tag) => tag.to_string(),
+        _ => format!("*{}", has_inner_text(t)),
+    }
+}
+
+fn has_inner_text(t: &Test) -> String {
+    match t {
+        Test::State(s) => state_pseudo(*s).to_string(),
+        Test::Structural(s) => structural_pseudo(*s).clone(),
         Test::Data(n, v) => attr_test("data", n, v.as_deref()),
         Test::Aria(n, v) => attr_test("aria", n, v.as_deref()),
-        Test::Tag(t) => t.to_string(),
-    };
-    format!(":not({inner_text})")
+        Test::Tag(tag) => tag.to_string(),
+        Test::Pseudo(p) => p.css().to_string(),
+    }
 }
 
 fn group_suffix(parent: &str, label: &str, state: &str, sibling: &str) -> String {
@@ -1260,7 +1302,7 @@ fn text_decls(prop: TextProperty, val: TextValue) -> Vec<(String, String)> {
 }
 
 fn overflow_decls(o: crate::plan::Overflow) -> Vec<(String, String)> {
-    let kind = |k: Option<OverflowKind>| {
+    let kind = |k: &Option<OverflowKind>| {
         k.map(|k| match k {
             OverflowKind::Visible => "visible",
             OverflowKind::Hidden => "hidden",
@@ -1269,7 +1311,7 @@ fn overflow_decls(o: crate::plan::Overflow) -> Vec<(String, String)> {
             OverflowKind::Auto => "auto",
         })
     };
-    let (x, y) = (kind(o.x), kind(o.y));
+    let (x, y) = (kind(&o.x), kind(&o.y));
     match (x, y) {
         (Some(k), Some(_)) if o.x == o.y => vec![("overflow".into(), k.to_string())],
         (Some(k), _) => vec![("overflow-x".into(), k.to_string())],
@@ -1320,6 +1362,26 @@ fn layout_decls(token: &ClassToken<'_>, l: &crate::plan::Layout) -> Vec<(String,
     if let Some(j) = l.justify_content {
         out.push(("justify-content".into(), justify_text(j).to_string()));
     }
+    // v0.9 §5: `justify-items-*` (the emitter is a verification tool — the
+    // declaration must appear for the class that set it only, so the slot
+    // is keyed by the utility head like the other layout axes).
+    if let Some(j) = l.justify_items
+        && token.body.starts_with("justify-items")
+    {
+        {
+            out.push((
+                "justify-items".into(),
+                match j {
+                    crate::plan::AlignItems::Start => "start",
+                    crate::plan::AlignItems::Center => "center",
+                    crate::plan::AlignItems::End => "end",
+                    crate::plan::AlignItems::Stretch => "stretch",
+                    crate::plan::AlignItems::Baseline => "baseline",
+                }
+                .to_string(),
+            ));
+        }
+    }
     if let Some(w) = l.flex_wrap {
         out.push((
             "flex-wrap".into(),
@@ -1356,6 +1418,48 @@ fn justify_text(j: JustifyContent) -> &'static str {
         JustifyContent::SpaceBetween => "space-between",
         JustifyContent::SpaceAround => "space-around",
         JustifyContent::SpaceEvenly => "space-evenly",
+    }
+}
+
+/// The CSS text of an arbitrary track template (v0.9 §4): `0 1fr`,
+/// `repeat(3, minmax(0, 1fr))`, `min-content`, ... The fr track emits as
+/// its max sizing (`1fr`, CSS's shorthand for `minmax(auto, 1fr)`).
+fn tracks_text(tracks: &[TrackComponent]) -> String {
+    let parts: Vec<String> = tracks
+        .iter()
+        .map(|t| match *t {
+            TrackComponent::Track(tr) => track_text(tr),
+            TrackComponent::Repeat { count, track } => {
+                format!("repeat({},{})", count, track_text(track))
+            }
+        })
+        .collect();
+    parts.join(" ")
+}
+
+fn track_text(tr: GridTrack) -> String {
+    if tr.min == tr.max {
+        return sizing_text(tr.max);
+    }
+    // `minmax(auto, 1fr)` renders as the fr shorthand (CSS convention).
+    if tr.min == TrackSizing::Auto {
+        return sizing_text(tr.max);
+    }
+    // v4 emits minmax() verbatim, no space after the comma (captured:
+    // `repeat(3,minmax(0,1fr))`).
+    format!("minmax({},{})", sizing_text(tr.min), sizing_text(tr.max))
+}
+
+fn sizing_text(s: TrackSizing) -> String {
+    match s {
+        // v4 emits the raw `0` (captured: `grid-template-columns: 0 1fr`).
+        TrackSizing::Px(0.0) => "0".into(),
+        TrackSizing::Px(v) => format!("{v}px"),
+        TrackSizing::Percent(v) => format!("{v}%"),
+        TrackSizing::Fr(v) => format!("{v}fr"),
+        TrackSizing::Auto => "auto".into(),
+        TrackSizing::MinContent => "min-content".into(),
+        TrackSizing::MaxContent => "max-content".into(),
     }
 }
 

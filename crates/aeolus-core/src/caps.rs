@@ -93,7 +93,10 @@ impl PropertySupport {
             | Slot::Animation
             // v0.6 gradient: negotiated by the backend lowering (masonry
             // native, floem reported — the parity contract, plan §4.1).
-            | Slot::Gradient(_) => false,
+            // v0.7 container containment: same (no backend has a native
+            // container-query surface; the reactive probe path emulates).
+            | Slot::Gradient(_)
+            | Slot::ContainerType => false,
         }
     }
 }
@@ -157,9 +160,10 @@ pub trait Backend {
 /// debug builds. `class` is the offending class string, for diagnostics.
 pub fn report_unsupported(slot: Slot, class: &str) {
     if cfg!(debug_assertions) {
-        tracing_or_stderr(&format!(
+        let msg = format!(
             "[aeolus] dropping unsupported slot {slot:?} for class {class:?} on this backend"
-        ));
+        );
+        tracing_or_stderr(&msg);
     }
 }
 
@@ -167,4 +171,65 @@ fn tracing_or_stderr(msg: &str) {
     // v1 keeps the core dependency-free; backends with `tracing` should call
     // `tracing::warn!` directly. This hook stays for the pure-core path.
     eprintln!("{msg}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The `supports()` routing table: v0.1/v0.2 slots negotiate through the
+    /// per-slot flags; the extras family (position/…/grid/transform/…),
+    /// gradients and the v0.7 container containment have no flags — they are
+    /// negotiated by the backend lowering. Pin both halves.
+    #[test]
+    fn supports_routes_slots_to_their_flags() {
+        let full = PropertySupport {
+            background: true,
+            content_color: true,
+            padding: true,
+            border_color: true,
+            border_width: true,
+            corner_radius: true,
+            dimensions: true,
+            min_dimensions: true,
+            max_dimensions: true,
+            gap: true,
+            shadow: true,
+            margin: true,
+            layout: true,
+            opacity: true,
+            ring: true,
+            outline: true,
+            cursor: true,
+            pointer_events: true,
+            text: true,
+        };
+        // The flag-backed slots answer their flag.
+        assert!(full.supports(Slot::Background));
+        assert!(full.supports(Slot::Text(crate::plan::TextProperty::FontSize)));
+        // Shadow-family slots share one flag; margin covers the auto form.
+        assert!(full.supports(Slot::ShadowRest));
+        assert!(full.supports(Slot::MarginAuto));
+        // Layout covers the flex/grid axis family.
+        assert!(full.supports(Slot::GapAxes));
+        // The extras family is NEVER flag-backed — all default to false
+        // even on an all-flags backend (negotiated by the lowering).
+        assert!(!full.supports(Slot::Position));
+        assert!(!full.supports(Slot::Grid));
+        assert!(!full.supports(Slot::Transform));
+        assert!(!full.supports(Slot::Gradient(crate::plan::GradientPart::From)));
+        assert!(!full.supports(Slot::ContainerType));
+        // The default (no flags) supports nothing flag-backed.
+        let none = PropertySupport::default();
+        assert!(!none.supports(Slot::Background));
+        assert!(!none.supports(Slot::Padding));
+    }
+
+    /// `report_unsupported` is total (never panics) for any slot/class —
+    /// the drop-with-warning contract runs in debug builds.
+    #[test]
+    fn report_unsupported_is_total() {
+        report_unsupported(Slot::ContainerType, "@container/card-header");
+        report_unsupported(Slot::Background, "bg-red-500");
+    }
 }

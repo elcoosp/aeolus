@@ -60,6 +60,9 @@ impl Probe for SelProbe {
                 _ => false,
             },
             Test::Tag(name) => self.tag.is_some_and(|t| t == name.as_ref()),
+            // Pseudo-element renderings never fire on a probe that does not
+            // model the rendering (the default probe answer).
+            Test::Pseudo(_) => false,
         }
     }
 

@@ -196,3 +196,50 @@ Honesty notes:
 - `plan_overlay_button` at ~330 ns means composing a cached component plan
   with per-instance overrides is ~23× cheaper than a cold re-resolve
   (~6.0 µs) and allocation-light — the intended usage pattern.
+
+## Variant-engine run (2026-11-08, 2-core sandbox, release profile, divan 0.1.21)
+
+After the variant & grid engine (`AEOLUS_V0.9.md` §8, merged with the
+per-edge set-mask milestone): pseudo-element variants, has-attr
+descendants, named containers, arbitrary grid templates, implicit
+tracks, justify-items. Same sandbox class as the earlier runs; compare
+RATIOS within a run.
+
+| benchmark | median | note |
+|---|---|---|
+| `diff_unchanged` | 154.8 ns | zero-alloc diff untouched (schema v3 payload unchanged for mask fields) |
+| `resolve_cached_hit` | 79.0 ns | = |
+| `resolve_button_cold` | 6.19 µs (2.7 Mitem/s) | ≈ — the Button string exercises none of the new surfaces |
+| `cn_button_merge` | 4.31 µs | = — the new conflict groups classify in the same match |
+| **`resolve_input_cold`** (new) | **11.5 µs** (2.4 Mitem/s) | the 32-class Input table: pseudo-element variants (`selection:`/`placeholder:`/`file:` ×10), responsive, dark |
+| **`resolve_card_header_cold`** (new) | **3.35 µs** (2.7 Mitem/s) | named container + arbitrary row template + auto-rows + conditional grid-cols |
+
+Verdict: the variant-engine work did not regress the pinned hot paths,
+and the NEW surfaces resolve at the same per-class throughput as the old
+ones (~2.4–2.7 Mitem/s cold). The allocation contract's exact-zero pins
+(diff, intern hit, warm cache hit) held unchanged
+(`tests/alloc_contract.rs`).
+
+## Test-pyramid run (2026-11-08, 2-core sandbox, bench profile, divan 0.1.21)
+
+The artifact path got its own bench file (`benches/snapshot.rs`, the
+test-pyramid milestone): the snapshot writer/reader and the plan-level
+overlay on a RICH plan — the Button table with its state layers plus the
+v0.7 shapes (`selection:`, `has-checked:`, `@container/card-header`,
+`md:p-8`, `dark:`). The reader is a hand-rolled strict parser; it reads
+the whole artifact and reconstructs every slot (mask-set fields
+included, schema v3).
+
+| benchmark | median | note |
+|---|---|---|
+| `snapshot_write_rich` | 15.7 µs | fixed-schema-order writer, shortest-float form |
+| `snapshot_read_rich` | 422 µs | strict reader: per-field paths, per-string allocs, typed errors |
+| `snapshot_roundtrip_rich` | 433 µs | write + read — the artifact contract |
+| `overlay_rich` | 649 ns | plan-level later-wins composition (per-slot merge) |
+| `diff_text_only_change` | 243 ns | the regression path: a non-first text property change (per-property bits now reach it) |
+
+Honesty notes: (1) the reader is ~27× the writer — it is a cold,
+correctness-first path (artifact import, tests, tooling), not a per-frame
+path; the hot path stays `resolve_cached_hit` + `diff` (both pinned
+zero-alloc in `tests/alloc_contract.rs`). (2) The bench profile is the
+same one `cargo bench` drives; treat numbers as relative, not absolute.
