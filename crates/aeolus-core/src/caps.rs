@@ -93,10 +93,7 @@ impl PropertySupport {
             | Slot::Animation
             // v0.6 gradient: negotiated by the backend lowering (masonry
             // native, floem reported — the parity contract, plan §4.1).
-            // v0.7 container containment: same (no backend has a native
-            // container-query surface; the reactive probe path emulates).
-            | Slot::Gradient(_)
-            | Slot::ContainerType => false,
+            | Slot::Gradient(_) => false,
         }
     }
 }
@@ -160,13 +157,13 @@ pub trait Backend {
 /// debug builds. `class` is the offending class string, for diagnostics.
 pub fn report_unsupported(slot: Slot, class: &str) {
     if cfg!(debug_assertions) {
-        tracing_or_stderr(format!(
+        tracing_or_stderr(&format!(
             "[aeolus] dropping unsupported slot {slot:?} for class {class:?} on this backend"
         ));
     }
 }
 
-fn tracing_or_stderr(msg: String) {
+fn tracing_or_stderr(msg: &str) {
     // v1 keeps the core dependency-free; backends with `tracing` should call
     // `tracing::warn!` directly. This hook stays for the pure-core path.
     eprintln!("{msg}");
