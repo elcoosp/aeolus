@@ -1,3 +1,5 @@
 target
 commit.sh
-ship.sh
+
+# The replayable commit script (local tooling, not part of the package)
+commit.sh
