@@ -1,5 +1,5 @@
 //! `aeolus` — the headless Aeolus CLI (v0.7, plan of record
-//! `AEOLUS_V0.7.md` §3).
+//! `AEOLUS_V0.9.md` §3).
 //!
 //! The project's consumption paths were all GUI backends; the CLI is the
 //! headless surface: resolve class strings into portable plan snapshots,
@@ -20,6 +20,7 @@
 
 use aeolus_core::plan::diff;
 use aeolus_core::{Breakpoint, Resolver, StylePlan, TailwindTheme, Warning, cn};
+use std::fmt::Write as _;
 use std::io::Write;
 
 /// The CLI version, from the workspace manifest.
@@ -154,7 +155,7 @@ pub fn check_string(classes: &str, theme: &TailwindTheme) -> Vec<Finding> {
     };
     for w in &res.warnings {
         let token = warning_class(w).to_string();
-        let detail = warning_detail(w).to_string();
+        let detail = warning_detail(w).clone();
         findings.push(Finding {
             token,
             from: classes.to_string(),
@@ -229,7 +230,7 @@ where
 {
     let argv: Vec<String> = args.into_iter().collect();
     if argv.iter().any(|a| a == "--help" || a == "-h") {
-        let _ = write!(out, "{}", USAGE);
+        let _ = write!(out, "{USAGE}");
         return 0;
     }
     if argv.iter().any(|a| a == "--version") {
@@ -237,7 +238,7 @@ where
         return 0;
     }
     let Some(cmd) = argv.first() else {
-        let _ = write!(err, "{}", USAGE);
+        let _ = write!(err, "{USAGE}");
         return 2;
     };
     let rest = &argv[1..];
@@ -248,7 +249,7 @@ where
         "cn" => cmd_cn(rest, out, err),
         "check" => cmd_check(rest, out, err),
         other => {
-            let _ = writeln!(err, "unknown command {other:?}\n{}", USAGE);
+            let _ = writeln!(err, "unknown command {other:?}\n{USAGE}");
             2
         }
     }
@@ -274,7 +275,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--theme" if allow.contains(&"theme") => {
                 i += 1;
                 match rest.get(i) {
-                    Some(v) => theme = v.clone(),
+                    Some(v) => theme.clone_from(v),
                     None => {
                         let _ = writeln!(
                             err,
@@ -474,7 +475,7 @@ fn cmd_diff(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                 aeolus_core::Lane::Cosmetic => "cosmetic",
                 aeolus_core::Lane::Geometric => "geometric",
             };
-            let _ = writeln!(out, "{:?} ({lane})", s);
+            let _ = writeln!(out, "{s:?} ({lane})");
         }
         if !d.changed.is_empty() {
             let _ = writeln!(
@@ -516,7 +517,7 @@ fn cmd_check(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             "--theme" => {
                 i += 1;
                 match rest.get(i) {
-                    Some(v) => theme_spec = v.clone(),
+                    Some(v) => theme_spec.clone_from(v),
                     None => {
                         let _ = writeln!(err, "--theme needs a value");
                         return 2;
@@ -532,7 +533,7 @@ fn cmd_check(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
                             "unknown" | "unsupported" | "conflict" | "any" | "none"
                         ) =>
                     {
-                        fail_on = v.clone()
+                        fail_on.clone_from(v);
                     }
                     _ => {
                         let _ =
@@ -618,7 +619,7 @@ fn cmd_check(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             .count(),
         _ => 0,
     };
-    if fails > 0 { 1 } else { 0 }
+    i32::from(fails > 0)
 }
 
 fn is_unknown(detail: &str) -> bool {
@@ -634,7 +635,9 @@ fn json_escape(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if (c as u32) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
             c => out.push(c),
         }
     }
