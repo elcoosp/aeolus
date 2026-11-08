@@ -226,6 +226,23 @@ const V4_FAMILIES: &[&str] = &[
     "cursor-zoom-in",
     "pointer-events-none",
     "pointer-events-auto",
+    // v0.7 (AEOLUS_V0.7.md): pseudo-element variants, has-attr descendants,
+    // named containers, arbitrary grid templates, justify-items.
+    "selection:bg-primary",
+    "placeholder:text-muted-foreground",
+    "file:text-sm",
+    "has-data-[slot=card-action]:grid-cols-2",
+    "has-aria-invalid:border-destructive",
+    "@container",
+    "@container/card-header",
+    "grid-cols-[0_1fr]",
+    "grid-rows-[auto_auto]",
+    "grid-cols-[repeat(3,minmax(0,1fr))]",
+    "auto-rows-min",
+    "auto-rows-fr",
+    "auto-cols-max",
+    "justify-items-start",
+    "justify-items-normal",
     // misc
     "resize",
     "appearance-none",
@@ -407,8 +424,7 @@ fn paren_shorthand_arbitrary() {
             top: 8.0,
             right: 8.0,
             bottom: 8.0,
-            left: 8.0,
-            set: EdgeSet::ALL
+            left: 8.0
         })
     );
 }
