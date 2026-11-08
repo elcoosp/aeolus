@@ -20,9 +20,8 @@ pub enum Atom {
     Group(Test, Option<Box<str>>),
     /// A `.peer[/label]` sibling matches `Test`.
     Peer(Test, Option<Box<str>>),
-    /// A descendant of the element matches the test (`has-checked:`,
-    /// and — v0.7 §2 — `has-data-[…]:`/`has-aria-[…]:`/`has-first:`).
-    Has(Test),
+    /// A descendant of the element matches the state (`has-checked:`).
+    Has(State),
     /// A media query (`dark:`, `print:`, `motion-reduce:`, ...).
     Media(Media),
     /// Viewport width window (`sm:`–`2xl:`, `min-*`, `max-*`).
@@ -60,14 +59,6 @@ pub enum Test {
     /// semantics CSS has when a selector does not match. A backend that
     /// models element kinds (e.g. a web backend) answers honestly.
     Tag(Box<str>),
-    /// The element's own pseudo-element rendering (`selection:`,
-    /// `placeholder:`, `file:` — v0.7 §1): the style applies to that
-    /// rendering while it exists. Not a runtime state — the default probe
-    /// answer is "no", so the rule never fires on a backend that does not
-    /// model the rendering (the same semantics CSS has when a selector
-    /// does not match). Backends with the surface (e.g. text-selection
-    /// colors on a text-input wrapper) answer honestly via `Probe::test`.
-    Pseudo(crate::ast::PseudoElement),
 }
 
 impl Atom {
@@ -86,9 +77,6 @@ impl Atom {
                 // hover:) must share their band so the cascade order is
                 // stable (v0.3 §1.2; ties keep source order).
                 Test::Tag(_) => 10,
-                // Pseudo-element renderings rank with the state band too:
-                // v4 emits them in the same variant order.
-                Test::Pseudo(_) => 10,
                 // aria/data come after states in v4's variant order.
                 Test::Data(_, _) | Test::Aria(_, _) => 14,
             },
