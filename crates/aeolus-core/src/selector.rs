@@ -143,7 +143,7 @@ fn media_atoms(query: &str) -> Result<Vec<Atom>, &'static str> {
     if query.contains(',') {
         return Err(DISJUNCTION);
     }
-    split_and(query)?
+    split_and(query)
         .iter()
         .map(|part| media_condition(part))
         .collect::<Result<Vec<Vec<Atom>>, &'static str>>()
@@ -194,7 +194,7 @@ fn container_atom(query: &str) -> Result<Atom, &'static str> {
     if query.contains(',') {
         return Err(DISJUNCTION);
     }
-    let parts = split_and(query)?;
+    let parts = split_and(query);
     let mut min = None;
     let mut max = None;
     for part in &parts {
@@ -261,7 +261,7 @@ fn window(min: bool, px: Option<f32>) -> Atom {
 }
 
 /// Split on a case-insensitive ` and `.
-fn split_and(query: &str) -> Result<Vec<&str>, &'static str> {
+fn split_and(query: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut rest = query;
     loop {
@@ -276,7 +276,7 @@ fn split_and(query: &str) -> Result<Vec<&str>, &'static str> {
             }
         }
     }
-    Ok(parts)
+    parts
 }
 
 // ---------------------------------------------------------------------------
@@ -411,10 +411,12 @@ fn pseudo_atoms(name: &str, args: Option<&str>) -> Result<Vec<Atom>, &'static st
         }
         // `:not(:hover)` — one simple inner test.
         ("not", Some(inner)) => simple_test(inner).map(|t| vec![Atom::Not(t)]),
-        // `:has(:focus)` — descendant tests (v0.7 §2 generalizes the typed
-        // inner from states to any single self test: states, data/aria
-        // attributes, structural position, element kind).
-        ("has", Some(inner)) => simple_test(inner).map(|t| vec![Atom::Has(t)]),
+        // `:has(:focus)` — descendant STATE only (`:has(> svg)` has no
+        // typed question beyond states).
+        ("has", Some(inner)) => simple_test(inner).and_then(|t| match t {
+            Test::State(s) => Ok(vec![Atom::Has(s)]),
+            _ => Err(COMPOUND_INNER),
+        }),
         // `:is(...)` / `:where(...)` — pure wrappers; a LIST is a
         // disjunction, a single inner classifies recursively.
         ("is" | "where", Some(inner)) => {
