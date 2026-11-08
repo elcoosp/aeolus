@@ -262,7 +262,7 @@ pub fn parse_named_variant(name: &str) -> NamedVariant<'_> {
         "user-valid" => NamedVariant::UserValid,
         "user-invalid" => NamedVariant::UserInvalid,
         "placeholder-shown" => NamedVariant::PlaceholderShown,
-        // v0.7 §1: pseudo-element variants v4 names as plain variants
+        // v0.9 §1: pseudo-element variants v4 names as plain variants
         // (`selection:` → `&::selection`, ...). They classify onto
         // `Test::Pseudo`, not runtime states.
         "selection" => NamedVariant::Pseudo(crate::ast::PseudoElement::Selection),
@@ -397,19 +397,6 @@ fn split_body(s: &str) -> Result<(&str, Option<Arbitrary<'_>>, Option<&str>), Pa
 /// (`[length:200px]`) and flagging the arbitrary-property form
 /// (`[mask-type:luminance]`).
 fn extract_arbitrary(raw: &str, form: ArbForm) -> Result<Arbitrary<'_>, ParseError> {
-    if raw.is_empty() {
-        return Err(ParseError::new("empty arbitrary value"));
-    }
-    let (hint, value) = match form {
-        ArbForm::Bracket => raw
-            .split_once(':')
-            .map(|(h, v)| (Some(h), v))
-            .unwrap_or((None, raw)),
-        ArbForm::Paren => (None, raw),
-    };
-    // `[mask-type:luminance]` — a bare CSS property declaration. Values
-    // carrying a ':' whose prefix is not a known v4 type hint are flagged
-    // as properties; the resolver reports them with a precise reason.
     const HINTS: &[&str] = &[
         "length",
         "color",
@@ -428,6 +415,18 @@ fn extract_arbitrary(raw: &str, form: ArbForm) -> Result<Arbitrary<'_>, ParseErr
         "relative-size",
         "string",
     ];
+    if raw.is_empty() {
+        return Err(ParseError::new("empty arbitrary value"));
+    }
+    let (hint, value) = match form {
+        ArbForm::Bracket => raw
+            .split_once(':')
+            .map_or((None, raw), |(h, v)| (Some(h), v)),
+        ArbForm::Paren => (None, raw),
+    };
+    // `[mask-type:luminance]` — a bare CSS property declaration. Values
+    // carrying a ':' whose prefix is not a known v4 type hint are flagged
+    // as properties; the resolver reports them with a precise reason.
     let is_property = form == ArbForm::Bracket && hint.is_some_and(|h| !HINTS.contains(&h));
     Ok(Arbitrary {
         hint,
@@ -444,15 +443,21 @@ mod tests {
 
     /// The named-variant table is the merge-key + classification surface:
     /// every name must land on the typed arm the resolver routes from.
-    /// v0.7 §1 pins the three pseudo-element names here (they were
+    /// v0.9 §1 pins the three pseudo-element names here (they were
     /// `Custom` — compile errors for `tw!` — before).
     #[test]
     fn named_variant_table_routes_every_family() {
         // States.
         assert_eq!(parse_named_variant("hover"), NamedVariant::Hover);
-        assert_eq!(parse_named_variant("focus-visible"), NamedVariant::FocusVisible);
-        assert_eq!(parse_named_variant("placeholder-shown"), NamedVariant::PlaceholderShown);
-        // Pseudo-elements (v0.7 §1) — their own arm, NOT states.
+        assert_eq!(
+            parse_named_variant("focus-visible"),
+            NamedVariant::FocusVisible
+        );
+        assert_eq!(
+            parse_named_variant("placeholder-shown"),
+            NamedVariant::PlaceholderShown
+        );
+        // Pseudo-elements (v0.9 §1) — their own arm, NOT states.
         assert_eq!(
             parse_named_variant("selection"),
             NamedVariant::Pseudo(PseudoElement::Selection)
@@ -467,17 +472,41 @@ mod tests {
         );
         // Media.
         assert_eq!(parse_named_variant("dark"), NamedVariant::Dark);
-        assert_eq!(parse_named_variant("motion-reduce"), NamedVariant::MotionReduce);
-        assert_eq!(parse_named_variant("pointer-coarse"), NamedVariant::PointerCoarse);
+        assert_eq!(
+            parse_named_variant("motion-reduce"),
+            NamedVariant::MotionReduce
+        );
+        assert_eq!(
+            parse_named_variant("pointer-coarse"),
+            NamedVariant::PointerCoarse
+        );
         // Viewport bounds + breakpoints.
-        assert_eq!(parse_named_variant("min-md"), NamedVariant::Min(Breakpoint::Md));
-        assert_eq!(parse_named_variant("max-sm"), NamedVariant::Max(Breakpoint::Sm));
-        assert_eq!(parse_named_variant("md"), NamedVariant::Breakpoint(Breakpoint::Md));
+        assert_eq!(
+            parse_named_variant("min-md"),
+            NamedVariant::Min(Breakpoint::Md)
+        );
+        assert_eq!(
+            parse_named_variant("max-sm"),
+            NamedVariant::Max(Breakpoint::Sm)
+        );
+        assert_eq!(
+            parse_named_variant("md"),
+            NamedVariant::Breakpoint(Breakpoint::Md)
+        );
         // Container forms.
-        assert_eq!(parse_named_variant("@md"), NamedVariant::Container(Breakpoint::Md));
-        assert_eq!(parse_named_variant("@max-lg"), NamedVariant::MaxContainer(Breakpoint::Lg));
+        assert_eq!(
+            parse_named_variant("@md"),
+            NamedVariant::Container(Breakpoint::Md)
+        );
+        assert_eq!(
+            parse_named_variant("@max-lg"),
+            NamedVariant::MaxContainer(Breakpoint::Lg)
+        );
         // Unknown names stay `Custom` — the theme resolves custom variants.
-        assert!(matches!(parse_named_variant("hocus"), NamedVariant::Custom(_)));
+        assert!(matches!(
+            parse_named_variant("hocus"),
+            NamedVariant::Custom(_)
+        ));
     }
 
     /// `parse_token`: negative sign, arbitrary values, raw modifiers and
@@ -487,7 +516,7 @@ mod tests {
         let t = parse_token("bg-red-500").unwrap();
         assert_eq!(&*t.elements, ["bg", "red", "500"]);
         assert_eq!(t.body, "bg-red-500");
-        assert!(t.negative == false && t.arbitrary.is_none() && t.modifier.is_none());
+        assert!(!t.negative && t.arbitrary.is_none() && t.modifier.is_none());
 
         let t = parse_token("-mt-4").unwrap();
         assert!(t.negative, "the leading `-` is the negative sign");
@@ -513,7 +542,11 @@ mod tests {
     fn parse_class_string_is_total_per_class() {
         let (tokens, errors) = parse_class_string("bg-red-500   p-4 p--4 hover:bg-blue-500");
         assert_eq!(tokens.len(), 3, "bg-red-500, p-4, hover:bg-blue-500");
-        assert_eq!(errors.len(), 1, "`p--4` (double dash) is reported, not fatal");
+        assert_eq!(
+            errors.len(),
+            1,
+            "`p--4` (double dash) is reported, not fatal"
+        );
         assert_eq!(errors[0].0, "p--4");
         // Source order is preserved in the token stream.
         assert_eq!(tokens[0].body, "bg-red-500");
