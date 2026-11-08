@@ -22,7 +22,6 @@ use crate::ast::Breakpoint;
 use crate::color::{Color, ParseError};
 use crate::plan::Ease;
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::sync::Arc;
 
 /// Tailwind CSS v4 default color palette (`@theme default`, colors only),
@@ -189,7 +188,7 @@ impl TailwindTheme {
 
     /// Build the `--color-{name}` / `--{name}` lookup keys in a 96-byte
     /// stack buffer — no `format!` on the hot path (plan §3.4.2).
-    fn prefixed<'b>(buf: &'b mut [u8; 96], prefix: &str, name: &str) -> Option<&'b str> {
+    fn prefixed<'b>(&self, buf: &'b mut [u8; 96], prefix: &str, name: &str) -> Option<&'b str> {
         if prefix.len() + name.len() > buf.len() {
             return None;
         }
@@ -203,13 +202,13 @@ impl TailwindTheme {
     /// naming, mapped via `@theme inline`).
     pub fn color(&self, name: &str) -> Option<Color> {
         let mut buf = [0u8; 96];
-        if let Some(k) = Self::prefixed(&mut buf, "--color-", name)
+        if let Some(k) = self.prefixed(&mut buf, "--color-", name)
             && let Some(Token::Color(c)) = self.tokens.get(k)
         {
             return Some(*c);
         }
         let mut buf2 = [0u8; 96];
-        if let Some(k) = Self::prefixed(&mut buf2, "--", name)
+        if let Some(k) = self.prefixed(&mut buf2, "--", name)
             && let Some(Token::Color(c)) = self.tokens.get(k)
         {
             return Some(*c);
@@ -220,7 +219,7 @@ impl TailwindTheme {
     /// Look up a length token (`--spacing`, `--radius-md`, ...) in px.
     pub fn length(&self, name: &str) -> Option<f32> {
         let mut buf = [0u8; 96];
-        let k = Self::prefixed(&mut buf, "--", name)?;
+        let k = self.prefixed(&mut buf, "--", name)?;
         match self.tokens.get(k) {
             Some(Token::Length(l)) => Some(*l),
             _ => None,
@@ -235,7 +234,7 @@ impl TailwindTheme {
     /// Look up a `--text-{name}` font-size token (+ paired line height).
     pub fn font_size(&self, name: &str) -> Option<(f32, Option<f32>)> {
         let mut buf = [0u8; 96];
-        let k = Self::prefixed(&mut buf, "--text-", name)?;
+        let k = self.prefixed(&mut buf, "--text-", name)?;
         match self.tokens.get(k) {
             Some(Token::FontSize { size, line_height }) => Some((*size, *line_height)),
             _ => None,
@@ -270,7 +269,7 @@ impl TailwindTheme {
     /// Leading tokens are unitless so they live in `Raw`.
     pub fn leading(&self, name: &str) -> Option<f32> {
         let mut buf = [0u8; 96];
-        let k = Self::prefixed(&mut buf, "--leading-", name)?;
+        let k = self.prefixed(&mut buf, "--leading-", name)?;
         match self.tokens.get(k) {
             Some(Token::Length(l)) => Some(*l),
             Some(Token::Raw(s)) => s.trim().parse().ok(),
@@ -310,7 +309,7 @@ impl TailwindTheme {
             return Vec::new();
         }
         let mut buf = [0u8; 96];
-        let Some(k) = Self::prefixed(&mut buf, "--shadow-", name) else {
+        let Some(k) = self.prefixed(&mut buf, "--shadow-", name) else {
             return Vec::new();
         };
         match self.tokens.get(k) {
@@ -322,7 +321,7 @@ impl TailwindTheme {
     /// All layers of `--inset-shadow-{name}` (v0.2).
     pub fn inset_shadows(&self, name: &str) -> Vec<BoxShadowSpec> {
         let mut buf = [0u8; 96];
-        let Some(k) = Self::prefixed(&mut buf, "--inset-shadow-", name) else {
+        let Some(k) = self.prefixed(&mut buf, "--inset-shadow-", name) else {
             return Vec::new();
         };
         match self.tokens.get(k) {
@@ -334,7 +333,7 @@ impl TailwindTheme {
     /// Look up a `--radius-{name}` token in px.
     pub fn radius(&self, name: &str) -> Option<f32> {
         let mut buf = [0u8; 96];
-        let k = Self::prefixed(&mut buf, "--radius-", name)?;
+        let k = self.prefixed(&mut buf, "--radius-", name)?;
         match self.tokens.get(k) {
             Some(Token::Length(l)) => Some(*l),
             _ => None,
@@ -344,7 +343,7 @@ impl TailwindTheme {
     /// A `--container-{name}` token in px (v0.2 `@container` scale).
     pub fn container_px(&self, name: &str) -> Option<f32> {
         let mut buf = [0u8; 96];
-        let k = Self::prefixed(&mut buf, "--container-", name)?;
+        let k = self.prefixed(&mut buf, "--container-", name)?;
         match self.tokens.get(k) {
             Some(Token::Length(l)) => Some(*l),
             _ => None,
@@ -369,7 +368,8 @@ impl TailwindTheme {
         self.breakpoints
             .iter()
             .find(|(n, _)| *n == b)
-            .map_or_else(|| b.default_px(), |(_, px)| *px)
+            .map(|(_, px)| *px)
+            .unwrap_or_else(|| b.default_px())
     }
 
     /// The full theme-aware breakpoint px table (`Breakpoint::index` order).
@@ -387,7 +387,7 @@ impl TailwindTheme {
     /// `in-out`, or a theme-defined `cubic-bezier(...)`; v0.2).
     pub fn ease(&self, name: &str) -> Option<Ease> {
         let mut buf = [0u8; 96];
-        if let Some(k) = Self::prefixed(&mut buf, "--ease-", name)
+        if let Some(k) = self.prefixed(&mut buf, "--ease-", name)
             && let Some(Token::Raw(v)) = self.tokens.get(k)
         {
             return Some(ease_from_value(v));
@@ -405,7 +405,7 @@ impl TailwindTheme {
     /// parsed into `(name, duration_ms, ease, infinite)`.
     pub fn animation(&self, name: &str) -> Option<AnimationSpec> {
         let mut buf = [0u8; 96];
-        let k = Self::prefixed(&mut buf, "--animate-", name)?;
+        let k = self.prefixed(&mut buf, "--animate-", name)?;
         match self.tokens.get(k) {
             Some(Token::Raw(v)) => parse_animation(v),
             _ => None,
@@ -627,7 +627,8 @@ impl TailwindTheme {
             .trim()
             .strip_prefix("var(")
             .and_then(|r| r.strip_suffix(')'))
-            .map_or("", str::trim);
+            .map(str::trim)
+            .unwrap_or("");
         if !matches!(self.tokens.get(inner), Some(Token::Color(_))) {
             return Err(PendingVar::Unresolved);
         }
@@ -1021,14 +1022,6 @@ fn parse_shadow_layer(value: &str) -> Result<BoxShadowSpec, ParseError> {
     })
 }
 
-/// Standard operator precedence for the shunting-yard calc evaluator.
-fn prec(op: char) -> u8 {
-    match op {
-        '*' | '/' => 2,
-        _ => 1,
-    }
-}
-
 /// Evaluate a `calc()` expression with `var()` refs, `+ - * /`, parentheses
 /// and **standard operator precedence** (shunting-yard, ~50 LOC, zero deps).
 ///
@@ -1042,14 +1035,6 @@ fn prec(op: char) -> u8 {
 /// token or any substituted var, the result is px; otherwise the expression
 /// was dimensionless (e.g. `calc(1.25 / 0.875)`) and the result is rem (×16),
 /// matching v4's `--text-sm--line-height` idiom.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Tok {
-    Num(f32),
-    Op(char),
-    LParen,
-    RParen,
-}
-
 fn eval_calc(expr: &str, tokens: &HashMap<String, Token>) -> Result<(f32, bool), ParseError> {
     let inner = expr
         .trim()
@@ -1076,7 +1061,7 @@ fn eval_calc(expr: &str, tokens: &HashMap<String, Token>) -> Result<(f32, bool),
             }
         };
         had_var = true;
-        let _ = write!(resolved, "{v} ");
+        resolved.push_str(&format!("{v} "));
         rest = &after[end + 1..];
     }
     resolved.push_str(rest);
@@ -1087,6 +1072,13 @@ fn eval_calc(expr: &str, tokens: &HashMap<String, Token>) -> Result<(f32, bool),
     // Unary +/- in operator position (start, after an operator or '(') is
     // folded into the following number, or, when it guards a parenthesized
     // group, rewritten as the binary `0 <op> (group)`.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Tok {
+        Num(f32),
+        Op(char),
+        LParen,
+        RParen,
+    }
     let mut toks: Vec<Tok> = Vec::new();
     let mut sign: f32 = 1.0; // pending unary sign for the next number
     let mut wants_operand = true; // true = a unary +/- may appear here
@@ -1155,6 +1147,12 @@ fn eval_calc(expr: &str, tokens: &HashMap<String, Token>) -> Result<(f32, bool),
     }
 
     // --- shunting-yard -> RPN (standard precedence: * / over + -) ----------
+    fn prec(op: char) -> u8 {
+        match op {
+            '*' | '/' => 2,
+            _ => 1,
+        }
+    }
     let mut rpn: Vec<Tok> = Vec::with_capacity(toks.len());
     let mut ops: Vec<char> = Vec::new();
     for t in toks {
@@ -1480,7 +1478,7 @@ mod tests {
         assert_eq!(t.radius("xl"), Some(16.0), "2 * 10 - 4 = 16");
     }
 
-    const SHADCN_LIGHT: &str = r"
+    const SHADCN_LIGHT: &str = r#"
     :root {
       --radius: 0.625rem;
       --background: oklch(1 0 0);
@@ -1498,7 +1496,7 @@ mod tests {
       --color-primary: var(--primary);
       --color-background: var(--background);
     }
-    ";
+    "#;
 
     #[test]
     fn parses_shadcn_tokens() {
