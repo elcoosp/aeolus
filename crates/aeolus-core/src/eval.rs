@@ -45,9 +45,21 @@ pub trait Probe {
         false
     }
 
-    /// Does any descendant satisfy the state (`has-*` variants)?
+    /// Does any descendant satisfy the state (`has-checked:`)?
     fn descendant_state(&self, _s: crate::ast::State) -> bool {
         false
+    }
+
+    /// Does any descendant satisfy the test (`has-*` variants — v0.7 §2
+    /// generalizes them to data/aria/structural inners)? Defaults to
+    /// answering only the state form through [`Probe::descendant_state`];
+    /// a backend that can answer attribute tests of its children overrides
+    /// this.
+    fn descendant(&self, t: &Test) -> bool {
+        match t {
+            Test::State(s) => self.descendant_state(*s),
+            _ => false,
+        }
     }
 
     /// Is the media query active (`dark`, `print`, `motion-reduce`, ...)?
@@ -84,7 +96,7 @@ impl Atom {
             Atom::Not(t) => !p.test(t),
             Atom::Group(t, l) => p.related(Rel::Group, l.as_deref(), t),
             Atom::Peer(t, l) => p.related(Rel::Peer, l.as_deref(), t),
-            Atom::Has(s) => p.descendant_state(*s),
+            Atom::Has(t) => p.descendant(t),
             Atom::Media(m) => p.media(*m),
             Atom::Viewport { min, max } => in_window(p.viewport_width(), *min, *max),
             Atom::Container { min, max, name } => {
@@ -240,5 +252,289 @@ impl From<VariantCondition> for crate::ast::State {
             VariantCondition::FocusWithin => crate::ast::State::FocusWithin,
             VariantCondition::Visited => crate::ast::State::Visited,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::State;
+    use crate::cond::Cond;
+
+    /// A scripted probe: answers from a fixed table, recording nothing.
+    struct Scripted {
+        tests: Vec<Test>,
+        group: bool,
+        peer: bool,
+        descendant_state: Option<State>,
+        media: Vec<Media>,
+        viewport: Option<f32>,
+        container: Option<f32>,
+    }
+
+    impl Probe for Scripted {
+        fn test(&self, t: &Test) -> bool {
+            self.tests.contains(t)
+        }
+        fn related(&self, rel: Rel, _label: Option<&str>, t: &Test) -> bool {
+            match rel {
+                Rel::Group => self.group && matches!(t, Test::State(_)),
+                Rel::Peer => self.peer && matches!(t, Test::State(_)),
+            }
+        }
+        fn descendant_state(&self, s: State) -> bool {
+            self.descendant_state == Some(s)
+        }
+        fn media(&self, m: Media) -> bool {
+            self.media.contains(&m)
+        }
+        fn viewport_width(&self) -> Option<f32> {
+            self.viewport
+        }
+        fn container_width(&self, _name: Option<&str>) -> Option<f32> {
+            self.container
+        }
+    }
+
+    fn on(state: State) -> Atom {
+        Atom::On(Test::State(state))
+    }
+
+    /// The bare `Test` form, for the `Not`/`Has` wrappers.
+    fn ts(state: State) -> Test {
+        Test::State(state)
+    }
+
+    /// The default probe answers "no" everywhere — a backend implements
+    /// only what it has, and unimplemented questions never fire rules.
+    #[test]
+    fn default_probe_answers_no_to_everything() {
+        struct Nil;
+        impl Probe for Nil {}
+        let p = Nil;
+        assert!(!on(State::Hover).matches(&p));
+        // `not-hover` against the default probe: test()=false ⇒ Not fires.
+        assert!(Atom::Not(ts(State::Hover)).matches(&p));
+        assert!(!Atom::Has(ts(State::Checked)).matches(&p));
+        assert!(!Atom::Media(Media::Dark).matches(&p));
+        assert!(!Atom::Viewport { min: None, max: None }.matches(&p));
+        assert!(!Atom::Container { min: None, max: None, name: None }.matches(&p));
+        // The descendant default answers only the state form (v0.7 §2).
+        assert!(!p.descendant(&Test::Data("slot".into(), None)));
+        assert!(!p.descendant(&Test::State(State::Checked)));
+    }
+
+    /// `Atom::matches` routes each arm to its probe question.
+    #[test]
+    fn atom_matches_routes_each_arm() {
+        let p = Scripted {
+            tests: vec![Test::State(State::Hover)],
+            group: false,
+            peer: false,
+            descendant_state: None,
+            media: vec![Media::Dark],
+            viewport: Some(800.0),
+            container: None,
+        };
+        assert!(on(State::Hover).matches(&p));
+        assert!(!on(State::Focus).matches(&p));
+        assert!(Atom::Not(ts(State::Focus)).matches(&p));
+        assert!(Atom::Media(Media::Dark).matches(&p));
+        assert!(!Atom::Media(Media::Print).matches(&p));
+        assert!(Atom::Viewport { min: Some(640.0), max: Some(1024.0) }.matches(&p));
+        assert!(!Atom::Viewport { min: Some(1024.0), max: None }.matches(&p));
+    }
+
+    /// `in_window` is `[min, max)`: min inclusive, max exclusive, and an
+    /// unknown width never matches (an unknown window cannot honestly
+    /// satisfy a width query).
+    #[test]
+    fn in_window_is_min_inclusive_max_exclusive() {
+        assert!(in_window(Some(640.0), Some(640.0), Some(1024.0)));
+        assert!(!in_window(Some(1024.0), Some(640.0), Some(1024.0)));
+        assert!(in_window(Some(1023.999), Some(640.0), Some(1024.0)));
+        assert!(in_window(Some(5000.0), Some(640.0), None));
+        assert!(in_window(Some(100.0), None, Some(640.0)));
+        assert!(!in_window(None, None, None));
+        assert!(!in_window(None, Some(0.0), None));
+    }
+
+    /// `split_group_label` longest-suffix match: `menufocus-visible` must
+    /// split as `(menu, focus-visible)`, NOT `(menufocus, visible)`-ish.
+    #[test]
+    fn split_group_label_is_longest_suffix() {
+        assert_eq!(split_group_label("hover"), Some((None, State::Hover)));
+        assert_eq!(split_group_label("menufocus"), Some((Some("menu"), State::Focus)));
+        assert_eq!(
+            split_group_label("menufocus-visible"),
+            Some((Some("menu"), State::FocusVisible))
+        );
+        assert_eq!(split_group_label("xplaceholder-shown"), Some((Some("x"), State::PlaceholderShown)));
+        assert_eq!(split_group_label("nosuchstate"), None);
+    }
+
+    /// Cascade order (the parity engine's core): a focused+hovered element
+    /// resolves the FOCUS layer even when the class string listed `hover:`
+    /// first — rank beats source order within the state band.
+    #[test]
+    fn resolve_prefers_focus_over_hover_regardless_of_source_order() {
+        let mut plan = StylePlan::default();
+        let mut hover_bg = ResolvedStyle::default();
+        hover_bg.background = Some(crate::plan::Background(crate::color::Color { l: 0.0, a: 0.0, b: 0.0, alpha: 1.0 }));
+        let mut focus_ring = ResolvedStyle::default();
+        focus_ring.ring = Some(crate::plan::Ring {
+            width: 3.0,
+            color: None,
+            offset_width: 0.0,
+            offset_color: None,
+            inset: false,
+        });
+        // Source order: hover FIRST, focus second.
+        plan.layers.push(crate::plan::ConditionalLayer {
+            condition: crate::plan::VariantCondition::Hover,
+            style: hover_bg.clone(),
+        });
+        plan.layers.push(crate::plan::ConditionalLayer {
+            condition: crate::plan::VariantCondition::FocusVisible,
+            style: focus_ring.clone(),
+        });
+        let p = Scripted {
+            tests: vec![Test::State(State::Hover), Test::State(State::FocusVisible)],
+            group: false,
+            peer: false,
+            descendant_state: None,
+            media: vec![],
+            viewport: None,
+            container: None,
+        };
+        let out = plan.resolve(&p);
+        assert!(out.background.is_some(), "hover layer applies");
+        assert!(out.ring.is_some(), "focus-visible layer applies");
+        // The reverse source order must produce the SAME result: rank
+        // ordering makes the flatten source-order independent within a band.
+        let mut flipped = StylePlan::default();
+        flipped.layers.push(crate::plan::ConditionalLayer {
+            condition: crate::plan::VariantCondition::FocusVisible,
+            style: focus_ring.clone(),
+        });
+        flipped.layers.push(crate::plan::ConditionalLayer {
+            condition: crate::plan::VariantCondition::Hover,
+            style: hover_bg.clone(),
+        });
+        assert_eq!(out, flipped.resolve(&p), "cascade rank must beat source order");
+    }
+
+    /// Dark beats the state band (140 > 10): a dark+hover element in dark
+    /// mode resolves the dark bucket over the hover layer.
+    #[test]
+    fn resolve_dark_beats_the_state_band() {
+        let mut plan = StylePlan::default();
+        let mut hover_bg = ResolvedStyle::default();
+        hover_bg.background = Some(crate::plan::Background(crate::color::Color { l: 0.0, a: 0.0, b: 0.0, alpha: 1.0 }));
+        let mut dark_bg = ResolvedStyle::default();
+        dark_bg.background = Some(crate::plan::Background(crate::color::Color { l: 1.0, a: 1.0, b: 1.0, alpha: 1.0 }));
+        plan.layers.push(crate::plan::ConditionalLayer {
+            condition: crate::plan::VariantCondition::Hover,
+            style: hover_bg,
+        });
+        plan.dark = Some(dark_bg);
+        let p = Scripted {
+            tests: vec![Test::State(State::Hover)],
+            group: false,
+            peer: false,
+            descendant_state: None,
+            media: vec![Media::Dark],
+            viewport: None,
+            container: None,
+        };
+        let out = plan.resolve(&p);
+        assert_eq!(
+            out.background,
+            Some(crate::plan::Background(crate::color::Color { l: 1.0, a: 1.0, b: 1.0, alpha: 1.0 }))
+        );
+        // Out of dark mode only the hover layer fires.
+        let light = Scripted {
+            tests: vec![Test::State(State::Hover)],
+            group: false,
+            peer: false,
+            descendant_state: None,
+            media: vec![],
+            viewport: None,
+            container: None,
+        };
+        let out = plan.resolve(&light);
+        assert_eq!(
+            out.background,
+            Some(crate::plan::Background(crate::color::Color { l: 0.0, a: 0.0, b: 0.0, alpha: 1.0 }))
+        );
+    }
+
+    /// Responsive buckets use the plan's OWN breakpoint table (`sm:` is 640
+    /// only because the table says so) — a lowered width wins by px, not by
+    /// name.
+    #[test]
+    fn resolve_responsive_uses_the_plan_breakpoint_table() {
+        let mut plan = StylePlan::default();
+        // Real plans carry the THEME's breakpoint table (the derived
+        // default is [0;5] — every width would match). Pin the v4 defaults.
+        plan.breakpoints = [640.0, 768.0, 1024.0, 1280.0, 1536.0];
+        let mut sm = ResolvedStyle::default();
+        sm.opacity = Some(crate::plan::Opacity(0.5));
+        plan.responsive.insert(crate::ast::Breakpoint::Sm, sm);
+        let wide = Scripted {
+            tests: vec![],
+            group: false,
+            peer: false,
+            descendant_state: None,
+            media: vec![],
+            viewport: Some(639.0),
+            container: None,
+        };
+        assert!(plan.resolve(&wide).opacity.is_none(), "639 < sm(640): no hit");
+        let at = Scripted {
+            tests: vec![],
+            group: false,
+            peer: false,
+            descendant_state: None,
+            media: vec![],
+            viewport: Some(640.0),
+            container: None,
+        };
+        assert_eq!(plan.resolve(&at).opacity, Some(crate::plan::Opacity(0.5)), "min is inclusive");
+    }
+
+    /// `resolve_rules_only` touches ONLY rules + group/peer buckets — the
+    /// Floem reactive path relies on layers/dark/responsive NOT leaking in.
+    #[test]
+    fn resolve_rules_only_excludes_buckets() {
+        let mut plan = StylePlan::default();
+        let mut hover_bg = ResolvedStyle::default();
+        hover_bg.background = Some(crate::plan::Background(crate::color::Color { l: 0.0, a: 0.0, b: 0.0, alpha: 1.0 }));
+        plan.layers.push(crate::plan::ConditionalLayer {
+            condition: crate::plan::VariantCondition::Hover,
+            style: hover_bg,
+        });
+        let mut dark_bg = ResolvedStyle::default();
+        dark_bg.opacity = Some(crate::plan::Opacity(0.25));
+        plan.dark = Some(dark_bg);
+        let mut rule_style = ResolvedStyle::default();
+        rule_style.cursor = Some(crate::plan::Cursor::Pointer);
+        plan.rules.push(Rule {
+            when: Cond(vec![Atom::On(ts(State::Checked))]),
+            style: rule_style,
+        });
+        let p = Scripted {
+            tests: vec![Test::State(State::Checked), Test::State(State::Hover)],
+            group: false,
+            peer: false,
+            descendant_state: None,
+            media: vec![Media::Dark],
+            viewport: None,
+            container: None,
+        };
+        let out = plan.resolve_rules_only(&p);
+        assert!(out.background.is_none(), "layers must not leak");
+        assert!(out.opacity.is_none(), "dark must not leak");
+        assert_eq!(out.cursor, Some(crate::plan::Cursor::Pointer), "matching rule fires");
     }
 }
