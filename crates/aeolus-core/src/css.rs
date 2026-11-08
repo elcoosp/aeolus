@@ -33,6 +33,7 @@ use crate::plan::{
 use crate::resolve::{
     Applied, GradientEdge, GradientShapeApplied, PartialValue, Resolver, Route, Warning,
 };
+use std::fmt::Write as _;
 
 /// One emitted CSS rule: `.selector` under optional `@media`/`@container`
 /// conditions with an ordered declaration list.
@@ -72,14 +73,14 @@ impl CssRule {
                 s.push('/');
                 s.push_str(n);
             }
-            s.push_str(&format!(" {c} {{\n"));
+            let _ = writeln!(s, " {c} {{");
         }
         if let Some(m) = &self.media {
-            s.push_str(&format!("@media {m} {{\n"));
+            let _ = writeln!(s, "@media {m} {{");
         }
-        s.push_str(&format!("  {} {{\n", self.selector));
+        let _ = writeln!(s, "  {} {{", self.selector);
         for (p, v) in &self.declarations {
-            s.push_str(&format!("    {p}: {v};\n"));
+            let _ = writeln!(s, "    {p}: {v};");
         }
         s.push_str("  }\n");
         if self.media.is_some() {
@@ -101,7 +102,7 @@ pub fn format_rules(out: &CssOutput) -> String {
     s
 }
 
-impl<'t> Resolver<'t> {
+impl Resolver<'_> {
     /// Emit the Tailwind-v4-equivalent CSS for a class string (v0.4 §1).
     ///
     /// One [`CssRule`] per class token, derived from the resolver's own
@@ -197,7 +198,7 @@ impl<'t> Resolver<'t> {
                             tag = Some(t.to_string());
                         }
                         crate::cond::Atom::On(Test::Pseudo(p)) => {
-                            // v0.7 §1: pseudo-element renderings append the
+                            // v0.9 §1: pseudo-element renderings append the
                             // `::selection`-style suffix (v4's shape:
                             // `.selection\:bg-primary::selection`).
                             rule.selector.push_str(p.css());
@@ -206,7 +207,7 @@ impl<'t> Resolver<'t> {
                             rule.selector.push_str(&not_test(inner));
                         }
                         crate::cond::Atom::Has(t) => {
-                            rule.selector.push_str(&format!(":has({})", has_inner(t)));
+                            let _ = write!(rule.selector, ":has({})", has_inner(t));
                         }
                         crate::cond::Atom::Group(test, label) => {
                             let state = match test {
@@ -287,9 +288,12 @@ impl<'t> Resolver<'t> {
             Applied::Replace(_, PartialValue::BorderColor(c)) => {
                 vec![("border-color".into(), self.color_text(token, &c.0))]
             }
-            Applied::Replace(_, PartialValue::Dimensions(d))
-            | Applied::Replace(_, PartialValue::MinDimensions(d))
-            | Applied::Replace(_, PartialValue::MaxDimensions(d)) => {
+            Applied::Replace(
+                _,
+                PartialValue::Dimensions(d)
+                | PartialValue::MinDimensions(d)
+                | PartialValue::MaxDimensions(d),
+            ) => {
                 let (wprop, hprop) =
                     if token.body.starts_with("min-w-") || token.body.starts_with("min-h-") {
                         ("min-width", "min-height")
@@ -300,10 +304,10 @@ impl<'t> Resolver<'t> {
                     };
                 let mut out = Vec::new();
                 if let Some(w) = d.width {
-                    out.push((wprop.to_string(), self.sized_text(token, &w)));
+                    out.push((wprop.to_string(), self.sized_text(token, w)));
                 }
                 if let Some(h) = d.height {
-                    out.push((hprop.to_string(), self.sized_text(token, &h)));
+                    out.push((hprop.to_string(), self.sized_text(token, h)));
                 }
                 out
             }
@@ -402,7 +406,7 @@ impl<'t> Resolver<'t> {
                     .or(right.as_ref())
                     .or(bottom.as_ref())
                     .or(left.as_ref())
-                    .map(|v| self.sized_text(token, v));
+                    .map(|v| self.sized_text(token, *v));
                 match (head, value) {
                     ("top", Some(v)) => vec![("top".into(), v)],
                     ("right", Some(v)) => vec![("right".into(), v)],
@@ -415,7 +419,7 @@ impl<'t> Resolver<'t> {
                 }
             }
             Applied::ZIndex(z) => vec![("z-index".into(), z.to_string())],
-            Applied::Overflow(o) => overflow_decls(o),
+            Applied::Overflow(o) => overflow_decls(*o),
             Applied::Visibility(v) => vec![(
                 "visibility".into(),
                 match v {
@@ -439,7 +443,7 @@ impl<'t> Resolver<'t> {
             }
             Applied::Grid(g) => {
                 let mut out = Vec::new();
-                // v0.7 §4: track templates are CANONICAL — emitted instead
+                // v0.9 §4: track templates are CANONICAL — emitted instead
                 // of the numeric repeat form when present.
                 if let Some(tracks) = &g.template_cols {
                     out.push(("grid-template-columns".into(), tracks_text(tracks)));
@@ -477,7 +481,7 @@ impl<'t> Resolver<'t> {
                 }
                 out
             }
-            // v0.7 §3: `@container[/name]` — the containment declarations.
+            // v0.9 §3: `@container[/name]` — the containment declarations.
             Applied::ContainerType(ct) => {
                 let mut out = vec![("container-type".into(), "inline-size".into())];
                 if let Some(n) = &ct.name {
@@ -530,12 +534,12 @@ impl<'t> Resolver<'t> {
                 }
                 .to_string(),
             )],
-            Applied::FlexBasis(v) => vec![("flex-basis".into(), self.sized_text(token, v))],
+            Applied::FlexBasis(v) => vec![("flex-basis".into(), self.sized_text(token, *v))],
             Applied::Order(o) => vec![("order".into(), o.to_string())],
             Applied::AlignContent(c) => {
                 vec![("align-content".into(), content_align_text(*c).to_string())]
             }
-            Applied::MarginAuto(e) => margin_auto_decls(e),
+            Applied::MarginAuto(e) => margin_auto_decls(*e),
             Applied::GapAxes(g) => {
                 let mut out = Vec::new();
                 if let Some(c) = g.col {
@@ -645,12 +649,8 @@ impl<'t> Resolver<'t> {
         let mut out = Vec::new();
         if scale_x.is_some() || scale_y.is_some() {
             // Unset axes compose to the `--tw-scale-{x,y}` initial value `1`.
-            let x = scale_x
-                .map(|v| format!("{}%", trim_f32(v * 100.0)))
-                .unwrap_or_else(|| "1".into());
-            let y = scale_y
-                .map(|v| format!("{}%", trim_f32(v * 100.0)))
-                .unwrap_or_else(|| "1".into());
+            let x = scale_x.map_or_else(|| "1".into(), |v| format!("{}%", trim_f32(v * 100.0)));
+            let y = scale_y.map_or_else(|| "1".into(), |v| format!("{}%", trim_f32(v * 100.0)));
             out.push(("scale".into(), format!("{x} {y}")));
         }
         if let Some(deg) = rotate_deg {
@@ -659,12 +659,10 @@ impl<'t> Resolver<'t> {
         if translate_x.is_some() || translate_y.is_some() {
             let x = translate_x
                 .as_ref()
-                .map(|v| self.sized_text(token, v))
-                .unwrap_or_else(|| "0".into());
+                .map_or_else(|| "0".into(), |v| self.sized_text(token, *v));
             let y = translate_y
                 .as_ref()
-                .map(|v| self.sized_text(token, v))
-                .unwrap_or_else(|| "0".into());
+                .map_or_else(|| "0".into(), |v| self.sized_text(token, *v));
             out.push(("translate".into(), format!("{x} {y}")));
         }
         if skew_x.is_some() || skew_y.is_some() {
@@ -766,11 +764,11 @@ impl<'t> Resolver<'t> {
 
     /// The text of one dimension value. Scale values were resolved to px —
     /// the token text reconstructs v4's `calc(var(--spacing) * n)` shape.
-    fn sized_text(&self, token: &ClassToken<'_>, v: &SizedValue) -> String {
+    fn sized_text(&self, token: &ClassToken<'_>, v: SizedValue) -> String {
         match v {
-            SizedValue::Px(px) => spacing_text(token, *px, self.theme.spacing()),
-            SizedValue::Scale(n) => format!("calc(var(--spacing) * {})", trim_f32(*n)),
-            SizedValue::Fraction(f) => format!("{}%", trim_f32(*f * 100.0)),
+            SizedValue::Px(px) => spacing_text(token, px, self.theme.spacing()),
+            SizedValue::Scale(n) => format!("calc(var(--spacing) * {})", trim_f32(n)),
+            SizedValue::Fraction(f) => format!("{}%", trim_f32(f * 100.0)),
             SizedValue::Full => "100%".into(),
             SizedValue::FitContent => "fit-content".into(),
             SizedValue::Auto => "auto".into(),
@@ -915,7 +913,7 @@ fn has_inner(t: &Test) -> String {
 fn has_inner_text(t: &Test) -> String {
     match t {
         Test::State(s) => state_pseudo(*s).to_string(),
-        Test::Structural(s) => structural_pseudo(*s).to_string(),
+        Test::Structural(s) => structural_pseudo(*s).clone(),
         Test::Data(n, v) => attr_test("data", n, v.as_deref()),
         Test::Aria(n, v) => attr_test("aria", n, v.as_deref()),
         Test::Tag(tag) => tag.to_string(),
@@ -1000,7 +998,7 @@ pub(crate) fn trim_f32(v: f32) -> String {
             "-infinity".into()
         };
     }
-    let s = format!("{:.6}", v);
+    let s = format!("{v:.6}");
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
@@ -1159,8 +1157,7 @@ fn ring_decls(r: &Ring) -> Vec<(String, String)> {
         let color = r
             .color
             .as_ref()
-            .map(oklch_text)
-            .unwrap_or_else(|| "currentcolor".into());
+            .map_or_else(|| "currentcolor".into(), oklch_text);
         let inset = if r.inset { "inset " } else { "" };
         layers.push(format!("{inset}0 0 0 {}px {}", trim_f32(r.width), color));
     }
@@ -1304,7 +1301,7 @@ fn text_decls(prop: TextProperty, val: TextValue) -> Vec<(String, String)> {
     }
 }
 
-fn overflow_decls(o: &crate::plan::Overflow) -> Vec<(String, String)> {
+fn overflow_decls(o: crate::plan::Overflow) -> Vec<(String, String)> {
     let kind = |k: &Option<OverflowKind>| {
         k.map(|k| match k {
             OverflowKind::Visible => "visible",
@@ -1365,7 +1362,7 @@ fn layout_decls(token: &ClassToken<'_>, l: &crate::plan::Layout) -> Vec<(String,
     if let Some(j) = l.justify_content {
         out.push(("justify-content".into(), justify_text(j).to_string()));
     }
-    // v0.7 §5: `justify-items-*` (the emitter is a verification tool — the
+    // v0.9 §5: `justify-items-*` (the emitter is a verification tool — the
     // declaration must appear for the class that set it only, so the slot
     // is keyed by the utility head like the other layout axes).
     if let Some(j) = l.justify_items
@@ -1424,7 +1421,7 @@ fn justify_text(j: JustifyContent) -> &'static str {
     }
 }
 
-/// The CSS text of an arbitrary track template (v0.7 §4): `0 1fr`,
+/// The CSS text of an arbitrary track template (v0.9 §4): `0 1fr`,
 /// `repeat(3, minmax(0, 1fr))`, `min-content`, ... The fr track emits as
 /// its max sizing (`1fr`, CSS's shorthand for `minmax(auto, 1fr)`).
 fn tracks_text(tracks: &[TrackComponent]) -> String {
@@ -1537,7 +1534,7 @@ fn transition_property_list(set: TransitionSet) -> &'static str {
     }
 }
 
-fn margin_auto_decls(e: &AutoEdges) -> Vec<(String, String)> {
+fn margin_auto_decls(e: AutoEdges) -> Vec<(String, String)> {
     let mut out = Vec::new();
     if e.left && e.right {
         out.push(("margin-inline".into(), "auto".into()));
