@@ -33,7 +33,6 @@
 //!   normalization above covers the `text-*/*` entries.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Write as _;
 
 use aeolus_core::{Resolver, TailwindTheme};
 
@@ -197,20 +196,20 @@ struct FlatRule {
 fn flatten(
     nodes: &[Node],
     sel: &str,
-    media: Option<&str>,
-    container: Option<&str>,
+    media: Option<String>,
+    container: Option<String>,
     out: &mut Vec<FlatRule>,
 ) {
-    // Child contexts resolved at PUSH time: cascade order = the rule's own
-    // declarations first, then nested blocks (last-wins for @supports).
-    type ChildCtx = (Vec<Node>, String, Option<String>, Option<String>);
     let mut rule = FlatRule {
         selector: sel.to_string(),
-        media: media.map(str::to_string),
-        container: container.map(str::to_string),
+        media: media.clone(),
+        container: container.clone(),
         decls: Vec::new(),
         supports: false,
     };
+    // Child contexts resolved at PUSH time: cascade order = the rule's own
+    // declarations first, then nested blocks (last-wins for @supports).
+    type ChildCtx = (Vec<Node>, String, Option<String>, Option<String>);
     let mut children: Vec<ChildCtx> = Vec::new();
     let mut supports_rules: Vec<FlatRule> = Vec::new();
     for n in nodes {
@@ -222,12 +221,7 @@ fn flatten(
                 } else {
                     panic!("nested selector without `&`: {s}");
                 };
-                children.push((
-                    kids.clone(),
-                    joined,
-                    media.map(str::to_string),
-                    container.map(str::to_string),
-                ));
+                children.push((kids.clone(), joined, media.clone(), container.clone()));
             }
             Node::At(prelude, kids) => {
                 if prelude.contains("not (hover: hover)") {
@@ -239,20 +233,15 @@ fn flatten(
                     .trim()
                     .to_string();
                 if prelude.starts_with("@container") {
-                    children.push((
-                        kids.clone(),
-                        sel.to_string(),
-                        media.map(str::to_string),
-                        Some(cond),
-                    ));
+                    children.push((kids.clone(), sel.to_string(), media.clone(), Some(cond)));
                 } else if prelude.starts_with("@media") {
                     if cond == "(hover: hover)" || cond == "(hover: none)" {
                         // documented normalization: hover-capability wrapper
                         children.push((
                             kids.clone(),
                             sel.to_string(),
-                            media.map(str::to_string),
-                            container.map(str::to_string),
+                            media.clone(),
+                            container.clone(),
                         ));
                     } else {
                         let combined = match &media {
@@ -263,7 +252,7 @@ fn flatten(
                             kids.clone(),
                             sel.to_string(),
                             Some(combined),
-                            container.map(str::to_string),
+                            container.clone(),
                         ));
                     }
                 } else {
@@ -271,8 +260,8 @@ fn flatten(
                     // replaces the plain fallback it follows.
                     let mut kid_rule = FlatRule {
                         selector: sel.to_string(),
-                        media: media.map(str::to_string),
-                        container: container.map(str::to_string),
+                        media: media.clone(),
+                        container: container.clone(),
                         decls: Vec::new(),
                         supports: true,
                     };
@@ -293,7 +282,7 @@ fn flatten(
     }
     out.extend(supports_rules);
     for (kids, csel, cmedia, ccontainer) in children {
-        flatten(&kids, &csel, cmedia.as_deref(), ccontainer.as_deref(), out);
+        flatten(&kids, &csel, cmedia, ccontainer, out);
     }
 }
 
@@ -376,7 +365,7 @@ fn trim_f32(v: f32) -> String {
             "-infinity".into()
         };
     }
-    let s = format!("{v:.6}");
+    let s = format!("{:.6}", v);
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
@@ -507,9 +496,10 @@ fn eval_calc_expr(expr: &str) -> Option<(f32, &'static str)> {
 fn parse_add(tokens: &[Tok], pos: &mut usize) -> Option<(f32, &'static str)> {
     let mut lhs = parse_mul(tokens, pos)?;
     while *pos < tokens.len() {
-        if let Tok::Op('+' | '-') = tokens[*pos] {
-            let Tok::Op(op) = tokens[*pos] else {
-                unreachable!("the if-let above proved this is an Op")
+        if let Tok::Op('+') | Tok::Op('-') = tokens[*pos] {
+            let op = match tokens[*pos] {
+                Tok::Op(c) => c,
+                _ => unreachable!(),
             };
             *pos += 1;
             let rhs = parse_mul(tokens, pos)?;
@@ -524,9 +514,10 @@ fn parse_add(tokens: &[Tok], pos: &mut usize) -> Option<(f32, &'static str)> {
 fn parse_mul(tokens: &[Tok], pos: &mut usize) -> Option<(f32, &'static str)> {
     let mut lhs = parse_unary(tokens, pos)?;
     while *pos < tokens.len() {
-        if let Tok::Op('*' | '/') = tokens[*pos] {
-            let Tok::Op(op) = tokens[*pos] else {
-                unreachable!("the if-let above proved this is an Op")
+        if let Tok::Op('*') | Tok::Op('/') = tokens[*pos] {
+            let op = match tokens[*pos] {
+                Tok::Op(c) => c,
+                _ => unreachable!(),
             };
             *pos += 1;
             let rhs = parse_unary(tokens, pos)?;
@@ -563,7 +554,7 @@ fn parse_unary(tokens: &[Tok], pos: &mut usize) -> Option<(f32, &'static str)> {
             *pos += 1;
             Some(r)
         }
-        Tok::Op(_) => None,
+        _ => None,
     }
 }
 
@@ -641,7 +632,7 @@ fn canonicalize_colors(value: &str) -> String {
         if starts_color {
             // find the token end: matching paren for functions, hex run for #
             let end = if rest.starts_with('#') {
-                rest.chars().take_while(char::is_ascii_hexdigit).count() + 1
+                rest.chars().take_while(|c| c.is_ascii_hexdigit()).count() + 1
             } else {
                 let mut depth = 0i32;
                 let mut e = 0;
@@ -666,22 +657,20 @@ fn canonicalize_colors(value: &str) -> String {
                     let chroma = (c.a * c.a + c.b * c.b).sqrt();
                     let hue = c.b.atan2(c.a).to_degrees().rem_euclid(360.0);
                     if (alpha - 1.0).abs() < f32::EPSILON {
-                        let _ = write!(
-                            out,
+                        out.push_str(&format!(
                             "oklch({} {} {})",
                             trim_f32(c.l),
                             trim_f32(chroma),
                             trim_f32(hue)
-                        );
+                        ));
                     } else {
-                        let _ = write!(
-                            out,
+                        out.push_str(&format!(
                             "oklch({} {} {} / {})",
                             trim_f32(c.l),
                             trim_f32(chroma),
                             trim_f32(hue),
                             trim_f32(alpha)
-                        );
+                        ));
                     }
                 }
                 Err(_) => out.push_str(token),
@@ -740,19 +729,18 @@ fn eval_color_mix(value: &str) -> String {
         {
             let mixed = c.mix_with_transparent(pct);
             out.push_str(&rest[..start]);
-            let _ = write!(
-                out,
+            out.push_str(&format!(
                 "oklch({} {} {} / {})",
                 trim_f32(mixed.l),
                 trim_f32((mixed.a * mixed.a + mixed.b * mixed.b).sqrt()),
                 trim_f32(mixed.b.atan2(mixed.a).to_degrees().rem_euclid(360.0)),
                 trim_f32(mixed.alpha)
-            );
+            ));
             rest = &tail[end - start + 1..];
             continue;
         }
         // Not evaluatable — keep verbatim.
-        out.push_str(&rest[..=end]);
+        out.push_str(&rest[..end + 1]);
         rest = &tail[end - start + 1..];
     }
     out.push_str(rest);
@@ -821,6 +809,14 @@ fn top_level_commas(s: &str) -> Vec<String> {
 fn value_eq(a: &str, b: &str) -> bool {
     let a = collapse(a);
     let b = collapse(b);
+    if a == b {
+        return true;
+    }
+    // v0.7 normalization: serializer comma spacing. v4 emits arbitrary
+    // values verbatim (`repeat(3,minmax(0,1fr))`) but keyword forms pretty
+    // (`minmax(0, 1fr)`) — spacing after commas is not semantic.
+    let a = a.replace(", ", ",");
+    let b = b.replace(", ", ",");
     if a == b {
         return true;
     }
@@ -917,6 +913,16 @@ fn golden_corpus_parity() {
         // Normalize golden: substitute vars + compose the --tw machinery.
         let mut normalized: Vec<(String, String, BTreeMap<String, String>)> = Vec::new();
         for r in &golden_rules {
+            // v0.7 normalization (AEOLUS_V0.7.md §6): v4's `selection:`
+            // emits TWO nested rules — `& *::selection` (descendants) and
+            // `&::selection` (self). The descendant half styles OTHER
+            // elements, which is outside the Probe model by construction
+            // (v0.3 §1.3), so it is skipped — the same boundary the
+            // `[&_svg]` warnings document. Detected by the descendant
+            // combinator before the pseudo-element (`… *::selection`).
+            if r.selector.contains(" *::") {
+                continue;
+            }
             let local: BTreeMap<String, String> = r
                 .decls
                 .iter()
@@ -932,7 +938,7 @@ fn golden_corpus_parity() {
                 if is_dropped(p, &nv) || nv.is_empty() {
                     continue;
                 }
-                decls.push((p.clone(), nv));
+                decls.push((p.to_string(), nv));
             }
             scale_unitless_line_height(&mut decls);
             let entry = (
@@ -966,7 +972,7 @@ fn golden_corpus_parity() {
                 if is_dropped(p, &nv) {
                     continue;
                 }
-                decls.push((p.clone(), nv));
+                decls.push((p.to_string(), nv));
             }
             scale_unitless_line_height(&mut decls);
             our_rules.push((
@@ -999,7 +1005,7 @@ fn golden_corpus_parity() {
                             )),
                         }
                     }
-                    for (p, v) in ours {
+                    for (p, v) in ours.iter() {
                         if !decls.contains_key(p) {
                             failures.push(format!(
                                 "{theme}:{class} [{sel} {media}] extra decl {p}: {v:?} (golden {decls:?})"
@@ -1022,12 +1028,13 @@ fn golden_corpus_parity() {
     }
 
     assert!(checked >= 150, "corpus shrank: {checked}");
-    assert!(
-        failures.is_empty(),
-        "{} parity failures (of {checked} entries):\n{}",
-        failures.len(),
-        failures.join("\n"),
-    );
+    if !failures.is_empty() {
+        panic!(
+            "{} parity failures (of {checked} entries):\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+    }
 }
 
 /// Compose the `--tw-*` shadow/ring machinery: for the var-list form of
