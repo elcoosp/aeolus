@@ -36,9 +36,10 @@ fn resolve_plan(resolver: &Resolver<'_>, classes: &str) -> StylePlan {
     match resolver.resolve(classes) {
         Ok(resolution) => resolution.plan,
         Err(err) => {
-            if cfg!(debug_assertions) {
-                panic!("aeolus: failed to parse class string {classes:?}: {err:?}");
-            }
+            assert!(
+                !cfg!(debug_assertions),
+                "aeolus: failed to parse class string {classes:?}: {err:?}"
+            );
             tracing::warn!("aeolus: dropping unparseable class string {classes:?}: {err:?}");
             StylePlan::default()
         }
@@ -96,8 +97,8 @@ where
 ///     "border-red-500",
 /// )
 /// ```
-pub fn input<'a, State, Action>(
-    resolver: &Resolver<'a>,
+pub fn input<State, Action>(
+    resolver: &Resolver<'_>,
     value: String,
     on_changed: impl Fn(&mut State, String) -> Action + Send + Sync + 'static,
     class: &str,
@@ -111,8 +112,8 @@ where
 }
 
 /// A Shadcn Badge (style-only; badges are not interactive).
-pub fn badge<'a>(
-    resolver: &Resolver<'a>,
+pub fn badge(
+    resolver: &Resolver<'_>,
     text: &'static str,
     variant: BadgeVariant,
     class: &str,
@@ -122,24 +123,20 @@ pub fn badge<'a>(
 }
 
 /// A Shadcn Label (style-only).
-pub fn label<'a>(resolver: &Resolver<'a>, text: &'static str, class: &str) -> impl WidgetView<()> {
+pub fn label(resolver: &Resolver<'_>, text: &'static str, class: &str) -> impl WidgetView<()> {
     let classes = cn(&[LABEL_BASE, class]);
     xilem_label(text).tw(resolver, &classes)
 }
 
 /// A Shadcn Card title (style-only).
-pub fn card_title<'a>(
-    resolver: &Resolver<'a>,
-    text: &'static str,
-    class: &str,
-) -> impl WidgetView<()> {
+pub fn card_title(resolver: &Resolver<'_>, text: &'static str, class: &str) -> impl WidgetView<()> {
     let classes = cn(&[CARD_TITLE, class]);
     xilem_label(text).tw(resolver, &classes)
 }
 
 /// A Shadcn Card description (style-only).
-pub fn card_description<'a>(
-    resolver: &Resolver<'a>,
+pub fn card_description(
+    resolver: &Resolver<'_>,
     text: &'static str,
     class: &str,
 ) -> impl WidgetView<()> {
@@ -153,8 +150,8 @@ pub fn card_description<'a>(
 /// slot lands, the wrapper resolves the Card's *paint* properties (background,
 /// border, radius, shadow, text color) and stacks children via the caller
 /// (e.g. a xilem `v_flex`), which is documented in the capability matrix.
-pub fn card<'a, V: WidgetView<()>>(
-    resolver: &Resolver<'a>,
+pub fn card<V: WidgetView<()>>(
+    resolver: &Resolver<'_>,
     child: V,
     class: &str,
 ) -> aeolus_xilem::view::Tw<V, (), ()> {
@@ -163,8 +160,8 @@ pub fn card<'a, V: WidgetView<()>>(
 }
 
 /// Card header container (same layout caveat as [`card`]).
-pub fn card_header<'a, V: WidgetView<()>>(
-    resolver: &Resolver<'a>,
+pub fn card_header<V: WidgetView<()>>(
+    resolver: &Resolver<'_>,
     child: V,
     class: &str,
 ) -> aeolus_xilem::view::Tw<V, (), ()> {
@@ -173,8 +170,8 @@ pub fn card_header<'a, V: WidgetView<()>>(
 }
 
 /// Card footer container (same layout caveat as [`card`]).
-pub fn card_footer<'a, V: WidgetView<()>>(
-    resolver: &Resolver<'a>,
+pub fn card_footer<V: WidgetView<()>>(
+    resolver: &Resolver<'_>,
     child: V,
     class: &str,
 ) -> aeolus_xilem::view::Tw<V, (), ()> {
@@ -183,8 +180,8 @@ pub fn card_footer<'a, V: WidgetView<()>>(
 }
 
 /// A Shadcn Alert (title + description as the child sequence; style-only).
-pub fn alert<'a, V: WidgetView<()>>(
-    resolver: &Resolver<'a>,
+pub fn alert<V: WidgetView<()>>(
+    resolver: &Resolver<'_>,
     child: V,
     variant: AlertVariant,
     class: &str,

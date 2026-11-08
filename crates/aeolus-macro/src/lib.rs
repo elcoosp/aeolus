@@ -11,6 +11,7 @@
 //! ```
 
 use proc_macro::{Delimiter, TokenStream, TokenTree};
+use std::fmt::Write as _;
 
 /// Validate class strings at compile time.
 #[proc_macro]
@@ -35,7 +36,7 @@ pub fn tw(input: TokenStream) -> TokenStream {
         if !unknown.is_empty() {
             let mut msg = String::from("tw!: unknown variant name(s)");
             for v in unknown {
-                msg.push_str(&format!(" {v}:"));
+                let _ = write!(msg, " {v}:");
             }
             msg.push_str(" — a static class list must only use v4 variants known to aeolus (dynamic strings may use @custom-variant names via the runtime resolver)");
             return compile_error(&input, &msg);
@@ -154,7 +155,7 @@ fn unescape(s: &str) -> String {
 fn compile_error(input: &TokenStream, msg: &str) -> TokenStream {
     // Preserve the span by attaching to the first token when possible.
     let _ = input;
-    format!("compile_error!({:?})", msg).parse().unwrap()
+    format!("compile_error!({msg:?})").parse().unwrap()
 }
 
 /// Collect every `NamedVariant::Custom` name in a token's variant stack

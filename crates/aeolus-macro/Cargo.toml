@@ -18,3 +18,7 @@ verbose-diagnostics = []
 
 # profile section must live at workspace root; kept opt-level note here:
 # proc-macro crates build fast with opt-level 1 (mission brief 3.3)
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true
