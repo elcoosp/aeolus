@@ -194,19 +194,37 @@ pub fn apply_resolved(mut style: Style, s: &ResolvedStyle, report: &mut Lowering
         style = style.color(to_floem_color(c));
     }
     if let Some(p) = &s.padding {
-        style = style
-            .padding_left(pt(p.left))
-            .padding_top(pt(p.top))
-            .padding_right(pt(p.right))
-            .padding_bottom(pt(p.bottom));
+        // v0.8 §1.2: Floem's cascade is per-FIELD, so a partial-edge layer
+        // applies only the edges its set-mask addresses — the masked-off
+        // edges keep the lower cascade entry (the 0.0 placeholders never
+        // enter the selector maps).
+        if p.set.top {
+            style = style.padding_top(pt(p.top));
+        }
+        if p.set.right {
+            style = style.padding_right(pt(p.right));
+        }
+        if p.set.bottom {
+            style = style.padding_bottom(pt(p.bottom));
+        }
+        if p.set.left {
+            style = style.padding_left(pt(p.left));
+        }
     }
     if let Some(m) = &s.margin {
         // Floem margin props are LengthAuto; margins accept the same px values.
-        style = style
-            .margin_left(pt_auto(m.left))
-            .margin_top(pt_auto(m.top))
-            .margin_right(pt_auto(m.right))
-            .margin_bottom(pt_auto(m.bottom));
+        if m.set.top {
+            style = style.margin_top(pt_auto(m.top));
+        }
+        if m.set.right {
+            style = style.margin_right(pt_auto(m.right));
+        }
+        if m.set.bottom {
+            style = style.margin_bottom(pt_auto(m.bottom));
+        }
+        if m.set.left {
+            style = style.margin_left(pt_auto(m.left));
+        }
     }
     if let Some(bc) = &s.border_color {
         let c = brush(bc.0);
@@ -218,36 +236,47 @@ pub fn apply_resolved(mut style: Style, s: &ResolvedStyle, report: &mut Lowering
     }
     if let Some(bw) = &s.border_width {
         // Floem models border geometry as a per-side `kurbo::Stroke`; the
-        // color lives in the separate `border_*_color` props.
+        // color lives in the separate `border_*_color` props. v0.8 §1.2:
+        // per-side, gated by the set-mask.
         use floem::peniko::kurbo::Stroke;
-        let left = Stroke::new(bw.left as f64);
-        let top = Stroke::new(bw.top as f64);
-        let right = Stroke::new(bw.right as f64);
-        let bottom = Stroke::new(bw.bottom as f64);
-        style = style
-            .border_left(left)
-            .border_top(top)
-            .border_right(right)
-            .border_bottom(bottom);
+        if bw.set.left {
+            style = style.border_left(Stroke::new(bw.left as f64));
+        }
+        if bw.set.top {
+            style = style.border_top(Stroke::new(bw.top as f64));
+        }
+        if bw.set.right {
+            style = style.border_right(Stroke::new(bw.right as f64));
+        }
+        if bw.set.bottom {
+            style = style.border_bottom(Stroke::new(bw.bottom as f64));
+        }
     }
     if let Some(cr) = &s.corner_radius {
-        style = style
-            .border_top_left_radius(pt(cr.top_left))
-            .border_top_right_radius(pt(cr.top_right))
-            .border_bottom_right_radius(pt(cr.bottom_right))
-            .border_bottom_left_radius(pt(cr.bottom_left));
+        if cr.set.top_left {
+            style = style.border_top_left_radius(pt(cr.top_left));
+        }
+        if cr.set.top_right {
+            style = style.border_top_right_radius(pt(cr.top_right));
+        }
+        if cr.set.bottom_right {
+            style = style.border_bottom_right_radius(pt(cr.bottom_right));
+        }
+        if cr.set.bottom_left {
+            style = style.border_bottom_left_radius(pt(cr.bottom_left));
+        }
     }
     if let Some(d) = &s.dimensions {
-        style = apply_dim(style, d.width, report, |s, v| s.width(v));
-        style = apply_dim(style, d.height, report, |s, v| s.height(v));
+        style = apply_dim(style, d.width, report, floem::style::Style::width);
+        style = apply_dim(style, d.height, report, floem::style::Style::height);
     }
     if let Some(d) = &s.min_dimensions {
-        style = apply_dim(style, d.width, report, |s, v| s.min_width(v));
-        style = apply_dim(style, d.height, report, |s, v| s.min_height(v));
+        style = apply_dim(style, d.width, report, floem::style::Style::min_width);
+        style = apply_dim(style, d.height, report, floem::style::Style::min_height);
     }
     if let Some(d) = &s.max_dimensions {
-        style = apply_dim(style, d.width, report, |s, v| s.max_width(v));
-        style = apply_dim(style, d.height, report, |s, v| s.max_height(v));
+        style = apply_dim(style, d.width, report, floem::style::Style::max_width);
+        style = apply_dim(style, d.height, report, floem::style::Style::max_height);
     }
     if let Some(g) = &s.gap {
         style = style.gap(pt(g.0));
@@ -345,10 +374,10 @@ pub fn apply_resolved(mut style: Style, s: &ResolvedStyle, report: &mut Lowering
         }
     }
     if let Some(i) = &e.inset {
-        style = apply_dim(style, i.top, report, |s, v| s.inset_top(v));
-        style = apply_dim(style, i.bottom, report, |s, v| s.inset_bottom(v));
-        style = apply_dim(style, i.left, report, |s, v| s.inset_left(v));
-        style = apply_dim(style, i.right, report, |s, v| s.inset_right(v));
+        style = apply_dim(style, i.top, report, floem::style::Style::inset_top);
+        style = apply_dim(style, i.bottom, report, floem::style::Style::inset_bottom);
+        style = apply_dim(style, i.left, report, floem::style::Style::inset_left);
+        style = apply_dim(style, i.right, report, floem::style::Style::inset_right);
     }
     if let Some(z) = e.z_index {
         style = style.z_index(z);
@@ -408,21 +437,21 @@ the brush as-is with no rect adaptation — resolve the size at the call site",
     if let Some(c) = e.align_content {
         match c {
             ContentAlign::Start => {
-                style = style.align_content(floem::style::AlignContent::FlexStart)
+                style = style.align_content(floem::style::AlignContent::FlexStart);
             }
             ContentAlign::Center => style = style.align_content(floem::style::AlignContent::Center),
             ContentAlign::End => style = style.align_content(floem::style::AlignContent::FlexEnd),
             ContentAlign::SpaceBetween => {
-                style = style.align_content(floem::style::AlignContent::SpaceBetween)
+                style = style.align_content(floem::style::AlignContent::SpaceBetween);
             }
             ContentAlign::SpaceAround => {
-                style = style.align_content(floem::style::AlignContent::SpaceAround)
+                style = style.align_content(floem::style::AlignContent::SpaceAround);
             }
             ContentAlign::SpaceEvenly => {
-                style = style.align_content(floem::style::AlignContent::SpaceEvenly)
+                style = style.align_content(floem::style::AlignContent::SpaceEvenly);
             }
             ContentAlign::Stretch | ContentAlign::Normal => {
-                style = style.align_content(floem::style::AlignContent::Stretch)
+                style = style.align_content(floem::style::AlignContent::Stretch);
             }
             ContentAlign::Baseline => {
                 report.drop("content-baseline", "taffy has no baseline align-content");
@@ -445,7 +474,7 @@ the brush as-is with no rect adaptation — resolve the size at the call site",
             style = style
                 .grid_template_rows(vec![repeat(RepetitionCount::Count(n), vec![fr(1.0_f32)])]);
         }
-        // v0.7 §4: the implicit tracks (auto-rows-* / auto-cols-*).
+        // v0.9 §4: the implicit tracks (auto-rows-* / auto-cols-*).
         if let Some(tracks) = &g.auto_rows {
             style = style.grid_auto_rows(to_taffy_tracks(tracks));
         }
@@ -471,10 +500,10 @@ the brush as-is with no rect adaptation — resolve the size at the call site",
             style = style.rotate(Angle::Deg(d as f64));
         }
         if let Some(tx) = &t.translate_x {
-            style = apply_translate(style, *tx, |s, v| s.translate_x(v));
+            style = apply_translate(style, *tx, floem::style::Style::translate_x);
         }
         if let Some(ty) = &t.translate_y {
-            style = apply_translate(style, *ty, |s, v| s.translate_y(v));
+            style = apply_translate(style, *ty, floem::style::Style::translate_y);
         }
         if t.skew_x.is_some() || t.skew_y.is_some() {
             report.drop("skew", "Floem has no skew transform props");
@@ -1140,9 +1169,10 @@ pub trait FloemTwExt: Decorators {
         match resolver.resolve(classes) {
             Ok(resolution) => self.tw(&resolution.plan),
             Err(err) => {
-                if cfg!(debug_assertions) {
-                    panic!("aeolus: failed to parse class string {classes:?}: {err:?}");
-                }
+                assert!(
+                    !cfg!(debug_assertions),
+                    "aeolus: failed to parse class string {classes:?}: {err:?}"
+                );
                 tracing::warn!("aeolus: dropping unparseable class string {classes:?}: {err:?}");
                 // Degrade to no-op styling: apply an empty rule so the return
                 // type still matches the styled chain.
