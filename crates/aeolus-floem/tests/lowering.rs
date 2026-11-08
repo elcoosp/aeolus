@@ -10,6 +10,7 @@ use floem::style::unit::Length;
 use floem::style::{
     Background, LineHeight, LineHeightValue, PaddingLeft, StyleSelector, TextColor,
 };
+use floem::taffy::prelude::{TaffyGridLine, TaffyGridSpan};
 
 use aeolus_core::color::Color;
 use aeolus_core::{Resolver, shadcn_default};
@@ -457,7 +458,6 @@ fn grid_lowers_templates_and_placement_natively() {
     let r = v4_resolver().resolve("col-span-2 col-start-3").unwrap();
     let (style, report) = lower(&r.plan);
     assert!(report.is_empty(), "{report:?}");
-    use floem::taffy::prelude::{TaffyGridLine, TaffyGridSpan};
     let placement = style.get(GridColumn);
     assert_eq!(
         placement.start,
@@ -555,8 +555,9 @@ fn slot_coverage_upgrades_are_consistent_with_the_lowering() {
             | Slot::Grid
             | Slot::AlignContent
             | Slot::BorderStyle
-            | Slot::Text(aeolus_core::TextProperty::Select)
-            | Slot::Text(aeolus_core::TextProperty::Whitespace) => {
+            | Slot::Text(
+                aeolus_core::TextProperty::Select | aeolus_core::TextProperty::Whitespace,
+            ) => {
                 assert_eq!(coverage, Coverage::Native, "{slot:?}");
             }
             _ => {}
@@ -565,8 +566,55 @@ fn slot_coverage_upgrades_are_consistent_with_the_lowering() {
 }
 
 // ---------------------------------------------------------------------------
+// v0.8 §1.2: per-edge set-mask application in the selector maps
+// ---------------------------------------------------------------------------
+
+/// Floem's cascade is per-FIELD (taffy style fields), so a partial-edge
+/// layer applies only the edges it addresses: `p-4 hover:px-8` keeps
+/// `padding-top: 16px` on hover and takes `padding-left/right: 32px` —
+/// the masked-off edges never enter the selector entry as zeros.
+#[test]
+fn partial_edge_layers_apply_only_their_edges() {
+    use floem::style::{PaddingBottom, PaddingLeft, PaddingRight, PaddingTop};
+
+    let r = resolver().resolve("p-4 hover:px-8").unwrap();
+    let (style, report) = lower(&r.plan);
+    assert!(report.is_empty(), "{report:?}");
+
+    let idle = style.clone().apply_selectors(&[]);
+    assert_eq!(
+        idle.get(PaddingLeft),
+        Length::Pt(16.0),
+        "idle padding comes from p-4"
+    );
+
+    let hovered = style.apply_selectors(&[StyleSelector::Hover]);
+    assert_eq!(
+        hovered.get(PaddingLeft),
+        Length::Pt(32.0),
+        "hover:px-8 sets the left edge"
+    );
+    assert_eq!(
+        hovered.get(PaddingRight),
+        Length::Pt(32.0),
+        "hover:px-8 sets the right edge"
+    );
+    assert_eq!(
+        hovered.get(PaddingTop),
+        Length::Pt(16.0),
+        "the top edge keeps p-4 — the layer's 0.0 placeholder must NOT apply"
+    );
+    assert_eq!(
+        hovered.get(PaddingBottom),
+        Length::Pt(16.0),
+        "the bottom edge keeps p-4"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // v0.7 (AEOLUS_V0.7.md §4/§5) — grid templates, auto tracks, justify-items:
-// the native taffy surface the pinned rev exposes, now wired.
+// the native taffy surface the pinned rev exposes, now wired (variant-engine
+// merge, schema v3).
 // ---------------------------------------------------------------------------
 
 #[test]
