@@ -104,30 +104,56 @@ fn css_write_button(b: Bencher) {
     b.bench(|| r.to_css(divan::black_box(BUTTON)).unwrap());
 }
 
-// v0.7 (AEOLUS_V0.7.md §8): the variant-engine surfaces. The Input table
-// carries the pseudo-element variants (selection:/placeholder:/file:) that
-// v0.7 taught the parser; the Card header carries the named container +
-// arbitrary row template + auto-rows + conditional grid-cols.
-const INPUT: &str = "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30";
-
-const CARD_HEADER: &str = "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6";
-
+// v0.7 (AEOLUS_V0.7.md): plan algebra + snapshot artifacts. The compose
+// cost rides on the same diff/overlay slot walk the rebuild path uses; the
+// snapshot costs are the writer/reader pair's own (JSON parse + walk).
 #[divan::bench]
-fn resolve_input_cold(b: Bencher) {
+fn plan_overlay_button(b: Bencher) {
     let t = theme();
-    b.counter(ItemsCount::new(INPUT.split_ascii_whitespace().count()))
-        .bench(|| Resolver::new(&t).resolve(divan::black_box(INPUT)).unwrap());
+    let r = Resolver::new(&t);
+    let base = r.resolve(BUTTON).unwrap().plan;
+    let over = r
+        .resolve("px-8 py-8 rounded-full uppercase shadow-2xl ring-4")
+        .unwrap()
+        .plan;
+    b.bench(|| divan::black_box(&base).overlay(divan::black_box(&over)));
+}
+
+/// v0.8 §1: the edge-wise overlay path on a PARTIAL-edge override — the
+/// mask-driven merge the layer/application semantics ride on.
+#[divan::bench]
+fn plan_overlay_partial_edges(b: Bencher) {
+    let t = theme();
+    let r = Resolver::new(&t);
+    let base = r.resolve(BUTTON).unwrap().plan;
+    let over = r.resolve("px-8 rounded-tr-full hover:py-2").unwrap().plan;
+    b.bench(|| divan::black_box(&base).overlay(divan::black_box(&over)));
 }
 
 #[divan::bench]
-fn resolve_card_header_cold(b: Bencher) {
+fn snapshot_write_button(b: Bencher) {
     let t = theme();
-    b.counter(ItemsCount::new(
-        CARD_HEADER.split_ascii_whitespace().count(),
-    ))
-    .bench(|| {
-        Resolver::new(&t)
-            .resolve(divan::black_box(CARD_HEADER))
-            .unwrap()
+    let plan = Resolver::new(&t).resolve(BUTTON).unwrap().plan;
+    b.bench(|| divan::black_box(&plan).to_snapshot_json());
+}
+
+#[divan::bench]
+fn snapshot_read_button(b: Bencher) {
+    let t = theme();
+    let json = Resolver::new(&t)
+        .resolve(BUTTON)
+        .unwrap()
+        .plan
+        .to_snapshot_json();
+    b.bench(|| StylePlan::from_snapshot_json(divan::black_box(&json)));
+}
+
+#[divan::bench]
+fn snapshot_roundtrip_button(b: Bencher) {
+    let t = theme();
+    let plan = Resolver::new(&t).resolve(BUTTON).unwrap().plan;
+    b.bench(|| {
+        let json = plan.to_snapshot_json();
+        StylePlan::from_snapshot_json(&json).unwrap()
     });
 }
