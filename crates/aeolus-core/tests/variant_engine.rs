@@ -104,14 +104,14 @@ fn pseudo_rules_never_fire_on_a_default_probe() {
     // The parity contract: a backend that does not answer the pseudo
     // question simply never fires the rule — the same semantics CSS has
     // when a selector does not match.
+    #[derive(Default)]
+    struct NilProbe;
+    impl Probe for NilProbe {}
     let t = theme();
     let plan = Resolver::new(&t)
         .resolve("bg-red-500 selection:bg-primary")
         .unwrap()
         .plan;
-    #[derive(Default)]
-    struct NilProbe;
-    impl Probe for NilProbe {}
     let flat = plan.resolve(&NilProbe);
     assert!(flat.background.is_some(), "base still styles");
     // `selection:bg-*` sets background inside the rule only; base is red.
@@ -120,11 +120,6 @@ fn pseudo_rules_never_fire_on_a_default_probe() {
 
 #[test]
 fn pseudo_rules_fire_when_the_probe_answers() {
-    let t = theme();
-    let plan = Resolver::new(&t)
-        .resolve("selection:bg-primary")
-        .unwrap()
-        .plan;
     #[derive(Default)]
     struct SelectedProbe;
     impl Probe for SelectedProbe {
@@ -132,6 +127,11 @@ fn pseudo_rules_fire_when_the_probe_answers() {
             matches!(t, Test::Pseudo(PseudoElement::Selection))
         }
     }
+    let t = theme();
+    let plan = Resolver::new(&t)
+        .resolve("selection:bg-primary")
+        .unwrap()
+        .plan;
     let flat = plan.resolve(&SelectedProbe);
     assert!(flat.background.is_some(), "the selection rule fires");
 }
@@ -152,7 +152,7 @@ fn has_data_routes_to_a_typed_descendant() {
         ))),
         "has-data-[slot=…] classifies onto Atom::Has(Test::Data)"
     );
-    assert!(style.extras.grid.as_ref().and_then(|g| g.cols) == Some(2));
+    assert_eq!(style.extras.grid.as_ref().and_then(|g| g.cols), Some(2));
 }
 
 #[test]
