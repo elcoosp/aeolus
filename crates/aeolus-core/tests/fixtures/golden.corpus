@@ -11,7 +11,6 @@
 --color-blue-500: oklch(62.3% 0.214 259.815)
 --color-purple-500: oklch(62.7% 0.265 303.9)
 --color-gray-100: oklch(96.7% 0.003 264.542)
---color-gray-500: oklch(55.1% 0.027 264.364)
 --color-gray-800: oklch(27.8% 0.033 256.848)
 --color-gray-900: oklch(21% 0.034 264.665)
 --color-black: #000
@@ -991,105 +990,6 @@ pointer-events: none;
     }
 }
 @end
-@entry default selection:bg-red-500
-.selection\:bg-red-500 {
-& *::selection {
-      background-color: var(--color-red-500);
-    }
-    &::selection {
-      background-color: var(--color-red-500);
-    }
-}
-@end
-@entry default placeholder:text-gray-500
-.placeholder\:text-gray-500 {
-&::placeholder {
-      color: var(--color-gray-500);
-    }
-}
-@end
-@entry default file:text-sm
-.file\:text-sm {
-&::file-selector-button {
-      font-size: var(--text-sm);
-      line-height: var(--tw-leading, var(--text-sm--line-height));
-    }
-}
-@end
-@entry default md:selection:bg-red-500
-.md\:selection\:bg-red-500 {
-@media (width >= 48rem) {
-      & *::selection {
-        background-color: var(--color-red-500);
-      }
-      &::selection {
-        background-color: var(--color-red-500);
-      }
-    }
-}
-@end
-@entry default has-data-[slot=card-action]:grid-cols-2
-.has-data-\[slot\=card-action\]\:grid-cols-2 {
-&:has(*[data-slot="card-action"]) {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-@end
-@entry default has-aria-invalid:border-red-500
-.has-aria-invalid\:border-red-500 {
-&:has(*[aria-invalid="true"]) {
-      border-color: var(--color-red-500);
-    }
-}
-@end
-@entry default has-first:grid-cols-3
-.has-first\:grid-cols-3 {
-&:has(*:first-child) {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-}
-@end
-@entry default grid-cols-[0_1fr]
-.grid-cols-\[0_1fr\] {
-grid-template-columns: 0 1fr;
-}
-@end
-@entry default grid-cols-[repeat(3,minmax(0,1fr))]
-.grid-cols-\[repeat\(3\,minmax\(0\,1fr\)\)\] {
-grid-template-columns: repeat(3,minmax(0,1fr));
-}
-@end
-@entry default grid-rows-[auto_auto]
-.grid-rows-\[auto_auto\] {
-grid-template-rows: auto auto;
-}
-@end
-@entry default auto-rows-min
-.auto-rows-min {
-grid-auto-rows: min-content;
-}
-@end
-@entry default auto-rows-fr
-.auto-rows-fr {
-grid-auto-rows: minmax(0, 1fr);
-}
-@end
-@entry default auto-cols-max
-.auto-cols-max {
-grid-auto-columns: max-content;
-}
-@end
-@entry default justify-items-start
-.justify-items-start {
-justify-items: start;
-}
-@end
-@entry default @container/card-header
-.\@container\/card-header {
-container-type: inline-size;
-    container-name: card-header;
-}
-@end
 @entry default @md:bg-red-500
 .\@md\:bg-red-500 {
 @container (width >= 28rem) {
@@ -1152,7 +1052,6 @@ padding: calc(var(--spacing) * 4) !important;
 --color-blue-500: oklch(62.3% 0.214 259.815)
 --color-purple-500: oklch(62.7% 0.265 303.9)
 --color-gray-100: oklch(96.7% 0.003 264.542)
---color-gray-500: oklch(55.1% 0.027 264.364)
 --color-gray-800: oklch(27.8% 0.033 256.848)
 --color-gray-900: oklch(21% 0.034 264.665)
 --color-black: #000
@@ -1242,23 +1141,6 @@ font-variation-settings: var(--default-font-variation-settings, normal)
 @propdef --tw-ring-offset-color: #fff
 @propdef --tw-ring-offset-shadow: 0 0 #0000
 @propdef --tw-outline-style: solid
-@entry shadcn selection:bg-primary
-.selection\:bg-primary {
-& *::selection {
-      background-color: var(--primary);
-    }
-    &::selection {
-      background-color: var(--primary);
-    }
-}
-@end
-@entry shadcn placeholder:text-muted-foreground
-.placeholder\:text-muted-foreground {
-&::placeholder {
-      color: var(--muted-foreground);
-    }
-}
-@end
 @entry shadcn bg-primary
 .bg-primary {
 background-color: var(--primary);
