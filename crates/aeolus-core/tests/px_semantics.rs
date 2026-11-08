@@ -109,8 +109,6 @@ fn spacing_families_still_scale() {
 /// flags are set regardless of how the author listed the classes.
 #[test]
 fn state_layers_cascade_by_condition_rank_not_source_order() {
-    use eval::Probe;
-
     let t = theme();
     // focus listed FIRST, hover second.
     let r = Resolver::new(&t)
@@ -138,12 +136,6 @@ fn state_layers_cascade_by_condition_rank_not_source_order() {
     let r = Resolver::new(&t)
         .resolve("active:bg-green-500 disabled:bg-gray-300")
         .unwrap();
-    struct ActiveDisabledProbe;
-    impl Probe for ActiveDisabledProbe {
-        fn test(&self, t: &Test) -> bool {
-            matches!(t, Test::State(State::Active) | Test::State(State::Disabled))
-        }
-    }
     let out = r.plan.resolve(&ActiveDisabledProbe);
     assert_eq!(
         out.background.unwrap().0.to_oklch_string(),
@@ -156,10 +148,19 @@ fn state_layers_cascade_by_condition_rank_not_source_order() {
 struct BothStatesProbe;
 impl Probe for BothStatesProbe {
     fn test(&self, t: &Test) -> bool {
-        matches!(t, Test::State(State::Hover) | Test::State(State::Focus))
+        matches!(t, Test::State(State::Hover | State::Focus))
     }
     fn related(&self, _rel: Rel, _label: Option<&str>, _t: &Test) -> bool {
         false
+    }
+}
+
+/// Probe that reports the element as active AND disabled — the rank
+/// tiebreak must pick disabled (canonical v4 variant order).
+struct ActiveDisabledProbe;
+impl Probe for ActiveDisabledProbe {
+    fn test(&self, t: &Test) -> bool {
+        matches!(t, Test::State(State::Active | State::Disabled))
     }
 }
 
