@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/aeolus-core",
     "crates/aeolus-macro",
+    "crates/aeolus-cli",
     "crates/aeolus-shadcn",
     "crates/aeolus-xilem",
     "crates/aeolus-floem",
@@ -18,6 +19,90 @@ version = "0.7.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/aeolus-rs/aeolus"
+
+# Pedantic clippy, workspace-wide (v0.8 §4). Every member opts in with
+# `[lints] workspace = true`. Lints that fight the codebase's DELIBERATE
+# idioms are excepted here, each with its rationale; everything else is
+# fixed in code — there are zero `#[allow(...)]` attributes in src/ or
+# tests/.
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# The px pipeline narrows f64→f32 at the IR boundary on purpose (the IR is
+# f32; theme CSS parses as f64). Every narrowing is bounds-checked upstream
+# by the parser's number ranges.
+cast_possible_truncation = "allow"
+# px/pt values are non-negative by grammar (the parser rejects negatives
+# outside the `-`-prefixed utility forms, which carry their sign upfront).
+cast_sign_loss = "allow"
+# Color/geometry parsing lives in the domain's own notation (r/g/b/a,
+# tl/tr/br/bl, x/y). Renaming would obscure the Tailwind/CSS source terms.
+many_single_char_names = "allow"
+similar_names = "allow"
+# `finalize`, the snapshot writer/reader and the CSS emitter are
+# table-shaped match walls by design: one arm per token, visually
+# auditable against the tailwindcss source.
+too_many_lines = "allow"
+match_same_arms = "allow"
+single_match_else = "allow"
+# The style math compares exact scale/sentinel values (spacing multiples,
+# the 9999px `rounded-full` sentinel) and the test suites pin with
+# explicit epsilons where the math is genuinely approximate.
+float_cmp = "allow"
+# Rustdoc `# Errors` sections would duplicate the honesty contracts the
+# crate documents in prose per function (the project's doc style predates
+# the lint and is consistent across the workspace).
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Builder-flavoured APIs (lowerings, style books, resolvers) read better
+# without a `#[must_use]` on every constructor/chain step; the return
+# values are always consumed in the documented flows.
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+# `EdgeSet`/`CornerSet`/`AutoEdges`/`Presence` are 4-bool masks BY DESIGN —
+# the per-edge set-mask model (v0.8 §1) is the milestone.
+struct_excessive_bools = "allow"
+# Tailwind class names (`bg-red-500`, `hover:bg-primary/90`) and CSS terms
+# in doc comments would need backticks everywhere; the crate docs are
+# already precise about what is a class and what is a type.
+doc_markdown = "allow"
+# The flat re-exports (`plan::Padding` as `aeolus_core::Padding`) are the
+# public API contract; renaming modules or types to satisfy the lint would
+# break the documented consumption surface.
+module_name_repetitions = "allow"
+# Test suites import `use aeolus_core::*` deliberately: every public type
+# of the IR is under test.
+wildcard_imports = "allow"
+# `assert!(v.is_empty())` is the established assertion idiom across the
+# suites; the suggested `assert_eq!(v, [] as [_; 0])` form is strictly
+# less readable for the same failure message.
+assert_is_empty = "allow"
+# The px pipeline uses the uniform `as` cast style at the f32 IR boundary
+# (including the deliberately-lossy narrowings); switching only the
+# lossless ones to `.into()` would hide the precision story in noise.
+cast_lossless = "allow"
+# Same boundary in the other direction (usize/px counts into f32 math).
+cast_precision_loss = "allow"
+# Construction sites name the type explicitly (`LoweringReport::default()`,
+# `DefaultProperties::default()`) so the reader never chases inference —
+# the deliberate style across backends and tests.
+default_trait_access = "allow"
+# The honest-failure contract (CONTRIBUTING §2, the `.tw()` panic-on-
+# unparseable path) asserts on `cfg!(debug_assertions)` — a constant per
+# build BY DESIGN: panic in debug, warn + degrade in release. Both spellings
+# (`if c { panic!() }` and `assert!(!c, …)`) trip a pedantic lint, so the
+# constant-condition assert is the sanctioned pattern.
+assertions_on_constants = "allow"
+# `resolved_for_state(plan, hovered, active, disabled, focused)` mirrors the
+# element-state probe flags 1:1 — the flag set IS the model; a params struct
+# would add indirection to the documented public surface.
+fn_params_excessive_bools = "allow"
+# `size_value()` mirrors the sizing-utility grammar's arity (token, value,
+# element hints, per-family flags); a params struct would obscure the 1:1
+# mapping to the Tailwind utility shape it resolves.
+too_many_arguments = "allow"
+# `as_chunks` stabilized after the core MSRV (1.88); the cache's FxHasher
+# keeps the `chunks_exact(8)` form for MSRV parity (documented in place).
+chunks_exact_to_as_chunks = "allow"
 
 [workspace.dependencies]
 aeolus-core = { version = "0.7.0", path = "crates/aeolus-core" }
