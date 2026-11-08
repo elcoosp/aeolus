@@ -64,8 +64,8 @@ use iced_widget::container;
 use aeolus_core::color::Color as TwColor;
 use aeolus_core::eval::{Probe, Rel};
 use aeolus_core::plan::{
-    CornerSet, EdgeSet, Gradient as TwGradient, GradientStops, ResolvedStyle, SizedValue, Slot,
-    StylePlan, TextProperty, TextValue, VariantCondition,
+    Gradient as TwGradient, GradientStops, ResolvedStyle, SizedValue, Slot, StylePlan,
+    TextProperty, TextValue, VariantCondition,
 };
 
 /// Everything the lowering could not express in Iced 0.14.
@@ -179,10 +179,6 @@ pub struct WidgetHints {
     pub height: Option<Length>,
     /// `p-*` family → `container(...).padding(...)` (per-edge native).
     pub padding: Option<iced_core::Padding>,
-    /// v0.8 §1.2: WHICH edges [`WidgetHints::padding`] addresses (the
-    /// core IR's set-mask, carried so [`WidgetHints::overlay`] can merge
-    /// edge-wise); unset edges are 0.0 placeholders.
-    pub padding_set: EdgeSet,
     /// `gap-*` → `Row/Column::spacing` (the single axis Iced supports).
     pub spacing: Option<f32>,
     /// `gap-x-*` (column gap) — pick per widget kind; Iced spacing is
@@ -200,8 +196,6 @@ pub struct WidgetHints {
 
 impl WidgetHints {
     /// Overlay `other` on top of `self` (later layers win per slot).
-    /// v0.8 §1.2: padding merges EDGE-WISE — an edge the other side does
-    /// not address (mask off) keeps the accumulated value.
     pub fn overlay(&mut self, other: &WidgetHints) {
         if other.width.is_some() {
             self.width = other.width;
@@ -209,37 +203,8 @@ impl WidgetHints {
         if other.height.is_some() {
             self.height = other.height;
         }
-        if let Some(op) = &other.padding {
-            let set = other.padding_set;
-            match &mut self.padding {
-                Some(sp) => {
-                    if set.top {
-                        sp.top = op.top;
-                    }
-                    if set.right {
-                        sp.right = op.right;
-                    }
-                    if set.bottom {
-                        sp.bottom = op.bottom;
-                    }
-                    if set.left {
-                        sp.left = op.left;
-                    }
-                }
-                None => self.padding = Some(*op),
-            }
-            if set.top {
-                self.padding_set.top = true;
-            }
-            if set.right {
-                self.padding_set.right = true;
-            }
-            if set.bottom {
-                self.padding_set.bottom = true;
-            }
-            if set.left {
-                self.padding_set.left = true;
-            }
+        if other.padding.is_some() {
+            self.padding = other.padding;
         }
         if other.spacing.is_some() {
             self.spacing = other.spacing;
@@ -273,8 +238,6 @@ struct Presence {
     border_width: bool,
     radius: bool,
     shadow: bool,
-    /// v0.8 §1.2: WHICH corners `radius` addresses, for edge-wise merges.
-    radius_set: CornerSet,
 }
 
 impl Presence {
@@ -286,10 +249,6 @@ impl Presence {
         self.border_width |= other.border_width;
         self.radius |= other.radius;
         self.shadow |= other.shadow;
-        self.radius_set.top_left |= other.radius_set.top_left;
-        self.radius_set.top_right |= other.radius_set.top_right;
-        self.radius_set.bottom_right |= other.radius_set.bottom_right;
-        self.radius_set.bottom_left |= other.radius_set.bottom_left;
     }
 }
 
@@ -363,20 +322,7 @@ impl IcedStyle {
             s.border.width = c.border.width;
         }
         if other.presence.radius {
-            // v0.8 §1.2: per-corner merge through the corner set-mask.
-            let set = other.presence.radius_set;
-            if set.top_left {
-                s.border.radius.top_left = c.border.radius.top_left;
-            }
-            if set.top_right {
-                s.border.radius.top_right = c.border.radius.top_right;
-            }
-            if set.bottom_right {
-                s.border.radius.bottom_right = c.border.radius.bottom_right;
-            }
-            if set.bottom_left {
-                s.border.radius.bottom_left = c.border.radius.bottom_left;
-            }
+            s.border.radius = c.border.radius;
         }
         if other.presence.shadow {
             s.shadow = c.shadow;
@@ -403,7 +349,7 @@ pub fn lower_resolved(style: &ResolvedStyle, report: &mut LoweringReport) -> Ice
     // painted alpha) are baked at lowering time, documented below. The
     // factor is also remembered for `overlay` (a bare `disabled:opacity-50`
     // layer has no colors of its own to bake).
-    let opacity = style.opacity.map_or(1.0, |o| o.0.clamp(0.0, 1.0));
+    let opacity = style.opacity.map(|o| o.0.clamp(0.0, 1.0)).unwrap_or(1.0);
     out.opacity_factor = opacity;
 
     if let Some(cc) = &style.content_color {
@@ -472,7 +418,6 @@ Background slot takes the gradient",
             bottom_left: cr.bottom_left,
         };
         out.presence.radius = true;
-        out.presence.radius_set = cr.set;
     }
 
     if let Some(s) = &style.shadow {
@@ -555,7 +500,6 @@ constructors), not a cascade style",
     }
 
     // Padding → widget-argument hint (per-edge native at construction).
-    // v0.8 §1.2: the set-mask rides along for edge-wise merges.
     if let Some(p) = &style.padding {
         out.widget.padding = Some(iced_core::Padding {
             top: p.top,
@@ -563,7 +507,6 @@ constructors), not a cascade style",
             bottom: p.bottom,
             left: p.left,
         });
-        out.widget.padding_set = p.set;
     }
 
     if let Some(g) = &style.gap {
@@ -984,10 +927,9 @@ use resolve_at with IcedProbe.focused",
                 book
             }
             Err(err) => {
-                assert!(
-                    !cfg!(debug_assertions),
-                    "aeolus: failed to parse class string {classes:?}: {err:?}"
-                );
+                if cfg!(debug_assertions) {
+                    panic!("aeolus: failed to parse class string {classes:?}: {err:?}");
+                }
                 tracing::warn!("aeolus: dropping unparseable class string {classes:?}: {err:?}");
                 let (book, _) = Self::new(&StylePlan::default());
                 book
@@ -1187,7 +1129,7 @@ pub fn slot_coverage(s: &ResolvedStyle) -> Vec<(Slot, Coverage)> {
             S::Gradient(GradientPart::Shape),
             if matches!(
                 s.background_gradient,
-                Some(TwGradient::Linear { .. } | TwGradient::None)
+                Some(TwGradient::Linear { .. }) | Some(TwGradient::None)
             ) {
                 Coverage::Native
             } else {
