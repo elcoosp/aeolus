@@ -60,7 +60,7 @@ pub struct ClassToken<'a> {
     pub raw: &'a str,
 }
 
-impl<'a> ClassToken<'a> {
+impl ClassToken<'_> {
     /// The opacity percent for color utilities, per v4 semantics:
     /// * `bg-primary/50` → `50.0` (bare number = percent);
     /// * `bg-primary/[0.37]` → `37.0` (bracketed decimal = raw alpha);
@@ -149,7 +149,8 @@ fn write_variant(s: &mut String, v: &Variant<'_>) {
             });
             s.push_str(name);
             if let Some(v) = value {
-                s.push_str(&format!("={v}"));
+                s.push('=');
+                s.push_str(v);
             }
         }
         Variant::Structural(st) => s.push_str(st.canonical()),
@@ -247,6 +248,7 @@ impl<T: Clone + std::fmt::Debug, const N: usize> std::fmt::Debug for Inline<T, N
 }
 
 /// Stack-inlined `&'a str` segments (`["rounded", "t", "lg"]`).
+#[derive(Clone, Copy)]
 pub struct Segments<'a, const N: usize> {
     items: [&'a str; N],
     len: u8,
@@ -298,23 +300,15 @@ impl<'a, const N: usize> std::ops::Deref for Segments<'a, N> {
     }
 }
 
-impl<'a, const N: usize> Clone for Segments<'a, N> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'a, const N: usize> Copy for Segments<'a, N> {}
-
-impl<'a, const N: usize> PartialEq for Segments<'a, N> {
+impl<const N: usize> PartialEq for Segments<'_, N> {
     fn eq(&self, other: &Self) -> bool {
         self.as_slice() == other.as_slice()
     }
 }
 
-impl<'a, const N: usize> Eq for Segments<'a, N> {}
+impl<const N: usize> Eq for Segments<'_, N> {}
 
-impl<'a, const N: usize> std::fmt::Debug for Segments<'a, N> {
+impl<const N: usize> std::fmt::Debug for Segments<'_, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.as_slice().iter()).finish()
     }
@@ -432,49 +426,6 @@ pub enum Structural {
     NthLast(i32),
 }
 
-/// The element's own pseudo-element renderings that v4 names as plain
-/// variants (v0.7 §1, plan `AEOLUS_V0.7.md`): `selection:` → `&::selection`,
-/// `placeholder:` → `&::placeholder`, `file:` → `&::file-selector-button`.
-///
-/// These are NOT runtime states (there is no "selected" flag on a widget the
-/// way `hover` is): they style a SUB-RENDERING of the element. The typed
-/// model keeps them distinguishable from [`State`]s — a backend answers them
-/// through `Probe::test(&Test::Pseudo(…))`, and the default probe answer is
-/// "no" (the rule never fires where the rendering does not exist — the same
-/// semantics CSS has when a selector does not match).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum PseudoElement {
-    /// `selection:` — `::selection`, the selected-text rendering.
-    Selection,
-    /// `placeholder:` — `::placeholder`, the placeholder rendering.
-    Placeholder,
-    /// `file:` — `::file-selector-button` (the `<input type=file>` button
-    /// part). No native GUI toolkit has a file-selector sub-widget; the
-    /// typed condition exists so the class parses, merges and emits, and
-    /// the rule simply never fires natively.
-    FileSelectorButton,
-}
-
-impl PseudoElement {
-    /// The canonical variant name (merge keys and diagnostics).
-    pub fn name(self) -> &'static str {
-        match self {
-            PseudoElement::Selection => "selection",
-            PseudoElement::Placeholder => "placeholder",
-            PseudoElement::FileSelectorButton => "file",
-        }
-    }
-
-    /// The CSS selector suffix (`::selection`, ...).
-    pub fn css(self) -> &'static str {
-        match self {
-            PseudoElement::Selection => "::selection",
-            PseudoElement::Placeholder => "::placeholder",
-            PseudoElement::FileSelectorButton => "::file-selector-button",
-        }
-    }
-}
-
 impl Structural {
     /// The canonical variant text (for merge keys and diagnostics).
     pub fn canonical(self) -> &'static str {
@@ -532,8 +483,6 @@ pub enum NamedVariant<'a> {
     UserInvalid,
     /// `placeholder-shown`.
     PlaceholderShown,
-    /// `selection:` — the element's own `::selection` rendering (v0.7 §1).
-    Pseudo(PseudoElement),
     /// `autofill`.
     Autofill,
     /// `read-only`.
@@ -619,7 +568,6 @@ impl NamedVariant<'_> {
             NamedVariant::UserValid => "user-valid".into(),
             NamedVariant::UserInvalid => "user-invalid".into(),
             NamedVariant::PlaceholderShown => "placeholder-shown".into(),
-            NamedVariant::Pseudo(p) => p.name().into(),
             NamedVariant::Autofill => "autofill".into(),
             NamedVariant::ReadOnly => "read-only".into(),
             NamedVariant::InRange => "in-range".into(),
