@@ -189,7 +189,7 @@ pub struct Extras {
     pub margin_auto: Option<AutoEdges>,
     /// `gap-x-*`/`gap-y-*` (per-axis gap).
     pub gap_axes: Option<GapAxes>,
-    /// `@container[/name]` — the containment context (v0.7 §3).
+    /// `@container[/name]` — the containment context (v0.9 §3).
     pub container_type: Option<ContainerType>,
     /// Remaining shadow layers of a multi-layer preset (`shadow-sm`'s
     /// second layer). `shadow` carries the first (dominant) layer.
@@ -278,7 +278,7 @@ pub enum Slot {
     InsetShadows,
     /// `background-image` gradient (with the part that changed).
     Gradient(GradientPart),
-    /// `@container[/name]` containment context (v0.7 §3).
+    /// `@container[/name]` containment context (v0.9 §3).
     ContainerType,
 }
 
@@ -369,8 +369,7 @@ impl Slot {
             | Slot::Transition
             | Slot::Animation
             | Slot::BorderStyle
-            | Slot::Text(TextProperty::Color)
-            | Slot::Text(TextProperty::UnderlineOffset)
+            | Slot::Text(TextProperty::Color | TextProperty::UnderlineOffset)
             | Slot::Ring(_) => Lane::Cosmetic,
             // Masonry requests layout for Padding/BorderWidth/CornerRadius/
             // Dimensions/BoxShadow; text size changes parley layout.
@@ -540,7 +539,47 @@ const NO_STOPS: GradientStops = GradientStops {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ContentColor(pub Color);
 
+/// Which edges a per-edge family (`p-*`/`m-*`/`border-*`) actually
+/// addressed — the v0.8 set-mask (AEOLUS_V0.8.md §1).
+///
+/// `false` means "this bucket/layer/plan never named that edge": the edge
+/// must NOT replace a lower cascade entry when the style is applied, and
+/// its `f32` value is the documented `0.0` placeholder. `true` means the
+/// edge carries a real value (which may legitimately be `0.0` — `pt-0`).
+///
+/// The same shape as [`AutoEdges`] (which says which edges are `auto`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EdgeSet {
+    /// The top edge is addressed.
+    pub top: bool,
+    /// The right edge is addressed.
+    pub right: bool,
+    /// The bottom edge is addressed.
+    pub bottom: bool,
+    /// The left edge is addressed.
+    pub left: bool,
+}
+
+impl EdgeSet {
+    /// Every edge addressed (a whole-edge family like `p-4`, or a merged
+    /// result that covers all four).
+    pub const ALL: EdgeSet = EdgeSet {
+        top: true,
+        right: true,
+        bottom: true,
+        left: true,
+    };
+
+    /// True when every edge is addressed.
+    pub fn is_all(self) -> bool {
+        self == EdgeSet::ALL
+    }
+}
+
 /// `p-*/px-*/py-*/pt-*/pr-*/pb-*/pl-*` in px.
+///
+/// v0.8: the [`EdgeSet`] mask records which edges the class string named;
+/// edges outside the mask are `0.0` placeholders, never cascade inputs.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Padding {
     /// Top edge in px.
@@ -551,6 +590,9 @@ pub struct Padding {
     pub bottom: f32,
     /// Left edge in px.
     pub left: f32,
+    /// Which edges this value addresses ([`EdgeSet::ALL`] for whole-edge
+    /// families and merged results).
+    pub set: EdgeSet,
 }
 
 /// `m-*` family (same shape as padding; separate type so slots stay distinct).
@@ -561,6 +603,9 @@ pub type Margin = Padding;
 pub struct BorderColor(pub Color);
 
 /// `border`, `border-2`, `border-x` etc. in px.
+///
+/// v0.8: carries the same [`EdgeSet`] mask as [`Padding`] — `border-r-4`
+/// addresses only the right side.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BorderWidth {
     /// Top edge in px.
@@ -571,9 +616,43 @@ pub struct BorderWidth {
     pub bottom: f32,
     /// Left edge in px.
     pub left: f32,
+    /// Which edges this value addresses.
+    pub set: EdgeSet,
+}
+
+/// Which corners a `rounded-*` family actually addressed — the corner
+/// counterpart of [`EdgeSet`] (v0.8 §1).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CornerSet {
+    /// The top-left corner is addressed.
+    pub top_left: bool,
+    /// The top-right corner is addressed.
+    pub top_right: bool,
+    /// The bottom-right corner is addressed.
+    pub bottom_right: bool,
+    /// The bottom-left corner is addressed.
+    pub bottom_left: bool,
+}
+
+impl CornerSet {
+    /// Every corner addressed (whole-corner families like `rounded-md`).
+    pub const ALL: CornerSet = CornerSet {
+        top_left: true,
+        top_right: true,
+        bottom_right: true,
+        bottom_left: true,
+    };
+
+    /// True when every corner is addressed.
+    pub fn is_all(self) -> bool {
+        self == CornerSet::ALL
+    }
 }
 
 /// `rounded-*` in px.
+///
+/// v0.8: the [`CornerSet`] mask records which corners the class string
+/// named; corners outside the mask are `0.0` placeholders.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CornerRadius {
     /// Top-left corner in px.
@@ -584,6 +663,8 @@ pub struct CornerRadius {
     pub bottom_right: f32,
     /// Bottom-left corner in px.
     pub bottom_left: f32,
+    /// Which corners this value addresses.
+    pub set: CornerSet,
 }
 
 /// `w-*/h-*/size-*` fixed sizes in px; `f32::INFINITY` is not used —
@@ -651,7 +732,7 @@ pub struct Layout {
     pub align_items: Option<AlignItems>,
     /// `justify-*` (content axis).
     pub justify_content: Option<JustifyContent>,
-    /// `justify-items-*` (the justify axis per item — v0.7 §5).
+    /// `justify-items-*` (the justify axis per item — v0.9 §5).
     pub justify_items: Option<AlignItems>,
     /// `flex-wrap`.
     pub flex_wrap: Option<bool>,
@@ -1021,20 +1102,20 @@ pub struct Grid {
     /// `row-start-N`.
     pub row_start: Option<i16>,
     /// Arbitrary/track templates: `grid-cols-[0_1fr]`,
-    /// `grid-cols-[repeat(3,minmax(0,1fr))]` (v0.7 §4). CANONICAL when
+    /// `grid-cols-[repeat(3,minmax(0,1fr))]` (v0.9 §4). CANONICAL when
     /// present: the numeric `cols`/`rows` forms are the v4 shorthand for
     /// `repeat(N, minmax(0, 1fr))`, so a backend that understands
     /// templates must prefer them and only fall back to the counts.
     pub template_cols: Option<Vec<TrackComponent>>,
     /// `grid-rows-[…]` — see [`Grid::template_cols`].
     pub template_rows: Option<Vec<TrackComponent>>,
-    /// `auto-rows-*` — the implicit-row track sizing (v0.7 §4).
+    /// `auto-rows-*` — the implicit-row track sizing (v0.9 §4).
     pub auto_rows: Option<Vec<TrackComponent>>,
-    /// `auto-cols-*` — the implicit-column track sizing (v0.7 §4).
+    /// `auto-cols-*` — the implicit-column track sizing (v0.9 §4).
     pub auto_cols: Option<Vec<TrackComponent>>,
 }
 
-/// One component of an arbitrary grid template (v0.7 §4).
+/// One component of an arbitrary grid template (v0.9 §4).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TrackComponent {
     /// A single track.
@@ -1050,7 +1131,7 @@ pub enum TrackComponent {
 }
 
 /// One grid track sizing: a min/max pair mirroring CSS
-/// `minmax()` semantics (v0.7 §4). A plain `1fr` is
+/// `minmax()` semantics (v0.9 §4). A plain `1fr` is
 /// `{ min: Auto, max: Fr(1) }` (taffy's `from_fr` semantics), a bare `0`
 /// is a fixed 0px track, `auto`/`min-content`/`max-content` pin both sides.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1093,7 +1174,7 @@ impl GridTrack {
     }
 }
 
-/// One sizing function of a [`GridTrack`] (v0.7 §4).
+/// One sizing function of a [`GridTrack`] (v0.9 §4).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TrackSizing {
     /// A fixed px length.
@@ -1111,7 +1192,7 @@ pub enum TrackSizing {
 }
 
 /// `@container[/name]` — establishes an inline-size containment context
-/// (v0.7 §3; CSS `container-type: inline-size` + `container-name`). The
+/// (v0.9 §3; CSS `container-type: inline-size` + `container-name`). The
 /// named form is what the shadcn Card header ships (`@container/card-header`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ContainerType {
@@ -1392,6 +1473,113 @@ macro_rules! for_each_present_slot {
     }};
 }
 
+/// Edge-wise `Some`-replaces for one 4-edge slot (v0.8 §1): every edge the
+/// override addresses wins; every edge it does not address keeps the
+/// destination's value. `None` destinations seed a default so partial
+/// overrides compose against nothing without inventing cascade inputs.
+/// (`Padding`/`Margin` and `BorderWidth` share the exact field shape.)
+macro_rules! overlay_edge_slot {
+    ($dst:expr, $src:expr) => {
+        if let Some(o) = $src {
+            let d = $dst.get_or_insert_with(Default::default);
+            if o.set.top {
+                d.top = o.top;
+                d.set.top = true;
+            }
+            if o.set.right {
+                d.right = o.right;
+                d.set.right = true;
+            }
+            if o.set.bottom {
+                d.bottom = o.bottom;
+                d.set.bottom = true;
+            }
+            if o.set.left {
+                d.left = o.left;
+                d.set.left = true;
+            }
+        }
+    };
+}
+
+/// Corner-wise counterpart of [`overlay_edge_slot!`].
+macro_rules! overlay_corner_slot {
+    ($dst:expr, $src:expr) => {
+        if let Some(o) = $src {
+            let d = $dst.get_or_insert_with(Default::default);
+            if o.set.top_left {
+                d.top_left = o.top_left;
+                d.set.top_left = true;
+            }
+            if o.set.top_right {
+                d.top_right = o.top_right;
+                d.set.top_right = true;
+            }
+            if o.set.bottom_right {
+                d.bottom_right = o.bottom_right;
+                d.set.bottom_right = true;
+            }
+            if o.set.bottom_left {
+                d.bottom_left = o.bottom_left;
+                d.set.bottom_left = true;
+            }
+        }
+    };
+}
+
+/// Fill the destination slot's masked-off edges from `base` (values AND
+/// mask), leaving `None` slots and addressed edges alone.
+macro_rules! materialize_edge_slot {
+    ($dst:expr, $base:expr) => {
+        if let Some(d) = $dst
+            && let Some(b) = $base
+        {
+            if !d.set.top {
+                d.top = b.top;
+                d.set.top = true;
+            }
+            if !d.set.right {
+                d.right = b.right;
+                d.set.right = true;
+            }
+            if !d.set.bottom {
+                d.bottom = b.bottom;
+                d.set.bottom = true;
+            }
+            if !d.set.left {
+                d.left = b.left;
+                d.set.left = true;
+            }
+        }
+    };
+}
+
+/// Corner-wise counterpart of [`materialize_edge_slot!`].
+macro_rules! materialize_corner_slot {
+    ($dst:expr, $base:expr) => {
+        if let Some(d) = $dst
+            && let Some(b) = $base
+        {
+            if !d.set.top_left {
+                d.top_left = b.top_left;
+                d.set.top_left = true;
+            }
+            if !d.set.top_right {
+                d.top_right = b.top_right;
+                d.set.top_right = true;
+            }
+            if !d.set.bottom_right {
+                d.bottom_right = b.bottom_right;
+                d.set.bottom_right = true;
+            }
+            if !d.set.bottom_left {
+                d.bottom_left = b.bottom_left;
+                d.set.bottom_left = true;
+            }
+        }
+    };
+}
+
 impl ResolvedStyle {
     /// Iterate over set slots (for diffing / capability checks).
     pub fn slots(&self) -> Vec<Slot> {
@@ -1405,7 +1593,18 @@ impl ResolvedStyle {
     }
 
     /// Overlay `other` on top of `self` (later layers win per slot).
+    ///
+    /// v0.8: the four per-edge families ([`Padding`]/[`Margin`],
+    /// [`BorderWidth`], [`CornerRadius`]) merge EDGE-WISE through the
+    /// set-mask — an edge the override does not address keeps the base
+    /// value, so `p-4` ⊕ `px-8` is `Padding { top: 16, right: 32, bottom:
+    /// 16, left: 32 }` (the CSS cascade), not the v0.7 zeroed replacement.
+    /// Every other slot is `Some`-replaces as before.
     pub fn overlay(&mut self, other: &ResolvedStyle) {
+        overlay_edge_slot!(&mut self.padding, &other.padding);
+        overlay_edge_slot!(&mut self.margin, &other.margin);
+        overlay_edge_slot!(&mut self.border_width, &other.border_width);
+        overlay_corner_slot!(&mut self.corner_radius, &other.corner_radius);
         macro_rules! rep {
             ($($f:ident),* $(,)?) => {
                 $(if other.$f.is_some() { self.$f = other.$f; })*
@@ -1415,15 +1614,11 @@ impl ResolvedStyle {
             background,
             background_gradient,
             content_color,
-            padding,
             border_color,
-            border_width,
-            corner_radius,
             dimensions,
             min_dimensions,
             max_dimensions,
             gap,
-            margin,
             layout,
             opacity,
             ring,
@@ -1432,7 +1627,7 @@ impl ResolvedStyle {
             pointer_events
         );
         if other.shadow.is_some() {
-            self.shadow = other.shadow.clone();
+            self.shadow.clone_from(&other.shadow);
         }
         for (p, val) in &other.text {
             if let Some(slot) = self.text.iter_mut().find(|(q, _)| q == p) {
@@ -1467,11 +1662,33 @@ impl ResolvedStyle {
             container_type
         );
         if !other.extras.shadow_rest.is_empty() {
-            self.extras.shadow_rest = other.extras.shadow_rest.clone();
+            self.extras
+                .shadow_rest
+                .clone_from(&other.extras.shadow_rest);
         }
         if !other.extras.inset_shadows.is_empty() {
-            self.extras.inset_shadows = other.extras.inset_shadows.clone();
+            self.extras
+                .inset_shadows
+                .clone_from(&other.extras.inset_shadows);
         }
+    }
+
+    /// Fill THIS style's unset edges (mask off) from `base` for the four
+    /// per-edge families — the layer-application primitive for cascades
+    /// that replace WHOLE properties (Masonry's `PropertyStack` entries,
+    /// Slint's state re-bindings).
+    ///
+    /// A `hover:px-8` layer materializes its top/bottom from the base
+    /// plan's padding instead of carrying the `0.0` placeholders, so the
+    /// applied entry computes what CSS computes (`p-4 hover:px-8` keeps
+    /// `padding-top: 16px`). Slots that are `None` here stay `None` (the
+    /// layer never addressed them; the lower cascade entry keeps serving
+    /// them), and a materialized value's mask ends full.
+    pub fn materialize_unset_edges_from(&mut self, base: &ResolvedStyle) {
+        materialize_edge_slot!(&mut self.padding, &base.padding);
+        materialize_edge_slot!(&mut self.margin, &base.margin);
+        materialize_edge_slot!(&mut self.border_width, &base.border_width);
+        materialize_corner_slot!(&mut self.corner_radius, &base.corner_radius);
     }
 }
 
@@ -1801,7 +2018,12 @@ mod tests {
     use crate::ast::Breakpoint;
 
     fn bg(c: [f32; 4]) -> Background {
-        Background(crate::color::Color { l: c[0], a: c[1], b: c[2], alpha: c[3] })
+        Background(crate::color::Color {
+            l: c[0],
+            a: c[1],
+            b: c[2],
+            alpha: c[3],
+        })
     }
 
     /// `ResolvedStyle::overlay` per-slot semantics: `Some` slots of the
@@ -1809,13 +2031,23 @@ mod tests {
     /// slot, never per whole-style.
     #[test]
     fn resolved_overlay_is_per_slot_later_wins() {
-        let mut base = ResolvedStyle::default();
-        base.background = Some(bg([0.0, 0.0, 0.0, 1.0]));
-        base.opacity = Some(Opacity(1.0));
-        let mut over = ResolvedStyle::default();
-        over.background = Some(bg([1.0, 0.0, 0.0, 1.0]));
+        let mut base = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            opacity: Some(Opacity(1.0)),
+            ..Default::default()
+        };
+
+        let over = ResolvedStyle {
+            background: Some(bg([1.0, 0.0, 0.0, 1.0])),
+            ..Default::default()
+        };
+
         base.overlay(&over);
-        assert_eq!(base.background, Some(bg([1.0, 0.0, 0.0, 1.0])), "set slot replaced");
+        assert_eq!(
+            base.background,
+            Some(bg([1.0, 0.0, 0.0, 1.0])),
+            "set slot replaced"
+        );
         assert_eq!(base.opacity, Some(Opacity(1.0)), "unset slot kept");
     }
 
@@ -1824,13 +2056,19 @@ mod tests {
     #[test]
     fn resolved_overlay_merges_text_per_property() {
         let mut base = ResolvedStyle::default();
-        base.text.push((TextProperty::FontSize, TextValue::Px(14.0)));
-        base.text.push((TextProperty::FontWeight, TextValue::Weight(500)));
+        base.text
+            .push((TextProperty::FontSize, TextValue::Px(14.0)));
+        base.text
+            .push((TextProperty::FontWeight, TextValue::Weight(500)));
         let mut over = ResolvedStyle::default();
-        over.text.push((TextProperty::FontWeight, TextValue::Weight(700)));
+        over.text
+            .push((TextProperty::FontWeight, TextValue::Weight(700)));
         base.overlay(&over);
         assert_eq!(base.text.len(), 2, "no property lost");
-        assert_eq!(base.text[1], (TextProperty::FontWeight, TextValue::Weight(700)));
+        assert_eq!(
+            base.text[1],
+            (TextProperty::FontWeight, TextValue::Weight(700))
+        );
     }
 
     /// Plan-level overlay: layers with the same condition merge per slot;
@@ -1838,16 +2076,35 @@ mod tests {
     #[test]
     fn plan_overlay_merges_layers_by_condition() {
         let mut base = StylePlan::default();
-        let mut l1 = ResolvedStyle::default();
-        l1.background = Some(bg([0.0, 0.0, 0.0, 1.0]));
-        base.layers.push(ConditionalLayer { condition: VariantCondition::Hover, style: l1 });
+        let l1 = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            ..Default::default()
+        };
+
+        base.layers.push(ConditionalLayer {
+            condition: VariantCondition::Hover,
+            style: l1,
+        });
         let mut over = StylePlan::default();
-        let mut l2 = ResolvedStyle::default();
-        l2.opacity = Some(Opacity(0.5));
-        over.layers.push(ConditionalLayer { condition: VariantCondition::Hover, style: l2 });
+        let l2 = ResolvedStyle {
+            opacity: Some(Opacity(0.5)),
+            ..Default::default()
+        };
+
+        over.layers.push(ConditionalLayer {
+            condition: VariantCondition::Hover,
+            style: l2,
+        });
         let merged = base.overlay(&over);
-        assert_eq!(merged.layers.len(), 1, "same condition merged, not appended");
-        assert_eq!(merged.layers[0].style.background, Some(bg([0.0, 0.0, 0.0, 1.0])));
+        assert_eq!(
+            merged.layers.len(),
+            1,
+            "same condition merged, not appended"
+        );
+        assert_eq!(
+            merged.layers[0].style.background,
+            Some(bg([0.0, 0.0, 0.0, 1.0]))
+        );
         assert_eq!(merged.layers[0].style.opacity, Some(Opacity(0.5)));
         // A new condition is appended.
         let mut over2 = StylePlan::default();
@@ -1863,25 +2120,43 @@ mod tests {
     #[test]
     fn plan_overlay_unions_responsive_and_dark() {
         let mut base = StylePlan::default();
-        let mut sm = ResolvedStyle::default();
-        sm.opacity = Some(Opacity(0.5));
+        let sm = ResolvedStyle {
+            opacity: Some(Opacity(0.5)),
+            ..Default::default()
+        };
+
         base.responsive.insert(Breakpoint::Sm, sm);
-        let mut base_dark = ResolvedStyle::default();
-        base_dark.background = Some(bg([0.0, 0.0, 0.0, 1.0]));
+        let base_dark = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            ..Default::default()
+        };
+
         base.dark = Some(base_dark);
 
         let mut over = StylePlan::default();
-        let mut md = ResolvedStyle::default();
-        md.cursor = Some(Cursor::Pointer);
+        let md = ResolvedStyle {
+            cursor: Some(Cursor::Pointer),
+            ..Default::default()
+        };
+
         over.responsive.insert(Breakpoint::Md, md);
-        let mut over_dark = ResolvedStyle::default();
-        over_dark.opacity = Some(Opacity(0.25));
+        let over_dark = ResolvedStyle {
+            opacity: Some(Opacity(0.25)),
+            ..Default::default()
+        };
+
         over.dark = Some(over_dark);
 
         let merged = base.overlay(&over);
         assert_eq!(merged.responsive.len(), 2, "union of buckets");
-        assert_eq!(merged.responsive[&Breakpoint::Sm].opacity, Some(Opacity(0.5)));
-        assert_eq!(merged.responsive[&Breakpoint::Md].cursor, Some(Cursor::Pointer));
+        assert_eq!(
+            merged.responsive[&Breakpoint::Sm].opacity,
+            Some(Opacity(0.5))
+        );
+        assert_eq!(
+            merged.responsive[&Breakpoint::Md].cursor,
+            Some(Cursor::Pointer)
+        );
         assert_eq!(
             merged.dark.as_ref().unwrap().background,
             Some(bg([0.0, 0.0, 0.0, 1.0])),
@@ -1896,10 +2171,16 @@ mod tests {
     /// runtime override story relies on).
     #[test]
     fn plan_overlay_breakpoints_win_and_is_idempotent() {
-        let mut base = StylePlan::default();
-        base.breakpoints = [600.0, 700.0, 1000.0, 1200.0, 1500.0];
-        let mut over = StylePlan::default();
-        over.breakpoints = [640.0, 768.0, 1024.0, 1280.0, 1536.0];
+        let base = StylePlan {
+            breakpoints: [600.0, 700.0, 1000.0, 1200.0, 1500.0],
+            ..Default::default()
+        };
+
+        let over = StylePlan {
+            breakpoints: [640.0, 768.0, 1024.0, 1280.0, 1536.0],
+            ..Default::default()
+        };
+
         let once = base.overlay(&over);
         assert_eq!(once.breakpoints, [640.0, 768.0, 1024.0, 1280.0, 1536.0]);
         let twice = once.overlay(&over);
@@ -1919,9 +2200,10 @@ mod tests {
                 crate::ast::State::Hover,
             ))]),
             style: {
-                let mut s = ResolvedStyle::default();
-                s.background = Some(bg([0.0, 0.0, 0.0, 1.0]));
-                s
+                ResolvedStyle {
+                    background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+                    ..Default::default()
+                }
             },
         });
         let mut over = StylePlan::default();
@@ -1930,14 +2212,18 @@ mod tests {
                 crate::ast::State::Hover,
             ))]),
             style: {
-                let mut s = ResolvedStyle::default();
-                s.opacity = Some(Opacity(0.5));
-                s
+                ResolvedStyle {
+                    opacity: Some(Opacity(0.5)),
+                    ..Default::default()
+                }
             },
         });
         let merged = base.overlay(&over);
         assert_eq!(merged.rules.len(), 1, "same conjunction is one rule");
-        assert_eq!(merged.rules[0].style.background, Some(bg([0.0, 0.0, 0.0, 1.0])));
+        assert_eq!(
+            merged.rules[0].style.background,
+            Some(bg([0.0, 0.0, 0.0, 1.0]))
+        );
         assert_eq!(merged.rules[0].style.opacity, Some(Opacity(0.5)));
     }
 
@@ -1945,9 +2231,18 @@ mod tests {
     /// change needs relayout, a paint-only change does not.
     #[test]
     fn diff_reports_changed_slots_and_lanes() {
-        let mut prev = ResolvedStyle::default();
-        prev.background = Some(bg([0.0, 0.0, 0.0, 1.0]));
-        prev.padding = Some(Padding { top: 8.0, right: 8.0, bottom: 8.0, left: 8.0 });
+        let prev = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            padding: Some(Padding {
+                top: 8.0,
+                right: 8.0,
+                bottom: 8.0,
+                left: 8.0,
+                set: EdgeSet::ALL,
+            }),
+            ..Default::default()
+        };
+
         let mut next = prev.clone();
         assert!(diff(&prev, &next).is_empty(), "identical styles diff empty");
 
@@ -1956,7 +2251,13 @@ mod tests {
         assert_eq!(d.changed, vec![Slot::Background]);
         assert!(!d.needs_layout(), "color is a paint lane");
 
-        next.padding = Some(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 16.0 });
+        next.padding = Some(Padding {
+            top: 16.0,
+            right: 16.0,
+            bottom: 16.0,
+            left: 16.0,
+            set: EdgeSet::ALL,
+        });
         let d = diff(&prev, &next);
         assert_eq!(d.changed.len(), 2);
         assert!(d.needs_layout(), "padding is geometric");
@@ -1969,20 +2270,26 @@ mod tests {
     #[test]
     fn diff_reports_the_actual_text_property_changed() {
         let mut prev = ResolvedStyle::default();
-        prev.text.push((TextProperty::FontWeight, TextValue::Weight(500)));
+        prev.text
+            .push((TextProperty::FontWeight, TextValue::Weight(500)));
         let mut next = ResolvedStyle::default();
-        next.text.push((TextProperty::FontWeight, TextValue::Weight(700)));
+        next.text
+            .push((TextProperty::FontWeight, TextValue::Weight(700)));
         let d = diff(&prev, &next);
         assert_eq!(d.changed, vec![Slot::Text(TextProperty::FontWeight)]);
 
         // Dense text vecs (the resolver's canonical shape) report the
         // changed property, not the family's first member.
         let mut prev = ResolvedStyle::default();
-        prev.text.push((TextProperty::FontSize, TextValue::Px(14.0)));
-        prev.text.push((TextProperty::FontWeight, TextValue::Weight(500)));
+        prev.text
+            .push((TextProperty::FontSize, TextValue::Px(14.0)));
+        prev.text
+            .push((TextProperty::FontWeight, TextValue::Weight(500)));
         let mut next = ResolvedStyle::default();
-        next.text.push((TextProperty::FontSize, TextValue::Px(14.0)));
-        next.text.push((TextProperty::FontWeight, TextValue::Weight(700)));
+        next.text
+            .push((TextProperty::FontSize, TextValue::Px(14.0)));
+        next.text
+            .push((TextProperty::FontWeight, TextValue::Weight(700)));
         assert_eq!(
             diff(&prev, &next).changed,
             vec![Slot::Text(TextProperty::FontWeight)]
@@ -2004,10 +2311,13 @@ mod tests {
     /// bitset staying within u128).
     #[test]
     fn slot_indices_fit_the_bitset() {
-        let mut full = ResolvedStyle::default();
-        full.background = Some(bg([0.0, 0.0, 0.0, 1.0]));
-        full.opacity = Some(Opacity(1.0));
-        full.cursor = Some(Cursor::Pointer);
+        let full = ResolvedStyle {
+            background: Some(bg([0.0, 0.0, 0.0, 1.0])),
+            opacity: Some(Opacity(1.0)),
+            cursor: Some(Cursor::Pointer),
+            ..Default::default()
+        };
+
         let bits = super::bits_of(&full);
         assert_eq!(bits.count_ones(), 3);
     }
