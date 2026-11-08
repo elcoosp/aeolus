@@ -15,7 +15,9 @@ fn resolver() -> Resolver<'static> {
 fn solid(bg: &iced_core::Background) -> iced_core::Color {
     match *bg {
         iced_core::Background::Color(c) => c,
-        other => panic!("expected a solid color, got {other:?}"),
+        iced_core::Background::Gradient(g) => {
+            panic!("expected a solid color, got gradient {g:?}")
+        }
     }
 }
 

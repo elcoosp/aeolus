@@ -30,3 +30,7 @@ tracing = "0.1"
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
 masonry_testing = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true

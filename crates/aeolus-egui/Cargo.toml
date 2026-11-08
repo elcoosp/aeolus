@@ -18,3 +18,7 @@ aeolus-core = { path = "../aeolus-core" }
 # everything here compiles headless (Context::default() works without a pass).
 egui = "0.37"
 tracing = "0.1"
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true

@@ -99,7 +99,7 @@ impl Color {
         };
         let num = |r: std::ops::Range<usize>| -> Result<f32, ParseError> {
             u8::from_str_radix(&srgb[r], 16)
-                .map(|v| v as f32 / 255.0)
+                .map(|v| f32::from(v) / 255.0)
                 .map_err(|_| bad())
         };
         let r = num(0..2)?;
@@ -492,12 +492,13 @@ mod tests {
     /// cache misses. Equality must be approximate (~1e-4).
     #[test]
     fn approximate_equality_ignores_float_noise() {
+        use crate::plan::{Background, ResolvedStyle};
+
         let a = Color::parse("oklch(0.637 0.237 25.331)").unwrap();
         let [r, g, b, al] = a.to_srgba();
         let roundtrip = Color::from_srgb(r, g, b, al);
         assert_eq!(a, roundtrip, "sRGB round-trip noise must not split colors");
         // The plan-level diff must agree (a ≈ b → no changed slots).
-        use crate::plan::{Background, ResolvedStyle};
         let mut prev = ResolvedStyle::default();
         let mut next = ResolvedStyle::default();
         prev.background = Some(Background(a));

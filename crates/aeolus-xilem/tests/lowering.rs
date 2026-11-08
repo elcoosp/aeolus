@@ -378,3 +378,51 @@ fn bg_none_lowers_to_no_gradient_property() {
     assert!(set.get::<Background>().is_none());
     assert!(report.dropped.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// v0.8 §1.2: per-edge set-mask materialization at the stack boundary
+// ---------------------------------------------------------------------------
+
+/// Stack entries replace WHOLE properties, so a partial-edge layer is
+/// materialized against the base before lowering: `p-4 hover:px-8` keeps
+/// `padding-top/bottom: 16px` on hover (the CSS cascade) instead of the
+/// 0.0 placeholders wiping the base's edges.
+#[test]
+fn partial_edge_layers_materialize_from_base() {
+    use masonry::layout::Length;
+
+    let theme = shadcn_default().unwrap();
+    let resolver = Resolver::new(&theme);
+    let resolution = resolver.resolve("p-4 hover:px-8").unwrap();
+    let (stack, report) = lower(&resolution.plan);
+    assert!(report.dropped.is_empty(), "unexpected drops: {report:?}");
+
+    let layers = stack.get_layers();
+    assert_eq!(layers.len(), 2, "base + hover");
+    let hover = layers[1]
+        .1
+        .get::<Padding>()
+        .expect("the hover entry carries the materialized padding");
+    assert_eq!(
+        hover,
+        &Padding {
+            left: Length::px(32.0),
+            right: Length::px(32.0),
+            top: Length::px(16.0),
+            bottom: Length::px(16.0),
+        },
+        "hover keeps the base's top/bottom (16px) and takes px-8's left/right"
+    );
+
+    // The base entry is untouched.
+    let base = layers[0].1.get::<Padding>().expect("base padding");
+    assert_eq!(
+        base,
+        &Padding {
+            left: Length::px(16.0),
+            right: Length::px(16.0),
+            top: Length::px(16.0),
+            bottom: Length::px(16.0),
+        },
+    );
+}

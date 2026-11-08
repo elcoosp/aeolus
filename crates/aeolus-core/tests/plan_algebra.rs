@@ -32,7 +32,8 @@ fn base_slot_composes_later_wins() {
             top: 32.0,
             right: 32.0,
             bottom: 32.0,
-            left: 32.0
+            left: 32.0,
+            set: EdgeSet::ALL
         })
     );
     // Untouched slots survive from the base plan.
@@ -50,15 +51,22 @@ fn layer_merge_by_condition() {
     assert_eq!(merged.layers.len(), 1, "one hover layer after merge");
     let hover = &merged.layers[0];
     assert_eq!(hover.condition, VariantCondition::Hover);
-    // Per-edge layers materialize unset edges as 0 (current finalize
-    // semantics, pinned by resolve-time tests): px-8 → {0, 32, 0, 32}.
+    // v0.8 set-mask semantics: the layer records WHICH edges px-8
+    // addresses — {right, left} — with 0.0 placeholders elsewhere. See
+    // tests/per_edge_layers.rs for the full contract.
     assert_eq!(
         hover.style.padding,
         Some(Padding {
             top: 0.0,
             right: 32.0,
             bottom: 0.0,
-            left: 32.0
+            left: 32.0,
+            set: EdgeSet {
+                top: false,
+                right: true,
+                bottom: false,
+                left: true
+            }
         })
     );
     assert!(hover.style.background.is_some(), "hover bg survives");
@@ -87,7 +95,8 @@ fn responsive_and_dark_compose_per_bucket() {
             top: 32.0,
             right: 32.0,
             bottom: 32.0,
-            left: 32.0
+            left: 32.0,
+            set: EdgeSet::ALL
         })
     );
     assert!(merged.responsive.contains_key(&Breakpoint::Lg));
@@ -145,7 +154,8 @@ fn breakpoints_and_container() {
             top: 32.0,
             right: 32.0,
             bottom: 32.0,
-            left: 32.0
+            left: 32.0,
+            set: EdgeSet::ALL
         })
     );
 }
