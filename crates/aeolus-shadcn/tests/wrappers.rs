@@ -14,9 +14,7 @@ fn resolver() -> Resolver<'static> {
 fn solid(bg: &iced_widget::core::Background) -> iced_widget::core::Color {
     match *bg {
         iced_widget::core::Background::Color(c) => c,
-        iced_widget::core::Background::Gradient(g) => {
-            panic!("expected a solid color, got gradient {g:?}")
-        }
+        other => panic!("expected a solid color, got {other:?}"),
     }
 }
 
