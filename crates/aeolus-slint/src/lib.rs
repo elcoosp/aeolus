@@ -61,7 +61,6 @@ use aeolus_core::eval::{Probe, Rel};
 use aeolus_core::plan::{
     Gradient, ResolvedStyle, SizedValue, Slot, StylePlan, TextProperty, TextValue, VariantCondition,
 };
-use std::fmt::Write as _;
 
 // ---------------------------------------------------------------------------
 // The honest report
@@ -266,7 +265,7 @@ impl SlintText {
     /// Overlay `other` on top of `self` (later layers win per slot).
     pub fn overlay(&mut self, other: &SlintText) {
         if other.color.is_some() {
-            self.color.clone_from(&other.color);
+            self.color = other.color.clone();
         }
         if other.font_size.is_some() {
             self.font_size = other.font_size;
@@ -278,7 +277,7 @@ impl SlintText {
             self.letter_spacing = other.letter_spacing;
         }
         if other.font_family.is_some() {
-            self.font_family.clone_from(&other.font_family);
+            self.font_family = other.font_family.clone();
         }
         if other.italic.is_some() {
             self.italic = other.italic;
@@ -521,7 +520,7 @@ impl SlintStyle {
     /// mirroring [`ResolvedStyle::overlay`]'s Some-replaces semantics.
     pub fn overlay(&mut self, other: &SlintStyle) {
         if other.background.is_some() {
-            self.background.clone_from(&other.background);
+            self.background = other.background.clone();
         }
         // `bg-none` clears the image slot exactly like CSS
         // `background-image: none` clears the composed layers.
@@ -529,15 +528,14 @@ impl SlintStyle {
             self.background_gradient = None;
         }
         if other.background_gradient.is_some() {
-            self.background_gradient
-                .clone_from(&other.background_gradient);
+            self.background_gradient = other.background_gradient.clone();
         }
         self.text.overlay(&other.text);
         if other.border_width.is_some() {
             self.border_width = other.border_width;
         }
         if other.border_color.is_some() {
-            self.border_color.clone_from(&other.border_color);
+            self.border_color = other.border_color.clone();
         }
         if other.border_radius.is_some() {
             self.border_radius = other.border_radius;
@@ -1218,19 +1216,9 @@ impl StyleBook {
         sorted.sort_by_key(|l| l.condition.rank());
         let mut layers = Vec::with_capacity(sorted.len());
         for layer in sorted {
-            // v0.8 §1.2: state blocks re-bind properties wholesale, so a
-            // partial-edge layer (`hover:px-8`) is materialized against the
-            // base first — its masked-off edges inherit the base's values
-            // instead of re-binding the 0.0 placeholders.
-            let mut style = layer.style.clone();
-            style.materialize_unset_edges_from(&plan.base);
-            layers.push((layer.condition, lower_resolved(&style, &mut report)));
+            layers.push((layer.condition, lower_resolved(&layer.style, &mut report)));
         }
-        let dark = plan.dark.as_ref().map(|d| {
-            let mut style = d.clone();
-            style.materialize_unset_edges_from(&plan.base);
-            lower_resolved(&style, &mut report)
-        });
+        let dark = plan.dark.as_ref().map(|d| lower_resolved(d, &mut report));
 
         (
             Self {
@@ -1257,10 +1245,9 @@ impl StyleBook {
                 book
             }
             Err(err) => {
-                assert!(
-                    !cfg!(debug_assertions),
-                    "aeolus: failed to parse class string {classes:?}: {err:?}"
-                );
+                if cfg!(debug_assertions) {
+                    panic!("aeolus: failed to parse class string {classes:?}: {err:?}");
+                }
                 tracing::warn!("aeolus: dropping unparseable class string {classes:?}: {err:?}");
                 let (book, _) = Self::new(&StylePlan::default());
                 book
@@ -1365,10 +1352,7 @@ impl StyleBook {
             if body.is_empty() {
                 continue;
             }
-            let mut indented = String::new();
-            for l in body.lines() {
-                let _ = writeln!(indented, "        {l}");
-            }
+            let indented: String = body.lines().map(|l| format!("        {l}\n")).collect();
             blocks.push(format!("    {name} when {gate} : {{\n{indented}    }}"));
         }
         if blocks.is_empty() {
