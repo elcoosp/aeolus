@@ -1,0 +1,29 @@
+[package]
+name = "aeolus-cli"
+description = "Headless Aeolus CLI: resolve Tailwind v4 class strings into plan snapshots, verification CSS, lane-aware diffs and lint findings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+# Zero dependencies beyond the core: the CLI shares the core's
+# no-external-crate discipline (hand-rolled arg parsing, std I/O only).
+aeolus-core = { workspace = true }
+
+[dev-dependencies]
+divan = "0.1"
+
+[[bin]]
+name = "aeolus"
+path = "src/main.rs"
+
+[[bench]]
+name = "pipeline"
+harness = false
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true
