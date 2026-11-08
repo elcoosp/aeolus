@@ -160,13 +160,14 @@ pub trait Backend {
 /// debug builds. `class` is the offending class string, for diagnostics.
 pub fn report_unsupported(slot: Slot, class: &str) {
     if cfg!(debug_assertions) {
-        tracing_or_stderr(format!(
+        let msg = format!(
             "[aeolus] dropping unsupported slot {slot:?} for class {class:?} on this backend"
-        ));
+        );
+        tracing_or_stderr(&msg);
     }
 }
 
-fn tracing_or_stderr(msg: String) {
+fn tracing_or_stderr(msg: &str) {
     // v1 keeps the core dependency-free; backends with `tracing` should call
     // `tracing::warn!` directly. This hook stays for the pure-core path.
     eprintln!("{msg}");
