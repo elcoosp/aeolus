@@ -262,12 +262,6 @@ pub fn parse_named_variant(name: &str) -> NamedVariant<'_> {
         "user-valid" => NamedVariant::UserValid,
         "user-invalid" => NamedVariant::UserInvalid,
         "placeholder-shown" => NamedVariant::PlaceholderShown,
-        // v0.7 §1: pseudo-element variants v4 names as plain variants
-        // (`selection:` → `&::selection`, ...). They classify onto
-        // `Test::Pseudo`, not runtime states.
-        "selection" => NamedVariant::Pseudo(crate::ast::PseudoElement::Selection),
-        "placeholder" => NamedVariant::Pseudo(crate::ast::PseudoElement::Placeholder),
-        "file" => NamedVariant::Pseudo(crate::ast::PseudoElement::FileSelectorButton),
         "autofill" => NamedVariant::Autofill,
         "read-only" => NamedVariant::ReadOnly,
         "in-range" => NamedVariant::InRange,
@@ -379,6 +373,7 @@ fn split_body(s: &str) -> Result<(&str, Option<Arbitrary<'_>>, Option<&str>), Pa
         if be >= head.len() {
             // The group extends past the top-level slash — impossible for a
             // well-formed token; treat conservatively as a parse error.
+
             return Err(ParseError::new("arbitrary group crosses the '/'"));
         }
         let after_group = &head[be + 1..];
@@ -397,17 +392,7 @@ fn split_body(s: &str) -> Result<(&str, Option<Arbitrary<'_>>, Option<&str>), Pa
 /// (`[length:200px]`) and flagging the arbitrary-property form
 /// (`[mask-type:luminance]`).
 fn extract_arbitrary(raw: &str, form: ArbForm) -> Result<Arbitrary<'_>, ParseError> {
-    if raw.is_empty() {
-        return Err(ParseError::new("empty arbitrary value"));
-    }
-    let (hint, value) = match form {
-        ArbForm::Bracket => raw
-            .split_once(':')
-            .map(|(h, v)| (Some(h), v))
-            .unwrap_or((None, raw)),
-        ArbForm::Paren => (None, raw),
-    };
-    // `[mask-type:luminance]` — a bare CSS property declaration. Values
+    // `ask-type:luminance]` — a bare CSS property declaration. Values
     // carrying a ':' whose prefix is not a known v4 type hint are flagged
     // as properties; the resolver reports them with a precise reason.
     const HINTS: &[&str] = &[
@@ -428,6 +413,18 @@ fn extract_arbitrary(raw: &str, form: ArbForm) -> Result<Arbitrary<'_>, ParseErr
         "relative-size",
         "string",
     ];
+
+    if raw.is_empty() {
+        return Err(ParseError::new("empty arbitrary value"));
+    }
+
+    let (hint, value) = match form {
+        ArbForm::Bracket => raw
+            .split_once(':')
+            .map_or((None, raw), |(h, v)| (Some(h), v)),
+        ArbForm::Paren => (None, raw),
+    };
+
     let is_property = form == ArbForm::Bracket && hint.is_some_and(|h| !HINTS.contains(&h));
     Ok(Arbitrary {
         hint,
