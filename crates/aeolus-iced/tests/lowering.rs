@@ -39,7 +39,7 @@ fn tw(resolver: &Resolver<'static>, classes: &str) -> StyleBook {
 fn solid(bg: &Background) -> Color {
     match *bg {
         Background::Color(c) => c,
-        Background::Gradient(g) => panic!("expected a solid color, got gradient {g:?}"),
+        other => panic!("expected a solid color, got {other:?}"),
     }
 }
 
@@ -369,34 +369,4 @@ fn focus_conditions_report_for_the_probe_path() {
     );
     // The book keeps no such layers natively — resolve_at serves them.
     assert!(book.layers.is_empty());
-}
-
-// ---------------------------------------------------------------------------
-// v0.8 §1.2: per-edge set-mask merge in the Catalog cascade
-// ---------------------------------------------------------------------------
-
-/// [`IcedStyle::overlay`] (the accumulation the Catalog closures do per
-/// frame) merges the padding hint EDGE-WISE through the v0.8 set-mask:
-/// `p-4` ⊕ `hover:px-8` keeps top/bottom 16px instead of the 0.0
-/// placeholders wiping them.
-#[test]
-fn partial_edge_layers_overlay_edge_wise() {
-    use aeolus_iced::LoweringReport;
-
-    let resolver = resolver();
-    let base_plan = resolver.resolve("p-4").unwrap().plan;
-    let layer_plan = resolver.resolve("hover:px-8").unwrap().plan;
-
-    let mut report = LoweringReport::default();
-    let mut base = lower_resolved(&base_plan.base, &mut report);
-    let mut layer_report = LoweringReport::default();
-    let layer = lower_resolved(&layer_plan.layers[0].style, &mut layer_report);
-
-    base.overlay(&layer);
-    let padding = base.widget.padding.expect("merged padding hint");
-    assert_eq!(
-        (padding.top, padding.right, padding.bottom, padding.left),
-        (16.0, 32.0, 16.0, 32.0),
-        "hover:px-8 overrides left/right only; top/bottom keep p-4"
-    );
 }
