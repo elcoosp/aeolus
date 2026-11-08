@@ -189,8 +189,6 @@ pub struct Extras {
     pub margin_auto: Option<AutoEdges>,
     /// `gap-x-*`/`gap-y-*` (per-axis gap).
     pub gap_axes: Option<GapAxes>,
-    /// `@container[/name]` — the containment context (v0.7 §3).
-    pub container_type: Option<ContainerType>,
     /// Remaining shadow layers of a multi-layer preset (`shadow-sm`'s
     /// second layer). `shadow` carries the first (dominant) layer.
     pub shadow_rest: Vec<BoxShadow>,
@@ -278,8 +276,6 @@ pub enum Slot {
     InsetShadows,
     /// `background-image` gradient (with the part that changed).
     Gradient(GradientPart),
-    /// `@container[/name]` containment context (v0.7 §3).
-    ContainerType,
 }
 
 /// Which part of the composed [`Gradient`] changed (v0.6 §1.3).
@@ -338,7 +334,6 @@ impl Slot {
             Slot::ShadowRest => 35,
             Slot::InsetShadows => 36,
             Slot::Gradient(_) => 37,
-            Slot::ContainerType => 38,
         }
     }
 }
@@ -363,8 +358,7 @@ impl Slot {
             | Slot::Transition
             | Slot::Animation
             | Slot::BorderStyle
-            | Slot::Text(TextProperty::Color)
-            | Slot::Text(TextProperty::UnderlineOffset)
+            | Slot::Text(TextProperty::Color | TextProperty::UnderlineOffset)
             | Slot::Ring(_) => Lane::Cosmetic,
             // Masonry requests layout for Padding/BorderWidth/CornerRadius/
             // Dimensions/BoxShadow; text size changes parley layout.
@@ -390,7 +384,6 @@ impl Slot {
             | Slot::GapAxes
             | Slot::ShadowRest
             | Slot::InsetShadows
-            | Slot::ContainerType
             | Slot::Text(_) => Lane::Geometric,
         }
     }
@@ -534,7 +527,47 @@ const NO_STOPS: GradientStops = GradientStops {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ContentColor(pub Color);
 
+/// Which edges a per-edge family (`p-*`/`m-*`/`border-*`) actually
+/// addressed — the v0.8 set-mask (AEOLUS_V0.8.md §1).
+///
+/// `false` means "this bucket/layer/plan never named that edge": the edge
+/// must NOT replace a lower cascade entry when the style is applied, and
+/// its `f32` value is the documented `0.0` placeholder. `true` means the
+/// edge carries a real value (which may legitimately be `0.0` — `pt-0`).
+///
+/// The same shape as [`AutoEdges`] (which says which edges are `auto`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EdgeSet {
+    /// The top edge is addressed.
+    pub top: bool,
+    /// The right edge is addressed.
+    pub right: bool,
+    /// The bottom edge is addressed.
+    pub bottom: bool,
+    /// The left edge is addressed.
+    pub left: bool,
+}
+
+impl EdgeSet {
+    /// Every edge addressed (a whole-edge family like `p-4`, or a merged
+    /// result that covers all four).
+    pub const ALL: EdgeSet = EdgeSet {
+        top: true,
+        right: true,
+        bottom: true,
+        left: true,
+    };
+
+    /// True when every edge is addressed.
+    pub fn is_all(self) -> bool {
+        self == EdgeSet::ALL
+    }
+}
+
 /// `p-*/px-*/py-*/pt-*/pr-*/pb-*/pl-*` in px.
+///
+/// v0.8: the [`EdgeSet`] mask records which edges the class string named;
+/// edges outside the mask are `0.0` placeholders, never cascade inputs.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Padding {
     /// Top edge in px.
@@ -545,6 +578,9 @@ pub struct Padding {
     pub bottom: f32,
     /// Left edge in px.
     pub left: f32,
+    /// Which edges this value addresses ([`EdgeSet::ALL`] for whole-edge
+    /// families and merged results).
+    pub set: EdgeSet,
 }
 
 /// `m-*` family (same shape as padding; separate type so slots stay distinct).
@@ -555,6 +591,9 @@ pub type Margin = Padding;
 pub struct BorderColor(pub Color);
 
 /// `border`, `border-2`, `border-x` etc. in px.
+///
+/// v0.8: carries the same [`EdgeSet`] mask as [`Padding`] — `border-r-4`
+/// addresses only the right side.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BorderWidth {
     /// Top edge in px.
@@ -565,9 +604,43 @@ pub struct BorderWidth {
     pub bottom: f32,
     /// Left edge in px.
     pub left: f32,
+    /// Which edges this value addresses.
+    pub set: EdgeSet,
+}
+
+/// Which corners a `rounded-*` family actually addressed — the corner
+/// counterpart of [`EdgeSet`] (v0.8 §1).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CornerSet {
+    /// The top-left corner is addressed.
+    pub top_left: bool,
+    /// The top-right corner is addressed.
+    pub top_right: bool,
+    /// The bottom-right corner is addressed.
+    pub bottom_right: bool,
+    /// The bottom-left corner is addressed.
+    pub bottom_left: bool,
+}
+
+impl CornerSet {
+    /// Every corner addressed (whole-corner families like `rounded-md`).
+    pub const ALL: CornerSet = CornerSet {
+        top_left: true,
+        top_right: true,
+        bottom_right: true,
+        bottom_left: true,
+    };
+
+    /// True when every corner is addressed.
+    pub fn is_all(self) -> bool {
+        self == CornerSet::ALL
+    }
 }
 
 /// `rounded-*` in px.
+///
+/// v0.8: the [`CornerSet`] mask records which corners the class string
+/// named; corners outside the mask are `0.0` placeholders.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct CornerRadius {
     /// Top-left corner in px.
@@ -578,6 +651,8 @@ pub struct CornerRadius {
     pub bottom_right: f32,
     /// Bottom-left corner in px.
     pub bottom_left: f32,
+    /// Which corners this value addresses.
+    pub set: CornerSet,
 }
 
 /// `w-*/h-*/size-*` fixed sizes in px; `f32::INFINITY` is not used —
@@ -645,8 +720,6 @@ pub struct Layout {
     pub align_items: Option<AlignItems>,
     /// `justify-*` (content axis).
     pub justify_content: Option<JustifyContent>,
-    /// `justify-items-*` (the justify axis per item — v0.7 §5).
-    pub justify_items: Option<AlignItems>,
     /// `flex-wrap`.
     pub flex_wrap: Option<bool>,
     /// `grow-*`.
@@ -974,7 +1047,7 @@ pub enum Visibility {
 }
 
 /// `grid-cols-*` / `grid-rows-*` / spans / starts.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Grid {
     /// `grid-cols-N`.
     pub cols: Option<u16>,
@@ -988,103 +1061,6 @@ pub struct Grid {
     pub col_start: Option<i16>,
     /// `row-start-N`.
     pub row_start: Option<i16>,
-    /// Arbitrary/track templates: `grid-cols-[0_1fr]`,
-    /// `grid-cols-[repeat(3,minmax(0,1fr))]` (v0.7 §4). CANONICAL when
-    /// present: the numeric `cols`/`rows` forms are the v4 shorthand for
-    /// `repeat(N, minmax(0, 1fr))`, so a backend that understands
-    /// templates must prefer them and only fall back to the counts.
-    pub template_cols: Option<Vec<TrackComponent>>,
-    /// `grid-rows-[…]` — see [`Grid::template_cols`].
-    pub template_rows: Option<Vec<TrackComponent>>,
-    /// `auto-rows-*` — the implicit-row track sizing (v0.7 §4).
-    pub auto_rows: Option<Vec<TrackComponent>>,
-    /// `auto-cols-*` — the implicit-column track sizing (v0.7 §4).
-    pub auto_cols: Option<Vec<TrackComponent>>,
-}
-
-/// One component of an arbitrary grid template (v0.7 §4).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TrackComponent {
-    /// A single track.
-    Track(GridTrack),
-    /// `repeat(N, <track>)` — a bounded expansion (single inner track;
-    /// multi-track and auto-fill/auto-fit forms report).
-    Repeat {
-        /// The repetition count (≤ 64).
-        count: u16,
-        /// The repeated track.
-        track: GridTrack,
-    },
-}
-
-/// One grid track sizing: a min/max pair mirroring CSS
-/// `minmax()` semantics (v0.7 §4). A plain `1fr` is
-/// `{ min: Auto, max: Fr(1) }` (taffy's `from_fr` semantics), a bare `0`
-/// is a fixed 0px track, `auto`/`min-content`/`max-content` pin both sides.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct GridTrack {
-    /// The minimum sizing function.
-    pub min: TrackSizing,
-    /// The maximum sizing function.
-    pub max: TrackSizing,
-}
-
-impl GridTrack {
-    /// A fixed-length track (`0`, `12px`) — min and max pinned.
-    pub fn px(v: f32) -> Self {
-        Self {
-            min: TrackSizing::Px(v),
-            max: TrackSizing::Px(v),
-        }
-    }
-
-    /// An fr track (`1fr`) — `min: Auto, max: Fr(n)` (CSS `minmax(auto, Nfr)`,
-    /// taffy's `from_fr`).
-    pub fn fr(n: f32) -> Self {
-        Self {
-            min: TrackSizing::Auto,
-            max: TrackSizing::Fr(n),
-        }
-    }
-
-    /// An `auto` track — both sides `Auto`.
-    pub fn auto() -> Self {
-        Self {
-            min: TrackSizing::Auto,
-            max: TrackSizing::Auto,
-        }
-    }
-
-    /// A keyword track (`min-content`/`max-content`) — both sides pinned.
-    pub fn keyword(k: TrackSizing) -> Self {
-        Self { min: k, max: k }
-    }
-}
-
-/// One sizing function of a [`GridTrack`] (v0.7 §4).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TrackSizing {
-    /// A fixed px length.
-    Px(f32),
-    /// A percentage of the grid container.
-    Percent(f32),
-    /// A fraction of the free space.
-    Fr(f32),
-    /// `auto`.
-    Auto,
-    /// `min-content`.
-    MinContent,
-    /// `max-content`.
-    MaxContent,
-}
-
-/// `@container[/name]` — establishes an inline-size containment context
-/// (v0.7 §3; CSS `container-type: inline-size` + `container-name`). The
-/// named form is what the shadcn Card header ships (`@container/card-header`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ContainerType {
-    /// The container name (`@container/card-header`), when named.
-    pub name: Option<Box<str>>,
 }
 
 /// `scale-*`/`rotate-*`/`translate-*`/`skew-*`.
@@ -1351,13 +1327,117 @@ macro_rules! for_each_present_slot {
         if !e.inset_shadows.is_empty() {
             $push(Slot::InsetShadows);
         }
-        if e.container_type.is_some() {
-            $push(Slot::ContainerType);
-        }
         if s.background_gradient.is_some() {
             $push(Slot::Gradient(GradientPart::Shape));
         }
     }};
+}
+
+/// Edge-wise `Some`-replaces for one 4-edge slot (v0.8 §1): every edge the
+/// override addresses wins; every edge it does not address keeps the
+/// destination's value. `None` destinations seed a default so partial
+/// overrides compose against nothing without inventing cascade inputs.
+/// (`Padding`/`Margin` and `BorderWidth` share the exact field shape.)
+macro_rules! overlay_edge_slot {
+    ($dst:expr, $src:expr) => {
+        if let Some(o) = $src {
+            let d = $dst.get_or_insert_with(Default::default);
+            if o.set.top {
+                d.top = o.top;
+                d.set.top = true;
+            }
+            if o.set.right {
+                d.right = o.right;
+                d.set.right = true;
+            }
+            if o.set.bottom {
+                d.bottom = o.bottom;
+                d.set.bottom = true;
+            }
+            if o.set.left {
+                d.left = o.left;
+                d.set.left = true;
+            }
+        }
+    };
+}
+
+/// Corner-wise counterpart of [`overlay_edge_slot!`].
+macro_rules! overlay_corner_slot {
+    ($dst:expr, $src:expr) => {
+        if let Some(o) = $src {
+            let d = $dst.get_or_insert_with(Default::default);
+            if o.set.top_left {
+                d.top_left = o.top_left;
+                d.set.top_left = true;
+            }
+            if o.set.top_right {
+                d.top_right = o.top_right;
+                d.set.top_right = true;
+            }
+            if o.set.bottom_right {
+                d.bottom_right = o.bottom_right;
+                d.set.bottom_right = true;
+            }
+            if o.set.bottom_left {
+                d.bottom_left = o.bottom_left;
+                d.set.bottom_left = true;
+            }
+        }
+    };
+}
+
+/// Fill the destination slot's masked-off edges from `base` (values AND
+/// mask), leaving `None` slots and addressed edges alone.
+macro_rules! materialize_edge_slot {
+    ($dst:expr, $base:expr) => {
+        if let Some(d) = $dst
+            && let Some(b) = $base
+        {
+            if !d.set.top {
+                d.top = b.top;
+                d.set.top = true;
+            }
+            if !d.set.right {
+                d.right = b.right;
+                d.set.right = true;
+            }
+            if !d.set.bottom {
+                d.bottom = b.bottom;
+                d.set.bottom = true;
+            }
+            if !d.set.left {
+                d.left = b.left;
+                d.set.left = true;
+            }
+        }
+    };
+}
+
+/// Corner-wise counterpart of [`materialize_edge_slot!`].
+macro_rules! materialize_corner_slot {
+    ($dst:expr, $base:expr) => {
+        if let Some(d) = $dst
+            && let Some(b) = $base
+        {
+            if !d.set.top_left {
+                d.top_left = b.top_left;
+                d.set.top_left = true;
+            }
+            if !d.set.top_right {
+                d.top_right = b.top_right;
+                d.set.top_right = true;
+            }
+            if !d.set.bottom_right {
+                d.bottom_right = b.bottom_right;
+                d.set.bottom_right = true;
+            }
+            if !d.set.bottom_left {
+                d.bottom_left = b.bottom_left;
+                d.set.bottom_left = true;
+            }
+        }
+    };
 }
 
 impl ResolvedStyle {
@@ -1373,7 +1453,18 @@ impl ResolvedStyle {
     }
 
     /// Overlay `other` on top of `self` (later layers win per slot).
+    ///
+    /// v0.8: the four per-edge families ([`Padding`]/[`Margin`],
+    /// [`BorderWidth`], [`CornerRadius`]) merge EDGE-WISE through the
+    /// set-mask — an edge the override does not address keeps the base
+    /// value, so `p-4` ⊕ `px-8` is `Padding { top: 16, right: 32, bottom:
+    /// 16, left: 32 }` (the CSS cascade), not the v0.7 zeroed replacement.
+    /// Every other slot is `Some`-replaces as before.
     pub fn overlay(&mut self, other: &ResolvedStyle) {
+        overlay_edge_slot!(&mut self.padding, &other.padding);
+        overlay_edge_slot!(&mut self.margin, &other.margin);
+        overlay_edge_slot!(&mut self.border_width, &other.border_width);
+        overlay_corner_slot!(&mut self.corner_radius, &other.corner_radius);
         macro_rules! rep {
             ($($f:ident),* $(,)?) => {
                 $(if other.$f.is_some() { self.$f = other.$f; })*
@@ -1383,15 +1474,11 @@ impl ResolvedStyle {
             background,
             background_gradient,
             content_color,
-            padding,
             border_color,
-            border_width,
-            corner_radius,
             dimensions,
             min_dimensions,
             max_dimensions,
             gap,
-            margin,
             layout,
             opacity,
             ring,
@@ -1400,7 +1487,7 @@ impl ResolvedStyle {
             pointer_events
         );
         if other.shadow.is_some() {
-            self.shadow = other.shadow.clone();
+            self.shadow.clone_from(&other.shadow);
         }
         for (p, val) in &other.text {
             if let Some(slot) = self.text.iter_mut().find(|(q, _)| q == p) {
@@ -1431,15 +1518,129 @@ impl ResolvedStyle {
             order,
             align_content,
             margin_auto,
-            gap_axes,
-            container_type
+            gap_axes
         );
         if !other.extras.shadow_rest.is_empty() {
-            self.extras.shadow_rest = other.extras.shadow_rest.clone();
+            self.extras
+                .shadow_rest
+                .clone_from(&other.extras.shadow_rest);
         }
         if !other.extras.inset_shadows.is_empty() {
-            self.extras.inset_shadows = other.extras.inset_shadows.clone();
+            self.extras
+                .inset_shadows
+                .clone_from(&other.extras.inset_shadows);
         }
+    }
+
+    /// Fill THIS style's unset edges (mask off) from `base` for the four
+    /// per-edge families — the layer-application primitive for cascades
+    /// that replace WHOLE properties (Masonry's `PropertyStack` entries,
+    /// Slint's state re-bindings).
+    ///
+    /// A `hover:px-8` layer materializes its top/bottom from the base
+    /// plan's padding instead of carrying the `0.0` placeholders, so the
+    /// applied entry computes what CSS computes (`p-4 hover:px-8` keeps
+    /// `padding-top: 16px`). Slots that are `None` here stay `None` (the
+    /// layer never addressed them; the lower cascade entry keeps serving
+    /// them), and a materialized value's mask ends full.
+    pub fn materialize_unset_edges_from(&mut self, base: &ResolvedStyle) {
+        materialize_edge_slot!(&mut self.padding, &base.padding);
+        materialize_edge_slot!(&mut self.margin, &base.margin);
+        materialize_edge_slot!(&mut self.border_width, &base.border_width);
+        materialize_corner_slot!(&mut self.corner_radius, &base.corner_radius);
+    }
+}
+
+impl StylePlan {
+    /// Compose `over` on top of `self` — the plan-level mirror of `cn()`.
+    ///
+    /// Where [`crate::cn`] merges class STRINGS before resolution (theme
+    /// aware, parse-based), `overlay` merges RESOLVED plans after it:
+    /// a component's cached plan can gain per-instance overrides at runtime
+    /// without re-resolving, re-parsing, or a theme reference.
+    ///
+    /// Semantics (v0.7 §1, every rule later-wins):
+    /// - `base`: [`ResolvedStyle::overlay`] — `Some` slots of `over.base`
+    ///   replace, unset slots keep the base value.
+    /// - `layers`: layers with the SAME [`VariantCondition`] merge per slot;
+    ///   conditions only `over` has are appended. The result stays in
+    ///   ascending [`VariantCondition::rank`] order (the cascade contract).
+    /// - `responsive`/`container`: per-bucket overlay, union of buckets.
+    /// - `dark`: per-slot overlay when both carry a dark bucket.
+    /// - `group`/`peer`: merged by id (label equal), new ids appended.
+    /// - `rules`: merged by [`crate::cond::Cond`] equality (the same conjunction is one
+    ///   rule), new conditions appended in `over` order.
+    /// - `breakpoints`: the override's table wins (it is theme-derived and
+    ///   the override is the later consumer; mixing plans from different
+    ///   theme versions is documented best-effort).
+    ///
+    /// The merged plan is idempotent (`p.overlay(o).overlay(o) == p.overlay(o)`)
+    /// and diff-integrated: `diff(&base.base, &merged.base)` reports exactly
+    /// the slots the override changed, so backends keep their repaint vs
+    /// relayout lanes when composing.
+    pub fn overlay(&self, over: &StylePlan) -> StylePlan {
+        let mut merged = self.clone();
+        merged.base.overlay(&over.base);
+
+        // Layers: merge by condition, keep ascending rank order (stable).
+        for layer in &over.layers {
+            if let Some(slot) = merged
+                .layers
+                .iter_mut()
+                .find(|l| l.condition == layer.condition)
+            {
+                slot.style.overlay(&layer.style);
+            } else {
+                merged.layers.push(layer.clone());
+            }
+        }
+        merged.layers.sort_by_key(|l| l.condition.rank());
+
+        // Responsive / container buckets: per-bucket overlay, union of keys.
+        for (bp, style) in &over.responsive {
+            match merged.responsive.get_mut(bp) {
+                Some(dst) => dst.overlay(style),
+                None => {
+                    merged.responsive.insert(*bp, style.clone());
+                }
+            }
+        }
+        for (bp, style) in &over.container {
+            match merged.container.get_mut(bp) {
+                Some(dst) => dst.overlay(style),
+                None => {
+                    merged.container.insert(*bp, style.clone());
+                }
+            }
+        }
+        // Dark: overlay when both plans carry a dark bucket.
+        match (&mut merged.dark, &over.dark) {
+            (Some(dst), Some(src)) => dst.overlay(src),
+            (None, Some(src)) => merged.dark = Some(src.clone()),
+            _ => {}
+        }
+        // group/peer: merge by id, preserve base-first order.
+        for (id, style) in &over.group {
+            match merged.group.iter_mut().find(|(gid, _)| gid == id) {
+                Some((_, dst)) => dst.overlay(style),
+                None => merged.group.push((id.clone(), style.clone())),
+            }
+        }
+        for (id, style) in &over.peer {
+            match merged.peer.iter_mut().find(|(pid, _)| pid == id) {
+                Some((_, dst)) => dst.overlay(style),
+                None => merged.peer.push((id.clone(), style.clone())),
+            }
+        }
+        // Rules: merge by condition equality (one rule per conjunction).
+        for rule in &over.rules {
+            match merged.rules.iter_mut().find(|r| r.when == rule.when) {
+                Some(dst) => dst.style.overlay(&rule.style),
+                None => merged.rules.push(rule.clone()),
+            }
+        }
+        merged.breakpoints = over.breakpoints;
+        merged
     }
 }
 
@@ -1558,7 +1759,6 @@ fn slot_from_index(idx: u16) -> Option<Slot> {
         Slot::Gradient(GradientPart::From),
         Slot::Gradient(GradientPart::Via),
         Slot::Gradient(GradientPart::To),
-        Slot::ContainerType,
     ];
     ALL.iter().copied().find(|s| s.index() == idx).or_else(|| {
         // Text slots: the enum's discriminants start after the variants above
@@ -1638,7 +1838,6 @@ fn slot_differs(slot: Slot, prev: &ResolvedStyle, next: &ResolvedStyle) -> bool 
             GradientPart::Via => gradient_edge_changed(prev, next, GradientEdgeSel::Via),
             GradientPart::To => gradient_edge_changed(prev, next, GradientEdgeSel::To),
         },
-        Slot::ContainerType => prev.extras.container_type != next.extras.container_type,
     }
 }
 
