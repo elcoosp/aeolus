@@ -1,4 +1,4 @@
-//! The oracle-fidelity headline (v0.7, plan `AEOLUS_V0.7.md` §7).
+//! The oracle-fidelity headline (v0.7, plan `AEOLUS_V0.9.md` §7).
 //!
 //! The shadcn v4 class tables shipped in `crates/aeolus-shadcn` ARE the
 //! project's oracle ("the tables are the oracle; fix the resolver" —
@@ -103,7 +103,7 @@ fn fidelity_ledger() {
     println!(
         "FIDELITY LEDGER: {total} warnings remain, all documented boundary ({boundary} boundary)"
     );
-    assert!(total == boundary);
+    assert_eq!(total, boundary);
 }
 
 #[test]
