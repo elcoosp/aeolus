@@ -7,6 +7,13 @@ fallback path). "❌" = not representable; reported via `LoweringReport`.
 
 ## Cascade model per framework
 
+> v0.8 §1 note: the per-edge families (`p-*`/`m-*`/`border-*`/`rounded-*`)
+> carry a set-mask in the IR; conditional layers no longer wipe the base's
+> masked-off edges on ANY backend (`p-4 hover:px-8` keeps
+> `padding-top: 16px` everywhere). Xilem/Slint materialize layers against
+> the base before lowering; Floem applies per-field gated by the mask;
+> Iced/egui merge the lowered payload edge-wise.
+
 | framework | cascade primitive | hover/focus/active/disabled | responsive | dark | container queries | group/peer | theme hot-swap | typography |
 |---|---|---|---|---|---|---|---|---|
 | **Masonry/Xilem** `9f504ae` (= upstream `dc49687` core, v0.6 §3.2) | 4-level: local props → `PropertyStack`(+`Selector`) → `DefaultProperties` → static default; relevance-gated cache | ✅ `Selector` flags (hover/active/disabled/focus) | ❌ no viewport signal (resize_observer only) | ❌ per-widget; host `set_default_properties` | ❌ | ❌ (has_hovered exists but not class-scoped) | ✅ `RenderRoot::set_default_properties` | ⚠️ parley `StyleSet` per widget; no FontSize/FontWeight properties |
@@ -38,10 +45,10 @@ fallback path). "❌" = not representable; reported via `LoweringReport`.
 | cursor / pointer-events | ❌ (reported) | ✅ `cursor` map / ✅ `pointer-events-none` | |
 | overflow (v0.6) | ✅ via `plan.resolve(&probe)` (no property) | ✅ `overflow_x`/`overflow_y` (v0.6 §2.1; auto → Scroll documented) | Masonry has no overflow property |
 | grid template/placement (v0.6) | ✅ via `plan.resolve(&probe)` | ✅ `grid_template_*` + `grid_column`/`grid_row` (v0.6 §2.5) | floem's full grid surface was unwired before v0.6 |
-| arbitrary grid templates + auto-rows/cols (v0.7) | ✅ via `plan.resolve(&probe)` | ✅ NATIVE — `Single`/`Repeat` track components + `grid_auto_rows/columns` (v0.7 §4) | templates are CANONICAL over the numeric counts; the `auto-rows-fr` keyword is `minmax(0, 1fr)` (corpus-pinned) |
-| justify-items (v0.7) | ❌ reported (no Masonry property) | ✅ NATIVE taffy `justify_items` (v0.7 §5) | `normal` → stretch (CSS) |
+| arbitrary grid templates + auto-rows/cols (v0.7) | ✅ via `plan.resolve(&probe)` | ✅ NATIVE — `Single`/`Repeat` track components + `grid_auto_rows/columns` (v0.9 §4) | templates are CANONICAL over the numeric counts; the `auto-rows-fr` keyword is `minmax(0, 1fr)` (corpus-pinned) |
+| justify-items (v0.7) | ❌ reported (no Masonry property) | ✅ NATIVE taffy `justify_items` (v0.9 §5) | `normal` → stretch (CSS) |
 | pseudo-element variants — `selection:`/`placeholder:`/`file:` (v0.7) | ✅ typed `Test::Pseudo` rules via `plan.resolve(&probe)` (probe default "no"; a wrapper with the surface answers) | ✅ typed rules via the reactive probe path (`FloemProbe`); no native `::selection` prop at the pin | v4's `selection:` ALSO emits a descendant rule (`& *::selection`) — outside the Probe model, a documented emitter normalization |
-| has-data/has-aria descendants (v0.7) | ✅ `Atom::Has(Test)` rules via probe | ✅ typed rules via the reactive probe path (v0.7 §2) | combinator forms (`has-[>svg]`) stay reported |
+| has-data/has-aria descendants (v0.7) | ✅ `Atom::Has(Test)` rules via probe | ✅ typed rules via the reactive probe path (v0.9 §2) | combinator forms (`has-[>svg]`) stay reported |
 | @container[/name] declaration (v0.7) | ✅ typed slot via `plan.resolve(&probe)` | ✅ typed slot; the reactive path answers `container_width` | the NAME is carried; name-matching ancestors is app-level (the probe answers for the app-supplied container) |
 | align-content (v0.6) | ✅ via `plan.resolve(&probe)` | ✅ `align_content` (v0.6 §2.4; baseline reported) | |
 | select-none/text (v0.6) | ❌ (reported) | ✅ the inherited `Selectable` prop (v0.6 §2.2) | Masonry: no selection property |
