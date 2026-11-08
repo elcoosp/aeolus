@@ -73,8 +73,7 @@ fn measured<T>(mut f: impl FnMut() -> T) -> (u64, u64, T) {
 }
 
 fn lock() -> MutexGuard<'static, ()> {
-    LOCK.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn theme() -> TailwindTheme {
@@ -140,7 +139,7 @@ fn cn_and_cold_resolve_are_counted() {
     let t = theme();
     let (cn_allocs, cn_bytes, merged) =
         measured(|| cn(&[BUTTON, "rounded-lg text-base bg-primary shadow-md"]));
-    assert_ne!(merged, "");
+    assert!(!merged.is_empty());
     // Measured 61 allocs / 46,218 B on rustc 1.99.1 (report 08).
     assert!(
         cn_allocs <= 128 && cn_bytes <= 65536,
