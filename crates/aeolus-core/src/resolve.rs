@@ -195,6 +195,9 @@ pub(crate) enum Applied {
         /// Position in percent.
         pct: f32,
     },
+    /// `@container[/name]` — establishes the containment context (v0.7 §3).
+    /// Last one in the bucket wins.
+    ContainerType(crate::plan::ContainerType),
 }
 
 /// The background-image shape classes (v0.6 §1.2).
@@ -319,7 +322,7 @@ impl<'t> Resolver<'t> {
     }
 
     /// Resolve pre-parsed tokens (used by the cache and by tests).
-    pub fn resolve_tokens(&self, tokens: Vec<ClassToken<'_>>) -> Resolution {
+    pub fn resolve_tokens<'a>(&self, tokens: Vec<ClassToken<'a>>) -> Resolution {
         let mut warnings = Vec::new();
         let mut base = Bucket::default();
         let mut layers: Vec<(VariantCondition, Bucket)> = Vec::new();
@@ -519,15 +522,15 @@ impl<'t> Resolver<'t> {
                 inner,
                 label,
             } => {
-                let test = Self::variant_test(inner)?;
-                let label = label.map(std::convert::Into::into);
+                let test = self.variant_test(inner)?;
+                let label = label.map(|l| l.into());
                 match parent {
                     ParentKind::Group => Atom::Group(test, label),
                     ParentKind::Peer => Atom::Peer(test, label),
                 }
             }
-            Variant::Not(inner) => Atom::Not(Self::variant_test(inner)?),
-            Variant::Has(inner) => return Self::has_atom(inner),
+            Variant::Not(inner) => Atom::Not(self.variant_test(inner)?),
+            Variant::Has(inner) => return self.has_atom(inner),
             Variant::Attr { kind, name, value } => {
                 let boxed = |s: &str| s.into();
                 match kind {
@@ -591,6 +594,10 @@ impl<'t> Resolver<'t> {
                 max: Some(self.theme.container_breakpoint_px(*b)),
                 name: None,
             },
+            // v0.7 §1: pseudo-element variants classify onto the typed
+            // `Test::Pseudo` condition (a sub-rendering, not a runtime
+            // state) — the rules path carries them.
+            NamedVariant::Pseudo(p) => Atom::On(crate::cond::Test::Pseudo(*p)),
             _ => unreachable!("named variant without state/media/breakpoint meaning"),
         })
     }
@@ -632,7 +639,7 @@ impl<'t> Resolver<'t> {
             } else {
                 self.theme.container_px(size)
             };
-            let named = named.map(std::convert::Into::into);
+            let named = named.map(|n| n.into());
             return match (px, dir) {
                 (Some(px), "min") => Ok(Atom::Container {
                     min: Some(px),
@@ -660,27 +667,38 @@ impl<'t> Resolver<'t> {
     }
 
     /// `has-checked` → descendant state; `has-[:focus]` (v0.3 §1.2) →
-    /// the same typed descendant state; other selector forms are reported.
-    fn has_atom(inner: &str) -> Result<Atom, &'static str> {
+    /// the same typed descendant state; `has-data-[…]]`/`has-aria-[…]]`/
+    /// `has-<structural>` → the typed descendant attribute/structural test
+    /// (v0.7 §2); other selector forms are reported.
+    fn has_atom(&self, inner: &str) -> Result<Atom, &'static str> {
         let sel = inner
             .strip_prefix('[')
             .and_then(|s| s.strip_suffix(']'))
             .unwrap_or(inner);
         if let Some(st) = state_name(sel.trim_start_matches(':')) {
-            return Ok(Atom::Has(st));
+            return Ok(Atom::Has(crate::cond::Test::State(st)));
         }
         if inner.starts_with('[') || inner.starts_with(':') || inner.starts_with('(') {
             return Err(
                 "has-[selector] has no typed equivalent in the Probe model — reported, never silent (v0.3 §1.3)",
             );
         }
-        Err("unknown has-<state> variant")
+        // `has-data-[slot=open]`, `has-aria-invalid`, `has-first`, ...
+        // — the inner is a bare attribute/structural/state form: parse it
+        // as a variant and map onto ONE typed descendant test (v0.7 §2).
+        match crate::parser::parse_variant(inner) {
+            Ok(v) => self
+                .variant_test(&v)
+                .map(Atom::Has)
+                .map_err(|_| "unknown has-<state> variant"),
+            Err(_) => Err("unknown has-<state> variant"),
+        }
     }
 
     /// The probe-testable `Test` of a simple variant (for `not-*` and
     /// `group-*`/`peer-*` inners). Arbitrary selectors classify to a
     /// single self test (v0.3 §1.2).
-    fn variant_test(v: &Variant<'_>) -> Result<crate::cond::Test, &'static str> {
+    fn variant_test(&self, v: &Variant<'_>) -> Result<crate::cond::Test, &'static str> {
         Ok(match v {
             Variant::Named(n) => {
                 if let Some(s) = n.state() {
@@ -774,7 +792,7 @@ pub(crate) fn state_name(name: &str) -> Option<State> {
     })
 }
 
-impl Resolver<'_> {
+impl<'t> Resolver<'t> {
     // ------------------------------------------------------------------
     // finalize: applied list -> ResolvedStyle (later entries win per slot)
     // ------------------------------------------------------------------
@@ -844,14 +862,6 @@ impl Resolver<'_> {
                 right: pad.right.unwrap_or(0.0),
                 bottom: pad.bottom.unwrap_or(0.0),
                 left: pad.left.unwrap_or(0.0),
-                // v0.8: the accumulated Options ARE the set-mask — an edge
-                // no class named stays a 0.0 placeholder with the mask off.
-                set: EdgeSet {
-                    top: pad.top.is_some(),
-                    right: pad.right.is_some(),
-                    bottom: pad.bottom.is_some(),
-                    left: pad.left.is_some(),
-                },
             });
         }
         if mar != Edges::NONE {
@@ -860,12 +870,6 @@ impl Resolver<'_> {
                 right: mar.right.unwrap_or(0.0),
                 bottom: mar.bottom.unwrap_or(0.0),
                 left: mar.left.unwrap_or(0.0),
-                set: EdgeSet {
-                    top: mar.top.is_some(),
-                    right: mar.right.is_some(),
-                    bottom: mar.bottom.is_some(),
-                    left: mar.left.is_some(),
-                },
             });
         }
         if bw != Edges::NONE {
@@ -874,12 +878,6 @@ impl Resolver<'_> {
                 right: bw.right.unwrap_or(0.0),
                 bottom: bw.bottom.unwrap_or(0.0),
                 left: bw.left.unwrap_or(0.0),
-                set: EdgeSet {
-                    top: bw.top.is_some(),
-                    right: bw.right.is_some(),
-                    bottom: bw.bottom.is_some(),
-                    left: bw.left.is_some(),
-                },
             });
         }
         if rad != Corners::NONE {
@@ -888,12 +886,6 @@ impl Resolver<'_> {
                 top_right: rad.tr.unwrap_or(0.0),
                 bottom_right: rad.br.unwrap_or(0.0),
                 bottom_left: rad.bl.unwrap_or(0.0),
-                set: CornerSet {
-                    top_left: rad.tl.is_some(),
-                    top_right: rad.tr.is_some(),
-                    bottom_right: rad.br.is_some(),
-                    bottom_left: rad.bl.is_some(),
-                },
             });
         }
 
@@ -970,6 +962,7 @@ impl Resolver<'_> {
         let mut inset_set = false;
         let mut gap_axes = GapAxes::default();
         let mut gap_axes_set = false;
+        let mut container_type: Option<ContainerType> = None;
 
         for a in &bucket.applied {
             match a {
@@ -1035,6 +1028,22 @@ impl Resolver<'_> {
                     if g.row_start.is_some() {
                         grid.row_start = g.row_start;
                     }
+                    // v0.7 §4: templates are the CANONICAL slot — later
+                    // template classes replace earlier ones (and an
+                    // arbitrary template after `grid-cols-N` wins, which is
+                    // why backends must prefer templates when present).
+                    if g.template_cols.is_some() {
+                        grid.template_cols = g.template_cols.clone();
+                    }
+                    if g.template_rows.is_some() {
+                        grid.template_rows = g.template_rows.clone();
+                    }
+                    if g.auto_rows.is_some() {
+                        grid.auto_rows = g.auto_rows.clone();
+                    }
+                    if g.auto_cols.is_some() {
+                        grid.auto_cols = g.auto_cols.clone();
+                    }
                     grid_set = true;
                 }
                 Applied::Inset {
@@ -1093,6 +1102,15 @@ impl Resolver<'_> {
         if gap_axes_set {
             style.extras.gap_axes = Some(gap_axes);
         }
+        // v0.7 §3: `@container[/name]` — last one in the bucket wins.
+        for a in &bucket.applied {
+            if let Applied::ContainerType(ct) = a {
+                container_type = Some(ct.clone());
+            }
+        }
+        if let Some(ct) = container_type {
+            style.extras.container_type = Some(ct);
+        }
 
         for a in &bucket.applied {
             if let Applied::Replace(slot, val) = a {
@@ -1106,10 +1124,10 @@ impl Resolver<'_> {
                 match (slot, val) {
                     (Slot::Background, PartialValue::Background(v)) => style.background = Some(*v),
                     (Slot::ContentColor, PartialValue::ContentColor(v)) => {
-                        style.content_color = Some(*v);
+                        style.content_color = Some(*v)
                     }
                     (Slot::BorderColor, PartialValue::BorderColor(v)) => {
-                        style.border_color = Some(*v);
+                        style.border_color = Some(*v)
                     }
                     (Slot::Gap, PartialValue::Gap(v)) => style.gap = Some(*v),
                     (Slot::Shadow, PartialValue::Shadow(v)) => style.shadow = Some(v.clone()),
@@ -1118,7 +1136,7 @@ impl Resolver<'_> {
                     (Slot::Outline, PartialValue::Outline(v)) => merge_outline(&mut style, v),
                     (Slot::Cursor, PartialValue::Cursor(v)) => style.cursor = Some(*v),
                     (Slot::PointerEvents, PartialValue::PointerEvents(v)) => {
-                        style.pointer_events = Some(*v);
+                        style.pointer_events = Some(*v)
                     }
                     _ => {}
                 }
@@ -1145,7 +1163,7 @@ impl Resolver<'_> {
                 if let Some(sh) = style.shadow.as_mut() {
                     sh.color = *c;
                 }
-                for layer in &mut style.extras.shadow_rest {
+                for layer in style.extras.shadow_rest.iter_mut() {
                     layer.color = *c;
                 }
             }
@@ -1166,10 +1184,10 @@ impl Resolver<'_> {
                 Applied::Animation(anim) => style.extras.animation = Some(anim.clone()),
                 Applied::ShadowPreset { first, rest } => {
                     style.shadow = Some(first.clone());
-                    style.extras.shadow_rest.clone_from(rest);
+                    style.extras.shadow_rest = rest.clone();
                 }
                 Applied::InsetShadows(sh) => {
-                    style.extras.inset_shadows.clone_from(sh);
+                    style.extras.inset_shadows = sh.clone();
                 }
                 _ => {}
             }
@@ -1228,14 +1246,16 @@ impl Resolver<'_> {
                     // the position for the composed default (v4 merges
                     // `from-20%` into `--tw-gradient-from-position`
                     // independently of the color var).
-                    let patch = |s: &mut Option<GradientStop>| match s {
-                        Some(stop) => stop.pos_pct = Some(*pct),
-                        None => {
-                            *s = Some(GradientStop {
-                                color: Color::TRANSPARENT,
-                                pos_pct: Some(*pct),
-                            });
-                        }
+                    let patch = |s: &mut Option<GradientStop>| {
+                        match s {
+                            Some(stop) => stop.pos_pct = Some(*pct),
+                            None => {
+                                *s = Some(GradientStop {
+                                    color: Color::TRANSPARENT,
+                                    pos_pct: Some(*pct),
+                                })
+                            }
+                        };
                     };
                     match edge {
                         GradientEdge::From => patch(&mut from),
@@ -1281,7 +1301,7 @@ impl Resolver<'_> {
     }
 }
 
-impl Resolver<'_> {
+impl<'t> Resolver<'t> {
     // ------------------------------------------------------------------
     // utility table
     // ------------------------------------------------------------------
@@ -1313,13 +1333,15 @@ impl Resolver<'_> {
                 "no" => els[1] == "underline",
                 "text" => els[1] == "wrap" || els[1] == "ellipsis" || els[1] == "clip",
                 "inset" => matches!(els[1], "x" | "y" | "shadow"),
-                "auto" => els[1] == "rows",
                 "scale" | "translate" | "skew" => els[1] == "x" || els[1] == "y",
                 "line" => els[1] == "clamp" || els[1] == "through",
                 "not" => els[1] == "italic",
                 "normal" => els[1] == "case",
                 "tabular" => els[1] == "nums",
                 "drop" => els[1] == "shadow",
+                // v0.7: two-word heads the shipped tables use.
+                "justify" => els[1] == "items",
+                "auto" => els[1] == "rows" || els[1] == "cols",
                 _ => false,
             };
         let head_n = if two_word { 2 } else { 1 };
@@ -1923,7 +1945,7 @@ impl Resolver<'_> {
                     }
                     let first = layers.remove(0);
                     let rest = layers;
-                    return Ok(shadow_applied(&first, &rest));
+                    return Ok(shadow_applied(first, rest));
                 }
                 if value == "none" {
                     return Ok(Applied::Replace(
@@ -1944,7 +1966,7 @@ impl Resolver<'_> {
                 if !layers.is_empty() {
                     let mut layers = layers;
                     let first = layers.remove(0);
-                    return Ok(shadow_applied(&first, &layers));
+                    return Ok(shadow_applied(first, layers));
                 }
                 // `shadow-{color}` recolors the preset in the same bucket.
                 if let Some(c) = self.theme.color(value) {
@@ -2010,7 +2032,7 @@ impl Resolver<'_> {
                         layout.flex_shrink = Some(1.0);
                         Ok(Applied::Replace(Slot::Layout, PartialValue::Layout(layout)))
                     }
-                    ["auto" | "initial" | "none"] => Err(unsupported(
+                    ["auto"] | ["initial"] | ["none"] => Err(unsupported(
                         "flex-auto/flex-initial/flex-none shorthand flex items are outside the v0.2 table",
                     )),
                     _ => Err(unknown(suggest(head, self.theme))),
@@ -2075,6 +2097,28 @@ impl Resolver<'_> {
                     Slot::Layout,
                     PartialValue::Layout(Layout {
                         justify_content: Some(v),
+                        ..Default::default()
+                    }),
+                ))
+            }
+            // v0.7 §5: `justify-items-*` — the per-item justify axis. CSS
+            // `normal` resolves to stretch for grid/flex containers (taffy's
+            // default), so it stores Stretch like content-normal does.
+            "justify-items" => {
+                let v = match value_elems {
+                    ["start"] => AlignItems::Start,
+                    ["center"] => AlignItems::Center,
+                    ["end"] => AlignItems::End,
+                    ["stretch"] | ["normal"] => AlignItems::Stretch,
+                    ["baseline"] | ["first", "baseline"] | ["last", "baseline"] => {
+                        AlignItems::Baseline
+                    }
+                    _ => return Err(unknown(suggest(head, self.theme))),
+                };
+                Ok(Applied::Replace(
+                    Slot::Layout,
+                    PartialValue::Layout(Layout {
+                        justify_items: Some(v),
                         ..Default::default()
                     }),
                 ))
@@ -2185,16 +2229,19 @@ impl Resolver<'_> {
                 Ok(Applied::AlignContent(v))
             }
             "grid" => {
-                // grid-cols-N / grid-rows-N (arbitrary templates reported).
+                // grid-cols-N / grid-rows-N (v0.6 counts) plus the v0.7 §4
+                // arbitrary track templates (`grid-cols-[0_1fr]`,
+                // `grid-cols-[repeat(3,minmax(0,1fr))]`, keywords).
                 if value == "cols" || value.starts_with("cols-") {
                     let rest = value.strip_prefix("cols-").unwrap_or("");
-                    let n: u16 = rest.parse().map_err(|_| {
-                        if t.arbitrary.is_some() {
-                            unsupported("arbitrary grid templates (grid-cols-[…]) are outside the typed IR — reported, never silent")
-                        } else {
-                            unknown(None)
-                        }
-                    })?;
+                    if let Some(arb) = t.arbitrary {
+                        let tracks = grid_tracks(arb.value).map_err(unsupported)?;
+                        return Ok(Applied::Grid(Grid {
+                            template_cols: Some(tracks),
+                            ..Default::default()
+                        }));
+                    }
+                    let n: u16 = rest.parse().map_err(|_| unknown(None))?;
                     return Ok(Applied::Grid(Grid {
                         cols: Some(n),
                         ..Default::default()
@@ -2202,13 +2249,14 @@ impl Resolver<'_> {
                 }
                 if value == "rows" || value.starts_with("rows-") {
                     let rest = value.strip_prefix("rows-").unwrap_or("");
-                    let n: u16 = rest.parse().map_err(|_| {
-                        if t.arbitrary.is_some() {
-                            unsupported("arbitrary grid templates (grid-rows-[…]) are outside the typed IR — reported, never silent")
-                        } else {
-                            unknown(None)
-                        }
-                    })?;
+                    if let Some(arb) = t.arbitrary {
+                        let tracks = grid_tracks(arb.value).map_err(unsupported)?;
+                        return Ok(Applied::Grid(Grid {
+                            template_rows: Some(tracks),
+                            ..Default::default()
+                        }));
+                    }
+                    let n: u16 = rest.parse().map_err(|_| unknown(None))?;
                     return Ok(Applied::Grid(Grid {
                         rows: Some(n),
                         ..Default::default()
@@ -2258,10 +2306,41 @@ impl Resolver<'_> {
                 }
                 Err(unknown(suggest(head, self.theme)))
             }
+            // v0.7 §4: `auto-rows-*` / `auto-cols-*` — the implicit-track
+            // sizing (keywords: auto/min/max/fr, or an arbitrary template).
             "auto-rows" if els.len() >= 2 && els[0] == "auto" && els[1] == "rows" => {
-                Err(unsupported(
-                    "auto-rows-min/max/fr tracks are outside the typed IR — reported, never silent",
-                ))
+                let tracks = auto_track(value, t).map_err(unsupported)?;
+                Ok(Applied::Grid(Grid {
+                    auto_rows: Some(tracks),
+                    ..Default::default()
+                }))
+            }
+            "auto-cols" if els.len() >= 2 && els[0] == "auto" && els[1] == "cols" => {
+                let tracks = auto_track(value, t).map_err(unsupported)?;
+                Ok(Applied::Grid(Grid {
+                    auto_cols: Some(tracks),
+                    ..Default::default()
+                }))
+            }
+            // v0.7 §3: `@container[/name]` — establish the containment
+            // context. The name rides the `/modifier` slot (the parser
+            // splits the top-level slash), so head is exactly `@container`.
+            "@container" if value_elems.is_empty() && t.arbitrary.is_none() => {
+                let name = match t.modifier {
+                    None => None,
+                    Some(n)
+                        if !n.is_empty()
+                            && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') =>
+                    {
+                        Some(n.into())
+                    }
+                    Some(_) => {
+                        return Err(unsupported(
+                            "@container/<name> expects a plain identifier name",
+                        ));
+                    }
+                };
+                Ok(Applied::ContainerType(crate::plan::ContainerType { name }))
             }
             "aspect" => {
                 let v = match value {
@@ -2813,6 +2892,7 @@ fn spacing_value<'a>(
 /// Sizing-family value resolution (`w-*`, `basis-*`, ...). Fractions come
 /// from the raw modifier (F1), viewport sizes are typed (v0.2), and the
 /// container scale resolves `max-w-xl` & friends from `--container-*`.
+#[allow(clippy::too_many_arguments)]
 fn size_value<'a>(
     t: &ClassToken<'a>,
     value: &str,
@@ -2962,6 +3042,158 @@ fn border_style_of(value: &str) -> Option<BorderStyle> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// v0.7 §4 — arbitrary grid track templates
+// ---------------------------------------------------------------------------
+
+/// The upper bound on tracks in one arbitrary template (bounded parsing:
+/// the fuzz contract — no unbounded work from a hostile string).
+const MAX_TRACKS: usize = 16;
+/// The upper bound on a `repeat(N, …)` count.
+const MAX_REPEAT: u16 = 64;
+
+/// Parse an arbitrary grid template value (`0_1fr`, `auto_auto`,
+/// `repeat(3,minmax(0,1fr))`) into track components. Underscores decode to
+/// spaces (v4's arbitrary-value convention). A malformed track reports with
+/// a precise reason.
+fn grid_tracks(raw: &str) -> Result<Vec<TrackComponent>, &'static str> {
+    let decoded = raw.replace('_', " ");
+    let trimmed = decoded.trim();
+    // repeat(N, <track>) — a single inner track (multi-track and
+    // auto-fill/auto-fit stay reported).
+    if let Some(inner) = trimmed
+        .strip_prefix("repeat(")
+        .and_then(|r| r.strip_suffix(')'))
+    {
+        let (count, track) = inner
+            .split_once(',')
+            .ok_or("repeat() needs a count and a track (repeat(3,minmax(0,1fr)))")?;
+        let count: u16 = count
+            .trim()
+            .parse()
+            .map_err(|_| "repeat() count is not a number (auto-fill/auto-fit are not typed)")?;
+        if count == 0 || count > MAX_REPEAT {
+            return Err("repeat() count is outside 1..=64");
+        }
+        let track = parse_track(track.trim())?;
+        return Ok(vec![TrackComponent::Repeat { count, track }]);
+    }
+    let mut out = Vec::new();
+    for part in trimmed.split_ascii_whitespace() {
+        if out.len() >= MAX_TRACKS {
+            return Err("arbitrary grid template exceeds 16 tracks");
+        }
+        out.push(TrackComponent::Track(parse_track(part)?));
+    }
+    if out.is_empty() {
+        return Err("empty grid template");
+    }
+    Ok(out)
+}
+
+/// Parse one grid track: `1fr` / `0` / `12px` / `50%` / `auto` /
+/// `min-content` / `max-content` / `minmax(a,b)`. A plain `1fr` is
+/// `minmax(auto, 1fr)` (CSS/taffy semantics — [`GridTrack::fr`]).
+fn parse_track(part: &str) -> Result<GridTrack, &'static str> {
+    if let Some(inner) = part
+        .strip_prefix("minmax(")
+        .and_then(|r| r.strip_suffix(')'))
+    {
+        let (min, max) = inner
+            .split_once(',')
+            .ok_or("minmax() needs two sizing functions")?;
+        return Ok(GridTrack {
+            min: parse_sizing(min.trim())?,
+            max: parse_sizing(max.trim())?,
+        });
+    }
+    match part {
+        "auto" => return Ok(GridTrack::auto()),
+        "min-content" => return Ok(GridTrack::keyword(TrackSizing::MinContent)),
+        "max-content" => return Ok(GridTrack::keyword(TrackSizing::MaxContent)),
+        _ => {}
+    }
+    if let Some(n) = part.strip_suffix("fr") {
+        let v: f32 = n.parse().map_err(|_| "not a parsable grid track")?;
+        if v < 0.0 || !v.is_finite() {
+            return Err("negative or non-finite fr track");
+        }
+        return Ok(GridTrack::fr(v));
+    }
+    if let Some(n) = part.strip_suffix('%') {
+        let v: f32 = n.parse().map_err(|_| "not a parsable grid track")?;
+        if v < 0.0 || !v.is_finite() {
+            return Err("negative or non-finite percent track");
+        }
+        return Ok(GridTrack {
+            min: TrackSizing::Percent(v),
+            max: TrackSizing::Percent(v),
+        });
+    }
+    // Bare numbers are CSS lengths (`0` is legal; unitless non-zero is not).
+    let v: f32 = part.parse().map_err(|_| "not a parsable grid track")?;
+    if v != 0.0 {
+        return Err("unitless grid track lengths must be 0 (use px/rem)");
+    }
+    Ok(GridTrack::px(0.0))
+}
+
+/// One minmax side. `fr` is NOT valid as a min (CSS rejects it; the
+/// resolver reports the track rather than silently clamping).
+fn parse_sizing(part: &str) -> Result<TrackSizing, &'static str> {
+    match part {
+        "auto" => return Ok(TrackSizing::Auto),
+        "min-content" => return Ok(TrackSizing::MinContent),
+        "max-content" => return Ok(TrackSizing::MaxContent),
+        _ => {}
+    }
+    if let Some(n) = part.strip_suffix("fr") {
+        let v: f32 = n.parse().map_err(|_| "not a parsable minmax() side")?;
+        if v < 0.0 || !v.is_finite() {
+            return Err("negative or non-finite fr");
+        }
+        return Ok(TrackSizing::Fr(v));
+    }
+    if let Some(n) = part.strip_suffix('%') {
+        let v: f32 = n.parse().map_err(|_| "not a parsable minmax() side")?;
+        return Ok(TrackSizing::Percent(v));
+    }
+    let v: f32 = part
+        .strip_suffix("px")
+        .unwrap_or(part)
+        .parse()
+        .map_err(|_| "not a parsable minmax() side")?;
+    Ok(TrackSizing::Px(v))
+}
+
+/// `auto-rows-*` / `auto-cols-*`: keyword forms (auto/min/max/fr) plus the
+/// arbitrary template. `min` → min-content, `max` → max-content, `fr` →
+/// 1fr, `auto` → auto.
+fn auto_track(value: &str, t: &ClassToken<'_>) -> Result<Vec<TrackComponent>, &'static str> {
+    if let Some(arb) = t.arbitrary {
+        return grid_tracks(arb.value);
+    }
+    let track = match value {
+        "auto" => GridTrack::auto(),
+        "min" => GridTrack::keyword(TrackSizing::MinContent),
+        "max" => GridTrack::keyword(TrackSizing::MaxContent),
+        // The v4 KEYWORD form is minmax(0, 1fr) — the blowout guard — NOT
+        // the CSS `1fr` shorthand (minmax(auto, 1fr)); pinned against the
+        // real 4.1.17 output in the golden corpus.
+        "fr" => GridTrack {
+            min: TrackSizing::Px(0.0),
+            max: TrackSizing::Fr(1.0),
+        },
+        other => {
+            let _ = other;
+            return Err(
+                "auto-rows/auto-cols keyword must be auto|min|max|fr (arbitrary templates use [...])",
+            );
+        }
+    };
+    Ok(vec![TrackComponent::Track(track)])
+}
+
 /// The v4.1.17 `bg-linear-*` corner directions, as CSS angles (0 = to
 /// top, clockwise). Captured verbatim from the real compiler
 /// (`tools/capture_gradients.mjs`): `to right` = 90, `to bottom right`
@@ -3050,11 +3282,11 @@ fn gradient_shape_of(t: &ClassToken<'_>, value: &str) -> Result<Option<Applied>,
 }
 
 fn shadow_applied(
-    first: &crate::theme::BoxShadowSpec,
-    rest: &[crate::theme::BoxShadowSpec],
+    first: crate::theme::BoxShadowSpec,
+    rest: Vec<crate::theme::BoxShadowSpec>,
 ) -> Applied {
     Applied::ShadowPreset {
-        first: to_shadow(first),
+        first: to_shadow(&first),
         rest: rest.iter().map(to_shadow).collect(),
     }
 }
@@ -3324,10 +3556,9 @@ fn border_width_family(name: &str, negative: bool) -> Option<Applied> {
     // edges are `None` (not `Some(0.0)`) so per-side classes COMPOSE like
     // the padding/margin families do. v0.2 adds the logical `s`/`e` sides
     // (LTR: left/right; flipped under RTL at lowering time).
-    use Applied::BorderWidth as B;
-
     let sign = if negative { -1.0 } else { 1.0 };
     let w = |n: f32| Some(n * sign);
+    use Applied::BorderWidth as B;
     let (edge, width) = match name.split_once('-') {
         Some((e, n)) => (Some(e), n.parse::<f32>().ok()),
         None => {
@@ -3445,6 +3676,9 @@ fn merge_layout(acc: &mut Layout, next: &Layout) {
     if next.justify_content.is_some() {
         acc.justify_content = next.justify_content;
     }
+    if next.justify_items.is_some() {
+        acc.justify_items = next.justify_items;
+    }
     if next.flex_wrap.is_some() {
         acc.flex_wrap = next.flex_wrap;
     }
@@ -3558,19 +3792,19 @@ fn v4_default_shadow(name: &str) -> crate::theme::BoxShadowSpec {
 fn is_size_name(elems: &[&str]) -> bool {
     matches!(
         elems,
-        ["xs"
-            | "sm"
-            | "base"
-            | "lg"
-            | "xl"
-            | "2xl"
-            | "3xl"
-            | "4xl"
-            | "5xl"
-            | "6xl"
-            | "7xl"
-            | "8xl"
-            | "9xl"]
+        ["xs"]
+            | ["sm"]
+            | ["base"]
+            | ["lg"]
+            | ["xl"]
+            | ["2xl"]
+            | ["3xl"]
+            | ["4xl"]
+            | ["5xl"]
+            | ["6xl"]
+            | ["7xl"]
+            | ["8xl"]
+            | ["9xl"]
     )
 }
 
