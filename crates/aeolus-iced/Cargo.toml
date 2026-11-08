@@ -21,3 +21,7 @@ iced_core = "0.14"
 # IS `iced_widget::container::Style`.
 iced_widget = { version = "0.14", default-features = false }
 tracing = "0.1"
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true
