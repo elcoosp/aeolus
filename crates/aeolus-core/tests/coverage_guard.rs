@@ -424,7 +424,8 @@ fn paren_shorthand_arbitrary() {
             top: 8.0,
             right: 8.0,
             bottom: 8.0,
-            left: 8.0
+            left: 8.0,
+            set: EdgeSet::ALL
         })
     );
 }
