@@ -21,6 +21,8 @@
 //! * [`ClassToken::body`] keeps the raw utility head+value slice so the
 //!   resolver can slice instead of `join("-")` (hot path, plan §3.4.1).
 
+use core::fmt::Write as _;
+
 /// The sentinel capacity of [`ClassToken::variants`]. More than 8 stacked
 /// variants on one class is pathological; such a class parses as
 /// `Unparseable` (a per-class warning, never a panic).
@@ -60,7 +62,7 @@ pub struct ClassToken<'a> {
     pub raw: &'a str,
 }
 
-impl<'a> ClassToken<'a> {
+impl ClassToken<'_> {
     /// The opacity percent for color utilities, per v4 semantics:
     /// * `bg-primary/50` → `50.0` (bare number = percent);
     /// * `bg-primary/[0.37]` → `37.0` (bracketed decimal = raw alpha);
@@ -149,7 +151,7 @@ fn write_variant(s: &mut String, v: &Variant<'_>) {
             });
             s.push_str(name);
             if let Some(v) = value {
-                s.push_str(&format!("={v}"));
+                let _ = write!(s, "={v}");
             }
         }
         Variant::Structural(st) => s.push_str(st.canonical()),
@@ -247,6 +249,7 @@ impl<T: Clone + std::fmt::Debug, const N: usize> std::fmt::Debug for Inline<T, N
 }
 
 /// Stack-inlined `&'a str` segments (`["rounded", "t", "lg"]`).
+#[derive(Clone)]
 pub struct Segments<'a, const N: usize> {
     items: [&'a str; N],
     len: u8,
@@ -298,23 +301,17 @@ impl<'a, const N: usize> std::ops::Deref for Segments<'a, N> {
     }
 }
 
-impl<'a, const N: usize> Clone for Segments<'a, N> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
+impl<const N: usize> Copy for Segments<'_, N> {}
 
-impl<'a, const N: usize> Copy for Segments<'a, N> {}
-
-impl<'a, const N: usize> PartialEq for Segments<'a, N> {
+impl<const N: usize> PartialEq for Segments<'_, N> {
     fn eq(&self, other: &Self) -> bool {
         self.as_slice() == other.as_slice()
     }
 }
 
-impl<'a, const N: usize> Eq for Segments<'a, N> {}
+impl<const N: usize> Eq for Segments<'_, N> {}
 
-impl<'a, const N: usize> std::fmt::Debug for Segments<'a, N> {
+impl<const N: usize> std::fmt::Debug for Segments<'_, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.as_slice().iter()).finish()
     }
@@ -433,7 +430,7 @@ pub enum Structural {
 }
 
 /// The element's own pseudo-element renderings that v4 names as plain
-/// variants (v0.7 §1, plan `AEOLUS_V0.7.md`): `selection:` → `&::selection`,
+/// variants (v0.9 §1, plan `AEOLUS_V0.9.md`): `selection:` → `&::selection`,
 /// `placeholder:` → `&::placeholder`, `file:` → `&::file-selector-button`.
 ///
 /// These are NOT runtime states (there is no "selected" flag on a widget the
@@ -532,7 +529,7 @@ pub enum NamedVariant<'a> {
     UserInvalid,
     /// `placeholder-shown`.
     PlaceholderShown,
-    /// `selection:` — the element's own `::selection` rendering (v0.7 §1).
+    /// `selection:` — the element's own `::selection` rendering (v0.9 §1).
     Pseudo(PseudoElement),
     /// `autofill`.
     Autofill,
@@ -885,7 +882,10 @@ mod tests {
         assert_eq!(PseudoElement::FileSelectorButton.name(), "file");
         assert_eq!(PseudoElement::Selection.css(), "::selection");
         assert_eq!(PseudoElement::Placeholder.css(), "::placeholder");
-        assert_eq!(PseudoElement::FileSelectorButton.css(), "::file-selector-button");
+        assert_eq!(
+            PseudoElement::FileSelectorButton.css(),
+            "::file-selector-button"
+        );
     }
 
     /// Structural canonical names feed merge keys; the Nth forms canonicalize
