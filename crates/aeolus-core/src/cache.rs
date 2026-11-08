@@ -73,9 +73,9 @@ impl Hasher for FastHasher {
         // Chunked 8-bytes-per-round folding. NOTE: the chunking assumes the
         // whole key arrives in ONE write — our cache/interner always call
         // `write` once per key (documented contract).
-        // `as_chunks` would read cleaner but is newer std than our MSRV;
-        // chunks_exact(8) is the MSRV-compatible form (lint excepted in
-        // the workspace lints with this rationale).
+        // `as_chunks` would please clippy but is newer std than our MSRV;
+        // chunks_exact(8) is the zero-dep-compatible form.
+        #[allow(clippy::chunks_exact_to_as_chunks)]
         let mut chunks = bytes.chunks_exact(8);
         for c in &mut chunks {
             self.mix(u64::from_le_bytes(c.try_into().unwrap()));
@@ -155,14 +155,12 @@ fn l1_insert(classes: &str, ver: u64, plan: Arc<CachedPlan>) {
 /// logically consistent here (plain maps of already-resolved values, no
 /// cross-lock invariants), so recovering the inner value is safe and the
 /// caller never panics.
-fn read_map<V>(lock: &RwLock<V>) -> std::sync::RwLockReadGuard<'_, V> {
-    lock.read()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+fn read_map<'a, V>(lock: &'a RwLock<V>) -> std::sync::RwLockReadGuard<'a, V> {
+    lock.read().unwrap_or_else(|e| e.into_inner())
 }
 
-fn write_map<V>(lock: &RwLock<V>) -> std::sync::RwLockWriteGuard<'_, V> {
-    lock.write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+fn write_map<'a, V>(lock: &'a RwLock<V>) -> std::sync::RwLockWriteGuard<'a, V> {
+    lock.write().unwrap_or_else(|e| e.into_inner())
 }
 
 /// A thread-safe resolver cache keyed by **(class string, theme_version)**,
@@ -278,10 +276,7 @@ impl PlanCache {
         let ver = theme.version();
         // Static strings live for the program's life: a plain (ptr, ver)
         // map per cache in front of the dynamic path.
-        let mut stat = self
-            .static_map
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut stat = self.static_map.write().unwrap_or_else(|e| e.into_inner());
         if let Some((v, p)) = stat.get(&key)
             && *v == ver
         {
