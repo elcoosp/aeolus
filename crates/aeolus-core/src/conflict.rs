@@ -47,11 +47,7 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         // the gradient shapes (`bg-linear-*`, `bg-radial`, `bg-conic*`,
         // `bg-none`) plus the deprecated `bg-gradient-to-*` alias.
         ["bg"] => "bg-color",
-        ["bg", "linear", ..]
-        | ["bg", "radial", ..]
-        | ["bg", "conic", ..]
-        | ["bg", "none"]
-        | ["bg", "gradient", ..] => "bg-image",
+        ["bg", "linear" | "radial" | "conic" | "gradient", ..] | ["bg", "none"] => "bg-image",
         ["bg", ..] => "bg-color",
         // Gradient stop edges: color and position are different custom
         // properties in v4 (`--tw-gradient-from` vs
@@ -67,16 +63,16 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["px", ..] => "padding-x",
         ["py", ..] => "padding-y",
         ["pt", ..] => "padding-top",
-        ["pr", ..] | ["pe", ..] => "padding-right",
+        ["pr" | "pe", ..] => "padding-right",
         ["pb", ..] => "padding-bottom",
-        ["pl", ..] | ["ps", ..] => "padding-left",
+        ["pl" | "ps", ..] => "padding-left",
         ["m"] | ["m", ..] => "margin",
         ["mx", ..] => "margin-x",
         ["my", ..] => "margin-y",
         ["mt", ..] => "margin-top",
-        ["mr", ..] | ["me", ..] => "margin-right",
+        ["mr" | "me", ..] => "margin-right",
         ["mb", ..] => "margin-bottom",
-        ["ml", ..] | ["ms", ..] => "margin-left",
+        ["ml" | "ms", ..] => "margin-left",
         ["size", ..] => "size",
         ["w", ..] => "width",
         ["min-w", ..] | ["min", "w", ..] => "min-width",
@@ -176,7 +172,7 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["cursor", ..] => "cursor",
         ["pointer-events", ..] | ["pointer", "events", ..] => "pointer-events",
         ["select", ..] => "user-select",
-        ["hidden"] | ["block"] | ["inline-flex"] | ["inline"] | ["grid"] => "display",
+        ["hidden" | "block" | "inline-flex" | "inline" | "grid"] => "display",
         ["display"] => "display",
         // Positioning families (tw_merge: position/inset/top/right/bottom/left/
         // z-index/overflow/overscroll-behavior).
@@ -209,7 +205,7 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["row", "span", ..] => "row-span",
         ["row", "start", ..] => "row-start",
         ["row", "end", ..] => "row-end",
-        // v0.7 §4: the grid TEMPLATE families are conflict groups — the
+        // v0.9 §4: the grid TEMPLATE families are conflict groups — the
         // numeric and arbitrary forms set the same CSS property
         // (`grid-template-columns`), so the later one evicts the earlier
         // across the numeric/arbitrary boundary. The parser strips the
@@ -219,7 +215,7 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["grid", "rows", ..] => "grid-template-rows",
         ["auto", "rows", ..] => "grid-auto-rows",
         ["auto", "cols", ..] => "grid-auto-columns",
-        // v0.7 §3: `@container[/name]` — every form establishes the same
+        // v0.9 §3: `@container[/name]` — every form establishes the same
         // `container-type` declaration; the later one wins.
         ["@container", ..] => "container-type",
         ["visible" | "invisible"] => "visibility",
@@ -259,7 +255,7 @@ const SHADOW_PRESETS: &[&str] = &["2xs", "xs", "sm", "md", "lg", "xl", "2xl", "i
 /// bare `ring` (default width). Colors never parse as numbers and arbitrary
 /// colors carry `#`/`oklch(`/names.
 fn is_width_value(e: &str, arbitrary: Option<&crate::ast::Arbitrary<'_>>) -> bool {
-    let v = arbitrary.map(|a| a.value).unwrap_or(e);
+    let v = arbitrary.map_or(e, |a| a.value);
     v.parse::<f32>().is_ok() || v.ends_with("px") || v.ends_with("rem") || v.ends_with("em")
 }
 
@@ -637,7 +633,7 @@ mod tests {
         assert_eq!(cn(&["col-span-2", "row-span-2"]), "col-span-2 row-span-2");
     }
 
-    /// v0.7 §4: the grid TEMPLATE families are conflict groups — the later
+    /// v0.9 §4: the grid TEMPLATE families are conflict groups — the later
     /// template (numeric or arbitrary) evicts the earlier one, across the
     /// numeric/arbitrary boundary (both set the same CSS property).
     #[test]
@@ -660,7 +656,7 @@ mod tests {
             "grid-cols-3 grid-rows-2"
         );
         assert_eq!(cn(&["grid-cols-3", "col-span-2"]), "grid-cols-3 col-span-2");
-        // v0.7 §3: named container declarations evict each other.
+        // v0.9 §3: named container declarations evict each other.
         assert_eq!(cn(&["@container/a", "@container/b"]), "@container/b");
     }
 
