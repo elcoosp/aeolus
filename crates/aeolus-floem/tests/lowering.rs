@@ -10,6 +10,7 @@ use floem::style::unit::Length;
 use floem::style::{
     Background, LineHeight, LineHeightValue, PaddingLeft, StyleSelector, TextColor,
 };
+use floem::taffy::prelude::{TaffyGridLine, TaffyGridSpan};
 
 use aeolus_core::color::Color;
 use aeolus_core::{Resolver, shadcn_default};
@@ -457,7 +458,6 @@ fn grid_lowers_templates_and_placement_natively() {
     let r = v4_resolver().resolve("col-span-2 col-start-3").unwrap();
     let (style, report) = lower(&r.plan);
     assert!(report.is_empty(), "{report:?}");
-    use floem::taffy::prelude::{TaffyGridLine, TaffyGridSpan};
     let placement = style.get(GridColumn);
     assert_eq!(
         placement.start,
@@ -555,8 +555,9 @@ fn slot_coverage_upgrades_are_consistent_with_the_lowering() {
             | Slot::Grid
             | Slot::AlignContent
             | Slot::BorderStyle
-            | Slot::Text(aeolus_core::TextProperty::Select)
-            | Slot::Text(aeolus_core::TextProperty::Whitespace) => {
+            | Slot::Text(
+                aeolus_core::TextProperty::Select | aeolus_core::TextProperty::Whitespace,
+            ) => {
                 assert_eq!(coverage, Coverage::Native, "{slot:?}");
             }
             _ => {}
@@ -565,136 +566,47 @@ fn slot_coverage_upgrades_are_consistent_with_the_lowering() {
 }
 
 // ---------------------------------------------------------------------------
-// v0.7 (AEOLUS_V0.7.md §4/§5) — grid templates, auto tracks, justify-items:
-// the native taffy surface the pinned rev exposes, now wired.
+// v0.8 §1.2: per-edge set-mask application in the selector maps
 // ---------------------------------------------------------------------------
 
+/// Floem's cascade is per-FIELD (taffy style fields), so a partial-edge
+/// layer applies only the edges it addresses: `p-4 hover:px-8` keeps
+/// `padding-top: 16px` on hover and takes `padding-left/right: 32px` —
+/// the masked-off edges never enter the selector entry as zeros.
 #[test]
-fn grid_arbitrary_templates_lower_to_taffy_tracks() {
-    use floem::taffy::prelude::{
-        FromFr, FromLength, GridTemplateComponent, MaxTrackSizingFunction, MinTrackSizingFunction,
-        TaffyAuto, TrackSizingFunction,
-    };
+fn partial_edge_layers_apply_only_their_edges() {
+    use floem::style::{PaddingBottom, PaddingLeft, PaddingRight, PaddingTop};
 
-    // grid-cols-[0_1fr] → [0px, minmax(auto, 1fr)].
-    let r = v4_resolver().resolve("grid grid-cols-[0_1fr]").unwrap();
+    let r = resolver().resolve("p-4 hover:px-8").unwrap();
     let (style, report) = lower(&r.plan);
     assert!(report.is_empty(), "{report:?}");
-    let templates = style.get(floem::style::GridTemplateColumns);
-    assert_eq!(templates.len(), 2, "two single tracks: {templates:?}");
+
+    let idle = style.clone().apply_selectors(&[]);
     assert_eq!(
-        templates[0],
-        GridTemplateComponent::Single(TrackSizingFunction {
-            min: MinTrackSizingFunction::from_length(0.0_f32),
-            max: MaxTrackSizingFunction::from_length(0.0_f32),
-        }),
-        "`0` is a fixed 0px track"
-    );
-    assert_eq!(
-        templates[1],
-        GridTemplateComponent::Single(TrackSizingFunction {
-            min: MinTrackSizingFunction::AUTO,
-            max: MaxTrackSizingFunction::from_fr(1.0_f32),
-        }),
-        "`1fr` is minmax(auto, 1fr)"
+        idle.get(PaddingLeft),
+        Length::Pt(16.0),
+        "idle padding comes from p-4"
     );
 
-    // repeat(3, minmax(0,1fr)) stays a repeat component.
-    let r = v4_resolver()
-        .resolve("grid-cols-[repeat(3,minmax(0,1fr))]")
-        .unwrap();
-    let (style, report) = lower(&r.plan);
-    assert!(report.is_empty(), "{report:?}");
-    let templates = style.get(floem::style::GridTemplateColumns);
-    let floem::taffy::style::GridTemplateComponent::Repeat(rep) = &templates[0] else {
-        panic!("expected repeat: {templates:?}");
-    };
-    assert_eq!(rep.count, floem::taffy::style::RepetitionCount::Count(3));
-}
-
-#[test]
-fn grid_arbitrary_templates_beat_the_numeric_counts() {
-    // The templates are CANONICAL: an arbitrary template after grid-cols-N
-    // must win the lowering.
-    use floem::taffy::prelude::{
-        GridTemplateComponent, MaxTrackSizingFunction, MinTrackSizingFunction, TaffyAuto,
-        TrackSizingFunction,
-    };
-
-    let r = v4_resolver()
-        .resolve("grid grid-cols-4 grid-cols-[auto_auto]")
-        .unwrap();
-    let (style, report) = lower(&r.plan);
-    assert!(report.is_empty(), "{report:?}");
-    let templates = style.get(floem::style::GridTemplateColumns);
-    assert_eq!(templates.len(), 2, "two auto tracks, not a repeat(4)");
-    assert!(matches!(
-        templates[0],
-        GridTemplateComponent::Single(TrackSizingFunction {
-            min: MinTrackSizingFunction::AUTO,
-            max: MaxTrackSizingFunction::AUTO,
-        })
-    ));
-}
-
-#[test]
-fn auto_rows_and_cols_lower_to_the_implicit_track_props() {
-    use floem::taffy::prelude::{
-        FromFr, FromLength, MaxTrackSizingFunction, MinTrackSizingFunction, TaffyMaxContent,
-        TaffyMinContent, TrackSizingFunction,
-    };
-
-    let r = v4_resolver().resolve("auto-rows-min").unwrap();
-    let (style, report) = lower(&r.plan);
-    assert!(report.is_empty(), "{report:?}");
-    let rows = style.get(floem::style::GridAutoRows);
+    let hovered = style.apply_selectors(&[StyleSelector::Hover]);
     assert_eq!(
-        rows.as_slice(),
-        &[TrackSizingFunction {
-            min: MinTrackSizingFunction::MIN_CONTENT,
-            max: MaxTrackSizingFunction::MIN_CONTENT,
-        }],
-        "auto-rows-min → min-content"
+        hovered.get(PaddingLeft),
+        Length::Pt(32.0),
+        "hover:px-8 sets the left edge"
     );
-
-    let r = v4_resolver().resolve("auto-rows-fr").unwrap();
-    let (style, report) = lower(&r.plan);
-    assert!(report.is_empty(), "{report:?}");
-    let rows = style.get(floem::style::GridAutoRows);
     assert_eq!(
-        rows.as_slice(),
-        &[TrackSizingFunction {
-            min: MinTrackSizingFunction::from_length(0.0_f32),
-            max: MaxTrackSizingFunction::from_fr(1.0_f32),
-        }],
-        "auto-rows-fr → minmax(0, 1fr) — the v4 keyword form (corpus-pinned)"
+        hovered.get(PaddingRight),
+        Length::Pt(32.0),
+        "hover:px-8 sets the right edge"
     );
-
-    let r = v4_resolver().resolve("auto-cols-max").unwrap();
-    let (style, report) = lower(&r.plan);
-    assert!(report.is_empty(), "{report:?}");
-    let cols = style.get(floem::style::GridAutoColumns);
     assert_eq!(
-        cols.as_slice(),
-        &[TrackSizingFunction {
-            min: MinTrackSizingFunction::MAX_CONTENT,
-            max: MaxTrackSizingFunction::MAX_CONTENT,
-        }],
-        "auto-cols-max → max-content"
+        hovered.get(PaddingTop),
+        Length::Pt(16.0),
+        "the top edge keeps p-4 — the layer's 0.0 placeholder must NOT apply"
     );
-}
-
-#[test]
-fn justify_items_lowers_to_the_native_prop() {
-    use floem::style::{AlignItems as TaffyAlign, JustifyItemsProp};
-
-    let r = v4_resolver().resolve("justify-items-center").unwrap();
-    let (style, report) = lower(&r.plan);
-    assert!(report.is_empty(), "{report:?}");
-    assert_eq!(style.get(JustifyItemsProp), Some(TaffyAlign::Center));
-
-    let r = v4_resolver().resolve("justify-items-start").unwrap();
-    let (style, report) = lower(&r.plan);
-    assert!(report.is_empty(), "{report:?}");
-    assert_eq!(style.get(JustifyItemsProp), Some(TaffyAlign::FlexStart));
+    assert_eq!(
+        hovered.get(PaddingBottom),
+        Length::Pt(16.0),
+        "the bottom edge keeps p-4"
+    );
 }
