@@ -143,7 +143,7 @@ fn media_atoms(query: &str) -> Result<Vec<Atom>, &'static str> {
     if query.contains(',') {
         return Err(DISJUNCTION);
     }
-    split_and(query)?
+    split_and(query)
         .iter()
         .map(|part| media_condition(part))
         .collect::<Result<Vec<Vec<Atom>>, &'static str>>()
@@ -194,7 +194,7 @@ fn container_atom(query: &str) -> Result<Atom, &'static str> {
     if query.contains(',') {
         return Err(DISJUNCTION);
     }
-    let parts = split_and(query)?;
+    let parts = split_and(query);
     let mut min = None;
     let mut max = None;
     for part in &parts {
@@ -261,7 +261,7 @@ fn window(min: bool, px: Option<f32>) -> Atom {
 }
 
 /// Split on a case-insensitive ` and `.
-fn split_and(query: &str) -> Result<Vec<&str>, &'static str> {
+fn split_and(query: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut rest = query;
     loop {
@@ -276,7 +276,7 @@ fn split_and(query: &str) -> Result<Vec<&str>, &'static str> {
             }
         }
     }
-    Ok(parts)
+    parts
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +411,7 @@ fn pseudo_atoms(name: &str, args: Option<&str>) -> Result<Vec<Atom>, &'static st
         }
         // `:not(:hover)` — one simple inner test.
         ("not", Some(inner)) => simple_test(inner).map(|t| vec![Atom::Not(t)]),
-        // `:has(:focus)` — descendant tests (v0.7 §2 generalizes the typed
+        // `:has(:focus)` — descendant tests (v0.9 §2 generalizes the typed
         // inner from states to any single self test: states, data/aria
         // attributes, structural position, element kind).
         ("has", Some(inner)) => simple_test(inner).map(|t| vec![Atom::Has(t)]),
@@ -546,24 +546,38 @@ mod tests {
     fn self_tests_classify_onto_the_typed_arms() {
         // Byte-identical arbitrary form ≡ the named variant (v0.3 §1.2):
         // same band, same test.
-        assert_eq!(classify("[&:hover]"), Ok(vec![Atom::On(Test::State(State::Hover))]));
+        assert_eq!(
+            classify("[&:hover]"),
+            Ok(vec![Atom::On(Test::State(State::Hover))])
+        );
         // Implicit-self compound: `p:hover` (no `&` → `&:is(p:hover)`).
         assert_eq!(
             classify("[p:hover]"),
-            Ok(vec![Atom::On(Test::Tag("p".into())), Atom::On(Test::State(State::Hover))])
+            Ok(vec![
+                Atom::On(Test::Tag("p".into())),
+                Atom::On(Test::State(State::Hover))
+            ])
         );
         // data/aria attribute tests (the `&[attr]` compound form — the
         // bare `data-state=open` form reads `data-state` as a tag).
         assert_eq!(
             classify("[&[data-state=open]]"),
-            Ok(vec![Atom::On(Test::Data("state".into(), Some("open".into())))])
+            Ok(vec![Atom::On(Test::Data(
+                "state".into(),
+                Some("open".into())
+            ))])
         );
         assert_eq!(
             classify("[&[aria-expanded]]"),
             Ok(vec![Atom::On(Test::Aria("expanded".into(), None))])
         );
         // Structural pseudo-classes.
-        assert_eq!(classify("[&:first-child]"), Ok(vec![Atom::On(Test::Structural(crate::ast::Structural::First))]));
+        assert_eq!(
+            classify("[&:first-child]"),
+            Ok(vec![Atom::On(Test::Structural(
+                crate::ast::Structural::First
+            ))])
+        );
     }
 
     /// `single_test` unwraps exactly one self test; compound inners and
@@ -585,11 +599,15 @@ mod tests {
     fn nth_forms_classify_to_the_structural_arm() {
         assert_eq!(
             classify("[&:nth-child(3)]"),
-            Ok(vec![Atom::On(Test::Structural(crate::ast::Structural::Nth(3)))])
+            Ok(vec![Atom::On(Test::Structural(
+                crate::ast::Structural::Nth(3)
+            ))])
         );
         assert_eq!(
             classify("[&:nth-last-child(2)]"),
-            Ok(vec![Atom::On(Test::Structural(crate::ast::Structural::NthLast(2)))])
+            Ok(vec![Atom::On(Test::Structural(
+                crate::ast::Structural::NthLast(2)
+            ))])
         );
     }
 }
