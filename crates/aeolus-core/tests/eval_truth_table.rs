@@ -37,8 +37,9 @@ impl Probe for TableProbe {
             Test::Aria(_, _) => false,
             Test::Structural(s) => matches!(s, Structural::First) && self.first_child,
             Test::Tag(_) => false,
-            // v0.7 §1: pseudo-element renderings — the table probe does
-            // not answer them (default "no").
+            // Pseudo-element renderings (`selection:`/`placeholder:`/`file:`)
+            // never fire on a probe that does not model the rendering — the
+            // default probe answer, same semantics as an unmatched state.
             Test::Pseudo(_) => false,
         }
     }
