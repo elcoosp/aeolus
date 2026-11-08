@@ -374,3 +374,33 @@ whitespace-nowrap bg-primary text-primary-foreground hover:bg-primary/90";
     assert_eq!(book.base.text.font_id.as_ref().unwrap().size, 14.0);
     assert_eq!(rgba(book.base.frame.fill), [23, 23, 23, 255]);
 }
+
+// ---------------------------------------------------------------------------
+// v0.8 §1.2: per-edge set-mask merge in the Frame cascade
+// ---------------------------------------------------------------------------
+
+/// [`EguiStyle::overlay`] (the accumulation `apply_widget_visuals_cascade`
+/// and the book resolvers do) merges `inner_margin`/`outer_margin` EDGE-WISE
+/// through the v0.8 set-mask: `p-4` ⊕ `hover:px-8` keeps top/bottom 16px
+/// instead of the 0.0 placeholders wiping them.
+#[test]
+fn partial_edge_layers_overlay_edge_wise() {
+    use aeolus_egui::LoweringReport;
+
+    let resolver = resolver();
+    let base_plan = resolver.resolve("p-4").unwrap().plan;
+    let layer_plan = resolver.resolve("hover:px-8").unwrap().plan;
+
+    let mut report = LoweringReport::default();
+    let mut base = lower_resolved(&base_plan.base, &mut report);
+    let mut layer_report = LoweringReport::default();
+    let layer = lower_resolved(&layer_plan.layers[0].style, &mut layer_report);
+
+    base.overlay(&layer);
+    let m = base.frame.inner_margin;
+    assert_eq!(
+        (m.top, m.right, m.bottom, m.left),
+        (16, 32, 16, 32),
+        "hover:px-8 overrides left/right only; top/bottom keep p-4"
+    );
+}
