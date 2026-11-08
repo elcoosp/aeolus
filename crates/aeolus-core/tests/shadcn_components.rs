@@ -43,7 +43,8 @@ fn button_base_resolves() {
             top_left: 8.0,
             top_right: 8.0,
             bottom_right: 8.0,
-            bottom_left: 8.0
+            bottom_left: 8.0,
+            set: CornerSet::ALL
         })
     );
     // text-sm -> 14px + line-height 20px
@@ -147,7 +148,8 @@ fn button_outline_variant() {
             top: 1.0,
             right: 1.0,
             bottom: 1.0,
-            left: 1.0
+            left: 1.0,
+            set: EdgeSet::ALL
         })
     );
     assert_eq!(
@@ -210,7 +212,7 @@ fn dark_hover_compound_routes_to_rules() {
     let bg = rule.style.background.expect("dark:hover bg");
     assert!((bg.0.alpha - 0.5).abs() < 1e-4);
     assert!((bg.0.l - 0.922).abs() < 1e-3, "input token");
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [aeolus_core::Warning; 0]);
 }
 
 /// F4 (plan §5.1): `md:hover:p-2` keeps BOTH conditions.
@@ -237,7 +239,8 @@ fn md_hover_compound_routes_to_rules() {
             top: 8.0,
             right: 8.0,
             bottom: 8.0,
-            left: 8.0
+            left: 8.0,
+            set: EdgeSet::ALL
         })
     );
 }
@@ -265,7 +268,8 @@ fn arbitrary_length_is_absolute() {
             top: 7.0,
             right: 7.0,
             bottom: 7.0,
-            left: 7.0
+            left: 7.0,
+            set: EdgeSet::ALL
         })
     );
     assert_eq!(r.warnings, Vec::new());
@@ -380,7 +384,8 @@ fn input_base_resolves() {
             top: 4.0,
             right: 12.0,
             bottom: 4.0,
-            left: 12.0
+            left: 12.0,
+            set: EdgeSet::ALL
         })
     );
     let bi = base.border_color.expect("border-input");
@@ -453,7 +458,8 @@ fn card_base_resolves() {
             top_left: 14.0,
             top_right: 14.0,
             bottom_right: 14.0,
-            bottom_left: 14.0
+            bottom_left: 14.0,
+            set: CornerSet::ALL
         })
     );
     assert_eq!(
@@ -462,7 +468,15 @@ fn card_base_resolves() {
             top: 24.0,
             right: 0.0,
             bottom: 24.0,
-            left: 0.0
+            left: 0.0,
+            // py-6 addresses top/bottom only (v0.8 set-mask); the 0.0
+            // left/right are placeholders, never cascade inputs.
+            set: EdgeSet {
+                top: true,
+                right: false,
+                bottom: true,
+                left: false
+            }
         })
     );
     assert!((base.background.as_ref().unwrap().0.l - 1.0).abs() < 1e-3);
@@ -487,7 +501,8 @@ fn badge_base_resolves() {
             top_left: 9999.0,
             top_right: 9999.0,
             bottom_right: 9999.0,
-            bottom_left: 9999.0
+            bottom_left: 9999.0,
+            set: CornerSet::ALL
         })
     );
     assert_eq!(
@@ -496,7 +511,8 @@ fn badge_base_resolves() {
             top: 2.0,
             right: 8.0,
             bottom: 2.0,
-            left: 8.0
+            left: 8.0,
+            set: EdgeSet::ALL
         })
     );
     assert!(
@@ -543,7 +559,8 @@ fn skeleton_resolves() {
             top_left: 8.0,
             top_right: 8.0,
             bottom_right: 8.0,
-            bottom_left: 8.0
+            bottom_left: 8.0,
+            set: CornerSet::ALL
         })
     );
     assert!((base.background.as_ref().unwrap().0.l - 0.97).abs() < 1e-3);
@@ -554,8 +571,9 @@ fn skeleton_resolves() {
     assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
 }
 
-/// Alert (alert.tsx) — relative/grid/gap-y all RESOLVE in v0.2; v0.7 §4
-/// resolves the arbitrary grid template into the canonical track slots.
+/// Alert (alert.tsx) — relative/grid/gap-y all RESOLVE in v0.2; the
+/// arbitrary grid template used to be reported, and since the variant
+/// engine (v0.9 §4) it RESOLVES to a typed track template.
 #[test]
 fn alert_resolves() {
     let r = Resolver::new(&theme()).resolve("relative grid w-full grid-cols-[0_1fr] items-start gap-y-0.5 rounded-lg border px-4 py-3 text-sm").unwrap();
@@ -577,7 +595,8 @@ fn alert_resolves() {
             top_left: 10.0,
             top_right: 10.0,
             bottom_right: 10.0,
-            bottom_left: 10.0
+            bottom_left: 10.0,
+            set: CornerSet::ALL
         })
     );
     assert_eq!(
@@ -586,7 +605,8 @@ fn alert_resolves() {
             top: 12.0,
             right: 16.0,
             bottom: 12.0,
-            left: 16.0
+            left: 16.0,
+            set: EdgeSet::ALL
         })
     );
     assert!(
@@ -602,20 +622,14 @@ fn alert_resolves() {
             row: Some(2.0)
         })
     );
-    // v0.7 §4: the arbitrary template lands in the canonical track slots —
-    // `0` = a fixed 0px track, `1fr` = minmax(auto, 1fr) — with zero
-    // warnings (the v0.6 report became a capability).
+    // The arbitrary grid template now resolves to a typed track template
+    // (variant engine, v0.9 §4) — nothing is reported.
     assert!(r.warnings.is_empty(), "warnings={:?}", r.warnings);
-    let g = base.extras.grid.as_ref().expect("grid slot");
-    assert_eq!(
-        g.template_cols.as_deref(),
-        Some(
-            &[
-                plan::TrackComponent::Track(plan::GridTrack::px(0.0)),
-                plan::TrackComponent::Track(plan::GridTrack::fr(1.0)),
-            ][..]
-        )
-    );
+    let grid = base.extras.grid.as_ref().expect("grid slot");
+    let cols = grid.template_cols.as_deref().expect("template_cols");
+    assert_eq!(cols.len(), 2, "{cols:?}");
+    assert!(matches!(cols[0], TrackComponent::Track(t) if t.min == TrackSizing::Px(0.0)));
+    assert!(matches!(cols[1], TrackComponent::Track(t) if t.max == TrackSizing::Fr(1.0)));
 }
 
 /// `cn()` conflict resolution composes with shadcn usage: user classes win.
@@ -675,6 +689,6 @@ fn negatives_and_important() {
     let r = Resolver::new(&theme()).resolve("-mt-4!").unwrap();
     let mar = r.plan.base.margin.expect("margin");
     assert_eq!(mar.top, -16.0);
-    assert!(r.plan.base.text.is_empty() || true);
+    assert!(r.plan.base.text.is_empty());
     let _ = Arc::new(&r.plan); // plans are clonable/shared
 }
