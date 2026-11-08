@@ -15,8 +15,8 @@ use crate::classes::{
 use aeolus_core::{Resolver, cn};
 
 /// A Shadcn Button (centered text via floem's own flex utilities).
-pub fn button(
-    resolver: &Resolver<'_>,
+pub fn button<'a>(
+    resolver: &Resolver<'a>,
     _id: &str,
     label_text: &'static str,
     variant: ButtonVariant,
@@ -35,8 +35,8 @@ pub fn button(
 }
 
 /// A Shadcn Badge.
-pub fn badge(
-    resolver: &Resolver<'_>,
+pub fn badge<'a>(
+    resolver: &Resolver<'a>,
     label_text: &'static str,
     variant: BadgeVariant,
     class: &str,
@@ -53,7 +53,7 @@ pub fn badge(
 }
 
 /// A Shadcn Label.
-pub fn label(resolver: &Resolver<'_>, label_text: &'static str, class: &str) -> impl IntoView {
+pub fn label<'a>(resolver: &Resolver<'a>, label_text: &'static str, class: &str) -> impl IntoView {
     let classes = cn(&[LABEL_BASE, class]);
     let plan = match resolver.resolve(&classes) {
         Ok(r) => r.plan,
@@ -66,8 +66,8 @@ pub fn label(resolver: &Resolver<'_>, label_text: &'static str, class: &str) -> 
 }
 
 /// Style any view sequence as a Shadcn Card (paint + flex column + gap).
-pub fn card<V: floem::views::Decorators>(
-    resolver: &Resolver<'_>,
+pub fn card<'a, V: floem::views::Decorators>(
+    resolver: &Resolver<'a>,
     child: V,
     class: &str,
 ) -> V::Intermediate {
@@ -83,8 +83,8 @@ pub fn card<V: floem::views::Decorators>(
 }
 
 /// Card header container.
-pub fn card_header<V: floem::views::Decorators>(
-    resolver: &Resolver<'_>,
+pub fn card_header<'a, V: floem::views::Decorators>(
+    resolver: &Resolver<'a>,
     child: V,
     class: &str,
 ) -> V::Intermediate {
@@ -100,8 +100,8 @@ pub fn card_header<V: floem::views::Decorators>(
 }
 
 /// Card footer container.
-pub fn card_footer<V: floem::views::Decorators>(
-    resolver: &Resolver<'_>,
+pub fn card_footer<'a, V: floem::views::Decorators>(
+    resolver: &Resolver<'a>,
     child: V,
     class: &str,
 ) -> V::Intermediate {
@@ -117,7 +117,11 @@ pub fn card_footer<V: floem::views::Decorators>(
 }
 
 /// Style any view as a Shadcn Card title.
-pub fn card_title(resolver: &Resolver<'_>, label_text: &'static str, class: &str) -> impl IntoView {
+pub fn card_title<'a>(
+    resolver: &Resolver<'a>,
+    label_text: &'static str,
+    class: &str,
+) -> impl IntoView {
     let classes = cn(&[CARD_TITLE, class]);
     let plan = match resolver.resolve(&classes) {
         Ok(r) => r.plan,
@@ -130,8 +134,8 @@ pub fn card_title(resolver: &Resolver<'_>, label_text: &'static str, class: &str
 }
 
 /// Style any view as a Shadcn Card description.
-pub fn card_description(
-    resolver: &Resolver<'_>,
+pub fn card_description<'a>(
+    resolver: &Resolver<'a>,
     label_text: &'static str,
     class: &str,
 ) -> impl IntoView {
@@ -147,8 +151,8 @@ pub fn card_description(
 }
 
 /// Style any view sequence as a Shadcn Alert.
-pub fn alert<V: floem::views::Decorators>(
-    resolver: &Resolver<'_>,
+pub fn alert<'a, V: floem::views::Decorators>(
+    resolver: &Resolver<'a>,
     child: V,
     variant: AlertVariant,
     class: &str,
