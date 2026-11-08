@@ -81,7 +81,7 @@ impl StyledButton {
         this.ctx.get_mut(&mut this.widget.child)
     }
 
-    fn submit_press(ctx: &mut EventCtx<'_>, button: Option<PointerButton>) {
+    fn submit_press(&self, ctx: &mut EventCtx<'_>, button: Option<PointerButton>) {
         // Belt-and-braces: Masonry already routes no pointer/text events to
         // disabled widgets (passes/event.rs `skip_if_disabled`), but a
         // disabled button must never submit, whatever the routing.
@@ -116,7 +116,7 @@ impl Widget for StyledButton {
                 // pointer (hovered) — i.e. press + release on the same
                 // widget. Dragging off cancels.
                 if ctx.is_active() && ctx.is_hovered() {
-                    Self::submit_press(ctx, pointer.button);
+                    self.submit_press(ctx, pointer.button);
                 }
                 ctx.request_paint_only();
             }
@@ -136,7 +136,7 @@ impl Widget for StyledButton {
                     && (matches!(&event.key, Key::Character(c) if c == " ")
                         || event.key == Key::Named(NamedKey::Enter)) =>
             {
-                Self::submit_press(ctx, None);
+                self.submit_press(ctx, None);
             }
             _ => (),
         }
@@ -149,7 +149,7 @@ impl Widget for StyledButton {
         event: &AccessEvent,
     ) {
         if event.action == masonry::accesskit::Action::Click {
-            Self::submit_press(ctx, None);
+            self.submit_press(ctx, None);
         }
     }
 
@@ -230,11 +230,12 @@ impl Widget for StyledButton {
             Axis::Horizontal => self.plan.base.dimensions.and_then(|d| d.width),
             Axis::Vertical => self.plan.base.dimensions.and_then(|d| d.height),
         }
-        .map_or(0.0, |v| match v {
+        .map(|v| match v {
             SizedValue::Px(px) => px,
             SizedValue::Scale(n) => n * 4.0,
             _ => 0.0,
-        }) as f64;
+        })
+        .unwrap_or(0.0) as f64;
 
         let auto_length = len_req.into();
         let context_size = LayoutSize::maybe(axis.cross(), cross_length);

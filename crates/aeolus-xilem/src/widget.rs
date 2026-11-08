@@ -106,11 +106,11 @@ impl Probe for CtxProbe<'_> {
         }
     }
 
-    fn related(&self, rel: Rel, label: Option<&str>, t: &Test) -> bool {
+    fn related(&self, rel: Rel, _label: Option<&str>, t: &Test) -> bool {
         // Only the DEFAULT (unlabeled) group/peer scope is tracked in TwEnv;
         // labeled scopes need the view-wrapper plumbing (plan §4.3) and
         // honestly answer "no" here.
-        if label.is_some() {
+        if _label.is_some() {
             return false;
         }
 
@@ -306,7 +306,7 @@ pub(crate) fn paint_plan_box(
     bbox: masonry::kurbo::Rect,
     style: &ResolvedStyle,
 ) {
-    let opacity = style.opacity.map_or(1.0, |o| o.0);
+    let opacity = style.opacity.map(|o| o.0).unwrap_or(1.0);
     let alpha = |c: aeolus_core::Color| {
         let m = to_masonry_color(c);
         // Multiply the chrome alpha by the plan's opacity (the documented
@@ -317,14 +317,15 @@ pub(crate) fn paint_plan_box(
     // Per-corner radii (v0.1 flattened to the max corner).
     let radii = style
         .corner_radius
-        .map_or(RoundedRectRadii::new(0.0, 0.0, 0.0, 0.0), |c| {
+        .map(|c| {
             RoundedRectRadii::new(
                 c.top_left as f64,
                 c.top_right as f64,
                 c.bottom_right as f64,
                 c.bottom_left as f64,
             )
-        });
+        })
+        .unwrap_or(RoundedRectRadii::new(0.0, 0.0, 0.0, 0.0));
 
     // Shadows: the dominant layer through Masonry's own painter; extra
     // layers through blurred rounded rects (v0.2 multi-layer presets).
@@ -362,7 +363,8 @@ pub(crate) fn paint_plan_box(
     // Background: fill the rounded rect (per-corner radii honored).
     let bg = style
         .background
-        .map_or(aeolus_core::Color::TRANSPARENT, |b| b.0);
+        .map(|b| b.0)
+        .unwrap_or(aeolus_core::Color::TRANSPARENT);
     let bg_alpha = bg.alpha * opacity;
     if bg_alpha > 0.0 {
         let rounded = RoundedRect::from_rect(bbox, radii);
@@ -375,7 +377,8 @@ pub(crate) fn paint_plan_box(
     if let Some(bw) = &style.border_width {
         let bc = style
             .border_color
-            .map_or(aeolus_core::Color::TRANSPARENT, |b| b.0);
+            .map(|b| b.0)
+            .unwrap_or(aeolus_core::Color::TRANSPARENT);
         if bc.alpha > 0.0 {
             paint_borders(painter, bbox, bw, bc, opacity, &radii);
         }

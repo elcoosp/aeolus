@@ -380,15 +380,7 @@ pub fn lower(plan: &StylePlan) -> (masonry::core::PropertyStack, LoweringReport)
                 continue;
             }
         };
-        stack.push_layer(selector, {
-            // v0.8 §1.2: stack entries replace WHOLE properties, so a
-            // partial-edge layer (`hover:px-8`) is materialized against the
-            // base first — its masked-off edges inherit the base's values
-            // instead of wiping them with the 0.0 placeholders.
-            let mut style = layer.style.clone();
-            style.materialize_unset_edges_from(&plan.base);
-            lower_resolved(&style, &mut report)
-        });
+        stack.push_layer(selector, lower_resolved(&layer.style, &mut report));
     }
     (stack, report)
 }

@@ -154,10 +154,9 @@ pub trait TwViewExt<State: 'static, Action>: WidgetView<State, Action> {
         match resolver.resolve(classes) {
             Ok(resolution) => tw_centered(resolution.plan, self),
             Err(err) => {
-                assert!(
-                    !cfg!(debug_assertions),
-                    "aeolus: failed to parse class string {classes:?}: {err:?}"
-                );
+                if cfg!(debug_assertions) {
+                    panic!("aeolus: failed to parse class string {classes:?}: {err:?}");
+                }
                 tracing::warn!("aeolus: dropping unparseable class string {classes:?}: {err:?}");
                 tw_centered(StylePlan::default(), self)
             }
@@ -179,10 +178,9 @@ pub trait TwViewExt<State: 'static, Action>: WidgetView<State, Action> {
             Err(err) => {
                 // Honest failure: unparseable classes are a programmer error.
                 // Panic loudly in debug, degrade to no-op styling in release.
-                assert!(
-                    !cfg!(debug_assertions),
-                    "aeolus: failed to parse class string {classes:?}: {err:?}"
-                );
+                if cfg!(debug_assertions) {
+                    panic!("aeolus: failed to parse class string {classes:?}: {err:?}");
+                }
                 tracing::warn!("aeolus: dropping unparseable class string {classes:?}: {err:?}");
                 self.plan(StylePlan::default())
             }
