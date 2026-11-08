@@ -53,7 +53,8 @@ use egui::{Color32, CornerRadius, CursorIcon, FontFamily, FontId, Frame, Margin,
 use aeolus_core::color::Color;
 use aeolus_core::eval::{Probe, Rel};
 use aeolus_core::plan::{
-    Gradient, ResolvedStyle, SizedValue, Slot, StylePlan, TextProperty, TextValue, VariantCondition,
+    CornerSet, EdgeSet, Gradient, ResolvedStyle, SizedValue, Slot, StylePlan, TextProperty,
+    TextValue, VariantCondition,
 };
 
 /// Everything the lowering could not express in egui 0.37.
@@ -149,7 +150,7 @@ impl EguiText {
     /// Overlay `other` on top of `self` (later layers win per slot).
     pub fn overlay(&mut self, other: &EguiText) {
         if other.font_id.is_some() {
-            self.font_id = other.font_id.clone();
+            self.font_id.clone_from(&other.font_id);
         }
         if other.color.is_some() {
             self.color = other.color;
@@ -253,13 +254,52 @@ impl EguiStyle {
             s.stroke = f.stroke;
         }
         if other.presence.corner_radius {
-            s.corner_radius = f.corner_radius;
+            // v0.8 §1.2: per-corner merge through the corner set-mask.
+            let set = other.presence.corner_set;
+            if set.top_left {
+                s.corner_radius.nw = f.corner_radius.nw;
+            }
+            if set.top_right {
+                s.corner_radius.ne = f.corner_radius.ne;
+            }
+            if set.bottom_right {
+                s.corner_radius.se = f.corner_radius.se;
+            }
+            if set.bottom_left {
+                s.corner_radius.sw = f.corner_radius.sw;
+            }
         }
         if other.presence.inner_margin {
-            s.inner_margin = f.inner_margin;
+            // v0.8 §1.2: per-edge merge — a `hover:px-8` layer must not
+            // wipe the base's top/bottom with its 0.0 placeholders.
+            let set = other.presence.inner_margin_set;
+            if set.left {
+                s.inner_margin.left = f.inner_margin.left;
+            }
+            if set.right {
+                s.inner_margin.right = f.inner_margin.right;
+            }
+            if set.top {
+                s.inner_margin.top = f.inner_margin.top;
+            }
+            if set.bottom {
+                s.inner_margin.bottom = f.inner_margin.bottom;
+            }
         }
         if other.presence.outer_margin {
-            s.outer_margin = f.outer_margin;
+            let set = other.presence.outer_margin_set;
+            if set.left {
+                s.outer_margin.left = f.outer_margin.left;
+            }
+            if set.right {
+                s.outer_margin.right = f.outer_margin.right;
+            }
+            if set.top {
+                s.outer_margin.top = f.outer_margin.top;
+            }
+            if set.bottom {
+                s.outer_margin.bottom = f.outer_margin.bottom;
+            }
         }
         if other.presence.shadow {
             s.shadow = f.shadow;
@@ -303,6 +343,12 @@ struct Presence {
     inner_margin: bool,
     outer_margin: bool,
     shadow: bool,
+    /// v0.8 §1.2: WHICH corners `corner_radius` addresses.
+    corner_set: CornerSet,
+    /// v0.8 §1.2: WHICH edges `inner_margin` addresses.
+    inner_margin_set: EdgeSet,
+    /// v0.8 §1.2: WHICH edges `outer_margin` addresses.
+    outer_margin_set: EdgeSet,
 }
 
 impl Presence {
@@ -314,6 +360,18 @@ impl Presence {
         self.inner_margin |= other.inner_margin;
         self.outer_margin |= other.outer_margin;
         self.shadow |= other.shadow;
+        self.corner_set.top_left |= other.corner_set.top_left;
+        self.corner_set.top_right |= other.corner_set.top_right;
+        self.corner_set.bottom_right |= other.corner_set.bottom_right;
+        self.corner_set.bottom_left |= other.corner_set.bottom_left;
+        self.inner_margin_set.top |= other.inner_margin_set.top;
+        self.inner_margin_set.right |= other.inner_margin_set.right;
+        self.inner_margin_set.bottom |= other.inner_margin_set.bottom;
+        self.inner_margin_set.left |= other.inner_margin_set.left;
+        self.outer_margin_set.top |= other.outer_margin_set.top;
+        self.outer_margin_set.right |= other.outer_margin_set.right;
+        self.outer_margin_set.bottom |= other.outer_margin_set.bottom;
+        self.outer_margin_set.left |= other.outer_margin_set.left;
     }
 }
 
@@ -333,7 +391,7 @@ pub fn lower_resolved(style: &ResolvedStyle, report: &mut LoweringReport) -> Egu
     // painted alpha) are baked at lowering time, documented below. The
     // factor is also remembered for `overlay` (a bare `disabled:opacity-50`
     // layer has no colors of its own to bake).
-    let opacity = style.opacity.map(|o| o.0.clamp(0.0, 1.0)).unwrap_or(1.0);
+    let opacity = style.opacity.map_or(1.0, |o| o.0.clamp(0.0, 1.0));
     out.opacity_factor = opacity;
 
     if let Some(cc) = &style.content_color {
@@ -382,17 +440,17 @@ mesh painter (Painter::add + RectShape UV trick) — reported, not faked",
     if let Some(o) = &style.outline {
         // No border set → the outline takes the single stroke slot
         // natively (the Floem ring→outline precedent); otherwise report.
-        if !out.presence.stroke {
+        if out.presence.stroke {
+            report.drop(
+                "outline",
+                "egui Frame carries a single Stroke and border-* already uses it",
+            );
+        } else {
             out.frame.stroke.width = o.width;
             if let Some(c) = o.color {
                 out.frame.stroke.color = to_egui_color(c);
             }
             out.presence.stroke = true;
-        } else {
-            report.drop(
-                "outline",
-                "egui Frame carries a single Stroke and border-* already uses it",
-            );
         }
     }
     if style.ring.is_some() {
@@ -412,6 +470,7 @@ mesh painter (Painter::add + RectShape UV trick) — reported, not faked",
             se: cr.bottom_right.clamp(0.0, 255.0) as u8,
         };
         out.presence.corner_radius = true;
+        out.presence.corner_set = cr.set;
     }
 
     // CSS padding → inner_margin, CSS margin → outer_margin (egui's own
@@ -424,6 +483,7 @@ mesh painter (Painter::add + RectShape UV trick) — reported, not faked",
             bottom: clamp_i8(p.bottom),
         };
         out.presence.inner_margin = true;
+        out.presence.inner_margin_set = p.set;
     }
     if let Some(m) = &style.margin {
         out.frame.outer_margin = Margin {
@@ -433,6 +493,7 @@ mesh painter (Painter::add + RectShape UV trick) — reported, not faked",
             bottom: clamp_i8(m.bottom),
         };
         out.presence.outer_margin = true;
+        out.presence.outer_margin_set = m.set;
     }
     if style.extras.margin_auto.is_some() {
         report.drop("margin-auto", "no auto margins in egui layout");
@@ -469,8 +530,8 @@ not a per-element style",
     }
     if let Some(d) = &style.min_dimensions {
         out.min_size = Some(Vec2::new(
-            d.width.map(sized_px).unwrap_or(0.0),
-            d.height.map(sized_px).unwrap_or(0.0),
+            d.width.map_or(0.0, sized_px),
+            d.height.map_or(0.0, sized_px),
         ));
     }
     if style.max_dimensions.is_some() {
@@ -902,9 +963,10 @@ per frame by resolve_at (EguiProbe::from_response)",
                 book
             }
             Err(err) => {
-                if cfg!(debug_assertions) {
-                    panic!("aeolus: failed to parse class string {classes:?}: {err:?}");
-                }
+                assert!(
+                    !cfg!(debug_assertions),
+                    "aeolus: failed to parse class string {classes:?}: {err:?}"
+                );
                 tracing::warn!("aeolus: dropping unparseable class string {classes:?}: {err:?}");
                 let (book, _) = Self::new(&StylePlan::default());
                 book
