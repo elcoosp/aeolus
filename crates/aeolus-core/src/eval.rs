@@ -50,7 +50,7 @@ pub trait Probe {
         false
     }
 
-    /// Does any descendant satisfy the test (`has-*` variants — v0.7 §2
+    /// Does any descendant satisfy the test (`has-*` variants — v0.9 §2
     /// generalizes them to data/aria/structural inners)? Defaults to
     /// answering only the state form through [`Probe::descendant_state`];
     /// a backend that can answer attribute tests of its children overrides
@@ -317,9 +317,22 @@ mod tests {
         assert!(Atom::Not(ts(State::Hover)).matches(&p));
         assert!(!Atom::Has(ts(State::Checked)).matches(&p));
         assert!(!Atom::Media(Media::Dark).matches(&p));
-        assert!(!Atom::Viewport { min: None, max: None }.matches(&p));
-        assert!(!Atom::Container { min: None, max: None, name: None }.matches(&p));
-        // The descendant default answers only the state form (v0.7 §2).
+        assert!(
+            !Atom::Viewport {
+                min: None,
+                max: None
+            }
+            .matches(&p)
+        );
+        assert!(
+            !Atom::Container {
+                min: None,
+                max: None,
+                name: None
+            }
+            .matches(&p)
+        );
+        // The descendant default answers only the state form (v0.9 §2).
         assert!(!p.descendant(&Test::Data("slot".into(), None)));
         assert!(!p.descendant(&Test::State(State::Checked)));
     }
@@ -341,8 +354,20 @@ mod tests {
         assert!(Atom::Not(ts(State::Focus)).matches(&p));
         assert!(Atom::Media(Media::Dark).matches(&p));
         assert!(!Atom::Media(Media::Print).matches(&p));
-        assert!(Atom::Viewport { min: Some(640.0), max: Some(1024.0) }.matches(&p));
-        assert!(!Atom::Viewport { min: Some(1024.0), max: None }.matches(&p));
+        assert!(
+            Atom::Viewport {
+                min: Some(640.0),
+                max: Some(1024.0)
+            }
+            .matches(&p)
+        );
+        assert!(
+            !Atom::Viewport {
+                min: Some(1024.0),
+                max: None
+            }
+            .matches(&p)
+        );
     }
 
     /// `in_window` is `[min, max)`: min inclusive, max exclusive, and an
@@ -364,12 +389,18 @@ mod tests {
     #[test]
     fn split_group_label_is_longest_suffix() {
         assert_eq!(split_group_label("hover"), Some((None, State::Hover)));
-        assert_eq!(split_group_label("menufocus"), Some((Some("menu"), State::Focus)));
+        assert_eq!(
+            split_group_label("menufocus"),
+            Some((Some("menu"), State::Focus))
+        );
         assert_eq!(
             split_group_label("menufocus-visible"),
             Some((Some("menu"), State::FocusVisible))
         );
-        assert_eq!(split_group_label("xplaceholder-shown"), Some((Some("x"), State::PlaceholderShown)));
+        assert_eq!(
+            split_group_label("xplaceholder-shown"),
+            Some((Some("x"), State::PlaceholderShown))
+        );
         assert_eq!(split_group_label("nosuchstate"), None);
     }
 
@@ -379,16 +410,27 @@ mod tests {
     #[test]
     fn resolve_prefers_focus_over_hover_regardless_of_source_order() {
         let mut plan = StylePlan::default();
-        let mut hover_bg = ResolvedStyle::default();
-        hover_bg.background = Some(crate::plan::Background(crate::color::Color { l: 0.0, a: 0.0, b: 0.0, alpha: 1.0 }));
-        let mut focus_ring = ResolvedStyle::default();
-        focus_ring.ring = Some(crate::plan::Ring {
-            width: 3.0,
-            color: None,
-            offset_width: 0.0,
-            offset_color: None,
-            inset: false,
-        });
+        let hover_bg = ResolvedStyle {
+            background: Some(crate::plan::Background(crate::color::Color {
+                l: 0.0,
+                a: 0.0,
+                b: 0.0,
+                alpha: 1.0,
+            })),
+            ..Default::default()
+        };
+
+        let focus_ring = ResolvedStyle {
+            ring: Some(crate::plan::Ring {
+                width: 3.0,
+                color: None,
+                offset_width: 0.0,
+                offset_color: None,
+                inset: false,
+            }),
+            ..Default::default()
+        };
+
         // Source order: hover FIRST, focus second.
         plan.layers.push(crate::plan::ConditionalLayer {
             condition: crate::plan::VariantCondition::Hover,
@@ -421,7 +463,11 @@ mod tests {
             condition: crate::plan::VariantCondition::Hover,
             style: hover_bg.clone(),
         });
-        assert_eq!(out, flipped.resolve(&p), "cascade rank must beat source order");
+        assert_eq!(
+            out,
+            flipped.resolve(&p),
+            "cascade rank must beat source order"
+        );
     }
 
     /// Dark beats the state band (140 > 10): a dark+hover element in dark
@@ -429,10 +475,26 @@ mod tests {
     #[test]
     fn resolve_dark_beats_the_state_band() {
         let mut plan = StylePlan::default();
-        let mut hover_bg = ResolvedStyle::default();
-        hover_bg.background = Some(crate::plan::Background(crate::color::Color { l: 0.0, a: 0.0, b: 0.0, alpha: 1.0 }));
-        let mut dark_bg = ResolvedStyle::default();
-        dark_bg.background = Some(crate::plan::Background(crate::color::Color { l: 1.0, a: 1.0, b: 1.0, alpha: 1.0 }));
+        let hover_bg = ResolvedStyle {
+            background: Some(crate::plan::Background(crate::color::Color {
+                l: 0.0,
+                a: 0.0,
+                b: 0.0,
+                alpha: 1.0,
+            })),
+            ..Default::default()
+        };
+
+        let dark_bg = ResolvedStyle {
+            background: Some(crate::plan::Background(crate::color::Color {
+                l: 1.0,
+                a: 1.0,
+                b: 1.0,
+                alpha: 1.0,
+            })),
+            ..Default::default()
+        };
+
         plan.layers.push(crate::plan::ConditionalLayer {
             condition: crate::plan::VariantCondition::Hover,
             style: hover_bg,
@@ -450,7 +512,12 @@ mod tests {
         let out = plan.resolve(&p);
         assert_eq!(
             out.background,
-            Some(crate::plan::Background(crate::color::Color { l: 1.0, a: 1.0, b: 1.0, alpha: 1.0 }))
+            Some(crate::plan::Background(crate::color::Color {
+                l: 1.0,
+                a: 1.0,
+                b: 1.0,
+                alpha: 1.0
+            }))
         );
         // Out of dark mode only the hover layer fires.
         let light = Scripted {
@@ -465,7 +532,12 @@ mod tests {
         let out = plan.resolve(&light);
         assert_eq!(
             out.background,
-            Some(crate::plan::Background(crate::color::Color { l: 0.0, a: 0.0, b: 0.0, alpha: 1.0 }))
+            Some(crate::plan::Background(crate::color::Color {
+                l: 0.0,
+                a: 0.0,
+                b: 0.0,
+                alpha: 1.0
+            }))
         );
     }
 
@@ -474,12 +546,16 @@ mod tests {
     /// name.
     #[test]
     fn resolve_responsive_uses_the_plan_breakpoint_table() {
-        let mut plan = StylePlan::default();
-        // Real plans carry the THEME's breakpoint table (the derived
-        // default is [0;5] — every width would match). Pin the v4 defaults.
-        plan.breakpoints = [640.0, 768.0, 1024.0, 1280.0, 1536.0];
-        let mut sm = ResolvedStyle::default();
-        sm.opacity = Some(crate::plan::Opacity(0.5));
+        let mut plan = StylePlan {
+            breakpoints: [640.0, 768.0, 1024.0, 1280.0, 1536.0],
+            ..Default::default()
+        };
+
+        let sm = ResolvedStyle {
+            opacity: Some(crate::plan::Opacity(0.5)),
+            ..Default::default()
+        };
+
         plan.responsive.insert(crate::ast::Breakpoint::Sm, sm);
         let wide = Scripted {
             tests: vec![],
@@ -490,7 +566,10 @@ mod tests {
             viewport: Some(639.0),
             container: None,
         };
-        assert!(plan.resolve(&wide).opacity.is_none(), "639 < sm(640): no hit");
+        assert!(
+            plan.resolve(&wide).opacity.is_none(),
+            "639 < sm(640): no hit"
+        );
         let at = Scripted {
             tests: vec![],
             group: false,
@@ -500,7 +579,11 @@ mod tests {
             viewport: Some(640.0),
             container: None,
         };
-        assert_eq!(plan.resolve(&at).opacity, Some(crate::plan::Opacity(0.5)), "min is inclusive");
+        assert_eq!(
+            plan.resolve(&at).opacity,
+            Some(crate::plan::Opacity(0.5)),
+            "min is inclusive"
+        );
     }
 
     /// `resolve_rules_only` touches ONLY rules + group/peer buckets — the
@@ -508,17 +591,31 @@ mod tests {
     #[test]
     fn resolve_rules_only_excludes_buckets() {
         let mut plan = StylePlan::default();
-        let mut hover_bg = ResolvedStyle::default();
-        hover_bg.background = Some(crate::plan::Background(crate::color::Color { l: 0.0, a: 0.0, b: 0.0, alpha: 1.0 }));
+        let hover_bg = ResolvedStyle {
+            background: Some(crate::plan::Background(crate::color::Color {
+                l: 0.0,
+                a: 0.0,
+                b: 0.0,
+                alpha: 1.0,
+            })),
+            ..Default::default()
+        };
+
         plan.layers.push(crate::plan::ConditionalLayer {
             condition: crate::plan::VariantCondition::Hover,
             style: hover_bg,
         });
-        let mut dark_bg = ResolvedStyle::default();
-        dark_bg.opacity = Some(crate::plan::Opacity(0.25));
+        let dark_bg = ResolvedStyle {
+            opacity: Some(crate::plan::Opacity(0.25)),
+            ..Default::default()
+        };
+
         plan.dark = Some(dark_bg);
-        let mut rule_style = ResolvedStyle::default();
-        rule_style.cursor = Some(crate::plan::Cursor::Pointer);
+        let rule_style = ResolvedStyle {
+            cursor: Some(crate::plan::Cursor::Pointer),
+            ..Default::default()
+        };
+
         plan.rules.push(Rule {
             when: Cond(vec![Atom::On(ts(State::Checked))]),
             style: rule_style,
@@ -535,6 +632,10 @@ mod tests {
         let out = plan.resolve_rules_only(&p);
         assert!(out.background.is_none(), "layers must not leak");
         assert!(out.opacity.is_none(), "dark must not leak");
-        assert_eq!(out.cursor, Some(crate::plan::Cursor::Pointer), "matching rule fires");
+        assert_eq!(
+            out.cursor,
+            Some(crate::plan::Cursor::Pointer),
+            "matching rule fires"
+        );
     }
 }
