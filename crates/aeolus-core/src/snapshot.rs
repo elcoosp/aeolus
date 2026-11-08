@@ -1,4 +1,4 @@
-//! Canonical plan snapshots (v0.7, plan of record `AEOLUS_V0.7.md` §2).
+//! Canonical plan snapshots (v0.7, plan of record `AEOLUS_V0.9.md` §2).
 //!
 //! The `StylePlan` IR is the project's central artifact — v0.7 makes it a
 //! PORTABLE one: [`StylePlan::to_snapshot_json`] serializes a plan into a
@@ -37,12 +37,21 @@ use crate::color::Color;
 use crate::cond::{Atom, Cond, Rule, Test};
 use crate::plan::*;
 use std::fmt;
+use std::fmt::Write as _;
 
 /// The snapshot format tag (the `format` header field).
 pub const PLAN_SNAPSHOT_FORMAT: &str = "aeolus-plan";
 /// The current snapshot schema version. Readers reject other versions with
 /// [`SnapshotError::UnsupportedVersion`] — new IR fields bump this.
-pub const PLAN_SNAPSHOT_VERSION: u32 = 2;
+///
+/// History: v2 (v0.8 §1) added the per-edge set-mask (`"set"` objects on
+/// `padding`/`margin`/`border_width`/`corner_radius`, REQUIRED on read —
+/// readers never guess). v3 (the variant-engine merge) adds the grid
+/// track templates (`template_cols`/`template_rows`/`auto_rows`/
+/// `auto_cols`), `container_type`, `layout.justify_items`, the
+/// `pseudo` test kind and the generalized `"has"` test object — a strict
+/// superset of the v2 payload.
+pub const PLAN_SNAPSHOT_VERSION: u32 = 3;
 
 /// Why a snapshot failed to parse. `Display` renders a precise,
 /// path-qualified message (the no-silent-failures rule for artifacts).
@@ -168,9 +177,9 @@ fn parse_value(b: &[u8], pos: &mut usize, depth: usize, path: &str) -> Result<Js
         b'{' => parse_obj(b, pos, depth, path),
         b'[' => parse_arr(b, pos, depth, path),
         b'"' => Ok(Json::Str(parse_string(b, pos, path)?)),
-        b't' => expect_lit(b, pos, "true", path).map(|_| Json::Bool(true)),
-        b'f' => expect_lit(b, pos, "false", path).map(|_| Json::Bool(false)),
-        b'n' => expect_lit(b, pos, "null", path).map(|_| Json::Null),
+        b't' => expect_lit(b, pos, "true", path).map(|()| Json::Bool(true)),
+        b'f' => expect_lit(b, pos, "false", path).map(|()| Json::Bool(false)),
+        b'n' => expect_lit(b, pos, "null", path).map(|()| Json::Null),
         b'-' | b'0'..=b'9' => parse_num(b, pos, path),
         _ => Err(SnapshotError::InvalidValue {
             path: path.to_string(),
@@ -501,7 +510,7 @@ impl W {
                 '\u{0008}' => self.out.push_str("\\b"),
                 '\u{000C}' => self.out.push_str("\\f"),
                 c if (c as u32) < 0x20 => {
-                    self.out.push_str(&format!("\\u{:04x}", c as u32));
+                    let _ = write!(self.out, "\\u{:04x}", c as u32);
                 }
                 c => self.out.push(c),
             }
@@ -516,7 +525,7 @@ impl W {
         } else if v.is_infinite() {
             self.s(if v > 0.0 { "inf" } else { "-inf" });
         } else {
-            self.out.push_str(&format!("{}", v));
+            let _ = write!(self.out, "{v}");
         }
     }
     fn opt_f32(&mut self, v: Option<f32>) {
@@ -792,7 +801,7 @@ fn write_test(w: &mut W, t: &Test) {
                     w.raw(&n.to_string());
                     w.raw("}");
                 }
-                other => w.str_val(structural_name(other)),
+                other => w.str_val(structural_name(*other)),
             }
             w.raw("}");
         }
@@ -811,7 +820,7 @@ fn write_test(w: &mut W, t: &Test) {
     }
 }
 
-/// The v0.7 §4 arbitrary grid templates. `None` writes `null` (the field
+/// The v0.9 §4 arbitrary grid templates. `None` writes `null` (the field
 /// is always present — fixed schema order); a template is an array of
 /// single-key components (`track` / `repeat`).
 fn write_tracks(w: &mut W, tracks: Option<&[TrackComponent]>) {
@@ -890,7 +899,7 @@ fn write_track_sizing(w: &mut W, s: TrackSizing) {
 fn write_style(w: &mut W, s: &ResolvedStyle) {
     w.raw("{");
     w.key("background");
-    write_opt_color_newtype(w, &s.background, |b| &b.0);
+    write_opt_color_newtype(w, s.background.as_ref(), |b| &b.0);
     w.sep();
     w.key("background_gradient");
     match &s.background_gradient {
@@ -899,17 +908,19 @@ fn write_style(w: &mut W, s: &ResolvedStyle) {
     }
     w.sep();
     w.key("content_color");
-    write_opt_color_newtype(w, &s.content_color, |c| &c.0);
+    write_opt_color_newtype(w, s.content_color.as_ref(), |c| &c.0);
     w.sep();
     w.key("padding");
-    write_opt_edges(w, &s.padding, |p| (&p.top, &p.right, &p.bottom, &p.left));
+    write_opt_edges(w, s.padding.as_ref(), |p| {
+        (&p.top, &p.right, &p.bottom, &p.left, p.set)
+    });
     w.sep();
     w.key("border_color");
-    write_opt_color_newtype(w, &s.border_color, |b| &b.0);
+    write_opt_color_newtype(w, s.border_color.as_ref(), |b| &b.0);
     w.sep();
     w.key("border_width");
-    write_opt_edges(w, &s.border_width, |b| {
-        (&b.top, &b.right, &b.bottom, &b.left)
+    write_opt_edges(w, s.border_width.as_ref(), |b| {
+        (&b.top, &b.right, &b.bottom, &b.left, b.set)
     });
     w.sep();
     w.key("corner_radius");
@@ -919,6 +930,7 @@ fn write_style(w: &mut W, s: &ResolvedStyle) {
             write_corner_fields(
                 w,
                 (&r.top_left, &r.top_right, &r.bottom_right, &r.bottom_left),
+                r.set,
             );
             w.raw("}");
         }
@@ -926,13 +938,13 @@ fn write_style(w: &mut W, s: &ResolvedStyle) {
     }
     w.sep();
     w.key("dimensions");
-    write_opt_dims(w, &s.dimensions);
+    write_opt_dims(w, s.dimensions.as_ref());
     w.sep();
     w.key("min_dimensions");
-    write_opt_dims(w, &s.min_dimensions);
+    write_opt_dims(w, s.min_dimensions.as_ref());
     w.sep();
     w.key("max_dimensions");
-    write_opt_dims(w, &s.max_dimensions);
+    write_opt_dims(w, s.max_dimensions.as_ref());
     w.sep();
     w.key("gap");
     match &s.gap {
@@ -941,29 +953,31 @@ fn write_style(w: &mut W, s: &ResolvedStyle) {
     }
     w.sep();
     w.key("shadow");
-    write_opt_shadow(w, &s.shadow);
+    write_opt_shadow(w, s.shadow.as_ref());
     w.sep();
     w.key("margin");
-    write_opt_edges(w, &s.margin, |m| (&m.top, &m.right, &m.bottom, &m.left));
+    write_opt_edges(w, s.margin.as_ref(), |m| {
+        (&m.top, &m.right, &m.bottom, &m.left, m.set)
+    });
     w.sep();
     w.key("layout");
     match &s.layout {
         Some(l) => {
             w.raw("{");
             w.key("display");
-            write_enum_opt(w, l.display.as_ref(), display_name);
+            write_enum_opt(w, l.display, display_name);
             w.sep();
             w.key("flex_direction");
-            write_enum_opt(w, l.flex_direction.as_ref(), flex_direction_name);
+            write_enum_opt(w, l.flex_direction, flex_direction_name);
             w.sep();
             w.key("align_items");
-            write_enum_opt(w, l.align_items.as_ref(), align_items_name);
+            write_enum_opt(w, l.align_items, align_items_name);
             w.sep();
             w.key("justify_content");
-            write_enum_opt(w, l.justify_content.as_ref(), justify_content_name);
+            write_enum_opt(w, l.justify_content, justify_content_name);
             w.sep();
             w.key("justify_items");
-            write_enum_opt(w, l.justify_items.as_ref(), align_items_name);
+            write_enum_opt(w, l.justify_items, align_items_name);
             w.sep();
             w.key("flex_wrap");
             match l.flex_wrap {
@@ -978,7 +992,7 @@ fn write_style(w: &mut W, s: &ResolvedStyle) {
             w.opt_f32(l.flex_shrink);
             w.sep();
             w.key("align_self");
-            write_enum_opt(w, l.align_self.as_ref(), align_items_name);
+            write_enum_opt(w, l.align_self, align_items_name);
             w.raw("}");
         }
         None => w.raw("null"),
@@ -1034,10 +1048,10 @@ fn write_style(w: &mut W, s: &ResolvedStyle) {
     }
     w.sep();
     w.key("cursor");
-    write_enum_opt(w, s.cursor.as_ref(), cursor_name);
+    write_enum_opt(w, s.cursor, cursor_name);
     w.sep();
     w.key("pointer_events");
-    write_enum_opt(w, s.pointer_events.as_ref(), pointer_events_name);
+    write_enum_opt(w, s.pointer_events, pointer_events_name);
     w.sep();
     w.key("text");
     w.raw("[");
@@ -1061,7 +1075,7 @@ fn write_style(w: &mut W, s: &ResolvedStyle) {
 fn write_extras(w: &mut W, e: &Extras) {
     w.raw("{");
     w.key("position");
-    write_enum_opt(w, e.position.as_ref(), position_name);
+    write_enum_opt(w, e.position, position_name);
     w.sep();
     w.key("inset");
     match &e.inset {
@@ -1094,17 +1108,17 @@ fn write_extras(w: &mut W, e: &Extras) {
         Some(o) => {
             w.raw("{");
             w.key("x");
-            write_enum_opt(w, o.x.as_ref(), overflow_kind_name);
+            write_enum_opt(w, o.x, overflow_kind_name);
             w.sep();
             w.key("y");
-            write_enum_opt(w, o.y.as_ref(), overflow_kind_name);
+            write_enum_opt(w, o.y, overflow_kind_name);
             w.raw("}");
         }
         None => w.raw("null"),
     }
     w.sep();
     w.key("visibility");
-    write_enum_opt(w, e.visibility.as_ref(), visibility_name);
+    write_enum_opt(w, e.visibility, visibility_name);
     w.sep();
     w.key("aspect_ratio");
     w.opt_f32(e.aspect_ratio);
@@ -1187,7 +1201,7 @@ fn write_extras(w: &mut W, e: &Extras) {
             w.f32(t.duration_ms);
             w.sep();
             w.key("ease");
-            write_enum_opt(w, t.ease.as_ref(), ease_name);
+            write_enum_opt(w, t.ease, ease_name);
             w.sep();
             w.key("delay_ms");
             w.f32(t.delay_ms);
@@ -1207,7 +1221,7 @@ fn write_extras(w: &mut W, e: &Extras) {
             w.opt_f32(a.duration_ms);
             w.sep();
             w.key("ease");
-            write_enum_opt(w, a.ease.as_ref(), ease_name);
+            write_enum_opt(w, a.ease, ease_name);
             w.sep();
             w.key("infinite");
             w.boolean(a.infinite);
@@ -1217,11 +1231,11 @@ fn write_extras(w: &mut W, e: &Extras) {
     }
     w.sep();
     w.key("border_style");
-    write_enum_opt(w, e.border_style.as_ref(), border_style_name);
+    write_enum_opt(w, e.border_style, border_style_name);
     w.sep();
     w.key("flex_basis");
     match &e.flex_basis {
-        Some(v) => write_sized(w, v),
+        Some(v) => write_sized(w, *v),
         None => w.raw("null"),
     }
     w.sep();
@@ -1232,7 +1246,7 @@ fn write_extras(w: &mut W, e: &Extras) {
     }
     w.sep();
     w.key("align_content");
-    write_enum_opt(w, e.align_content.as_ref(), content_align_name);
+    write_enum_opt(w, e.align_content, content_align_name);
     w.sep();
     w.key("margin_auto");
     match &e.margin_auto {
@@ -1323,14 +1337,14 @@ fn write_shadow(w: &mut W, sh: &BoxShadow) {
     w.raw("}");
 }
 
-fn write_opt_shadow(w: &mut W, sh: &Option<BoxShadow>) {
+fn write_opt_shadow(w: &mut W, sh: Option<&BoxShadow>) {
     match sh {
         Some(sh) => write_shadow(w, sh),
         None => w.raw("null"),
     }
 }
 
-fn write_opt_dims(w: &mut W, d: &Option<Dimensions>) {
+fn write_opt_dims(w: &mut W, d: Option<&Dimensions>) {
     match d {
         Some(d) => {
             w.raw("{");
@@ -1413,24 +1427,24 @@ fn write_stop(w: &mut W, stop: &GradientStop) {
     w.raw("}");
 }
 
-fn write_sized(w: &mut W, v: &SizedValue) {
+fn write_sized(w: &mut W, v: SizedValue) {
     match v {
         SizedValue::Px(px) => {
             w.raw("{");
             w.key("px");
-            w.f32(*px);
+            w.f32(px);
             w.raw("}");
         }
         SizedValue::Scale(n) => {
             w.raw("{");
             w.key("scale");
-            w.f32(*n);
+            w.f32(n);
             w.raw("}");
         }
         SizedValue::Fraction(f) => {
             w.raw("{");
             w.key("fraction");
-            w.f32(*f);
+            w.f32(f);
             w.raw("}");
         }
         SizedValue::Full => w.str_val("full"),
@@ -1442,7 +1456,7 @@ fn write_sized(w: &mut W, v: &SizedValue) {
 
 fn write_opt_sized(w: &mut W, v: Option<SizedValue>) {
     match v {
-        Some(v) => write_sized(w, &v),
+        Some(v) => write_sized(w, v),
         None => w.raw("null"),
     }
 }
@@ -1507,17 +1521,21 @@ fn write_opt_color(w: &mut W, c: Option<Color>) {
     }
 }
 
-fn write_opt_color_newtype<T>(w: &mut W, slot: &Option<T>, get: impl Fn(&T) -> &Color) {
+fn write_opt_color_newtype<T>(w: &mut W, slot: Option<&T>, get: impl Fn(&T) -> &Color) {
     match slot {
         Some(v) => w.color(get(v)),
         None => w.raw("null"),
     }
 }
 
-fn write_opt_edges<T>(w: &mut W, slot: &Option<T>, edges: impl Fn(&T) -> (&f32, &f32, &f32, &f32)) {
+fn write_opt_edges<T>(
+    w: &mut W,
+    slot: Option<&T>,
+    edges: impl Fn(&T) -> (&f32, &f32, &f32, &f32, EdgeSet),
+) {
     match slot {
         Some(v) => {
-            let (top, right, bottom, left) = edges(v);
+            let (top, right, bottom, left, set) = edges(v);
             w.raw("{");
             w.key("top");
             w.f32(*top);
@@ -1530,13 +1548,33 @@ fn write_opt_edges<T>(w: &mut W, slot: &Option<T>, edges: impl Fn(&T) -> (&f32, 
             w.sep();
             w.key("left");
             w.f32(*left);
+            w.sep();
+            write_edge_set(w, set);
             w.raw("}");
         }
         None => w.raw("null"),
     }
 }
 
-fn write_corner_fields(w: &mut W, (tl, tr, br, bl): (&f32, &f32, &f32, &f32)) {
+/// The v0.8 `"set"` mask object — fixed field order, four booleans.
+fn write_edge_set(w: &mut W, set: EdgeSet) {
+    w.key("set");
+    w.raw("{");
+    w.key("top");
+    w.boolean(set.top);
+    w.sep();
+    w.key("right");
+    w.boolean(set.right);
+    w.sep();
+    w.key("bottom");
+    w.boolean(set.bottom);
+    w.sep();
+    w.key("left");
+    w.boolean(set.left);
+    w.raw("}");
+}
+
+fn write_corner_fields(w: &mut W, (tl, tr, br, bl): (&f32, &f32, &f32, &f32), set: CornerSet) {
     w.key("top_left");
     w.f32(*tl);
     w.sep();
@@ -1548,6 +1586,21 @@ fn write_corner_fields(w: &mut W, (tl, tr, br, bl): (&f32, &f32, &f32, &f32)) {
     w.sep();
     w.key("bottom_left");
     w.f32(*bl);
+    w.sep();
+    w.key("set");
+    w.raw("{");
+    w.key("top_left");
+    w.boolean(set.top_left);
+    w.sep();
+    w.key("top_right");
+    w.boolean(set.top_right);
+    w.sep();
+    w.key("bottom_right");
+    w.boolean(set.bottom_right);
+    w.sep();
+    w.key("bottom_left");
+    w.boolean(set.bottom_left);
+    w.raw("}");
 }
 
 fn write_enum_opt<T: Copy>(w: &mut W, value: Option<T>, name: impl Fn(T) -> &'static str) {
@@ -1784,7 +1837,7 @@ fn read_layer(j: &Json, path: &str) -> Result<ConditionalLayer, SnapshotError> {
                             path: join_path(path, "condition"),
                             msg: "unknown variant condition".to_string(),
                         })?,
-                )
+                );
             }
             "style" => style = Some(read_style(value, &join_path(path, "style"))?),
             _ => {
@@ -1879,7 +1932,7 @@ fn read_atom(j: &Json, path: &str) -> Result<Atom, SnapshotError> {
                         label = Some(match v {
                             Json::Null => None,
                             _ => Some(read_string(v, &join_path(&child, "label"))?.into()),
-                        })
+                        });
                     }
                     _ => {
                         return Err(SnapshotError::UnknownField {
@@ -1933,7 +1986,7 @@ fn read_atom(j: &Json, path: &str) -> Result<Atom, SnapshotError> {
                         name = Some(match v {
                             Json::Null => None,
                             _ => Some(read_string(v, &join_path(&child, "name"))?.into()),
-                        })
+                        });
                     }
                     _ => {
                         return Err(SnapshotError::UnknownField {
@@ -1951,7 +2004,7 @@ fn read_atom(j: &Json, path: &str) -> Result<Atom, SnapshotError> {
     }
 }
 
-/// The v0.7 §4 grid templates: `null` or an array of single-key
+/// The v0.9 §4 grid templates: `null` or an array of single-key
 /// components (`track` / `repeat{count,track}`). Strict: unknown keys,
 /// missing fields and non-canonical shapes are typed errors.
 fn read_tracks(j: &Json, path: &str) -> Result<Option<Vec<TrackComponent>>, SnapshotError> {
@@ -2148,7 +2201,7 @@ fn read_test(j: &Json, path: &str) -> Result<Test, SnapshotError> {
                         attr_value = Some(match v {
                             Json::Null => None,
                             _ => Some(read_string(v, &join_path(&child, "value"))?.into()),
-                        })
+                        });
                     }
                     _ => {
                         return Err(SnapshotError::UnknownField {
@@ -2234,35 +2287,38 @@ fn read_style(j: &Json, path: &str) -> Result<ResolvedStyle, SnapshotError> {
                 }
             }
             "content_color" => {
-                s.content_color = read_opt_color_newtype(value, &p)?.map(ContentColor)
+                s.content_color = read_opt_color_newtype(value, &p)?.map(ContentColor);
             }
             "padding" => {
-                s.padding = read_opt_edges(value, &p, |t, r, b, l| Padding {
+                s.padding = read_opt_edges(value, &p, |t, r, b, l, set| Padding {
                     top: t,
                     right: r,
                     bottom: b,
                     left: l,
-                })?
+                    set,
+                })?;
             }
             "border_color" => s.border_color = read_opt_color_newtype(value, &p)?.map(BorderColor),
             "border_width" => {
-                s.border_width = read_opt_edges(value, &p, |t, r, b, l| BorderWidth {
+                s.border_width = read_opt_edges(value, &p, |t, r, b, l, set| BorderWidth {
                     top: t,
                     right: r,
                     bottom: b,
                     left: l,
-                })?
+                    set,
+                })?;
             }
             "corner_radius" => {
                 s.corner_radius = match value {
                     Json::Null => None,
                     v => {
-                        let (tl, tr, br, bl) = read_corner_obj(v, &p)?;
+                        let (tl, tr, br, bl, set) = read_corner_obj(v, &p)?;
                         Some(CornerRadius {
                             top_left: tl,
                             top_right: tr,
                             bottom_right: br,
                             bottom_left: bl,
+                            set,
                         })
                     }
                 }
@@ -2273,12 +2329,13 @@ fn read_style(j: &Json, path: &str) -> Result<ResolvedStyle, SnapshotError> {
             "gap" => s.gap = read_opt_f32(value, &p)?.map(Gap),
             "shadow" => s.shadow = read_opt_shadow(value, &p)?,
             "margin" => {
-                s.margin = read_opt_edges(value, &p, |t, r, b, l| Margin {
+                s.margin = read_opt_edges(value, &p, |t, r, b, l, set| Margin {
                     top: t,
                     right: r,
                     bottom: b,
                     left: l,
-                })?
+                    set,
+                })?;
             }
             "layout" => s.layout = read_opt_layout(value, &p)?,
             "opacity" => s.opacity = read_opt_f32(value, &p)?.map(Opacity),
@@ -2514,7 +2571,7 @@ fn read_extras(j: &Json, path: &str, e: &mut Extras) -> Result<(), SnapshotError
                                                 msg: "unknown transition set".to_string(),
                                             },
                                         )?,
-                                    )
+                                    );
                                 }
                                 "duration_ms" => duration_ms = read_f32(val, &ip)?,
                                 "ease" => {
@@ -2528,7 +2585,7 @@ fn read_extras(j: &Json, path: &str, e: &mut Extras) -> Result<(), SnapshotError
                                                 },
                                             )?)
                                         }
-                                    })
+                                    });
                                 }
                                 "delay_ms" => delay_ms = read_f32(val, &ip)?,
                                 _ => return Err(SnapshotError::UnknownField { path: ip }),
@@ -2579,7 +2636,7 @@ fn read_extras(j: &Json, path: &str, e: &mut Extras) -> Result<(), SnapshotError
                                                 },
                                             )?)
                                         }
-                                    })
+                                    });
                                 }
                                 "infinite" => infinite = Some(read_bool(val, &ip)?),
                                 _ => return Err(SnapshotError::UnknownField { path: ip }),
@@ -2710,7 +2767,7 @@ fn read_extras(j: &Json, path: &str, e: &mut Extras) -> Result<(), SnapshotError
                                     name = Some(match val {
                                         Json::Null => None,
                                         _ => Some(read_string(val, &ip)?.into()),
-                                    })
+                                    });
                                 }
                                 _ => return Err(SnapshotError::UnknownField { path: ip }),
                             }
@@ -2795,7 +2852,7 @@ fn read_stops(j: &Json, path: &str) -> Result<GradientStops, SnapshotError> {
                 via = Some(match value {
                     Json::Null => None,
                     v => Some(read_stop(v, &p)?),
-                })
+                });
             }
             "to" => to = Some(read_stop(value, &p)?),
             _ => return Err(SnapshotError::UnknownField { path: p }),
@@ -2943,14 +3000,14 @@ fn read_opt_layout(j: &Json, path: &str) -> Result<Option<Layout>, SnapshotError
                 match key.as_str() {
                     "display" => l.display = read_named_opt(value, &p, parse_display)?,
                     "flex_direction" => {
-                        l.flex_direction = read_named_opt(value, &p, parse_flex_direction)?
+                        l.flex_direction = read_named_opt(value, &p, parse_flex_direction)?;
                     }
                     "align_items" => l.align_items = read_named_opt(value, &p, parse_align_items)?,
                     "justify_content" => {
-                        l.justify_content = read_named_opt(value, &p, parse_justify_content)?
+                        l.justify_content = read_named_opt(value, &p, parse_justify_content)?;
                     }
                     "justify_items" => {
-                        l.justify_items = read_named_opt(value, &p, parse_align_items)?
+                        l.justify_items = read_named_opt(value, &p, parse_align_items)?;
                     }
                     "flex_wrap" => l.flex_wrap = read_opt_bool(value, &p)?,
                     "flex_grow" => l.flex_grow = read_opt_f32(value, &p)?,
@@ -3269,7 +3326,7 @@ fn read_opt_color_newtype(j: &Json, path: &str) -> Result<Option<Color>, Snapsho
 fn read_opt_edges<T>(
     j: &Json,
     path: &str,
-    build: impl Fn(f32, f32, f32, f32) -> T,
+    build: impl Fn(f32, f32, f32, f32, EdgeSet) -> T,
 ) -> Result<Option<T>, SnapshotError> {
     match j {
         Json::Null => Ok(None),
@@ -3281,6 +3338,7 @@ fn read_opt_edges<T>(
                 });
             };
             let (mut top, mut right, mut bottom, mut left) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+            let mut set: Option<EdgeSet> = None;
             for (key, value) in fields {
                 let p = join_path(path, key);
                 match key.as_str() {
@@ -3288,15 +3346,70 @@ fn read_opt_edges<T>(
                     "right" => right = read_f32(value, &p)?,
                     "bottom" => bottom = read_f32(value, &p)?,
                     "left" => left = read_f32(value, &p)?,
+                    "set" => set = Some(read_edge_set(value, &p)?),
                     _ => return Err(SnapshotError::UnknownField { path: p }),
                 }
             }
-            Ok(Some(build(top, right, bottom, left)))
+            // The mask is REQUIRED from v2 on: a document without it is a
+            // different schema version, and readers never guess.
+            let Some(set) = set else {
+                return Err(SnapshotError::InvalidValue {
+                    path: path.to_string(),
+                    msg: "missing `set` mask (schema v2 requires it)".to_string(),
+                });
+            };
+            Ok(Some(build(top, right, bottom, left, set)))
         }
     }
 }
 
-fn read_corner_obj(j: &Json, path: &str) -> Result<(f32, f32, f32, f32), SnapshotError> {
+/// The strict `"set"` mask reader: an object of exactly the four edge
+/// booleans, no aliases, no defaults.
+fn read_edge_set(j: &Json, path: &str) -> Result<EdgeSet, SnapshotError> {
+    let Json::Obj(fields) = j else {
+        return Err(SnapshotError::InvalidValue {
+            path: path.to_string(),
+            msg: "expected an object".to_string(),
+        });
+    };
+    let mut set = EdgeSet::default();
+    for (key, value) in fields {
+        let p = join_path(path, key);
+        match key.as_str() {
+            "top" => set.top = read_bool(value, &p)?,
+            "right" => set.right = read_bool(value, &p)?,
+            "bottom" => set.bottom = read_bool(value, &p)?,
+            "left" => set.left = read_bool(value, &p)?,
+            _ => return Err(SnapshotError::UnknownField { path: p }),
+        }
+    }
+    Ok(set)
+}
+
+/// The strict corner-set reader (the corner counterpart of
+/// [`read_edge_set`]).
+fn read_corner_set(j: &Json, path: &str) -> Result<CornerSet, SnapshotError> {
+    let Json::Obj(fields) = j else {
+        return Err(SnapshotError::InvalidValue {
+            path: path.to_string(),
+            msg: "expected an object".to_string(),
+        });
+    };
+    let mut set = CornerSet::default();
+    for (key, value) in fields {
+        let p = join_path(path, key);
+        match key.as_str() {
+            "top_left" => set.top_left = read_bool(value, &p)?,
+            "top_right" => set.top_right = read_bool(value, &p)?,
+            "bottom_right" => set.bottom_right = read_bool(value, &p)?,
+            "bottom_left" => set.bottom_left = read_bool(value, &p)?,
+            _ => return Err(SnapshotError::UnknownField { path: p }),
+        }
+    }
+    Ok(set)
+}
+
+fn read_corner_obj(j: &Json, path: &str) -> Result<(f32, f32, f32, f32, CornerSet), SnapshotError> {
     let Json::Obj(fields) = j else {
         return Err(SnapshotError::InvalidValue {
             path: path.to_string(),
@@ -3307,6 +3420,7 @@ fn read_corner_obj(j: &Json, path: &str) -> Result<(f32, f32, f32, f32), Snapsho
     let mut tr = 0.0f32;
     let mut br = 0.0f32;
     let mut bl = 0.0f32;
+    let mut set: Option<CornerSet> = None;
     for (key, value) in fields {
         let p = join_path(path, key);
         match key.as_str() {
@@ -3314,10 +3428,17 @@ fn read_corner_obj(j: &Json, path: &str) -> Result<(f32, f32, f32, f32), Snapsho
             "top_right" => tr = read_f32(value, &p)?,
             "bottom_right" => br = read_f32(value, &p)?,
             "bottom_left" => bl = read_f32(value, &p)?,
+            "set" => set = Some(read_corner_set(value, &p)?),
             _ => return Err(SnapshotError::UnknownField { path: p }),
         }
     }
-    Ok((tl, tr, br, bl))
+    let Some(set) = set else {
+        return Err(SnapshotError::InvalidValue {
+            path: path.to_string(),
+            msg: "missing `set` mask (schema v2 requires it)".to_string(),
+        });
+    };
+    Ok((tl, tr, br, bl, set))
 }
 
 fn read_named_opt<T: Copy>(
@@ -3464,7 +3585,7 @@ fn media_name(m: Media) -> &'static str {
     }
 }
 
-/// The pseudo-element variant names (v0.7 §1) as accepted by the reader —
+/// The pseudo-element variant names (v0.9 §1) as accepted by the reader —
 /// the same names the parser registers for `selection:`/`placeholder:`/`file:`.
 fn parse_pseudo(s: &str) -> Option<PseudoElement> {
     Some(match s {
@@ -3498,7 +3619,7 @@ fn parse_media(s: &str) -> Option<Media> {
     })
 }
 
-fn structural_name(s: &Structural) -> &'static str {
+fn structural_name(s: Structural) -> &'static str {
     match s {
         Structural::First => "first",
         Structural::Last => "last",
@@ -3522,7 +3643,7 @@ fn parse_structural(s: &str) -> Option<Structural> {
     })
 }
 
-fn display_name(d: &Display) -> &'static str {
+fn display_name(d: Display) -> &'static str {
     match d {
         Display::Flex => "flex",
         Display::InlineFlex => "inline_flex",
@@ -3545,7 +3666,7 @@ fn parse_display(s: &str) -> Option<Display> {
     })
 }
 
-fn flex_direction_name(d: &FlexDirection) -> &'static str {
+fn flex_direction_name(d: FlexDirection) -> &'static str {
     match d {
         FlexDirection::Row => "row",
         FlexDirection::Column => "column",
@@ -3564,7 +3685,7 @@ fn parse_flex_direction(s: &str) -> Option<FlexDirection> {
     })
 }
 
-fn align_items_name(a: &AlignItems) -> &'static str {
+fn align_items_name(a: AlignItems) -> &'static str {
     match a {
         AlignItems::Start => "start",
         AlignItems::Center => "center",
@@ -3585,7 +3706,7 @@ fn parse_align_items(s: &str) -> Option<AlignItems> {
     })
 }
 
-fn justify_content_name(j: &JustifyContent) -> &'static str {
+fn justify_content_name(j: JustifyContent) -> &'static str {
     match j {
         JustifyContent::Start => "start",
         JustifyContent::Center => "center",
@@ -3608,7 +3729,7 @@ fn parse_justify_content(s: &str) -> Option<JustifyContent> {
     })
 }
 
-fn cursor_name(c: &Cursor) -> &'static str {
+fn cursor_name(c: Cursor) -> &'static str {
     match c {
         Cursor::Auto => "auto",
         Cursor::Default => "default",
@@ -3691,7 +3812,7 @@ fn parse_cursor(s: &str) -> Option<Cursor> {
     })
 }
 
-fn pointer_events_name(p: &PointerEvents) -> &'static str {
+fn pointer_events_name(p: PointerEvents) -> &'static str {
     match p {
         PointerEvents::None => "none",
         PointerEvents::Auto => "auto",
@@ -3706,7 +3827,7 @@ fn parse_pointer_events(s: &str) -> Option<PointerEvents> {
     })
 }
 
-fn position_name(p: &Position) -> &'static str {
+fn position_name(p: Position) -> &'static str {
     match p {
         Position::Static => "static",
         Position::Fixed => "fixed",
@@ -3727,7 +3848,7 @@ fn parse_position(s: &str) -> Option<Position> {
     })
 }
 
-fn overflow_kind_name(o: &OverflowKind) -> &'static str {
+fn overflow_kind_name(o: OverflowKind) -> &'static str {
     match o {
         OverflowKind::Visible => "visible",
         OverflowKind::Hidden => "hidden",
@@ -3748,7 +3869,7 @@ fn parse_overflow_kind(s: &str) -> Option<OverflowKind> {
     })
 }
 
-fn visibility_name(v: &Visibility) -> &'static str {
+fn visibility_name(v: Visibility) -> &'static str {
     match v {
         Visibility::Visible => "visible",
         Visibility::Hidden => "hidden",
@@ -3763,7 +3884,7 @@ fn parse_visibility(s: &str) -> Option<Visibility> {
     })
 }
 
-fn border_style_name(b: &BorderStyle) -> &'static str {
+fn border_style_name(b: BorderStyle) -> &'static str {
     match b {
         BorderStyle::Solid => "solid",
         BorderStyle::Dashed => "dashed",
@@ -3786,7 +3907,7 @@ fn parse_border_style(s: &str) -> Option<BorderStyle> {
     })
 }
 
-fn content_align_name(c: &ContentAlign) -> &'static str {
+fn content_align_name(c: ContentAlign) -> &'static str {
     match c {
         ContentAlign::Start => "start",
         ContentAlign::Center => "center",
@@ -3840,7 +3961,7 @@ fn parse_transition_set(s: &str) -> Option<TransitionSet> {
     })
 }
 
-fn ease_name(e: &Ease) -> &'static str {
+fn ease_name(e: Ease) -> &'static str {
     match e {
         Ease::Linear => "linear",
         Ease::In => "in",
@@ -4036,7 +4157,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             e.to_string(),
-            "snapshot schema version 7 is not supported (this build reads version 2)"
+            "snapshot schema version 7 is not supported (this build reads version 3)"
         );
     }
 
@@ -4048,6 +4169,7 @@ mod tests {
             right: 4.0,
             bottom: 4.0,
             left: 4.0,
+            set: EdgeSet::ALL,
         });
         let json = plan.to_snapshot_json();
         // Inject an unknown field at base.padding.
