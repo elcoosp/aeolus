@@ -112,6 +112,8 @@ jobs:
       - uses: taiki-e/install-action@cargo-fuzz
       - name: Fuzz 60s per target
         run: |
-          for t in parse_class_string color_parse cn theme_from_css; do
+          # All six targets in fuzz/Cargo.toml — parse_variant and
+          # probe_eval were wired as targets but never swept by CI.
+          for t in parse_class_string color_parse cn theme_from_css parse_variant probe_eval; do
             cargo +nightly fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=4096
           done
