@@ -88,9 +88,16 @@ impl Color {
             3 | 4 => {
                 let mut v = String::with_capacity(s.len() * 2);
                 for ch in s.chars() {
-                    let lo = ch.to_digit(16).ok_or_else(bad)?;
-                    v.push(char::from_digit(lo, 16).unwrap());
-                    v.push(char::from_digit(lo, 16).unwrap());
+                    let Some(lo) = ch.to_digit(16) else {
+                        return Err(bad());
+                    };
+                    // lo is one hex digit (0..=15), so the from_digit
+                    // round-trip cannot fail; spelled with an explicit
+                    // error arm so this reachable public path (untrusted
+                    // class strings) carries no panic (CONTRIBUTING §2).
+                    let hex = char::from_digit(lo, 16).ok_or_else(bad)?;
+                    v.push(hex);
+                    v.push(hex);
                 }
                 v
             }

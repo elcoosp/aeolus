@@ -1110,7 +1110,14 @@ fn eval_calc(expr: &str, tokens: &HashMap<String, Token>) -> Result<(f32, bool),
         }
         if !value_part.is_empty() {
             if value_part.len() == 1 && "+-*/".contains(value_part) {
-                let op = value_part.chars().next().unwrap();
+                // A single-byte operator token: the byte IS the char, so
+                // `chars().next()` is Some by construction; spelled as a
+                // let-else returning a parse error so this reachable
+                // public path (untrusted theme CSS) carries no panic
+                // (CONTRIBUTING §2).
+                let Some(op) = value_part.chars().next() else {
+                    return Err(ParseError::new(format!("bad calc token {raw:?}")));
+                };
                 if wants_operand {
                     if op == '-' || op == '+' {
                         // Unary sign: fold into the next number, or convert
@@ -1161,8 +1168,16 @@ fn eval_calc(expr: &str, tokens: &HashMap<String, Token>) -> Result<(f32, bool),
         match t {
             Tok::Num(v) => rpn.push(Tok::Num(v)),
             Tok::Op(op) => {
-                while ops.last().is_some_and(|&o| o != '(' && prec(o) >= prec(op)) {
-                    rpn.push(Tok::Op(ops.pop().unwrap()));
+                // Shunting-yard: pop while the top binds at least as
+                // tightly. The pop rides the same guard that scoped the
+                // loop, so the operator stack carries no panic path
+                // (CONTRIBUTING §2: no unwraps on reachable paths).
+                while let Some(&top) = ops.last() {
+                    if top == '(' || prec(top) < prec(op) {
+                        break;
+                    }
+                    ops.pop();
+                    rpn.push(Tok::Op(top));
                 }
                 ops.push(op);
             }
@@ -1413,6 +1428,32 @@ fn split_decls(body: &str) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The calc() operator-edge errors are typed parse failures, never
+    /// panics: the operator/operand invariants ride the parse path, and
+    /// the shunting-yard pops its operator stack under the same guard
+    /// that scoped the loop (the no-panic contract, CONTRIBUTING §2).
+    #[test]
+    fn calc_operator_edges_error_not_panic() {
+        for expr in [
+            "calc(2px + )",      // ends with an operator
+            "calc(* 4px)",       // operator needs a left operand
+            "calc(2px + * 3px)", // second operator in operand position
+        ] {
+            let css = format!(":root {{ --x: {expr}; }}");
+            let err = TailwindTheme::from_theme_css(&css)
+                .expect_err("a malformed calc() must be a typed parse error");
+            assert!(
+                !err.message.is_empty(),
+                "the error names what failed: {expr}"
+            );
+        }
+        // The sane spellings still resolve end to end.
+        let t = TailwindTheme::from_theme_css(":root { --x: calc(2px + 3px) }").unwrap();
+        assert_eq!(t.length("x"), Some(5.0));
+        let t = TailwindTheme::from_theme_css(":root { --x: calc((2px + 3px) * 2) }").unwrap();
+        assert_eq!(t.length("x"), Some(10.0));
+    }
 
     /// Fuzz finding: a CSS string ending in an UNBALANCED block must not
     /// panic (matching_brace returns the string length; `rest[close + 1..]`
