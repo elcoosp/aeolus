@@ -5,6 +5,15 @@
 > First consumer: **`aeolus-gpui`**, replacing the Tailwind half of `gpui-rsx` with real v4 semantics.
 > Breaking the API is allowed and expected (→ `1.0`).
 
+**P1 status (2026-11).** Phase P1 — the data-driven core — has landed
+as the `aeolus-syntax` (zero-copy lexer, differentially pinned to the
+v0.x parser over the golden corpus), `aeolus-data` (registry-as-data,
+group names cross-checked against the tw_merge oracle) and `aeolus-ir`
+(longhand `Prop`/`Val`/`Decl`/`Layer`/`Program` + `PropMask` bitset
+algebra) workspace crates, git-only while the pipeline assembles. P2
+(`aeolus-compile`), P3 (codegen/GPUI) and `xtask` remain planned; the
+sketches below are their contracts, not their implementations.
+
 **Status of evidence.** Everything in §1 comes from reading `elcoosp/aeolus` at the
 v0.9-in-tree rev (`47ecfba`, 2026-11 — the v0.8 set-mask + the variant & grid engine
 landed, workspace version still 0.7.0) and `wsafight/gpui-rsx` (v0.12.1), plus GPUI's
