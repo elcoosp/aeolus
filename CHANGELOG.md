@@ -6,7 +6,58 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] — v0.8 + v0.9: per-edge set-mask, variant engine & test pyramid (merged)
 
-### v0.9.1 — consumer handoff (this change)
+### V1 phase P1 — the data-driven core lands (this change)
+
+The first slice of the zero-runtime track (`docs/AEOLUS_V1_ARCHITECTURE.md`
+§8, phase P1) is now in-tree, git-only (`publish = false`), zero new
+external dependencies:
+
+- **Added `aeolus-ir`:** the longhand IR — `#[repr(u16)] Prop` (95
+  longhands, discriminant order = cascade/sort order), the `PropMask`
+  u128 bitset (`union`/`intersect`/`difference`/`covers` — the v0.8
+  per-edge set-mask idea generalized to the whole surface:
+  `p-4 ⊕ px-8` and layer dominance are bit operations), the 12-byte
+  `Copy` `Val`, `Cond`/`Bp` layer conditions with the v4-cascade
+  specificity ranks, and `Decl`/`Layer`/`Program` assembly. Law-tested
+  (`tests/ir_laws.rs`: mask algebra idempotence/absorption/disjoint
+  TRBL edges, value size budget, stable specificity sort, the
+  base-conflict projection), benched (`benches/mask.rs`), and
+  demonstrated for consumers (`examples/mask_algebra.rs`).
+- **Added `aeolus-data`:** the utility registry as data — one auditable
+  row per utility pattern (~150 rows: root, `ValueKind` shape, longhand
+  targets, `tw_merge` conflict group, v4 source ref, negation flag),
+  the committed v4 scale tables (text sizes, weights, radii, tracking,
+  leading, container widths, z, opacity, border/outline steps, the
+  full default colour palette + shadcn tokens), longest-prefix
+  disambiguation lookup (`rounded-tl-lg` → `rounded-tl`, `min-w-0` →
+  `min-w`, the `text-*` font-size/colour/align triple split), and
+  `generate_docs()` proving the one-source-of-truth claim. The registry
+  tests cross-check every group name against the v0.x
+  `collision_group` oracle AND sweep the golden corpus: every
+  oracle-grouped corpus class must find a registry row carrying that
+  group.
+- **Added `aeolus-syntax`:** the zero-copy lexer — class strings into
+  borrowed `Candidate`s with byte spans (variant segmentation,
+  negation, importance, body, arbitrary form/hint/value/property flag,
+  raw `/modifier`), zero dependencies, typed `LexError` spans, honest
+  per-class degradation. The differential harness pins the lexer to
+  the v0.x `aeolus-core::parser` oracle — the failure/Success split,
+  variant segmentation (canonical space), negation, importance, body,
+  arbitrary and modifier — over a 59-string tricky battery AND every
+  golden-corpus class; the one documented divergence is the v0.x
+  inline caps (8 variants / 10 elements), which the lexer
+  deliberately drops. Benched (`benches/lex.rs`: bare, stacked,
+  calc-arbitrary, whole-string sweep).
+- **Workspace:** the three crates join `[workspace.members]` (git-only
+  while the pipeline assembles, plan §3.2); `aeolus-ir` joins
+  `[workspace.dependencies]` for `aeolus-data`. Pedantic clippy via the
+  workspace `[lints]` table, zero `#[allow]` in the new crates.
+
+P2 (the `aeolus-compile` pipeline), P3 (GPUI codegen) and `xtask`
+remain planned — nothing in the v0.x surface changes: every v0.9.1
+test still passes untouched.
+
+### v0.9.1 — consumer handoff
 
 - **Added:** runnable consumer examples — `crates/aeolus-core/examples/`
   (`resolve`, `plan_algebra`, `cn_merge`) and

@@ -1,55 +1,77 @@
-# feat: consumer-examples-handoff — v0.9 doc alignment, typed theme errors, runnable examples
+# feat: v1-p1-data-driven-core — the V1 zero-runtime data-driven core (phase P1)
 
-## Milestone — v0.9.1 "consumer handoff"
+## Milestone — V1 phase P1: the data-driven core
 
-The tree carries the v0.8 per-edge set-mask and the v0.9 variant & grid engine
-in-tree, but the surfaces a consumer reads told different stories: the README
-quoted both 157 and 193 for the golden corpus and still listed the arbitrary
-grid templates as deferred (v0.9 landed them), the Learn-more section linked
-neither `AEOLUS_V0.8.md`, `AEOLUS_V0.9.md` nor the V1 architecture plan (and
-its older links pointed at non-existent root-level `AEOLUS_V*.md` paths), the
-CHANGELOG header only said "v0.8", the CLI rustdoc cited `AEOLUS_V0.9.md` §3
-as the CLI plan of record (it is `AEOLUS_V0.7.md` §3), and the V1 architecture
-doc's evidence header still claimed a "v0.7.0 tree". This PR aligns every one
-of those surfaces to the v0.9-in-tree reality, clears the two micro-debt items
-found in the survey, and adds the missing consumer surface — runnable
-`examples/` — so a new consumer has working entry points for the first time.
-The V1 zero-runtime track (GPUI, `aeolus-syntax`/`aeolus-ir`/codegen, `xtask`)
-stays documented as future work; nothing of it exists in this tree.
+The tree carries the v0.8 per-edge set-mask and the v0.9 variant & grid
+engine with the v0.9.1 consumer handoff (examples, typed theme errors)
+already merged. This change lands the FIRST slice of the zero-runtime
+track (`docs/AEOLUS_V1_ARCHITECTURE.md` §8, phase P1 — "the data-driven
+core"): three net-new git-only crates that give Aeolus the pieces the
+1.0 compiler pipeline assembles from — the zero-copy lexer, the utility
+registry as data, and the longhand IR with mask algebra. Nothing in the
+v0.x surface changes: every existing test passes untouched, no new
+external dependencies anywhere, `publish = false` while the pipeline
+comes together (plan §3.2).
 
 ### What changed
 
-- **examples/** (net-new): `crates/aeolus-core/examples/{resolve,plan_algebra,cn_merge}.rs`
-  and `crates/aeolus-xilem/examples/styled_label.rs` — resolve → slots/CSS/snapshot,
-  overlay + diff lanes + artifact round-trip, `cn()` conflict merge, and the
-  headless Masonry lowering + `.tw()` sugar. README's Usage section lists them.
-- **Typed theme-spec errors**: `aeolus_cli::load_theme` now returns
-  `ThemeSpecError` (UnknownSpec / BuiltIn / ReadFile / ParseCss) instead of a
-  bare `String`. Display text is unchanged, so the `run()` stderr contract
-  (pinned by the existing tests) is preserved; bare-word specs that are not
-  built-ins now produce a precise "unknown spec" message instead of a
-  misleading file-not-found.
-- **Opt-in instrumentation seams** (off by default — the default dependency
-  graph stays zero-dep): CLI feature `miette` (structured `Diagnostic`
-  code+help on `ThemeSpecError`) and `tracing` (debug spans around command
-  dispatch and the per-file `check` loop). The `aeolus-xilem` backend already
-  carries `tracing`; these bring the headless surface to the same bar without
-  taxing default builds.
-- **Micro-debt**: `muda-stub`'s crate-level `#![allow(dead_code)]` /
-  `#![allow(clippy::new_without_default)]` moved into its own `[lints]` table
-  with rationale — the workspace-wide "zero `#[allow]` in `crates/*/src`"
-  grep claim holds again (the stub is not a workspace member; its allowances
-  are deliberate and now documented where allowances belong).
-- **Docs**: README (corpus 193 in both places; deferred-items list updated —
-  grid templates LANDED, V1 track explicitly PLANNED-not-present; Learn-more
-  links V0.8/V0.9/V1 + fixed `docs/release-notes/…` targets; test count
-  re-measured 444/446; runnable-examples section), CHANGELOG (Unreleased
-  header covers v0.8+v0.9; v0.9.1 subsection), CLI rustdoc plan-of-record
-  reference, V1 architecture evidence header (F1/F2/F6/F8 re-verified at
-  `47ecfba`).
-- **Benches**: `theme_spec_load_builtin` (~115 µs — the once-per-process
-  embedded-palette parse) and `theme_spec_error_render` (~118 ns) in
-  `benches/pipeline.rs`.
+- **`aeolus-ir`** (net-new, zero-dep): the longhand IR —
+  `#[repr(u16)] Prop` (95 longhands; discriminant order = cascade/sort
+  order), the `PropMask` u128 bitset (`union`/`intersect`/
+  `difference`/`covers`/`for_each` — the v0.8 per-edge set-mask idea
+  generalized to the whole longhand surface: `p-4 ⊕ px-8` and layer
+  dominance are bit operations, plan §3.3), the 12-byte `Copy` `Val`
+  (Px/Rem/Pct/Num/Rgba/Tok/ModePair/Kw), `Cond`/`Bp` layer conditions
+  with the v4-cascade specificity ranks, and `Decl`/`Layer`/`Program`
+  assembly (layer 0 = base, stable specificity sort, the
+  base-conflict projection). Laws pinned in `tests/ir_laws.rs` (mask
+  algebra idempotence/absorption/dominance, disjoint TRBL edges, the
+  u128 budget, value size, stable sort, conditional layers never evict
+  base declarations), benched in `benches/mask.rs`, demonstrated for
+  consumers in `examples/mask_algebra.rs`.
+- **`aeolus-data`** (net-new, dep: `aeolus-ir`): the utility registry
+  as data — ~150 auditable rows (root, `ValueKind` shape, longhand
+  targets in TRBL/TL-TR-BR-BL fan-out order, `tw_merge` conflict group,
+  negation flag, v4 source ref), the committed v4 scale tables
+  (`TEXT_SIZES` with the calculated leading pairs, weights, radii,
+  tracking, leading ratios, container widths, z levels, opacity,
+  border/outline/ring-offset steps, the full default colour palette +
+  shadcn tokens, gradient shapes), longest-prefix disambiguation
+  (`rounded-tl-lg` → `rounded-tl`, `min-w-0` → `min-w`, the `text-*`
+  font-size/colour/align triple split, `from-20%` → from-pos vs
+  `from-red-500` → from-color), and `generate_docs()` rendering the
+  audit page from the same rows (the one-source-of-truth claim, plan
+  §3.2). `tests/registry.rs` cross-checks every sampled group name AND
+  sweeps the golden corpus: every `collision_group`-grouped corpus
+  class must find a registry row carrying that group — the tw_merge
+  quirk (`border-dashed` under `border-color`, `flex-1` under
+  `flex-direction`, `ring-inset` under `ring-color`) is registry
+  reality, not a comment.
+- **`aeolus-syntax`** (net-new, zero-dep): the zero-copy lexer — class
+  strings into borrowed `Candidate`s with byte spans (bracket-aware
+  variant segmentation, negation, importance both spellings, body,
+  arbitrary form/hint/value/property flag, RAW `/modifier`), typed
+  `LexError`s with spans, honest per-class degradation for class
+  STRINGS. `tests/differential.rs` pins the lexer to the v0.x
+  `aeolus-core::parser` oracle over a 59-string tricky battery AND
+  every golden-corpus class: failure/Success split, variant
+  segmentation (compared in canonical space through the oracle's own
+  `parse_variant`), negation, importance, body, arbitrary and modifier
+  must agree. One documented divergence: the v0.x inline caps (8
+  variants / 10 elements) are deliberately dropped. `tests/shapes.rs`
+  pins the spans/slices/errors contract; `benches/lex.rs` measures the
+  cold paths (bare 15 ns, stacked 80 ns, calc-arbitrary 47 ns,
+  whole-string 813 ns).
+- **Docs drift fixed for P1:** the README crate table grows the three
+  V1 rows, the Status deferred-items list now says P1 is IN the tree
+  (P2/P3/xtask/GPUI remain planned), the Learn-more V1 entry drops
+  "nothing built yet", the CHANGELOG grows the P1 section, and the V1
+  architecture doc's header records the P1 status beside its evidence
+  header.
+- **Micro-debt/hygiene:** `muda-stub`'s `[lints]` comment now names the
+  two allowances it carries (dead_code, new_without_default) — keeping
+  the workspace's zero-`#[allow]` grep claim precise after the P1
+  additions.
 
 ### Gates (all green on the dirty tree, pre-handoff)
 
@@ -57,40 +79,34 @@ stays documented as future work; nothing of it exists in this tree.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` —
   zero warnings. Pedantic is enforced through the workspace
   `[lints.clippy]` table (`pedantic = warn`, per-lint exceptions with
-  rationale), denied by `-D warnings`. Note on the invocation: appending
-  `-W pedantic` after `--` (unqualified) hard-errors on
-  `renamed-and-removed-lints` under `-D warnings`, and the qualified
-  `-W clippy::pedantic` re-arms pedantic lints AFTER cargo emits the
-  `[lints]` flags, stomping the documented per-lint exceptions (verified:
-  `many_single_char_names` fires on sanctioned code); `-W` before `--` is
-  rejected by cargo. The table-driven form is the working pedantic gate —
-  verified by the same run erroring on any stomped allow.
-- `#![allow|expect|cfg_attr(allow)]` grep over all `.rs` in `crates/`, `fuzz/` —
+  rationale), denied by `-D warnings`; the new crates opt in with
+  `[lints] workspace = true` and carry zero `#[allow]`/`#[expect]`.
+- `#![allow|expect|cfg_attr(allow)]` grep over all `.rs` in `crates/` —
   **empty**.
-- `cargo test --all-features --workspace` — **446 passed, 0 failed**
-  (444 under default features; the delta is the feature-gated CLI tests).
-- `cargo test --benches` (divan, stable — no nightly-only benches exist;
-  the `cargo-fuzz` targets are CI-gated nightly and are not benches) —
-  bench binaries compile and run green.
-- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` and
-  `cargo test --doc -p aeolus-core` — clean (CI parity, bonus).
+- `cargo test --workspace --all-features` — **481 passed, 0 failed**
+  (446 pre-P1 + 35 net-new: 15 in `aeolus-ir`, 9 in `aeolus-data`,
+  11 in `aeolus-syntax`).
+- `cargo test --workspace --benches` + `cargo bench` runs (divan,
+  stable — no nightly-only benches exist; the `cargo-fuzz` targets are
+  CI-gated nightly and are not benches): the P1 `mask`/`lex` suites
+  compile and run green alongside the existing benches
+  (`mask_union_overlay` ≈ 0.4 ns, `lex_bare` ≈ 15 ns).
 
 ### Per-file history lives on the branch
 
 Merging is `--rebase` with **one commit per logical change** landed as
-Conventional-Commit commits on `feat/consumer-examples-handoff` (docs / test /
-feat(examples) / refactor(cli) / chore(lints) / chore(release)), so the
-per-file history survives the rebase onto `origin/main`; the review shows the
-same tree this PR body describes. **No commits have been made on the base
-branch for this work** — the whole change ships as the branch's commits
-authored by `ship.sh` from the dirty tree it was handed.
+Conventional-Commit commits on `feat/v1-p1-data-driven-core` (per-crate
+feat commits for ir → data → syntax, test/bench/docs commits, the
+workspace wiring, the release chore), so the per-file history survives
+the rebase onto `origin/main`; the review shows the same tree this PR
+body describes. **No commits have been made on the base branch for this
+work** — the whole change ships as the branch's commits authored by
+`ship.sh` from the dirty tree it was handed.
 
 ### Verify locally
 
 ```sh
-cargo run -p aeolus-core --example resolve
-cargo run -p aeolus-core --example plan_algebra
-cargo run -p aeolus-core --example cn_merge
-cargo run -p aeolus-xilem --example styled_label
-cargo test --all-features --workspace
+cargo run -p aeolus-ir --example mask_algebra
+cargo test -p aeolus-ir -p aeolus-data -p aeolus-syntax
+cargo test --workspace --all-features
 ```

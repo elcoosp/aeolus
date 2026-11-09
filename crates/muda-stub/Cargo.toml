@@ -17,11 +17,12 @@ serde = []
 [dependencies]
 dpi = { version = "0.1", default-features = false }
 
-# The two crate-level `#![allow(...)]` attributes that used to sit at the
-# top of src/lib.rs live here instead (v0.9.1 consumer-handoff): the
-# workspace's no-allow bar is enforced by a grep over crates/*/src, so
-# allowances belong in a [lints] table WITH their rationale, like the
-# workspace root does for clippy::pedantic exceptions.
+# The two crate-level lint allowances (dead_code, new_without_default)
+# that used to sit at the top of src/lib.rs live here instead (v0.9.1
+# consumer-handoff): the workspace's no-allow bar is enforced by a grep
+# over crates/*/src, so allowances belong in a [lints] table WITH their
+# rationale, like the workspace root does for clippy::pedantic
+# exceptions.
 #
 # Rationale — dead_code: the stub deliberately mirrors the wider muda
 # surface than floem's call sites touch (floem merely STORES Menu values),
