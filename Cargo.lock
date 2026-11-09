@@ -54,7 +54,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "aeolus-cli"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aeolus-core",
  "divan",
@@ -64,15 +64,23 @@ dependencies = [
 
 [[package]]
 name = "aeolus-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "divan",
  "proptest",
 ]
 
 [[package]]
+name = "aeolus-data"
+version = "0.8.0"
+dependencies = [
+ "aeolus-core",
+ "aeolus-ir",
+]
+
+[[package]]
 name = "aeolus-egui"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aeolus-core",
  "egui",
@@ -81,7 +89,7 @@ dependencies = [
 
 [[package]]
 name = "aeolus-floem"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aeolus-core",
  "floem",
@@ -92,7 +100,7 @@ dependencies = [
 
 [[package]]
 name = "aeolus-iced"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aeolus-core",
  "iced_core",
@@ -101,15 +109,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "aeolus-ir"
+version = "0.8.0"
+dependencies = [
+ "divan",
+]
+
+[[package]]
 name = "aeolus-macro"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aeolus-core",
 ]
 
 [[package]]
 name = "aeolus-shadcn"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aeolus-core",
  "aeolus-egui",
@@ -129,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "aeolus-slint"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aeolus-core",
  "futures",
@@ -140,8 +155,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aeolus-syntax"
+version = "0.8.0"
+dependencies = [
+ "aeolus-core",
+ "divan",
+]
+
+[[package]]
 name = "aeolus-xilem"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aeolus-core",
  "masonry",
