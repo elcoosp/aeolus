@@ -1,0 +1,29 @@
+[package]
+name = "aeolus-syntax"
+description = "Aeolus V1 zero-copy lexer: Tailwind v4 class strings into borrowed candidates with spans"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+# Git-only while the V1 pipeline assembles (see aeolus-ir; plan §3.2).
+publish = false
+
+[dependencies]
+# Intentionally empty: zero-copy means zero dependencies. The lexer
+# borrows `&str` end to end (plan §3.2: "zero-dep, `no_std + alloc`
+# capable, borrowed").
+
+[dev-dependencies]
+# The differential oracle: the v0.x parser stays the grammar reference
+# until the registry-as-data pipeline replaces it (plan §5.2).
+aeolus-core = { workspace = true }
+divan = "0.1"
+
+[[bench]]
+name = "lex"
+harness = false
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true

@@ -1,0 +1,24 @@
+[package]
+name = "aeolus-data"
+description = "Aeolus V1 utility registry as data: one auditable row per utility (pattern, value kind, longhand targets, conflict group, v4 source ref)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+# Git-only while the V1 pipeline assembles (plan §3.2); the generator
+# story (xtask-emitted phf/trie + generated docs/linter tables) grows
+# from these rows in P2 — the committed tables ARE the source of truth
+# this round, and `generate_docs()` proves the one-source-of-truth claim.
+publish = false
+
+[dependencies]
+aeolus-ir = { workspace = true }
+
+[dev-dependencies]
+# The differential oracle for the conflict-group names (tw_merge table).
+aeolus-core = { workspace = true }
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true

@@ -1,0 +1,28 @@
+[package]
+name = "aeolus-ir"
+description = "Aeolus V1 longhand IR: Prop/Val/Decl/Layer/Program with mask algebra (docs/AEOLUS_V1_ARCHITECTURE.md §3.3)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+# The V1 stack is net-new API on the road to 1.0 ("breaking the API is
+# allowed and expected", the architecture plan says); it stays git-only
+# until the compiler pipeline (aeolus-theme / aeolus-codegen) lands.
+publish = false
+
+[dependencies]
+# Intentionally empty: the IR is the zero-dependency heart of the V1
+# revamp (architecture plan §3.2 — every value is Copy, no heap in the
+# static form).
+
+[dev-dependencies]
+divan = "0.1"
+
+[[bench]]
+name = "mask"
+harness = false
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true
