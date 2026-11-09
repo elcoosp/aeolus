@@ -5,9 +5,15 @@
 > First consumer: **`aeolus-gpui`**, replacing the Tailwind half of `gpui-rsx` with real v4 semantics.
 > Breaking the API is allowed and expected (→ `1.0`).
 
-**Status of evidence.** Everything in §1 comes from reading `elcoosp/aeolus` (v0.7.0 tree) and
-`wsafight/gpui-rsx` (v0.12.1), plus GPUI's `style.rs` / `styled.rs` / `elements/div.rs` on `main`.
-**I could not build or benchmark anything** (no Rust toolchain in the analysis sandbox). Every number
+**Status of evidence.** Everything in §1 comes from reading `elcoosp/aeolus` at the
+v0.9-in-tree rev (`47ecfba`, 2026-11 — the v0.8 set-mask + the variant & grid engine
+landed, workspace version still 0.7.0) and `wsafight/gpui-rsx` (v0.12.1), plus GPUI's
+`style.rs` / `styled.rs` / `elements/div.rs` on `main`. The code-level findings were
+**re-verified against that tree by the v0.9.1 consumer-handoff**: F1 (`tw!` still emits
+the input string back), F2 (`resolve_static` still takes the exclusive lock on a hit),
+F6 (`button_classes() -> String` per call) and F8 (`resolve.rs` is 4022 lines) all still
+hold; F3's numbers remain the README's own quotes. **I could not build or benchmark
+anything** (no Rust toolchain in the analysis sandbox). Every number
 labelled _measured_ is quoted from Aeolus' own README; every number labelled _target_ is a proposal that
 Phase 0 must validate before anything else is built. Claims about GPUI internals should be re-checked
 against the GPUI revision you pin.
