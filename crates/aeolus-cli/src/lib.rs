@@ -1,5 +1,5 @@
 //! `aeolus` — the headless Aeolus CLI (v0.7, plan of record
-//! `AEOLUS_V0.9.md` §3).
+//! `AEOLUS_V0.7.md` §3).
 //!
 //! The project's consumption paths were all GUI backends; the CLI is the
 //! headless surface: resolve class strings into portable plan snapshots,
@@ -8,16 +8,23 @@
 //! source files (unknown classes, unsupported utilities, conflicts).
 //!
 //! Design contract:
-//! - **Zero dependencies** beyond `aeolus-core` (hand-rolled arg parsing,
-//!   std I/O only) — the same discipline as the core.
+//! - **Zero dependencies beyond `aeolus-core` in the DEFAULT build**
+//!   (hand-rolled arg parsing, std I/O only) — the same discipline as the
+//!   core. The `tracing` and `miette` cargo features are opt-in
+//!   instrumentation seams (off by default, so the default dependency
+//!   graph stays zero-dep): `tracing` adds spans around the command
+//!   dispatch and the per-file check loop; `miette` adds structured
+//!   `Diagnostic` impls (code + help text) to the typed errors.
 //! - **`run()` is the whole program**: arguments in, writers out, exit code
 //!   back — fully testable without spawning a process (`tests/cli.rs`).
 //! - Exit codes: `0` success (warnings are non-fatal, printed to stderr),
 //!   `1` findings matched `--fail-on`, `2` usage/theme/IO errors.
 //! - Every diagnostic is precise (the no-silent-failures rule): unknown
 //!   classes carry suggestions, findings name the token, the string and
-//!   the reason.
+//!   the reason, and theme-spec failures are typed
+//!   ([`ThemeSpecError`]), never bare strings.
 
+use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
 use aeolus_core::{Breakpoint, Resolver, StylePlan, TailwindTheme, Warning, cn};
 use std::fmt::Write as _;
@@ -44,17 +51,152 @@ impl Finding {
     }
 }
 
+/// The typed failure of the `--theme <spec>` seam ([`load_theme`]).
+///
+/// Every variant renders the SAME text the historical `String` error
+/// produced, so the `run()` stderr contract is unchanged; the type exists
+/// so programmatic consumers (wrappers, tests) can match on the failure
+/// mode instead of parsing prose. With the `miette` feature, the variants
+/// additionally carry structured help text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThemeSpecError {
+    /// `spec` named neither a built-in theme nor an existing CSS file.
+    UnknownSpec {
+        /// The offending spec, verbatim.
+        spec: String,
+    },
+    /// A built-in palette failed to parse. Unreachable for the embedded
+    /// data (compile-time constants); handled honestly anyway.
+    BuiltIn {
+        /// Which built-in spec (`shadcn` or `shadcn-dark`).
+        spec: &'static str,
+        /// The underlying theme-parse failure.
+        source: ParseError,
+    },
+    /// The CSS path could not be read from disk.
+    ReadFile {
+        /// The offending path, verbatim.
+        path: String,
+        /// The OS-reported failure kind.
+        kind: std::io::ErrorKind,
+    },
+    /// The CSS file was read but its `@theme`/`:root` declarations did
+    /// not parse (e.g. a `calc()` referencing a var that is never
+    /// defined).
+    ParseCss {
+        /// The offending path, verbatim.
+        path: String,
+        /// The underlying theme-parse failure.
+        source: ParseError,
+    },
+}
+
+impl std::fmt::Display for ThemeSpecError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ThemeSpecError::UnknownSpec { spec } => write!(
+                f,
+                "unknown theme spec {spec:?} — expected shadcn | shadcn-dark | default | <path-to-theme-css>"
+            ),
+            ThemeSpecError::BuiltIn { spec, source } => write!(f, "{spec} theme: {source}"),
+            ThemeSpecError::ReadFile { path, kind } => {
+                write!(f, "cannot read theme CSS {path:?}: {kind}")
+            }
+            ThemeSpecError::ParseCss { path, source } => {
+                write!(f, "theme CSS {path:?}: {source}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ThemeSpecError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ThemeSpecError::BuiltIn { source, .. } | ThemeSpecError::ParseCss { source, .. } => {
+                Some(source)
+            }
+            ThemeSpecError::UnknownSpec { .. } | ThemeSpecError::ReadFile { .. } => None,
+        }
+    }
+}
+
+#[cfg(feature = "miette")]
+impl miette::Diagnostic for ThemeSpecError {
+    fn code(&self) -> Option<Box<dyn std::fmt::Display + '_>> {
+        Some(Box::new(match self {
+            ThemeSpecError::UnknownSpec { .. } => "aeolus::theme_spec::unknown",
+            ThemeSpecError::BuiltIn { .. } => "aeolus::theme_spec::builtin",
+            ThemeSpecError::ReadFile { .. } => "aeolus::theme_spec::read_file",
+            ThemeSpecError::ParseCss { .. } => "aeolus::theme_spec::parse_css",
+        }))
+    }
+
+    fn help(&self) -> Option<Box<dyn std::fmt::Display + '_>> {
+        Some(Box::new(match self {
+            ThemeSpecError::UnknownSpec { .. } => {
+                "the theme spec accepts: shadcn | shadcn-dark | default | <path-to-theme-css>"
+                    .to_string()
+            }
+            ThemeSpecError::BuiltIn { .. } => {
+                "the embedded shadcn palettes are compile-time data; if this fires, report it as a bug"
+                    .to_string()
+            }
+            ThemeSpecError::ReadFile { path, .. } => format!(
+                "check that {path} exists and is readable, or pass a built-in spec (shadcn | shadcn-dark | default)"
+            ),
+            ThemeSpecError::ParseCss { .. } => {
+                "the file was read but its @theme/:root declarations did not parse — every var() referenced inside calc() must be defined in the same file"
+                    .to_string()
+            }
+        }))
+    }
+}
+
 /// Load a theme by spec: `shadcn` (the default), `shadcn-dark`, `default`
 /// (the verbatim Tailwind v4 default theme), or a path to theme CSS.
-pub fn load_theme(spec: &str) -> Result<TailwindTheme, String> {
+///
+/// A spec is treated as a PATH when it contains a path separator or names
+/// a `.css` extension (any letter case); any other bare word that is not a
+/// built-in name is [`ThemeSpecError::UnknownSpec`] (the accepted forms are
+/// in the message and in the miette help) instead of a misleading
+/// file-not-found. Relative CSS files are still supported when written as a
+/// path (`./custom.css`).
+///
+/// # Errors
+/// A typed [`ThemeSpecError`] per failure mode: unknown spec, unreadable
+/// file, unparseable CSS (and the never-expected built-in parse failure).
+pub fn load_theme(spec: &str) -> Result<TailwindTheme, ThemeSpecError> {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(spec = %spec, "loading theme by spec");
     match spec {
-        "shadcn" => aeolus_core::shadcn_default().map_err(|e| format!("shadcn theme: {e}")),
-        "shadcn-dark" => aeolus_core::shadcn_dark().map_err(|e| format!("shadcn-dark theme: {e}")),
+        "shadcn" => aeolus_core::shadcn_default().map_err(|e| ThemeSpecError::BuiltIn {
+            spec: "shadcn",
+            source: e,
+        }),
+        "shadcn-dark" => aeolus_core::shadcn_dark().map_err(|e| ThemeSpecError::BuiltIn {
+            spec: "shadcn-dark",
+            source: e,
+        }),
         "default" => Ok(TailwindTheme::new()),
+        spec if !(spec.contains('/')
+            || spec.contains('\\')
+            || std::path::Path::new(spec)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("css"))) =>
+        {
+            Err(ThemeSpecError::UnknownSpec {
+                spec: spec.to_string(),
+            })
+        }
         path => {
-            let css = std::fs::read_to_string(path)
-                .map_err(|e| format!("cannot read theme CSS {path:?}: {e}"))?;
-            TailwindTheme::from_theme_css(&css).map_err(|e| format!("theme CSS {path:?}: {e}"))
+            let css = std::fs::read_to_string(path).map_err(|e| ThemeSpecError::ReadFile {
+                path: path.to_string(),
+                kind: e.kind(),
+            })?;
+            TailwindTheme::from_theme_css(&css).map_err(|e| ThemeSpecError::ParseCss {
+                path: path.to_string(),
+                source: e,
+            })
         }
     }
 }
@@ -228,6 +370,8 @@ pub fn run<I>(args: I, out: &mut dyn Write, err: &mut dyn Write) -> i32
 where
     I: IntoIterator<Item = String>,
 {
+    #[cfg(feature = "tracing")]
+    let _run_span = tracing::debug_span!("aeolus_run").entered();
     let argv: Vec<String> = args.into_iter().collect();
     if argv.iter().any(|a| a == "--help" || a == "-h") {
         let _ = write!(out, "{USAGE}");
@@ -566,6 +710,8 @@ fn cmd_check(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     let mut findings: Vec<(String, Finding)> = Vec::new();
     let mut io_errors = 0usize;
     for file in &files {
+        #[cfg(feature = "tracing")]
+        let _file_span = tracing::debug_span!("aeolus_check_file", file = file.as_str()).entered();
         let source = match std::fs::read_to_string(file) {
             Ok(s) => s,
             Err(e) => {

@@ -11,7 +11,21 @@ publish = false
 [dependencies]
 # Zero dependencies beyond the core: the CLI shares the core's
 # no-external-crate discipline (hand-rolled arg parsing, std I/O only).
+# The two OPTIONAL features below are instrumentation seams (v0.9.1
+# consumer-handoff): they stay OFF by default so the default dependency
+# graph — and anything consuming the git crate — pulls nothing extra.
 aeolus-core = { workspace = true }
+# `tracing` feature: debug spans around command dispatch and the per-file
+# check loop (no subscriber installed by the CLI — the host app owns one).
+tracing = { version = "0.1", optional = true }
+# `miette` feature: structured `Diagnostic` impls (code + help text) on
+# the typed errors; `miette`'s fancy rendering is the host's choice.
+miette = { version = "7", optional = true, default-features = false }
+
+[features]
+default = []
+tracing = ["dep:tracing"]
+miette = ["dep:miette"]
 
 [dev-dependencies]
 divan = "0.1"
