@@ -2,7 +2,7 @@
 //! extraction + linting + snapshot emission on realistic inputs.
 //! Run with `cargo bench -p aeolus-cli`.
 
-use aeolus_cli::{check_string, extract_candidate_strings};
+use aeolus_cli::{check_string, extract_candidate_strings, load_theme};
 use aeolus_core::{Resolver, StylePlan, TailwindTheme, shadcn_css};
 use divan::Bencher;
 use std::fmt::Write as _;
@@ -80,4 +80,23 @@ fn plan_overlay_button(b: Bencher) {
         .unwrap()
         .plan;
     b.bench(|| divan::black_box(&base).overlay(divan::black_box(&over)));
+}
+
+// The `--theme <spec>` seam (v0.9.1 consumer-handoff): the built-in
+// `shadcn` spec re-parses the embedded palette each call — the cost a
+// CLI process pays once at startup, now measured alongside the pipeline.
+#[divan::bench]
+fn theme_spec_load_builtin(b: Bencher) {
+    b.bench(|| load_theme(divan::black_box("shadcn")));
+}
+
+#[divan::bench]
+fn theme_spec_error_render(b: Bencher) {
+    // The typed-error path: constructing and rendering the failure a
+    // bare-word spec produces (work the error message does, not the
+    // happy path).
+    b.bench(|| {
+        let e = load_theme("nope").expect_err("nope is not a built-in spec");
+        e.to_string()
+    });
 }
