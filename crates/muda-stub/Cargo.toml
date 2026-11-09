@@ -16,3 +16,23 @@ serde = []
 
 [dependencies]
 dpi = { version = "0.1", default-features = false }
+
+# The two crate-level `#![allow(...)]` attributes that used to sit at the
+# top of src/lib.rs live here instead (v0.9.1 consumer-handoff): the
+# workspace's no-allow bar is enforced by a grep over crates/*/src, so
+# allowances belong in a [lints] table WITH their rationale, like the
+# workspace root does for clippy::pedantic exceptions.
+#
+# Rationale — dead_code: the stub deliberately mirrors the wider muda
+# surface than floem's call sites touch (floem merely STORES Menu values),
+# so parts of the no-op surface are never referenced; that is the
+# designed state, not an oversight.
+#
+# Rationale — new_without_default: every `Menu::new()` here is a trivial
+# total constructor of a no-op type; a `Default` impl would add nothing
+# and the crate is never published (see the crate docs).
+[lints.rust]
+dead_code = "allow"
+
+[lints.clippy]
+new_without_default = "allow"
