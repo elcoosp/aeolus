@@ -4,7 +4,38 @@ All notable changes to Aeolus are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — v0.8: per-edge set-mask, variant engine & test pyramid
+## [Unreleased] — v0.8 + v0.9: per-edge set-mask, variant engine & test pyramid (merged)
+
+### v0.9.1 — consumer handoff (this change)
+
+- **Added:** runnable consumer examples — `crates/aeolus-core/examples/`
+  (`resolve`, `plan_algebra`, `cn_merge`) and
+  `crates/aeolus-xilem/examples/styled_label` (plan → native Masonry
+  `PropertyStack` + the `.tw()` view sugar, headlessly). The README's
+  Usage section now lists them.
+- **Added (opt-in):** the `aeolus-cli` `--theme` seam returns the typed
+  `ThemeSpecError` (unknown spec / unreadable file / unparseable CSS) —
+  Display text unchanged, so the `run()` stderr contract is preserved.
+  Two OFF-by-default instrumentation features land with it: `miette`
+  (structured `Diagnostic` help text on the typed errors) and `tracing`
+  (debug spans around command dispatch and the per-file `check` loop);
+  the DEFAULT build keeps the zero-dependency discipline.
+- **Changed (docs):** the v0.9-in-tree reality is now stated everywhere:
+  the README's corpus count is 193 in both places (the emitter bullet
+  said 157), the Status deferred-items list no longer claims arbitrary
+  grid templates are still reported (they LANDED with v0.9), the
+  Learn-more section links `AEOLUS_V0.8.md`/`AEOLUS_V0.9.md`/the V1
+  architecture plan (and fixes the `docs/release-notes/…` link targets),
+  the CLI rustdoc's plan-of-record reference points to `AEOLUS_V0.7.md`
+  §3 (was `AEOLUS_V0.9.md`), and the V1 architecture doc's evidence
+  header records the re-verification of its F-findings at the v0.9 tree.
+- **Changed (hygiene):** `muda-stub`'s crate-level `#![allow(dead_code)]`
+  and `#![allow(clippy::new_without_default)]` moved into its own
+  `[lints]` table with rationale — the workspace-wide "zero `#[allow]`
+  attributes in `crates/*/src`" grep claim holds again.
+- **Benches:** `theme_spec_load_builtin` and `theme_spec_error_render`
+  in the CLI's `benches/pipeline.rs` (the `--theme` seam, once per
+  process).
 
 ### Fixed
 
