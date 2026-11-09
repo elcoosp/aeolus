@@ -206,8 +206,10 @@ pub const OUTLINE_NONE_ROW: UtilityRow = row(
 
 // -- The registry ---------------------------------------------------------
 
-/// Every registry row, in root order. The P1 port: the top ~150 utility
-/// patterns the golden corpus + the `tw_merge` surface exercise.
+/// Every registry row, in root order. The P1 port: the 178 utility
+/// patterns the golden corpus + the `tw_merge` surface exercise (the
+/// plan's "top ~150" turned out to be 178 — the audit count the
+/// generated docs render from these rows).
 pub static ROWS: &[UtilityRow] = &[
     // ---- padding (tw_merge: padding family) -----------------------------
     row(

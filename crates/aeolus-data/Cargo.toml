@@ -14,10 +14,31 @@ publish = false
 
 [dependencies]
 aeolus-ir = { workspace = true }
+# `tracing` feature: debug spans around the registry read paths (the
+# same opt-in instrumentation seam the CLI grew in v0.9.1). OFF by
+# default so the default graph stays dependency-light (aeolus-ir only);
+# no subscriber is installed here — the host app owns one.
+tracing = { version = "0.1", optional = true }
+# `miette` feature: structured `Diagnostic` impls (code + help text) on
+# [`registry::LookupError`]. OFF by default; `miette`'s fancy rendering
+# is the host's choice.
+miette = { version = "7", optional = true, default-features = false }
+
+[features]
+default = []
+tracing = ["dep:tracing"]
+miette = ["dep:miette"]
 
 [dev-dependencies]
 # The differential oracle for the conflict-group names (tw_merge table).
 aeolus-core = { workspace = true }
+# The lookup-seam microbenchmarks (divan, stable — the workspace bench
+# idiom).
+divan = "0.1"
+
+[[bench]]
+name = "lookup"
+harness = false
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]

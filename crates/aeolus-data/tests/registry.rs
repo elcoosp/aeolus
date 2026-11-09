@@ -15,11 +15,14 @@
 //!    the registry ports the corpus's utility surface).
 //! 5. **Docs generation** — `generate_docs()` is a honest render of the
 //!    same rows.
+//! 6. **Typed lookup seam** — `lookup_detailed` returns exactly what
+//!    `lookup` returns on a hit, and a typed `LookupError` (with the
+//!    tried value shapes) on a miss — the "did you mean" seed.
 
 use aeolus_core::conflict::collision_group;
 use aeolus_core::parser::parse_token;
-use aeolus_data::registry::{generate_docs, lookup, lookup_root, roots};
-use aeolus_data::{ValueKind, tables};
+use aeolus_data::registry::{generate_docs, lookup, lookup_detailed, lookup_root, roots};
+use aeolus_data::{ValueKind, registry::LookupError, tables};
 
 // ---------------------------------------------------------------------------
 // 1. Row invariants
@@ -440,4 +443,119 @@ fn generate_docs_renders_every_row() {
     // and the spacing step surface in the docs page.
     assert!(tables::COLOR_KEYWORDS.iter().any(|&(n, _)| n == "red-500"));
     assert!((tables::SPACING_STEP_REM - 0.25).abs() < f32::EPSILON);
+}
+
+// ---------------------------------------------------------------------------
+// 6. The typed lookup seam (lookup_detailed + LookupError)
+// ---------------------------------------------------------------------------
+
+/// `lookup_detailed` on a hit returns exactly what `lookup` returns —
+/// same rows, same registry order. The typed failure adds a WHY on a
+/// miss, never changes the WHAT on a hit.
+#[test]
+fn detailed_hits_match_lookup() {
+    for body in [
+        "p-4",
+        "pb-px",
+        "px-8",
+        "mx-auto",
+        "w-8",
+        "w-full",
+        "w-1/2",
+        "min-w-0",
+        "rounded-tl-lg",
+        "flex-1",
+        "text-sm",
+        "text-center",
+        "text-red-500",
+        "from-20%",
+        "hidden",
+        "pointer-events-none",
+    ] {
+        let silent: Vec<_> = lookup(body).collect();
+        let detailed =
+            lookup_detailed(body).unwrap_or_else(|e| panic!("{body} must look up, got {e:?}"));
+        assert_eq!(
+            detailed, silent,
+            "detailed lookup diverged from lookup for {body}"
+        );
+        assert!(!detailed.is_empty(), "{body} must hit the registry");
+    }
+}
+
+/// An unknown root is a TYPED failure carrying the body — never a silent
+/// empty iterator behind the detailed seam — and it agrees with the
+/// silent seam on which bodies miss entirely.
+#[test]
+fn unknown_root_is_typed_not_silent() {
+    let err = lookup_detailed("not-a-utility").unwrap_err();
+    match &err {
+        LookupError::UnknownRoot { body } => {
+            assert_eq!(body.as_str(), "not-a-utility");
+        }
+        other @ LookupError::ShapeRejected { .. } => {
+            panic!("expected UnknownRoot, got {other:?}")
+        }
+    }
+    // Consistency: the silent seam misses the same body.
+    assert!(lookup("not-a-utility").next().is_none());
+    // The Display form names the body (the audit view) and the Error
+    // impl is usable as `dyn Error` (source is None — no chain).
+    let msg = err.to_string();
+    assert!(
+        msg.contains("not-a-utility"),
+        "display names the body: {msg}"
+    );
+    let _: &dyn std::error::Error = &err;
+    assert!(std::error::Error::source(&err).is_none());
+}
+
+/// A matched root with a rejected suffix shape is typed too: the error
+/// names the winning root AND the value shapes that were tried, so the
+/// diagnostics surface can say what WAS possible.
+#[test]
+fn shape_rejection_is_typed_with_its_tried_kinds() {
+    let err = lookup_detailed("p-red").unwrap_err();
+    match &err {
+        LookupError::ShapeRejected { body, root, tried } => {
+            assert_eq!(body.as_str(), "p-red");
+            assert_eq!(*root, "p");
+            assert_eq!(tried, &["spacing", "arbitrary"], "p's two arms");
+        }
+        other @ LookupError::UnknownRoot { .. } => {
+            panic!("expected ShapeRejected, got {other:?}")
+        }
+    }
+    // The silent seam misses the same body.
+    assert!(lookup("p-red").next().is_none());
+    // The text triple-split root rejects its own junk suffix the same
+    // way (root matched, shape rejected).
+    let err = lookup_detailed("text-banana").unwrap_err();
+    assert!(
+        matches!(err, LookupError::ShapeRejected { root: "text", .. }),
+        "text-banana must reject on the text root, got {err:?}"
+    );
+}
+
+/// With the `miette` feature (the CLI's instrumentation seam, off by
+/// default) the lookup errors carry a structured code + help text.
+#[cfg(all(test, feature = "miette"))]
+mod miette_contract {
+    use super::*;
+
+    #[test]
+    fn lookup_errors_carry_code_and_help() {
+        use miette::Diagnostic;
+        for body in ["not-a-utility", "p-red", "text-banana"] {
+            let err = lookup_detailed(body).unwrap_err();
+            let code = Diagnostic::code(&err)
+                .map(|c| c.to_string())
+                .expect("every variant carries a code");
+            assert!(code.starts_with("aeolus::registry::"), "code {code}");
+            let help = Diagnostic::help(&err)
+                .map(|h| h.to_string())
+                .expect("every variant carries help text");
+            assert!(!help.is_empty(), "help for {body}");
+        }
+    }
 }

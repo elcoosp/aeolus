@@ -14,7 +14,10 @@
 //! at compile time to lower candidates into `Program`s. The conflict
 //! group names are the `tw_merge` 0.1.22 table's own strings (the v0.x
 //! `aeolus-core::conflict` oracle); the registry tests pin the two
-//! tables together, so a drift fails CI, not a downstream backend.
+//! tables together, so a drift fails CI, not a downstream backend. The
+//! read side is typed as well: [`registry::lookup_detailed`] answers a
+//! miss with [`registry::LookupError`] (unknown root vs. rejected value
+//! shape) instead of an empty iterator.
 //!
 //! What a row does NOT carry: the CSS emission logic. The registry says
 //! `p-4` targets the four padding longhands with the spacing scale; how
@@ -24,6 +27,8 @@
 pub mod registry;
 pub mod rows;
 pub mod tables;
+
+pub use registry::{LookupError, lookup_detailed};
 
 use aeolus_ir::Prop;
 
