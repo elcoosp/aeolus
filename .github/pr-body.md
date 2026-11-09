@@ -1,112 +1,109 @@
-# feat: v1-p1-data-driven-core — the V1 zero-runtime data-driven core (phase P1)
+# feat: p1-consumer-examples — typed registry seam, consumer examples, drift alignment
 
-## Milestone — V1 phase P1: the data-driven core
+## Milestone — the P1 consumer handoff, part two
 
-The tree carries the v0.8 per-edge set-mask and the v0.9 variant & grid
-engine with the v0.9.1 consumer handoff (examples, typed theme errors)
-already merged. This change lands the FIRST slice of the zero-runtime
-track (`docs/AEOLUS_V1_ARCHITECTURE.md` §8, phase P1 — "the data-driven
-core"): three net-new git-only crates that give Aeolus the pieces the
-1.0 compiler pipeline assembles from — the zero-copy lexer, the utility
-registry as data, and the longhand IR with mask algebra. Nothing in the
-v0.x surface changes: every existing test passes untouched, no new
-external dependencies anywhere, `publish = false` while the pipeline
-comes together (plan §3.2).
+The V1 data-driven core (phase P1: `aeolus-syntax`, `aeolus-data`,
+`aeolus-ir`) landed git-only in the previous change; this change closes
+the P1 story so P2 (the `aeolus-compile` pipeline) starts from an
+honest, resolvable, consumer-ready tree — nothing in the v0.x surface
+changes and no default dependency graph grows.
 
 ### What changed
 
-- **`aeolus-ir`** (net-new, zero-dep): the longhand IR —
-  `#[repr(u16)] Prop` (95 longhands; discriminant order = cascade/sort
-  order), the `PropMask` u128 bitset (`union`/`intersect`/
-  `difference`/`covers`/`for_each` — the v0.8 per-edge set-mask idea
-  generalized to the whole longhand surface: `p-4 ⊕ px-8` and layer
-  dominance are bit operations, plan §3.3), the 12-byte `Copy` `Val`
-  (Px/Rem/Pct/Num/Rgba/Tok/ModePair/Kw), `Cond`/`Bp` layer conditions
-  with the v4-cascade specificity ranks, and `Decl`/`Layer`/`Program`
-  assembly (layer 0 = base, stable specificity sort, the
-  base-conflict projection). Laws pinned in `tests/ir_laws.rs` (mask
-  algebra idempotence/absorption/dominance, disjoint TRBL edges, the
-  u128 budget, value size, stable sort, conditional layers never evict
-  base declarations), benched in `benches/mask.rs`, demonstrated for
-  consumers in `examples/mask_algebra.rs`.
-- **`aeolus-data`** (net-new, dep: `aeolus-ir`): the utility registry
-  as data — ~150 auditable rows (root, `ValueKind` shape, longhand
-  targets in TRBL/TL-TR-BR-BL fan-out order, `tw_merge` conflict group,
-  negation flag, v4 source ref), the committed v4 scale tables
-  (`TEXT_SIZES` with the calculated leading pairs, weights, radii,
-  tracking, leading ratios, container widths, z levels, opacity,
-  border/outline/ring-offset steps, the full default colour palette +
-  shadcn tokens, gradient shapes), longest-prefix disambiguation
-  (`rounded-tl-lg` → `rounded-tl`, `min-w-0` → `min-w`, the `text-*`
-  font-size/colour/align triple split, `from-20%` → from-pos vs
-  `from-red-500` → from-color), and `generate_docs()` rendering the
-  audit page from the same rows (the one-source-of-truth claim, plan
-  §3.2). `tests/registry.rs` cross-checks every sampled group name AND
-  sweeps the golden corpus: every `collision_group`-grouped corpus
-  class must find a registry row carrying that group — the tw_merge
-  quirk (`border-dashed` under `border-color`, `flex-1` under
-  `flex-direction`, `ring-inset` under `ring-color`) is registry
-  reality, not a comment.
-- **`aeolus-syntax`** (net-new, zero-dep): the zero-copy lexer — class
-  strings into borrowed `Candidate`s with byte spans (bracket-aware
-  variant segmentation, negation, importance both spellings, body,
-  arbitrary form/hint/value/property flag, RAW `/modifier`), typed
-  `LexError`s with spans, honest per-class degradation for class
-  STRINGS. `tests/differential.rs` pins the lexer to the v0.x
-  `aeolus-core::parser` oracle over a 59-string tricky battery AND
-  every golden-corpus class: failure/Success split, variant
-  segmentation (compared in canonical space through the oracle's own
-  `parse_variant`), negation, importance, body, arbitrary and modifier
-  must agree. One documented divergence: the v0.x inline caps (8
-  variants / 10 elements) are deliberately dropped. `tests/shapes.rs`
-  pins the spans/slices/errors contract; `benches/lex.rs` measures the
-  cold paths (bare 15 ns, stacked 80 ns, calc-arbitrary 47 ns,
-  whole-string 813 ns).
-- **Docs drift fixed for P1:** the README crate table grows the three
-  V1 rows, the Status deferred-items list now says P1 is IN the tree
-  (P2/P3/xtask/GPUI remain planned), the Learn-more V1 entry drops
-  "nothing built yet", the CHANGELOG grows the P1 section, and the V1
-  architecture doc's header records the P1 status beside its evidence
-  header.
-- **Micro-debt/hygiene:** `muda-stub`'s `[lints]` comment now names the
-  two allowances it carries (dead_code, new_without_default) — keeping
-  the workspace's zero-`#[allow]` grep claim precise after the P1
-  additions.
+- **Fixed the build breakage the v0.9.0 release shipped.** The release
+  bump moved `[workspace.package]` to 0.9.0 but left the
+  `[workspace.dependencies]` intra-workspace pins at 0.8.0; cargo
+  enforces the version requirement against path dependencies, so every
+  `aeolus-core = { workspace = true }` member failed resolution
+  (`failed to select a version for the requirement aeolus-core =
+  "^0.8.0"`) — the tree at HEAD did not build at all. The pins are back
+  in lockstep (0.9.0), the manifest carries a comment stating the
+  contract, `Cargo.lock` records the members at 0.9.0, and `ship.sh`'s
+  BUMP step now updates both blocks together so a release can not
+  strand them again.
+- **`aeolus-data` grows the typed read seam** the crate docs promise:
+  `registry::lookup_detailed` returns exactly `lookup`'s rows on a hit
+  (pinned by tests) and, on a miss, a typed
+  `LookupError::UnknownRoot` / `LookupError::ShapeRejected { root,
+  tried }` — the deduplicated value-shape labels that were tried, with
+  `AnyOf` arms flattened to their inner kinds (the RED test caught the
+  first implementation labelling every row "any-of"). Two OFF-by-default
+  instrumentation features land with it, exactly the CLI's v0.9.1
+  pattern: `tracing` (debug spans on the read paths) and `miette`
+  (`Diagnostic` code + help text: `aeolus::registry::unknown_root` /
+  `::shape_rejected`). The default graph stays dependency-light
+  (aeolus-ir only). Benched in `benches/lookup.rs` (silent hit, detailed
+  hit, both misses — median 327.8 ns on the detailed hit vs 531.8 ns
+  silent, misses 387–434 ns).
+- **The three crates that had no consumer entry point get runnable
+  demonstrations:** `crates/aeolus-syntax/examples/lex_candidates.rs`
+  (borrowed candidates + byte spans, honest per-class degradation, the
+  typed `LexError` misses), `crates/aeolus-data/examples/registry_lookup.rs`
+  (rows, longest-prefix disambiguation, conflict groups, the typed
+  misses, `generate_docs()`), and
+  `crates/aeolus-cli/examples/theme_spec.rs` (the `--theme` seam as a
+  library: `load_theme` + the typed `ThemeSpecError` contract).
+- **Micro-debt cleanup (CONTRIBUTING §2: no unwraps on reachable
+  public-API paths):** `eval_calc`'s shunting-yard pop now rides the
+  same guard that scoped the loop, the bare-operator token is a
+  let-else returning a parse error, and `Color::parse`'s 3/4-digit hex
+  doubling has an explicit error arm instead of two provably-safe
+  unwraps. A new test pins the calc()-edge typed-error contract
+  (`calc(2px + )` / `calc(* 4px)` / `calc(2px + * 3px)` are parse
+  errors, never panics) and the sane spellings still resolve.
+- **CI drift:** the fuzz smoke loop sweeps all SIX `fuzz/Cargo.toml`
+  targets — `parse_variant` and `probe_eval` were wired as targets but
+  absent from the CI loop.
+- **Docs drift, everywhere it was found:** the README status paragraph
+  says **v0.9.0** (it still said v0.7.0 while claiming P1 was in-tree);
+  the CHANGELOG cuts `[0.9.0]` and `[0.8.0]` (the merged v0.8 + v0.9
+  story had lived under `[Unreleased]` since its tags) and this change
+  gets its own `[Unreleased]` section; the P1 story's counts are the
+  real ones — `Prop` = **110 longhands** (was "95") and the registry =
+  **178 rows** (was "~150") — in the CHANGELOG, the architecture plan's
+  P1 status block, the §8 roadmap row (with the generator explicitly
+  moved to P2) and `rows.rs`'s own rustdoc; the evidence header's
+  "workspace version still 0.7.0" is annotated with when that stopped
+  being true (the v0.8.0/v0.9.0 tags).
 
 ### Gates (all green on the dirty tree, pre-handoff)
 
 - `cargo fmt --all --check` — clean.
-- `cargo clippy --workspace --all-targets --all-features -- -D warnings` —
-  zero warnings. Pedantic is enforced through the workspace
-  `[lints.clippy]` table (`pedantic = warn`, per-lint exceptions with
-  rationale), denied by `-D warnings`; the new crates opt in with
-  `[lints] workspace = true` and carry zero `#[allow]`/`#[expect]`.
-- `#![allow|expect|cfg_attr(allow)]` grep over all `.rs` in `crates/` —
-  **empty**.
-- `cargo test --workspace --all-features` — **481 passed, 0 failed**
-  (446 pre-P1 + 35 net-new: 15 in `aeolus-ir`, 9 in `aeolus-data`,
-  11 in `aeolus-syntax`).
-- `cargo test --workspace --benches` + `cargo bench` runs (divan,
-  stable — no nightly-only benches exist; the `cargo-fuzz` targets are
-  CI-gated nightly and are not benches): the P1 `mask`/`lex` suites
-  compile and run green alongside the existing benches
-  (`mask_union_overlay` ≈ 0.4 ns, `lex_bare` ≈ 15 ns).
+- `cargo clippy --workspace --all-targets --all-features -- -D
+  warnings` — **exit 0, zero warnings**. Pedantic is enforced through
+  the workspace `[lints.clippy]` table (`pedantic = warn`, per-lint
+  exceptions with rationale) denied by `-D warnings` — proven live: the
+  gate rejected `match_wildcard_for_single_variants` in the new tests
+  until they named the variants. (Clippy 1.99 makes a literal `-W
+  pedantic` on the command line a deprecation ERROR, and `-W
+  clippy::pedantic` overrides the manifest's rationale-backed allows —
+  186 of them, all deliberate — so the manifest-driven gate is the one
+  that preserves this repo's documented lint contract.)
+- `#![allow|expect|cfg_attr(allow)]` grep over `crates/` — **empty**.
+- `cargo test --workspace --all-features` — **486 passed, 0 failed**
+  (the pre-change suite plus the net-new: 3 registry-seam tests + the
+  miette contract test + the calc-edge pin).
+- `cargo test --benches --all-features` — green (all benches are divan
+  and stable; **no nightly-only benches exist** — the only nightly
+  surface is the `cargo-fuzz` job, which is CI-gated and not a bench).
 
 ### Per-file history lives on the branch
 
 Merging is `--rebase` with **one commit per logical change** landed as
-Conventional-Commit commits on `feat/v1-p1-data-driven-core` (per-crate
-feat commits for ir → data → syntax, test/bench/docs commits, the
-workspace wiring, the release chore), so the per-file history survives
-the rebase onto `origin/main`; the review shows the same tree this PR
-body describes. **No commits have been made on the base branch for this
-work** — the whole change ships as the branch's commits authored by
-`ship.sh` from the dirty tree it was handed.
+Conventional-Commit commits on `feat/p1-consumer-examples` (the
+build-pin fix, the CI fix, the core de-unwrap refactor, the data seam
+feat with its tests + bench, the examples feat, the docs alignment), so
+the per-file history survives the rebase onto `origin/main`; the review
+shows the same tree this PR body describes. **No commits have been made
+on the base branch for this work** — the whole change ships as the
+branch's commits authored by `ship.sh` from the dirty tree it was
+handed.
 
 ### Verify locally
 
 ```sh
-cargo run -p aeolus-ir --example mask_algebra
-cargo test -p aeolus-ir -p aeolus-data -p aeolus-syntax
+cargo run -p aeolus-syntax --example lex_candidates
+cargo run -p aeolus-data --example registry_lookup
+cargo run -p aeolus-cli --example theme_spec
 cargo test --workspace --all-features
 ```
