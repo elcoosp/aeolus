@@ -2,7 +2,7 @@
 //! capture is the initial "no such crate" compile failure, recorded in
 //! `reports/10-tdd-evidence/09-portable-plans.md`).
 
-use aeolus_cli::{check_string, extract_candidate_strings, run};
+use aeolus_cli::{ThemeSpecError, check_string, extract_candidate_strings, load_theme, run};
 use aeolus_core::{StylePlan, TailwindTheme, shadcn_css};
 
 fn theme() -> TailwindTheme {
@@ -241,4 +241,107 @@ fn extractor_finds_quoted_and_raw_strings() {
         check_string("p-4 bg-primary", &t),
         [] as [aeolus_cli::Finding; 0]
     );
+}
+
+// ---------------------------------------------------------------------------
+// Typed theme-spec errors (v0.9.1 consumer-handoff): `load_theme` is a
+// PUBLIC seam of the headless surface; per the no-weak-errors rule it
+// returns a typed error (not `String`) whose Display keeps the historical
+// run() stderr contract (`cannot read theme CSS …`) pinned above.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn load_theme_reports_unknown_spec_as_typed_error() {
+    let e = load_theme("nope").unwrap_err();
+    match &e {
+        ThemeSpecError::UnknownSpec { spec } => assert_eq!(spec, "nope"),
+        other => panic!("expected UnknownSpec, got {other:?}"),
+    }
+    let msg = e.to_string();
+    assert!(msg.contains("nope"), "names the offending spec: {msg}");
+    assert!(
+        msg.contains("shadcn") && msg.contains("default") && msg.contains("<path"),
+        "display carries the accepted forms: {msg}"
+    );
+}
+
+#[test]
+fn load_theme_reports_missing_file_as_typed_io_error() {
+    let e = load_theme("/nonexistent/theme.css").unwrap_err();
+    match &e {
+        ThemeSpecError::ReadFile { path, kind } => {
+            assert_eq!(path, "/nonexistent/theme.css");
+            assert_eq!(*kind, std::io::ErrorKind::NotFound);
+        }
+        other => panic!("expected ReadFile, got {other:?}"),
+    }
+    // The rendered text keeps the historical prefix the run() contract
+    // (and resolve_theme_file_and_specs above) already pin.
+    assert!(e.to_string().contains("cannot read theme CSS"), "{e}");
+}
+
+#[test]
+fn load_theme_reports_unparseable_css_as_typed_parse_error() {
+    let path = std::env::temp_dir().join("aeolus-cli-bad-theme.css");
+    // A var() that never resolves is the documented theme-parse failure
+    // (calc entries whose dependencies never appear are rejected).
+    std::fs::write(
+        &path,
+        ":root { --primary: calc(var(--never-defined) * 2); }",
+    )
+    .unwrap();
+    let e = load_theme(path.to_str().unwrap()).unwrap_err();
+    match &e {
+        ThemeSpecError::ParseCss { path, .. } => {
+            assert!(path.ends_with("aeolus-cli-bad-theme.css"), "{path}");
+        }
+        other => panic!("expected ParseCss, got {other:?}"),
+    }
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn load_theme_built_in_specs_still_resolve() {
+    assert!(load_theme("shadcn").is_ok());
+    assert!(load_theme("shadcn-dark").is_ok());
+    assert!(load_theme("default").is_ok());
+}
+
+#[test]
+fn run_reports_the_typed_theme_error_on_stderr() {
+    let (code, _, err) = run_cmd(&["resolve", "--theme", "/nonexistent/theme.css", "p-4"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("cannot read theme CSS"), "{err}");
+}
+
+#[cfg(feature = "miette")]
+#[test]
+fn theme_spec_error_carries_miette_help() {
+    use miette::Diagnostic;
+    let e = load_theme("nope").unwrap_err();
+    let help = e.help().expect("unknown-spec carries help").to_string();
+    assert!(
+        help.contains("shadcn"),
+        "help names the accepted specs: {help}"
+    );
+    assert!(e.code().is_some(), "every variant carries a code");
+    let e = load_theme("/nonexistent/theme.css").unwrap_err();
+    let help = e.help().expect("read-file carries help").to_string();
+    assert!(
+        help.contains("built-in"),
+        "help suggests the fallback: {help}"
+    );
+}
+
+#[cfg(feature = "tracing")]
+#[test]
+fn run_with_tracing_spans_keeps_the_contract() {
+    // No global subscriber is installed: the spans compile and are no-ops.
+    // The observable contract (exit code, stderr text) must be unchanged.
+    let (code, out, err) = run_cmd(&["resolve", "p-4"]);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert!(out.contains("\"base\""), "snapshot artifact intact: {out}");
+    let (code, _, err) = run_cmd(&["resolve", "--theme", "/nonexistent/theme.css", "p-4"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("cannot read theme CSS"), "{err}");
 }
