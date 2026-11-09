@@ -15,7 +15,7 @@ members = [
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/aeolus-rs/aeolus"
@@ -105,8 +105,8 @@ too_many_arguments = "allow"
 chunks_exact_to_as_chunks = "allow"
 
 [workspace.dependencies]
-aeolus-core = { version = "0.7.0", path = "crates/aeolus-core" }
-aeolus-macro = { version = "0.7.0", path = "crates/aeolus-macro" }
+aeolus-core = { version = "0.8.0", path = "crates/aeolus-core" }
+aeolus-macro = { version = "0.8.0", path = "crates/aeolus-macro" }
 
 # AEOLUS sandbox only: floem hard-depends on muda's `gtk` feature on Linux
 # (floem/Cargo.toml, `[target.'cfg(target_os = "linux")'.dependencies]` has no
