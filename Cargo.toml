@@ -111,9 +111,15 @@ too_many_arguments = "allow"
 chunks_exact_to_as_chunks = "allow"
 
 [workspace.dependencies]
-aeolus-core = { version = "0.8.0", path = "crates/aeolus-core" }
-aeolus-macro = { version = "0.8.0", path = "crates/aeolus-macro" }
-aeolus-ir = { version = "0.8.0", path = "crates/aeolus-ir" }
+# Intra-workspace version pins MUST stay in lockstep with
+# `[workspace.package] version` (the v0.9.0 release bump left these at
+# 0.8.0 and the workspace stopped resolving: cargo enforces the version
+# requirement against the path dependency, so every `aeolus-core = {
+# workspace = true }` member failed with "failed to select a version").
+# ship.sh's BUMP step updates both blocks together.
+aeolus-core = { version = "0.9.0", path = "crates/aeolus-core" }
+aeolus-macro = { version = "0.9.0", path = "crates/aeolus-macro" }
+aeolus-ir = { version = "0.9.0", path = "crates/aeolus-ir" }
 
 # AEOLUS sandbox only: floem hard-depends on muda's `gtk` feature on Linux
 # (floem/Cargo.toml, `[target.'cfg(target_os = "linux")'.dependencies]` has no
