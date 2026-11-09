@@ -4,7 +4,51 @@ All notable changes to Aeolus are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — v0.8 + v0.9: per-edge set-mask, variant engine & test pyramid (merged)
+## [Unreleased]
+
+### The P1 consumer handoff, part two: typed registry seam, examples, drift alignment (this change)
+
+- **Fixed (build):** the v0.9.0 release bump left `[workspace.dependencies]`'s
+  intra-workspace pins at 0.8.0 while `[workspace.package]` moved to 0.9.0
+  — cargo enforces the version requirement against path dependencies, so
+  the workspace stopped resolving (`failed to select a version for the
+  requirement aeolus-core = "^0.8.0"`). The pins are back in lockstep,
+  with a manifest comment explaining the contract and the release
+  process (ship.sh) updating both blocks together from now on.
+- **Fixed (ci):** the fuzz sweep runs all SIX fuzz targets —
+  `parse_variant` and `probe_eval` were wired in `fuzz/Cargo.toml` but
+  absent from the CI loop.
+- **Added (data):** `registry::lookup_detailed` + `LookupError` — the
+  typed "did you mean" seed the crate docs promise: identical rows to
+  `lookup` on a hit (pinned), and on a miss a TYPED failure mode —
+  `UnknownRoot` vs `ShapeRejected { root, tried }` (the deduplicated
+  value-shape labels that were tried, `AnyOf` arms flattened). Two
+  OFF-by-default instrumentation features land with it, exactly the
+  CLI's v0.9.1 pattern: `tracing` (debug spans on the read paths) and
+  `miette` (`Diagnostic` code + help text). The default graph stays
+  dependency-light (aeolus-ir only). Benched (`benches/lookup.rs`:
+  silent hit, detailed hit, both misses).
+- **Added (examples):** consumer demonstrations for the crates that had
+  none — `crates/aeolus-syntax/examples/lex_candidates.rs` (the
+  zero-copy lexer's candidates + spans, and a typed miss),
+  `crates/aeolus-data/examples/registry_lookup.rs` (rows, masks,
+  conflict groups, the typed failures), and
+  `crates/aeolus-cli/examples/theme_spec.rs` (the `--theme` seam as a
+  library: `load_theme`, the typed `ThemeSpecError` contract).
+- **Changed (hygiene):** the guarded unwraps on reachable public parse
+  paths are gone — `eval_calc`'s shunting-yard pop rides its own guard,
+  the bare-operator token is a let-else returning a parse error, and
+  `Color::parse`'s 3/4-digit hex doubling has an explicit error arm
+  (CONTRIBUTING §2: no unwraps on reachable public-API paths). A new
+  test pins the calc()-edge typed-error contract (operator needs an
+  operand / ends with an operator — errors, never panics).
+- **Changed (docs):** the drift pass — the README's status paragraph
+  says v0.9.0 (it still said v0.7.0); the CHANGELOG cuts `[0.9.0]` and
+  `[0.8.0]` (the merged v0.8 + v0.9 story had lived under
+  `[Unreleased]` since its tags); the P1 section's counts are the real
+  ones (`Prop` = 110 longhands, the registry = 178 rows — was "95" and
+  "~150"); the V1 architecture plan's P1 status and §8 row record the
+  landed reality (178 rows in-tree, the xtask generator explicitly P2).
 
 ### V1 phase P1 — the data-driven core lands (this change)
 
@@ -12,7 +56,7 @@ The first slice of the zero-runtime track (`docs/AEOLUS_V1_ARCHITECTURE.md`
 §8, phase P1) is now in-tree, git-only (`publish = false`), zero new
 external dependencies:
 
-- **Added `aeolus-ir`:** the longhand IR — `#[repr(u16)] Prop` (95
+- **Added `aeolus-ir`:** the longhand IR — `#[repr(u16)] Prop` (110
   longhands, discriminant order = cascade/sort order), the `PropMask`
   u128 bitset (`union`/`intersect`/`difference`/`covers` — the v0.8
   per-edge set-mask idea generalized to the whole surface:
@@ -24,7 +68,7 @@ external dependencies:
   base-conflict projection), benched (`benches/mask.rs`), and
   demonstrated for consumers (`examples/mask_algebra.rs`).
 - **Added `aeolus-data`:** the utility registry as data — one auditable
-  row per utility pattern (~150 rows: root, `ValueKind` shape, longhand
+  row per utility pattern (178 rows: root, `ValueKind` shape, longhand
   targets, `tw_merge` conflict group, v4 source ref, negation flag),
   the committed v4 scale tables (text sizes, weights, radii, tracking,
   leading, container widths, z, opacity, border/outline steps, the
@@ -87,6 +131,8 @@ test still passes untouched.
 - **Benches:** `theme_spec_load_builtin` and `theme_spec_error_render`
   in the CLI's `benches/pipeline.rs` (the `--theme` seam, once per
   process).
+
+## [0.9.0] — 2026-11-09 — v0.8 + v0.9: per-edge set-mask, variant engine & test pyramid (merged)
 
 ### Fixed
 
@@ -162,6 +208,12 @@ test still passes untouched.
   contract.
 - **`benches/snapshot.rs`**: the artifact path and the plan overlay on
   the rich Button plan — report 08.
+
+## [0.8.0] — 2026-11-09
+
+The per-edge set-mask slice of the merged story above (the two releases
+shipped one merged narrative — see [0.9.0]; the tags cut at
+`chore(release): v0.8.0` and `chore(release): v0.9.0`).
 
 ## [0.7.0] — 2026-11-08
 

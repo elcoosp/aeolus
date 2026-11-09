@@ -8,15 +8,20 @@
 **P1 status (2026-11).** Phase P1 — the data-driven core — has landed
 as the `aeolus-syntax` (zero-copy lexer, differentially pinned to the
 v0.x parser over the golden corpus), `aeolus-data` (registry-as-data,
-group names cross-checked against the tw_merge oracle) and `aeolus-ir`
-(longhand `Prop`/`Val`/`Decl`/`Layer`/`Program` + `PropMask` bitset
-algebra) workspace crates, git-only while the pipeline assembles. P2
-(`aeolus-compile`), P3 (codegen/GPUI) and `xtask` remain planned; the
-sketches below are their contracts, not their implementations.
+178 rows, group names cross-checked against the tw_merge oracle, plus
+the typed `lookup_detailed`/`LookupError` read seam) and `aeolus-ir`
+(longhand `Prop`/`Val`/`Decl`/`Layer`/`Program` — 110 longhands — +
+`PropMask` bitset algebra) workspace crates, git-only while the
+pipeline assembles. The §8 row's "registry + generator" generator
+story (xtask-emitted phf/trie) stayed in P2: the committed tables ARE
+the P1 source of truth, as §3.2 always said. P2 (`aeolus-compile`),
+P3 (codegen/GPUI) and `xtask` remain planned; the sketches below are
+their contracts, not their implementations.
 
 **Status of evidence.** Everything in §1 comes from reading `elcoosp/aeolus` at the
 v0.9-in-tree rev (`47ecfba`, 2026-11 — the v0.8 set-mask + the variant & grid engine
-landed, workspace version still 0.7.0) and `wsafight/gpui-rsx` (v0.12.1), plus GPUI's
+landed; the workspace version AT THAT REV was still 0.7.0 — it released as the
+v0.8.0/v0.9.0 tags days later) and `wsafight/gpui-rsx` (v0.12.1), plus GPUI's
 `style.rs` / `styled.rs` / `elements/div.rs` on `main`. The code-level findings were
 **re-verified against that tree by the v0.9.1 consumer-handoff**: F1 (`tw!` still emits
 the input string back), F2 (`resolve_static` still takes the exclusive lock on a hit),
@@ -357,7 +362,7 @@ Do **not** block on these: the design works today and simply gets cheaper if the
 | Phase                     | Deliverable                                                                                                                                                                                        | Exit criteria                                                                   | Est.    |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------- |
 | **P0 – Prove it**         | Bench harness; hand-write the ideal GPUI output for 5 representative strings; compare (a) current runtime, (b) gpui-rsx static, (c) builder chain, (d) cloned `static` refinement, (e) outlined fn | Real numbers replace §4 targets; pick emit strategy; confirm GPUI pin           | 1       |
-| **P1 – Data-driven core** | `aeolus-syntax`, `aeolus-data` registry + generator, `aeolus-ir`; port top ~150 utilities                                                                                                          | New compiler == old `Resolver` == golden corpus on those utilities              | 3–4     |
+| **P1 – Data-driven core** | `aeolus-syntax`, `aeolus-data` registry + generator, `aeolus-ir`; port top ~150 utilities (LANDED 2026-11 as the three git-only crates — 178 registry rows; the generator moved to P2)                                                                                                         | New compiler == old `Resolver` == golden corpus on those utilities              | 3–4     |
 | **P2 – Full pipeline**    | `aeolus-compile`, `aeolus-theme` (T0–T2), IR-level `cn()`, `@utility`/`@custom-variant`                                                                                                            | Full 193-entry corpus + property/fuzz suites green; `/N` identity property test | 3       |
 | **P3 – GPUI static**      | `aeolus-codegen-gpui`, `aeolus-macros` (`tw!`, `cn!`, `variants!`, `theme!`), `aeolus-gpui` (`TwExt`)                                                                                              | `iai` parity with hand-written; 0-alloc/0-lock contract tests; demo app         | 3       |
 | **P4 – Env variants**     | `AeolusRoot`/`Env`, `dark:`, breakpoints, group/state bits, aria/data                                                                                                                              | Conformance score published for GPUI; diagnostics for unsupported variants      | 2       |
