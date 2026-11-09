@@ -30,9 +30,6 @@
 //! silently do nothing — acceptable for a style-lowering prototype whose
 //! tests never open windows.
 
-#![allow(dead_code)]
-#![allow(clippy::new_without_default)]
-
 use std::fmt;
 
 /// Error type returned by appending items. Never actually produced here.
