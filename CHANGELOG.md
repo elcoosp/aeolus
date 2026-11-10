@@ -1,3 +1,39 @@
+## [0.10.0] - 2026-11-10
+
+### 🚀 Features
+
+- Aeolus v1 crates
+- *(data)* Typed lookup failures on the registry seam
+- *(examples)* Demonstrate the lexer, registry and theme seam
+- *(compile)* Wire the lex-registry-IR compile seam
+- *(examples)* Demonstrate the compile pipeline
+
+### 🐛 Bug Fixes
+
+- *(build)* Keep intra-workspace pins in lockstep with the release
+- *(ci)* Sweep all six fuzz targets in the smoke loop
+- *(v1)* Sync the crate VERSION consts with the manifests
+
+### 📚 Documentation
+
+- Align the surfaces to the in-tree v0.9.0 reality
+- Align every surface to the P2 seam and v0.10.0
+
+### 🚜 Refactor
+
+- *(core)* Drop guarded unwraps on reachable parse paths
+- *(syntax)* Drop the dead signed_body accessor
+
+### 🧪 Testing
+
+- *(compile)* Pin the seam contracts end to end
+
+### ⚙️ Miscellaneous Tasks
+
+- Pr body
+- *(release)* V0.10.0
+- *(repo)* Ignore the ship delivery manifest
+- Pr body
 # Changelog
 
 All notable changes to Aeolus are documented here. The format follows

@@ -1,109 +1,146 @@
-# feat: p1-consumer-examples — typed registry seam, consumer examples, drift alignment
+# feat: p2-compile-seam — the lex-registry-IR compile seam, typed diagnostics
 
-## Milestone — the P1 consumer handoff, part two
+## Milestone — P2's first slice: the compile pipeline's first seam
 
 The V1 data-driven core (phase P1: `aeolus-syntax`, `aeolus-data`,
-`aeolus-ir`) landed git-only in the previous change; this change closes
-the P1 story so P2 (the `aeolus-compile` pipeline) starts from an
-honest, resolvable, consumer-ready tree — nothing in the v0.x surface
-changes and no default dependency graph grows.
+`aeolus-ir`) landed git-only; this change lands the first slice of P2
+(architecture plan §3.1/§3.2): **`aeolus-compile`**, the pure function
+
+```rust
+compile(&str, &Config) -> Result<Compiled, CompileError>
+```
+
+that runs class strings through the three P1 crates end to end — the
+zero-copy lexer, the typed registry read side, the longhand value pass —
+and emits cascade-sorted `Program`s with the IR's masks as data. The
+theme and target halves of the plan's signature (`aeolus-theme` T0–T2,
+the IR-level `cn()` merge, `@utility`/`@custom-variant`, the xtask
+generator) are the remaining P2 slices; every seam this change touches
+says so in its rustdoc. Nothing in the v0.x surface changes and no
+default dependency graph grows (the new crate's default graph is
+aeolus-syntax + aeolus-data + aeolus-ir only).
 
 ### What changed
 
-- **Fixed the build breakage the v0.9.0 release shipped.** The release
-  bump moved `[workspace.package]` to 0.9.0 but left the
-  `[workspace.dependencies]` intra-workspace pins at 0.8.0; cargo
-  enforces the version requirement against path dependencies, so every
-  `aeolus-core = { workspace = true }` member failed resolution
-  (`failed to select a version for the requirement aeolus-core =
-  "^0.8.0"`) — the tree at HEAD did not build at all. The pins are back
-  in lockstep (0.9.0), the manifest carries a comment stating the
-  contract, `Cargo.lock` records the members at 0.9.0, and `ship.sh`'s
-  BUMP step now updates both blocks together so a release can not
-  strand them again.
-- **`aeolus-data` grows the typed read seam** the crate docs promise:
-  `registry::lookup_detailed` returns exactly `lookup`'s rows on a hit
-  (pinned by tests) and, on a miss, a typed
-  `LookupError::UnknownRoot` / `LookupError::ShapeRejected { root,
-  tried }` — the deduplicated value-shape labels that were tried, with
-  `AnyOf` arms flattened to their inner kinds (the RED test caught the
-  first implementation labelling every row "any-of"). Two OFF-by-default
-  instrumentation features land with it, exactly the CLI's v0.9.1
-  pattern: `tracing` (debug spans on the read paths) and `miette`
-  (`Diagnostic` code + help text: `aeolus::registry::unknown_root` /
-  `::shape_rejected`). The default graph stays dependency-light
-  (aeolus-ir only). Benched in `benches/lookup.rs` (silent hit, detailed
-  hit, both misses — median 327.8 ns on the detailed hit vs 531.8 ns
-  silent, misses 387–434 ns).
-- **The three crates that had no consumer entry point get runnable
-  demonstrations:** `crates/aeolus-syntax/examples/lex_candidates.rs`
-  (borrowed candidates + byte spans, honest per-class degradation, the
-  typed `LexError` misses), `crates/aeolus-data/examples/registry_lookup.rs`
-  (rows, longest-prefix disambiguation, conflict groups, the typed
-  misses, `generate_docs()`), and
-  `crates/aeolus-cli/examples/theme_spec.rs` (the `--theme` seam as a
-  library: `load_theme` + the typed `ThemeSpecError` contract).
-- **Micro-debt cleanup (CONTRIBUTING §2: no unwraps on reachable
-  public-API paths):** `eval_calc`'s shunting-yard pop now rides the
-  same guard that scoped the loop, the bare-operator token is a
-  let-else returning a parse error, and `Color::parse`'s 3/4-digit hex
-  doubling has an explicit error arm instead of two provably-safe
-  unwraps. A new test pins the calc()-edge typed-error contract
-  (`calc(2px + )` / `calc(* 4px)` / `calc(2px + * 3px)` are parse
-  errors, never panics) and the sane spellings still resolve.
-- **CI drift:** the fuzz smoke loop sweeps all SIX `fuzz/Cargo.toml`
-  targets — `parse_variant` and `probe_eval` were wired as targets but
-  absent from the CI loop.
-- **Docs drift, everywhere it was found:** the README status paragraph
-  says **v0.9.0** (it still said v0.7.0 while claiming P1 was in-tree);
-  the CHANGELOG cuts `[0.9.0]` and `[0.8.0]` (the merged v0.8 + v0.9
-  story had lived under `[Unreleased]` since its tags) and this change
-  gets its own `[Unreleased]` section; the P1 story's counts are the
-  real ones — `Prop` = **110 longhands** (was "95") and the registry =
-  **178 rows** (was "~150") — in the CHANGELOG, the architecture plan's
-  P1 status block, the §8 roadmap row (with the generator explicitly
-  moved to P2) and `rows.rs`'s own rustdoc; the evidence header's
-  "workspace version still 0.7.0" is annotated with when that stopped
-  being true (the v0.8.0/v0.9.0 tags).
+- **`aeolus-compile`** (git-only, `publish = false`): the five-stage
+  pipeline — lex (borrowed candidates, byte spans), variant fold (the
+  flat-`Cond` model: dominant condition, source order breaks ties —
+  `cond.rs`'s own contract, now implemented), registry read (the typed
+  `lookup_detailed` miss modes, spanned), value pass (spacing rem/px
+  configs per plan §3.3, fractions, numbers, row-table keyword slots),
+  assembly (stable specificity sort, `Layer::new`-derived masks,
+  interned as the IR's documented dynamic form). The registry semantics
+  are pinned by a const assert at `REGISTRY_VERSION = "1"` — a registry
+  semantics bump must re-audit the value pass, and the build says so.
+- **Every class that does not lower comes back typed**: `Diagnostic`
+  carries the token's byte span, a stable `aeolus::compile::*` code and
+  a help text (CONTRIBUTING §2 applied to the pipeline). Boundaries:
+  importance (`!`), `/modifiers`, colour tokens, arbitrary values,
+  untyped variants (`has-`, `[a&]`, …) — each its own variant, never a
+  dropped class. Two OFF-by-default instrumentation features land with
+  the crate, exactly the CLI's v0.9.1 / registry's P1 pattern:
+  `tracing` (spans on the stages) and `miette` (code + help on
+  `CompileError`; the always-on `code()`/`help()` strings live on
+  `DiagnosticKind`).
+- **The seam surfaced the first concrete IR budget**: the colour
+  keyword table is **270 entries** and `Val::Kw` is a **u8 slot** —
+  colour tokens lower through the theme pass's `TokenTable`
+  (plan §3.4 T2), typed and reported, never truncated. Also surfaced:
+  the named group/peer label has no IR slot yet (the probe folds, the
+  name threading is the codegen's), and the lexer's degraded pairs lost
+  their spans (the seam re-derives them with the lexer's own sequential
+  find). All three are test-pinned, documented in
+  `reports/10-tdd-evidence/13-compile-seam.md`.
+- **TDD order preserved; gates capture at handoff.** The suite
+  (`tests/compile.rs`, 23 ungated + 2 feature-gated) was authored FIRST
+  as the RED spec, the implementation second, the bench
+  (`benches/compile.rs`: single utility, variant stack, the shadcn
+  Button surface, the typed miss — divan, stable) and the consumer
+  example (`examples/compile_pipeline.rs`) last. This handoff's sandbox
+  has no Rust toolchain, so the RED→GREEN capture and the gate outputs
+  below run with the first cargo invocation in the gate environment;
+  the `Cargo.lock` entry for `aeolus-compile` is already in place so
+  that run is `--locked`-clean.
+- **Micro-debt cleanup (CONTRIBUTING §2/§3):**
+  - `Candidate::signed_body` removed — dead code (zero callers across
+    the workspace) whose doc contradicted its own implementation (it
+    returned the sign-STRIPPED body while claiming to restore the sign;
+    the sign rides `Candidate::negative` by design).
+  - The `VERSION` consts in `aeolus-syntax` and `aeolus-ir` derive from
+    the manifests now (`env!("CARGO_PKG_VERSION")`) — the hardcoded
+    `"0.1.0"` had drifted three releases behind the workspace; each
+    crate pins the derivation with a test.
+- **Docs drift, everywhere it was found:** the README's version badge
+  said **0.7.0** (three releases stale), the status paragraph said
+  **v0.9.0** after the v0.10.0 release commit, the consumer-examples
+  block listed 4 of the tree's 8 examples, and the test-count claim was
+  stale (now the real 509; 513 with the instrumentation features); the
+  crate table carries `aeolus-compile`. The CHANGELOG cuts **[0.10.0]**
+  — the release commit shipped without its section — and this change
+  gets its own `[Unreleased]`. The architecture plan records the P2
+  seam's landed reality beside P1's (a P2 status block + the §8 row).
+  Rustdocs stopped contradicting the code: `prop.rs`'s "96 longhands" →
+  110 (and "32 bits" of headroom → 18), `hash_classes`' "used by both
+  cache and interner" → what actually uses it, and the `tw!`
+  span-preservation promise → the honest nightly-only ceiling (V1 plan
+  §9 documents the same constraint).
 
-### Gates (all green on the dirty tree, pre-handoff)
+### Gates (static verification in the no-toolchain sandbox; executable capture at handoff)
 
-- `cargo fmt --all --check` — clean.
+- `cargo fmt --all --check` — **not run here** (no cargo; the task
+  forbids toolchain execution in this sandbox). Authored to rustfmt
+  style; capture at handoff.
 - `cargo clippy --workspace --all-targets --all-features -- -D
-  warnings` — **exit 0, zero warnings**. Pedantic is enforced through
-  the workspace `[lints.clippy]` table (`pedantic = warn`, per-lint
-  exceptions with rationale) denied by `-D warnings` — proven live: the
-  gate rejected `match_wildcard_for_single_variants` in the new tests
-  until they named the variants. (Clippy 1.99 makes a literal `-W
-  pedantic` on the command line a deprecation ERROR, and `-W
-  clippy::pedantic` overrides the manifest's rationale-backed allows —
-  186 of them, all deliberate — so the manifest-driven gate is the one
-  that preserves this repo's documented lint contract.)
-- `#![allow|expect|cfg_attr(allow)]` grep over `crates/` — **empty**.
-- `cargo test --workspace --all-features` — **486 passed, 0 failed**
-  (the pre-change suite plus the net-new: 3 registry-seam tests + the
-  miette contract test + the calc-edge pin).
-- `cargo test --benches --all-features` — green (all benches are divan
-  and stable; **no nightly-only benches exist** — the only nightly
-  surface is the `cargo-fuzz` job, which is CI-gated and not a bench).
+  warnings` — **not run here**. Pedantic is enforced through the
+  workspace `[lints.clippy]` table (`pedantic = warn`, priority −1,
+  per-lint exceptions with rationale) denied by `-D warnings` — the
+  manifest-driven gate is the one that preserves this repo's documented
+  lint contract (a literal `-W pedantic` on the command line both
+  deprecation-errors on current clippy and would override the
+  manifest's rationale-backed exceptions). Verified statically: the
+  `[lints.clippy]` table is intact, and the
+  `#!?\[(allow|expect)\(|cfg_attr\([^)]*_allow\(` grep over `crates/`
+  is **empty** (the new crate included; zero allowances in code, all
+  exceptions in the manifest tables with rationale).
+- `cargo test --workspace --all-features` — **not run here**. The net
+  new is 25 tests (23 ungated + 2 gated) in `aeolus-compile` plus the
+  2 version-pin tests (syntax, ir): the suite count moves 482 → 509
+  (513 with the instrumentation features). Every test's registry rows,
+  tables and prop targets were cross-checked against the committed
+  rows/tables by hand (TRBL orders, keyword slots, the 270-entry
+  colour table).
+- `cargo test --benches --all-features` — **not run here**. All benches
+  in the workspace remain divan and stable; the new bench adds no
+  nightly gating. **No nightly-only benches exist** — the only nightly
+  surface is the `cargo-fuzz` job, which is CI-gated and not a bench.
+- Feature matrix: **no mutually-exclusive features exist anywhere in
+  the workspace** (cli/data/compile carry the additive
+  `tracing`/`miette` optional-dep switches; macro's
+  `verbose-diagnostics` is additive) — so `--all-features` is safe and
+  there is no `ci-bundle` to assemble.
+- Cargo.lock: the `aeolus-compile` member entry is in place
+  (version 0.10.0, deps + optionals + dev-deps, alphabetical order
+  preserved) so `cargo test --locked` resolves before the first
+  update.
 
 ### Per-file history lives on the branch
 
 Merging is `--rebase` with **one commit per logical change** landed as
-Conventional-Commit commits on `feat/p1-consumer-examples` (the
-build-pin fix, the CI fix, the core de-unwrap refactor, the data seam
-feat with its tests + bench, the examples feat, the docs alignment), so
-the per-file history survives the rebase onto `origin/main`; the review
-shows the same tree this PR body describes. **No commits have been made
-on the base branch for this work** — the whole change ships as the
-branch's commits authored by `ship.sh` from the dirty tree it was
-handed.
+Conventional-Commit commits on `feat/p2-compile-seam` (the compile-seam
+feat carrying its workspace wiring, lock entry and bench, the test pin,
+the examples feat, the dead-code refactor, the VERSION fix, the docs
+alignment, the gitignore chore, the pr-body chore) — the grouping is
+declared in `ship.toml` at the repo root, so the per-file history
+survives the rebase onto `origin/main`; the review shows the same tree
+this PR body describes. **No commits have been made on the base branch
+for this work** — the whole change ships as the branch's commits
+authored by ship from the dirty tree it was handed.
 
 ### Verify locally
 
 ```sh
-cargo run -p aeolus-syntax --example lex_candidates
-cargo run -p aeolus-data --example registry_lookup
-cargo run -p aeolus-cli --example theme_spec
+cargo run -p aeolus-compile --example compile_pipeline
 cargo test --workspace --all-features
+cargo test --benches --all-features
+cargo bench -p aeolus-compile
 ```
