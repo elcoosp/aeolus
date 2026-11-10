@@ -1,12 +1,14 @@
 # Aeolus CI (Phase 4 hardening).
 #
-# Gates, in mission order. The root workspace covers aeolus-core +
-# aeolus-macro (publishable) AND the three backend crates (they resolve
-# their git-pinned framework deps directly, no repos/ checkout needed).
-# cargo-deny runs the licenses gate only (see deny.toml: advisories are a
-# per-release manual review, SECURITY.md).
+# Gates, in mission order. The root workspace covers the publishable
+# pair (aeolus-core + aeolus-macro), the CLI, aeolus-shadcn, the five
+# backend crates (they resolve their git-pinned framework deps directly,
+# no repos/ checkout needed) and the five V1 pipeline crates — 14
+# members over `--workspace`. cargo-deny runs the licenses gate only
+# (see deny.toml: advisories are a per-release manual review,
+# SECURITY.md).
 #
-# Fuzzing runs the four libfuzzer targets for 60s each on every push to
+# Fuzzing runs all SIX libfuzzer targets for 60s each on every push to
 # main and on a weekly schedule (catching regressions without bloating
 # every PR by more than ~4 minutes).
 
@@ -36,7 +38,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88
-      - run: cargo check -p aeolus-core -p aeolus-macro -p aeolus-cli
+      # The 1.88 set: the publishable pair, the CLI, and the five V1
+      # pipeline crates (each declares rust-version = 1.88 — gated here,
+      # not just claimed).
+      - run: >-
+          cargo check -p aeolus-core -p aeolus-macro -p aeolus-cli
+          -p aeolus-syntax -p aeolus-data -p aeolus-ir
+          -p aeolus-compile -p aeolus-theme
 
   msrv-backends:
     runs-on: ubuntu-latest
