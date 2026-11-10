@@ -35,6 +35,30 @@
 
 ### 🚀 Features
 
+- *(compile)* The interpreter arm (plan §3.1 emit (c): `interp`/`interp_theme` resolve a compiled `Program` to its effective declarations under a probe `Env`, theme dynamism through the `TokenSource` seam, honest exclusion notes)
+- *(compile)* The static-data emit arm (plan §3.1 emit (b): `emit_static` freezes the program into the IR's own byte-stable `static` item)
+- *(theme)* The mode-aware one-load-one-multiply primitive (`TokenTable::resolve_rgba`) the interpreter's built-in source resolves through
+- *(compile)* Wire the interpreter and static-data arms into the `Target` surface and the `Compiled` convenience methods
+- *(bench)* Measure the interpreter paths and the static-data emit
+- *(compile)* Demonstrate the interpreter and the static-data emit
+
+### 📚 Documentation
+
+- *(readme)* Align the badge, the status version, the crate table, the examples and the test counts to 0.13.0 and the emit arms
+- *(architecture)* Mark the interp and static-data emit arms landed; the Rust-tokens arm and the xtask story remain
+- *(workspace)* Repair the stale P2 slice comment (`@utility`/`@custom-variant` landed as P2 slice 5)
+- *(benchmarks)* File the emit-arms run numbers
+- *(evidence)* File the emit-arms red-to-green record
+
+### 🧪 Testing
+
+- *(compile)* Pin the interpreter contracts end to end
+- *(compile)* Pin the static-data emit contracts end to end
+- *(theme)* Pin the concrete rgba resolve refusals and the active-half multiply
+
+
+### 🚀 Features
+
 - *(compile)* The dyn-cache seam module (the leak-pool dedupe: `DynCache` over the `DynStore` trait, built-in `TwoGenStore`)
 - *(compile)* Wire the dyn cache into the compile seam and the themed/customized session entry points
 - *(bench)* Measure the dyn cache hit and miss paths
