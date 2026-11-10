@@ -38,19 +38,26 @@
 //! `tests/css.rs` pins their diagnostics EQUAL over a battery.
 //!
 //! What this slice deliberately is NOT (each is a remaining P2/P3
-//! slice, and the seams say so in their rustdocs):
-//! `@utility`/`@custom-variant`, the xtask generator story, and the
-//! remaining [`Target`] arms (Rust tokens, static data, the
-//! interpreter). What LANDED here beside the theme half and the
-//! IR-level [`cn()`] merge (plan §3.2's "hosts the `cn()` engine at IR
-//! level" — same-condition layers merge by `Cond` equality,
-//! declarations concatenate and the per-longhand LAST occurrence wins,
-//! so the overlap the merge removes is exactly
-//! [`aeolus_ir::Program::base_conflicts`]'s bits on the raw cascade):
-//! the TARGET half's CSS arm — [`emit_css`]/[`emit_css_theme`] render
-//! the plan §3.1 emit (d) form in-pipeline (the [`Target`] docs carry
-//! the why: the IR's row-relative `Kw` slot cannot recover the row's
-//! CSS text, so the emit renders where the rows still talk).
+//! slice, and the seams say so in their rustdocs): the xtask generator
+//! story, the theme-token functional custom form (`--value(color)`, the
+//! next custom-seam slice) and the remaining [`Target`] arms (Rust
+//! tokens, static data, the interpreter). What LANDED here beside the
+//! theme half, the IR-level [`cn()`] merge (plan §3.2's "hosts the
+//! `cn()` engine at IR level" — same-condition layers merge by `Cond`
+//! equality, declarations concatenate and the per-longhand LAST
+//! occurrence wins, so the overlap the merge removes is exactly
+//! [`aeolus_ir::Program::base_conflicts`]'s bits on the raw cascade)
+//! and the TARGET half's CSS arm — [`emit_css`]/[`emit_css_theme`]
+//! render the plan §3.1 emit (d) form in-pipeline (the [`Target`] docs
+//! carry the why: the IR's row-relative `Kw` slot cannot recover the
+//! row's CSS text, so the emit renders where the rows still talk) — is
+//! the CUSTOM-AUTHORING seam (plan §5.4's `@utility`/`@custom-variant`
+//! surface): [`Customs`] register custom utilities (fixed literals and
+//! functional forms) and custom variant aliases, and
+//! [`compile_with`]/[`compile_theme_with`]/[`emit_css_with`]/
+//! [`emit_css_theme_with`] lower and render them through the SAME
+//! typed read side, value pass, diagnostics and emit paths as the
+//! built-in surface (the `custom` module's docs carry the design).
 //!
 //! Storage note: [`Program`] holds `&'static` slices, so each compile
 //! call interns its program into the leak pool the IR documents as the
@@ -63,25 +70,37 @@
 //! lowering was audited against.
 
 mod css;
+mod custom;
 mod lower;
 mod variant;
 
 use std::fmt;
 
-use aeolus_data::registry::lookup_detailed;
 use aeolus_data::LookupError;
+use aeolus_data::registry::lookup_detailed;
 use aeolus_ir::{Cond, Decl, Layer, Program};
-use aeolus_syntax::parse_class_string;
 use aeolus_syntax::Candidate;
 use aeolus_syntax::LexErrorKind;
+use aeolus_syntax::parse_class_string;
 use aeolus_theme::TokenTable;
 
-pub use css::{emit_css, emit_css_theme, CssAt, CssRule, CssSheet};
+pub use css::{
+    CssAt, CssRule, CssSheet, emit_css, emit_css_theme, emit_css_theme_with, emit_css_with,
+};
+pub use custom::{ClassifyVariant, CustomForm, CustomUtility, CustomValue, CustomVariant, Customs};
 
 // The lowering audits the rows' meaning; a registry semantics bump must
-// re-audit it. `matches!` on the &str literal is const-evaluable.
+// re-audit it. Byte-wise const compare — `&str` equality is not a const
+// trait, so the pin walks the bytes (const-safe on the MSRV).
+const fn registry_version_is_pinned() -> bool {
+    let v = aeolus_data::REGISTRY_VERSION.as_bytes();
+    if v.len() != 1 {
+        return false;
+    }
+    v[0] == b'1'
+}
 const _: () = assert!(
-    matches!(aeolus_data::REGISTRY_VERSION, "1"),
+    registry_version_is_pinned(),
     "aeolus-compile pins the registry semantics at REGISTRY_VERSION \"1\"; \
      re-audit the value pass before bumping the registry"
 );
@@ -126,7 +145,10 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { spacing: Spacing::Tailwind, rem_px: 16.0 }
+        Self {
+            spacing: Spacing::Tailwind,
+            rem_px: 16.0,
+        }
     }
 }
 
@@ -160,7 +182,11 @@ pub struct Diagnostic {
 
 impl Diagnostic {
     pub(crate) fn new(span: (usize, usize), raw: &str, kind: DiagnosticKind) -> Self {
-        Self { span, raw: raw.to_string(), kind }
+        Self {
+            span,
+            raw: raw.to_string(),
+            kind,
+        }
     }
 }
 
@@ -319,10 +345,16 @@ impl fmt::Display for DiagnosticKind {
                 f.write_str("the v4 important flag has no IR slot in this slice")
             }
             DiagnosticKind::UnsupportedModifier { modifier } => {
-                write!(f, "modifier {modifier:?} lowers in the theme pass, not the compile seam")
+                write!(
+                    f,
+                    "modifier {modifier:?} lowers in the theme pass, not the compile seam"
+                )
             }
             DiagnosticKind::UnsupportedNegation { body } => {
-                write!(f, "{body:?} refuses the negated form (the row's negative flag)")
+                write!(
+                    f,
+                    "{body:?} refuses the negated form (the row's negative flag)"
+                )
             }
             DiagnosticKind::UnsupportedValue { body, reason } => {
                 write!(f, "{body:?} does not lower in this slice: {reason}")
@@ -409,7 +441,45 @@ impl miette::Diagnostic for CompileError {
 /// # Ok::<(), aeolus_compile::CompileError>(())
 /// ```
 pub fn compile(input: &str, config: &Config) -> Result<Compiled, CompileError> {
-    run(input, config, None)
+    run(input, *config, None, &Customs::new())
+}
+
+/// [`compile`] with the custom-authoring seam supplied (plan §5.4's
+/// `@utility`/`@custom-variant` surface): registered custom utilities
+/// lower exactly like registry rows and registered variant aliases
+/// fold like built-in spellings — the registry always wins a name
+/// collision, and the typed read side (unknown root vs rejected shape)
+/// is byte-shared.
+///
+/// With EMPTY registrations every contract is byte-identical to
+/// [`compile`] (the differential pins it over a battery): the seam is
+/// additive, never a behaviour switch.
+///
+/// ```no_run
+/// use aeolus_compile::{compile_with, Config, CustomForm, CustomUtility, Customs};
+/// use aeolus_ir::Prop;
+///
+/// let customs = Customs::new().utility(CustomUtility::functional(
+///     "brand-p",
+///     CustomForm::Spacing,
+///     &[Prop::PaddingTop, Prop::PaddingRight, Prop::PaddingBottom, Prop::PaddingLeft],
+/// ));
+/// let compiled = compile_with("brand-p-4", &customs, &Config::default())?;
+/// assert!(compiled.diagnostics.is_empty()); // the registration lowered
+/// # Ok::<(), aeolus_compile::CompileError>(())
+/// ```
+pub fn compile_with(
+    input: &str,
+    customs: &Customs,
+    config: &Config,
+) -> Result<Compiled, CompileError> {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        utilities = customs.utilities().len(),
+        variants = customs.variants().len(),
+        "compile_with: the custom seam is supplied"
+    );
+    run(input, *config, None, customs)
 }
 
 /// Compile a class string with the theme pass supplied (plan §3.2's
@@ -449,7 +519,41 @@ pub fn compile_theme(
         tier = ?tokens.tier(),
         "compile_theme: the theme pass is supplied"
     );
-    run(input, config, Some(tokens))
+    run(input, *config, Some(tokens), &Customs::new())
+}
+
+/// [`compile_theme`] with the custom-authoring seam supplied: colour
+/// tokens lower through the theme pass AND registered custom
+/// utilities/variants lower through the same pipeline (see
+/// [`compile_with`] for the seam's contract).
+///
+/// ```no_run
+/// use aeolus_compile::{compile_theme_with, Config, CustomVariant, Customs};
+/// use aeolus_ir::Cond;
+/// use aeolus_theme::{ThemeSource, TokenTable};
+///
+/// let source = ThemeSource::shadcn_dark()?;
+/// let tokens = TokenTable::runtime(&source)?;
+/// let customs = Customs::new().variant(CustomVariant::new("night", Cond::Dark));
+/// let compiled = compile_theme_with("night:bg-primary/90", &tokens, &customs, &Config::default())?;
+/// assert!(compiled.diagnostics.is_empty()); // the alias folded, the token lowered
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn compile_theme_with(
+    input: &str,
+    tokens: &TokenTable,
+    customs: &Customs,
+    config: &Config,
+) -> Result<Compiled, CompileError> {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        tokens = tokens.len(),
+        tier = ?tokens.tier(),
+        utilities = customs.utilities().len(),
+        variants = customs.variants().len(),
+        "compile_theme_with: the theme pass and the custom seam are supplied"
+    );
+    run(input, *config, Some(tokens), customs)
 }
 
 /// Merge already-compiled programs, RIGHTMOST WINS per longhand — the
@@ -541,7 +645,10 @@ pub fn cn(inputs: &[&Compiled]) -> Result<Compiled, CompileError> {
         decls.sort_by_key(|decl: &Decl| decl.prop);
         let mut merged: Vec<Decl> = Vec::with_capacity(decls.len());
         for decl in decls {
-            if merged.last().is_some_and(|last: &Decl| last.prop == decl.prop) {
+            if merged
+                .last()
+                .is_some_and(|last: &Decl| last.prop == decl.prop)
+            {
                 merged.pop();
             }
             merged.push(decl);
@@ -551,18 +658,30 @@ pub fn cn(inputs: &[&Compiled]) -> Result<Compiled, CompileError> {
     }
     let layers: &'static [Layer] = Box::leak(layers.into_boxed_slice());
     #[cfg(feature = "tracing")]
-    tracing::debug!(layers = layers.len(), diagnostics = diagnostics.len(), "cn: merged");
-    Ok(Compiled { program: Program::new(layers), diagnostics })
+    tracing::debug!(
+        layers = layers.len(),
+        diagnostics = diagnostics.len(),
+        "cn: merged"
+    );
+    Ok(Compiled {
+        program: Program::new(layers),
+        diagnostics,
+    })
 }
 
 /// The whole pipeline, theme-less or themed. `tokens` selects whether
 /// the colour/modifier surfaces lower (the theme pass) or stay typed
-/// boundaries (the honest default).
+/// boundaries (the honest default); `customs` is the registered
+/// custom-authoring surface (empty registrations change nothing — the
+/// differential pins it).
 fn run(
     input: &str,
-    config: &Config,
+    config: Config,
     tokens: Option<&TokenTable>,
+    customs: &Customs,
 ) -> Result<Compiled, CompileError> {
+    // The internal walk takes the Copy config by value (clippy's
+    // trivially-copy pass-by-ref); the public API keeps the reference.
     #[cfg(feature = "tracing")]
     tracing::debug!(input_len = input.len(), "compile: lex -> lookup -> lower");
 
@@ -576,7 +695,11 @@ fn run(
     // span inside the input — no re-derivation, no format contract.
     let (candidates, degraded) = parse_class_string(input);
     #[cfg(feature = "tracing")]
-    tracing::debug!(tokens = candidates.len(), degraded = degraded.len(), "lexer done");
+    tracing::debug!(
+        tokens = candidates.len(),
+        degraded = degraded.len(),
+        "lexer done"
+    );
 
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
     for failure in &degraded {
@@ -606,55 +729,146 @@ fn run(
             ));
             continue;
         }
-        let alpha = match candidate.modifier {
-            None => None,
-            Some(modifier) => match normalize_modifier(modifier).filter(|_| tokens.is_some()) {
-                Some(alpha) => Some(alpha),
-                None => {
-                    // Unparseable/var-named modifiers always; parseable
-                    // modifiers without the theme pass too (the boundary
-                    // is the theme-less default).
-                    diagnostics.push(Diagnostic::new(
-                        candidate.span,
-                        candidate.raw,
-                        DiagnosticKind::UnsupportedModifier { modifier: modifier.to_string() },
-                    ));
-                    continue;
-                }
-            },
-        };
-        let cond = match variant::fold(&candidate.variants) {
+        let cond = match variant::fold(&candidate.variants, customs) {
             Ok(cond) => cond,
             Err(miss) => {
                 diagnostics.push(variant_diagnostic(candidate, &miss));
                 continue;
             }
         };
-        let rows = match lookup_detailed(candidate.body) {
-            Ok(rows) => rows,
-            Err(err) => {
-                diagnostics.push(lookup_diagnostic(candidate, err));
-                continue;
+        // The registry read side, with the value pass's fraction
+        // re-attachment (the audited oracle's F1: the raw `/modifier`
+        // is the DENOMINATOR for fraction-shaped rows — `w-1/2` lexes
+        // body `w-1` plus raw modifier `2`, and the fraction is `1/2`).
+        // The first lookup runs on the lexed body; on a miss with a raw
+        // modifier riding, the JOINED body retries — the registry's own
+        // fraction shape accepts the joined suffix, and the modifier is
+        // SPENT (no opacity rides it). `effective_body` is the body the
+        // value pass and the diagnostics read.
+        let joined = candidate
+            .modifier
+            .map(|modifier| format!("{}/{}", candidate.body, modifier));
+        let (rows, effective_body, fraction_ride) = match &joined {
+            // The joined body reads FIRST (the sizing family's own
+            // precedence — a bare `w-1` also reads as spacing, so the
+            // denominator reading must win the arm choice when a raw
+            // modifier rides); a joined miss falls back to the lexed
+            // body and the modifier goes through the opacity gate.
+            Some(text) => match lookup_detailed(text) {
+                Ok(retried) => (Ok(retried), text.as_str(), true),
+                Err(_) => (lookup_detailed(candidate.body), candidate.body, false),
+            },
+            None => (lookup_detailed(candidate.body), candidate.body, false),
+        };
+        // The modifier gate, AFTER the read side: a fraction ride is not
+        // an opacity modifier. Everything else normalizes as before —
+        // unparseable/var-named modifiers always, parseable modifiers
+        // without the theme pass too (the boundary is the theme-less
+        // default).
+        let alpha = if fraction_ride {
+            None
+        } else {
+            match candidate.modifier {
+                None => None,
+                Some(modifier) => match normalize_modifier(modifier).filter(|_| tokens.is_some()) {
+                    Some(alpha) => Some(alpha),
+                    None => {
+                        diagnostics.push(Diagnostic::new(
+                            candidate.span,
+                            candidate.raw,
+                            DiagnosticKind::UnsupportedModifier {
+                                modifier: modifier.to_string(),
+                            },
+                        ));
+                        continue;
+                    }
+                },
             }
         };
-        for row in rows {
-            match lower::row_to_decls(*row, candidate.body, candidate.negative, alpha, tokens, config)
-            {
-                Ok(decls) => {
-                    let idx = match conds.iter().position(|&c| c == cond) {
-                        Some(idx) => idx,
-                        None => {
-                            conds.push(cond);
-                            groups.push(Vec::new());
-                            conds.len() - 1
+        match rows {
+            Ok(rows) => {
+                for row in rows {
+                    match lower::row_to_decls(
+                        *row,
+                        effective_body,
+                        candidate.negative,
+                        alpha,
+                        tokens,
+                        config,
+                    ) {
+                        Ok(decls) => {
+                            let idx = match conds.iter().position(|&c| c == cond) {
+                                Some(idx) => idx,
+                                None => {
+                                    conds.push(cond);
+                                    groups.push(Vec::new());
+                                    conds.len() - 1
+                                }
+                            };
+                            groups[idx].extend(decls);
                         }
-                    };
-                    groups[idx].extend(decls);
-                }
-                Err(reject) => {
-                    diagnostics.push(reject_diagnostic(candidate, reject, candidate.modifier));
+                        Err(reject) => {
+                            diagnostics.push(reject_diagnostic(
+                                candidate,
+                                effective_body,
+                                reject,
+                                candidate.modifier,
+                            ));
+                        }
+                    }
                 }
             }
+            // The registry is the oracle; the customs are additive
+            // surface consulted on the registry's unknown-root miss
+            // only. A registered custom utility lowers through the SAME
+            // group/cond assembly and the SAME typed boundary set. On a
+            // custom miss the MORE SPECIFIC report wins: a custom shape
+            // rejection names the custom root and its forms (the
+            // built-in side said unknown-root — it never saw the
+            // registration), while a double miss keeps the built-in
+            // UnknownRoot (the two are byte-identical; the differential
+            // pins it).
+            Err(builtin_err) => match customs.lookup(candidate.body) {
+                Ok(utilities) => {
+                    for utility in utilities {
+                        match custom::utility_to_decls(
+                            utility,
+                            candidate.body,
+                            candidate.negative,
+                            alpha,
+                            tokens,
+                            config,
+                        ) {
+                            Ok(decls) => {
+                                let idx = match conds.iter().position(|&c| c == cond) {
+                                    Some(idx) => idx,
+                                    None => {
+                                        conds.push(cond);
+                                        groups.push(Vec::new());
+                                        conds.len() - 1
+                                    }
+                                };
+                                groups[idx].extend(decls);
+                            }
+                            Err(reject) => {
+                                diagnostics.push(reject_diagnostic(
+                                    candidate,
+                                    effective_body,
+                                    reject,
+                                    candidate.modifier,
+                                ));
+                            }
+                        }
+                    }
+                }
+                Err(custom_err) => {
+                    let err = match custom_err {
+                        LookupError::ShapeRejected { .. } => custom_err,
+                        LookupError::UnknownRoot { .. } => builtin_err,
+                    };
+                    diagnostics.push(lookup_diagnostic(candidate, err));
+                }
+            },
         }
     }
 
@@ -674,7 +888,10 @@ fn run(
     let layers: &'static [Layer] = Box::leak(layers.into_boxed_slice());
     #[cfg(feature = "tracing")]
     tracing::debug!(layers = layers.len(), "program interned");
-    Ok(Compiled { program: Program::new(layers), diagnostics })
+    Ok(Compiled {
+        program: Program::new(layers),
+        diagnostics,
+    })
 }
 
 /// The `/modifier` text → the alpha fraction the theme pass carries:
@@ -685,7 +902,11 @@ fn run(
 /// (`mix_with_transparent`) and the table's resolve.
 pub(crate) fn normalize_modifier(modifier: &str) -> Option<f32> {
     let bracketed = modifier.starts_with('[') && modifier.ends_with(']');
-    let raw = if bracketed { &modifier[1..modifier.len() - 1] } else { modifier };
+    let raw = if bracketed {
+        &modifier[1..modifier.len() - 1]
+    } else {
+        modifier
+    };
     let value = raw.parse::<f32>().ok()?;
     if !value.is_finite() {
         return None;
@@ -705,7 +926,9 @@ pub(crate) fn variant_diagnostic(
     Diagnostic {
         span: (start, start + miss.variant.len()),
         raw: candidate.raw.to_string(),
-        kind: DiagnosticKind::UnsupportedVariant { variant: miss.variant.clone() },
+        kind: DiagnosticKind::UnsupportedVariant {
+            variant: miss.variant.clone(),
+        },
     }
 }
 
@@ -720,28 +943,32 @@ pub(crate) fn lookup_diagnostic(candidate: &Candidate<'_>, err: LookupError) -> 
     Diagnostic::new(candidate.span, candidate.raw, kind)
 }
 
-/// The value pass's typed refusals, carried through spanned. The
+/// The value pass's typed refusals, carried through spanned. `body` is
+/// the EFFECTIVE body the value pass read (the fraction re-attachment's
+/// joined form when the raw modifier rode as a denominator); the
 /// modifier boundary renders the candidate's raw modifier text (the
 /// value pass refuses the WHOLE row when an alpha cannot ride).
 pub(crate) fn reject_diagnostic(
     candidate: &Candidate<'_>,
+    body: &str,
     reject: lower::Reject,
     modifier: Option<&str>,
 ) -> Diagnostic {
     let kind = match reject {
-        lower::Reject::Negation => {
-            DiagnosticKind::UnsupportedNegation { body: candidate.body.to_string() }
-        }
-        lower::Reject::Value { reason } => {
-            DiagnosticKind::UnsupportedValue { body: candidate.body.to_string(), reason }
-        }
+        lower::Reject::Negation => DiagnosticKind::UnsupportedNegation {
+            body: body.to_string(),
+        },
+        lower::Reject::Value { reason } => DiagnosticKind::UnsupportedValue {
+            body: body.to_string(),
+            reason,
+        },
         lower::Reject::Modifier => DiagnosticKind::UnsupportedModifier {
             modifier: modifier.unwrap_or_default().to_string(),
         },
         // Internal marker: `row_to_decls` resolves it (the token path or
         // the typed REASON_TOKEN_TABLE value) before returning.
         lower::Reject::TokenOverflow => DiagnosticKind::UnsupportedValue {
-            body: candidate.body.to_string(),
+            body: body.to_string(),
             reason: lower::REASON_TOKEN_TABLE,
         },
     };
