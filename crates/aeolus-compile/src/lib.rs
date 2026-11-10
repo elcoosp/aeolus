@@ -39,8 +39,8 @@
 //!
 //! What this slice deliberately is NOT (each is a remaining P2/P3
 //! slice, and the seams say so in their rustdocs): the xtask generator
-//! story, the remaining [`Target`] arms (Rust tokens, static data, the
-//! interpreter), the arbitrary-value unit grammar and the has-/data-/
+//! story, the remaining [`Target`] arm (Rust tokens), the
+//! arbitrary-value unit grammar and the has-/data-/
 //! aria- variant folding. What LANDED here beside the theme half, the
 //! IR-level [`cn()`] merge (plan §3.2's "hosts the `cn()` engine at IR
 //! level" — same-condition layers merge by `Cond` equality,
@@ -62,7 +62,22 @@
 //! and the DYN-CACHE seam: [`DynCache`] is the content-keyed, bounded,
 //! thread-safe cache over this pipeline (the leak-pool dedupe the
 //! storage note below promises), with the storage swappable through
-//! [`DynStore`] and the built-in [`TwoGenStore`].
+//! [`DynStore`] and the built-in [`TwoGenStore`] — and the
+//! INTERPRETER arm (plan §3.1 emit (c), the "interp" half the
+//! [`Target`] enum named but never armed): [`interp`]/[`interp_theme`]
+//! resolve a compiled [`Program`] to its EFFECTIVE declarations under
+//! one probe [`Env`] — the per-longhand cascade the IR's specificity
+//! sort encodes, theme dynamism through the [`TokenSource`] seam (the
+//! built-in [`TokenTable`] answers with the T2 tier's one-load-one-
+//! multiply; a host source wires in through the same two questions),
+//! and the honest exclusions reported as typed notes
+//! ([`InterpNote`]) — the runtime half the §3.2 table's
+//! "interpreter otherwise" migration line needs; and the STATIC-DATA
+//! arm (plan §3.1 emit (b)): [`emit_static`] freezes a compiled
+//! [`Program`] into the IR's OWN static form — one compilable,
+//! byte-stable `static` item over `Layer::new` constructors, the
+//! artifact the plan §3.3 "the static form is a `static` item"
+//! story ships.
 //!
 //! Storage note: [`Program`] holds `&'static` slices, so each compile
 //! call interns its program into the leak pool the IR documents as the
@@ -83,7 +98,9 @@
 mod css;
 mod custom;
 mod dyn_cache;
+mod interp;
 mod lower;
+mod statics;
 mod variant;
 
 use std::fmt;
@@ -103,6 +120,8 @@ pub use custom::{ClassifyVariant, CustomForm, CustomUtility, CustomValue, Custom
 pub use dyn_cache::{
     CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity, DynStore, TwoGenStore,
 };
+pub use interp::{Env, InterpError, InterpNote, Interped, TokenSource, interp, interp_theme};
+pub use statics::emit_static;
 
 // The lowering audits the rows' meaning; a registry semantics bump must
 // re-audit it. Byte-wise const compare — `&str` equality is not a const
@@ -123,16 +142,27 @@ const _: () = assert!(
 /// The emit half of the plan §3.2 compile signature
 /// (`compile(&str, &ThemeSource, &Target) -> Result<Program, Diagnostics>`):
 /// what ARTIFACT the pipeline's emit stage produces from the program.
-/// Slice 4 lands the first arm — [`Target::Css`], rendered by
-/// [`emit_css`]/[`emit_css_theme`]; the plan §3.1 diagram's other emit
-/// forms (Rust tokens, static data, the interpreter) are the P3 codegen
-/// slices and stay named-but-unarmed here until they land.
+/// Three of the plan §3.1 diagram's four emit forms are armed —
+/// [`Target::Css`] (slice 4, rendered by [`emit_css`]/[`emit_css_theme`]),
+/// [`Target::Interp`] (the interpreter, [`interp`]/[`interp_theme`]) and
+/// [`Target::Static`] (the static-data form, [`emit_static`]) — and the
+/// remaining one (Rust tokens) stays named-but-unarmed here until the
+/// P3 codegen slices land.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     /// The CSS text form (plan §3.1 emit (d)): a rendered stylesheet per
     /// class string — [`emit_css`]/[`emit_css_theme`] are this arm's
     /// entry points.
     Css,
+    /// The resolved-declaration form (plan §3.1 emit (c)): the program's
+    /// EFFECTIVE declarations under one probe situation and one token
+    /// source — [`interp`]/[`interp_theme`] are this arm's entry points.
+    Interp,
+    /// The static-data form (plan §3.1 emit (b)): the program as the
+    /// IR's own `static` item, byte-stable, compilable anywhere
+    /// `aeolus-ir` is a dependency — [`emit_static`] is this arm's
+    /// entry point.
+    Static,
 }
 
 /// How spacing multiples bake (plan §3.3's `spacing = "tailwind" | "px"`
@@ -178,6 +208,43 @@ pub struct Compiled {
     pub program: Program,
     /// One entry per class that did NOT lower, in source order.
     pub diagnostics: Vec<Diagnostic>,
+}
+
+impl Compiled {
+    /// Resolve this compile's program to its effective declarations
+    /// under one probe situation — the interpreter arm's ergonomic half
+    /// ([`interp`] on [`Compiled::program`]; the theme-LESS boundary:
+    /// token values refuse typed, [`interp_theme`] carries the source).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no source rides along.
+    pub fn interp(&self, env: &Env) -> Result<Interped, InterpError> {
+        interp(&self.program, env)
+    }
+
+    /// Resolve this compile's program to its effective declarations
+    /// under one probe situation and one [`TokenSource`] — the themed
+    /// half (the built-in [`TokenTable`] answers with concrete colours;
+    /// a host source wires in through the seam).
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme`]).
+    pub fn interp_theme(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+    ) -> Result<Interped, InterpError> {
+        interp_theme(&self.program, tokens, env)
+    }
+
+    /// Emit this compile's program as the IR's static form — the
+    /// static-data arm's ergonomic half ([`emit_static`] on
+    /// [`Compiled::program`]): one compilable, byte-stable `static`
+    /// item.
+    pub fn emit_static(&self) -> String {
+        emit_static(&self.program)
+    }
 }
 
 /// Why one class did not lower, with the machine-readable code and the
