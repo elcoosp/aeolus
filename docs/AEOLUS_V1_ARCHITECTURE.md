@@ -8,7 +8,7 @@
 **P1 status (2026-11).** Phase P1 — the data-driven core — has landed
 as the `aeolus-syntax` (zero-copy lexer, differentially pinned to the
 v0.x parser over the golden corpus), `aeolus-data` (registry-as-data,
-178 rows, group names cross-checked against the tw_merge oracle, plus
+184 rows, group names cross-checked against the tw_merge oracle, plus
 the typed `lookup_detailed`/`LookupError` read seam) and `aeolus-ir`
 (longhand `Prop`/`Val`/`Decl`/`Layer`/`Program` — 110 longhands — +
 `PropMask` bitset algebra) workspace crates, git-only while the
@@ -39,14 +39,17 @@ occurrence per longhand — the differential contract is test-pinned
 declarations are exactly `Program::base_conflicts()`'s bits, which
 come out empty), the audited `tw_merge` table stays at the string
 level, and the merge is idempotent and associative.
-Remaining P2 slices: `@utility`/`@custom-variant`, the `Target` half
-of the signature, and the xtask generator story. The seam surfaced
+Remaining P2 slices: `@utility`/`@custom-variant` and the xtask
+generator story (the Target half's CSS arm landed 2026-11 as P2 slice
+4 — see the P1/P2 rows and the crate docs). The seam surfaced
 honest boundaries, all test-pinned: the IR's u8 `Val::Kw` slot cannot
 index the 270-entry colour table (RESOLVED by the theme pass's u16
 `Tok` slot; the T1 u16 `ModePair` budget is its own typed
 `ThemeError::PairOverflow` refusal), the flat `Cond` model folds
 stacked variants to the dominant condition (the named group/peer
-label has no IR slot yet), and the f32 grammar's non-finite spellings
+label has no IR slot yet — the CSS emit arm renders it from the
+candidate's segments, which is why the emit lives in the pipeline),
+and the f32 grammar's non-finite spellings
 are typed refusals, never IR literals. P3 (codegen/GPUI) remains
 planned; the sketches below are its contracts where still
 unimplemented.
@@ -395,8 +398,8 @@ Do **not** block on these: the design works today and simply gets cheaper if the
 | Phase                     | Deliverable                                                                                                                                                                                        | Exit criteria                                                                   | Est.    |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------- |
 | **P0 – Prove it**         | Bench harness; hand-write the ideal GPUI output for 5 representative strings; compare (a) current runtime, (b) gpui-rsx static, (c) builder chain, (d) cloned `static` refinement, (e) outlined fn | Real numbers replace §4 targets; pick emit strategy; confirm GPUI pin           | 1       |
-| **P1 – Data-driven core** | `aeolus-syntax`, `aeolus-data` registry + generator, `aeolus-ir`; port top ~150 utilities (LANDED 2026-11 as the three git-only crates — 178 registry rows; the generator moved to P2)                                                                                                         | New compiler == old `Resolver` == golden corpus on those utilities              | 3–4     |
-| **P2 – Full pipeline**    | `aeolus-compile`, `aeolus-theme` (T0–T2), IR-level `cn()`, `@utility`/`@custom-variant` — **the compile seam landed 2026-11** (`aeolus-compile`: lex → registry lookup → longhand lowering → cascade-sorted `Program`, typed spanned diagnostics, the spacing config knob), **the theme pass landed 2026-11** (`aeolus-theme`: CSS-first `ThemeSource` → tiered `TokenTable`s over the audited v0.x reader; `compile_theme` lowers colour tokens and `/opacity` modifiers, the §2 premultiplied identity) and **the IR-level `cn()` merge landed 2026-11** (`aeolus_compile::cn(&[&Compiled])`: same-condition layers fold by `Cond` equality, last per longhand wins, conflict-free out — test-pinned against compiling the concatenation; `@utility`/`@custom-variant` and the `Target` half remain) | Full 193-entry corpus + property/fuzz suites green; `/N` identity property test | 3       |
+| **P1 – Data-driven core** | `aeolus-syntax`, `aeolus-data` registry + generator, `aeolus-ir`; port top ~150 utilities (LANDED 2026-11 as the three P1 git-only crates — joined since by the P2 git-only crates `aeolus-compile` and `aeolus-theme`; 184 registry rows; the generator moved to P2)                                                                                                         | New compiler == old `Resolver` == golden corpus on those utilities              | 3–4     |
+| **P2 – Full pipeline**    | `aeolus-compile`, `aeolus-theme` (T0–T2), IR-level `cn()`, `@utility`/`@custom-variant` — **the compile seam landed 2026-11** (`aeolus-compile`: lex → registry lookup → longhand lowering → cascade-sorted `Program`, typed spanned diagnostics, the spacing config knob), **the theme pass landed 2026-11** (`aeolus-theme`: CSS-first `ThemeSource` → tiered `TokenTable`s over the audited v0.x reader; `compile_theme` lowers colour tokens and `/opacity` modifiers, the §2 premultiplied identity), **the IR-level `cn()` merge landed 2026-11** (`aeolus_compile::cn(&[&Compiled])`: same-condition layers fold by `Cond` equality, last per longhand wins, conflict-free out — test-pinned against compiling the concatenation) and **the Target half's CSS arm landed 2026-11** (`emit_css`/`emit_css_theme`: the §3.1 emit (d) rendered in-pipeline — the row tables' keyword text, tiered token forms, baked dark-pair companions, v4 media/container queries, the typed lexer channel; `@utility`/`@custom-variant`, the xtask generator story and the remaining emit arms remain) | Full 193-entry corpus + property/fuzz suites green; `/N` identity property test | 3       |
 | **P3 – GPUI static**      | `aeolus-codegen-gpui`, `aeolus-macros` (`tw!`, `cn!`, `variants!`, `theme!`), `aeolus-gpui` (`TwExt`)                                                                                              | `iai` parity with hand-written; 0-alloc/0-lock contract tests; demo app         | 3       |
 | **P4 – Env variants**     | `AeolusRoot`/`Env`, `dark:`, breakpoints, group/state bits, aria/data                                                                                                                              | Conformance score published for GPUI; diagnostics for unsupported variants      | 2       |
 | **P5 – Ecosystem**        | gpui-rsx integration PR, LSP/CLI, gpui-component bridge, docs book, public benchmarks, `1.0-rc`                                                                                                    | Third-party app migrated; migration guide; CI perf gates                        | 2–3     |

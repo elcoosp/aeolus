@@ -4,7 +4,8 @@
 
 | version | supported |
 |---|---|
-| 0.1.x | ✅ |
+| 0.12.x | ✅ |
+| < 0.12 | ❌ (security fixes ride the latest minor) |
 
 Aeolus is a **style compiler**. It parses untrusted-ish text (Tailwind class
 strings, `@theme` CSS) and emits styling values for native UI frameworks.
@@ -15,9 +16,10 @@ hot path is designed so that **no input can panic it**:
   reported, never fatal;
 - the theme parser tolerates arbitrary CSS (malformed tails ignored);
 - `cn()` is best-effort and total (any input returns a string);
-- fuzz targets pin these properties (`fuzz/`): `parse_class_string`,
-  `color_parse`, `cn`, `theme_from_css` each ran 60s clean in
-  release+ASAN at the 0.1.0 tag;
+- fuzz targets pin these properties (`fuzz/`): all six targets —
+  `parse_class_string`, `color_parse`, `cn`, `theme_from_css`,
+  `parse_variant`, `probe_eval` — sweep on every main push and weekly
+  in release+ASAN (the 0.1.0 tag's four-target smoke was the seed set);
 - floats are clamped at conversion boundaries, so absurd numeric input
   degrades to clamped colors, never NaN/inf propagation.
 
@@ -43,10 +45,12 @@ unless they prefer otherwise.
 incorrect styling semantics reachable from any input to the public APIs of
 the published crates (`aeolus-core`, `aeolus-macro`).
 
-**Out of scope**: the three `publish = false` backend crates in 0.1.0
-(`aeolus-xilem`, `aeolus-floem`, `aeolus-shadcn`) track git-pinned upstream
-framework commits — report upstream framework issues there; issues in the
-dev-sandbox `muda-stub` (it is a build-time artifact and never ships); and
+**Out of scope**: the crates marked `publish = false` (the five backend
+crates `aeolus-xilem`/`aeolus-floem`/`aeolus-iced`/`aeolus-egui`/`aeolus-slint`,
+plus `aeolus-shadcn`, `aeolus-cli` and the five V1 pipeline crates) track
+git-pinned upstream framework commits — report upstream framework issues
+there; issues in the dev-sandbox `muda-stub` (it is a build-time artifact
+and never ships); and
 "issues" that the `LoweringReport`/`Warning` machinery already reports by
 design (dropped features are contractual behavior, not vulnerabilities).
 

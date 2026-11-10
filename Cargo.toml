@@ -18,8 +18,9 @@ members = [
     "crates/aeolus-ir",
     # The V1 pipeline's first seam (plan §3.2, phase P2): lex → lookup →
     # lower → cascade-sorted `Program`, with typed spanned diagnostics.
-    # Same git-only discipline; the Target half of the compile signature
-    # and the IR-level `cn()` merge are the next P2 slices.
+    # Same git-only discipline; the Target half's CSS emit arm (P2 slice
+    # 4: `emit_css`/`emit_css_theme`) is in-tree, and `@utility`/
+    # `@custom-variant` is the next P2 slice.
     "crates/aeolus-compile",
     # The theme pass (plan §3.2, phase P2 slice 2): CSS-first theme
     # sources resolved into tiered token tables (T0 literals, T1 const
@@ -128,7 +129,9 @@ chunks_exact_to_as_chunks = "allow"
 # 0.8.0 and the workspace stopped resolving: cargo enforces the version
 # requirement against the path dependency, so every `aeolus-core = {
 # workspace = true }` member failed with "failed to select a version").
-# ship.sh's BUMP step updates both blocks together.
+# ship-style release tooling's BUMP step updates both blocks together
+# (keep them in lockstep on every release bump; the drift story above is
+# what happens when they do not move together).
 aeolus-core = { version = "0.12.0", path = "crates/aeolus-core" }
 aeolus-macro = { version = "0.12.0", path = "crates/aeolus-macro" }
 aeolus-ir = { version = "0.12.0", path = "crates/aeolus-ir" }
@@ -144,7 +147,7 @@ aeolus-theme = { version = "0.12.0", path = "crates/aeolus-theme" }
 # API-compatible stub (crates/muda-stub) covering the exact muda surface
 # floem uses. The stub is dev-only: it is NOT a workspace member, is never a
 # dependency of any publishable crate (aeolus-core / aeolus-macro do not
-# reference muda at all), and the three backend crates carry `publish = false`
+# reference muda at all), and the five backend crates carry `publish = false`
 # for exactly this reason. See reports/09-publishing/PUBLISHING.md.
 [patch.crates-io]
 muda = { path = "crates/muda-stub" }

@@ -1,32 +1,3 @@
-## [0.12.0] - 2026-11-10
-
-### 🚀 Features
-
-- *(compile)* Wire the ir-level cn merge
-- *(bench)* Measure the cn merge
-- *(examples)* Demonstrate the ir-level cn merge
-
-### 🐛 Bug Fixes
-
-- *(theme)* Give the pair overflow its typed refusal
-
-### 📚 Documentation
-
-- Align every surface to the cn merge and sweep the drift
-
-### 🚜 Refactor
-
-- *(compile)* Type the variant-fold miss
-
-### 🧪 Testing
-
-- *(compile)* Pin the ir-level cn contracts
-
-### ⚙️ Miscellaneous Tasks
-
-- Gate the cli's 1.88 msrv claim
-- Pr body
-- *(release)* V0.12.0
 # Changelog
 
 All notable changes to Aeolus are documented here. The format follows
@@ -35,7 +6,75 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### The P2 slice 3 — the IR-level `cn()` merge (this change)
+### The P2 slice 4 — the `Target` half's CSS arm (this change)
+
+The fourth slice of phase P2 (architecture plan §3.1/§3.2): the compile
+signature gains its EMIT half — `Target::Css`, the first arm of the plan
+§3.1 diagram's emit stage, rendered by `aeolus_compile::emit_css` /
+`emit_css_theme`: class strings in, a rendered stylesheet out. The emit
+runs IN the pipeline (not over the `Compiled` artifact) because the IR's
+`Val::Kw` slot indexes the ROW'S OWN keyword table — the row context is
+what recovers the CSS text (`flex-col` → `column`), the variant
+SEGMENTS are what render conditions the flat `Cond` model folds (the
+named `group-hover/menu:` label, conjunctive probe stacks), and the
+theme tiers are what choose the form (baked literals `rgb(r g b / a%)`,
+runtime `var(--color-…)` with the §2 `color-mix` identity under an
+`/opacity` modifier, baked dark pairs as light + `:where(.dark, .dark *)`
+companion rules). Breakpoints render v4 range-syntax media queries and
+`@container` blocks; the class text escapes as v4 escapes it.
+
+- **Added (compile):** `Target` (the plan §3.2 signature's emit half;
+  the P3 forms — Rust tokens, static data, the interpreter — stay named
+  but unarmed), `CssSheet`/`CssRule`/`CssAt` and `emit_css` /
+  `emit_css_theme` (the theme-less default keeps colour tokens and
+  modifiers typed boundaries, exactly like `compile`), with `tracing`
+  spans on the emit stages. `examples/css_emit.rs` demonstrates the
+  whole story (a real `@theme` file through the runtime and baked
+  tables, the dark companions, the boundary walk), and the bench family
+  gains `emit_css_*` (divan, stable).
+- **Added (ir):** `Bp::rem` — the documented `--breakpoint-*` defaults
+  the media queries render from (the theme tier re-maps the values, not
+  the order).
+- **Changed (syntax, refactor):** the lexer's degraded channel is TYPED
+  — `parse_class_string` reports `LexFailure { span, raw, kind }`
+  instead of `(String, String)` pairs whose `{raw}: {message}` format
+  contract consumers had to un-parse, and `DiagnosticKind::Lex` carries
+  the `LexErrorKind` (the stable message renders through it). Spans are
+  now the lexer's own (exact on repeated tokens — pinned), no
+  re-derivation by `find()`. The differential harness keeps its
+  raw-keyed comparison.
+- **Changed (data, fix):** the `truncate` composite splits into THREE
+  root-sharing rows — the one-bare-value fan-out could not carry
+  per-prop values and rode `ellipsis` onto `overflow-x`/`white-space`,
+  where it is not a legal value. The registry is now 184 rows (178
+  literal + 6 shared consts); the count is stated, not implied.
+- **Changed (compile, refactor):** the breakpoint spelling table now
+  walks `Bp::ALL`/`Bp::name` — the IR's own table is the single source,
+  the parallel `match` wall is gone (the dead-code item this slice was
+  carrying), and the css arm reuses the same oracle for its refusal set.
+- **Changed (docs):** the drift sweep — the README badge and status
+  paragraph still said v0.11.0 after the v0.12.0 release and its
+  "Learn more" line still planned the landed `cn()` merge; the root
+  Cargo.toml still announced the `cn()` merge as "next"; the CI header
+  still counted four fuzz targets (six since the sweep fix) and
+  described a three-backend workspace (14 members); the architecture
+  plan's P1 row still said "three git-only crates" (five) and "178
+  registry rows" (184); SECURITY's supported-versions table stopped at
+  0.1.x; the CHANGELOG carried the git-cliff `[0.12.0]` block ABOVE the
+  file title with an `[Unreleased]` describing the already-released
+  slice — consolidated here; and the five V1 crates' `rust-version =
+  1.88` claim has its CI job now (`msrv-core` checks them).
+
+## [0.12.0] — 2026-11-10 — the P2 slice 3: the IR-level `cn()` merge
+
+Release summary (the git-cliff block, filed in place): features — the
+compile seam hosts the ir-level cn merge, the merge bench, the consumer
+example; fixes — the theme pair overflow's typed refusal; docs — the
+cn-merge surface alignment and the drift sweep; refactors — the typed
+variant-fold miss; tests — the ir-level cn contract pins; misc — the
+CLI's 1.88 MSRV gate, the pr body, the release itself.
+
+### The P2 slice 3 — the IR-level `cn()` merge
 
 The third slice of phase P2 (architecture plan §3.2/§3.3): the compile
 seam hosts the `cn()` engine at IR level — `aeolus_compile::cn(&[&Compiled])`
