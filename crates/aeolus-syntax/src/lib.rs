@@ -22,7 +22,7 @@
 mod candidate;
 mod error;
 
-pub use candidate::{Arb, Candidate, Form, parse_candidate, parse_class_string};
+pub use candidate::{Arb, Candidate, Form, HINTS, parse_candidate, parse_class_string};
 pub use error::{LexError, LexErrorKind, LexFailure};
 
 /// The lexer's semantic version, surfaced for the pipeline's
