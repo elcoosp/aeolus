@@ -60,6 +60,13 @@ harness = false
 name = "css"
 harness = false
 
+# The dyn-cache benchmarks (the leak-pool dedupe slice): the cold path
+# (probe + pipeline + store) against the warm hit and the uncached
+# free functions.
+[[bench]]
+name = "dyn_cache"
+harness = false
+
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
