@@ -21,7 +21,7 @@
 //! Written FIRST (the RED spec): the suite fails against a stub crate
 //! and passes only once `compile()` satisfies every pin below.
 
-use aeolus_compile::{compile, CompileError, Config, DiagnosticKind, Spacing};
+use aeolus_compile::{CompileError, Config, DiagnosticKind, Spacing, compile};
 use aeolus_data::tables;
 use aeolus_ir::{Bp, Cond, Decl, Program, Prop, PropMask, Val};
 
@@ -37,7 +37,7 @@ fn kw_index(table: &[(&str, &str)], name: &str) -> u8 {
         .iter()
         .position(|&(entry, _)| entry == name)
         .expect("test table lookup must succeed");
-    assert!(idx <= u8::MAX as usize, "table must fit the IR's u8 slot");
+    assert!(u8::try_from(idx).is_ok(), "table must fit the IR's u8 slot");
     idx as u8
 }
 
@@ -47,7 +47,7 @@ fn kw_index3(table: &[(&str, &str, &str)], name: &str) -> u8 {
         .iter()
         .position(|&(entry, _, _)| entry == name)
         .expect("test table lookup must succeed");
-    assert!(idx <= u8::MAX as usize, "table must fit the IR's u8 slot");
+    assert!(u8::try_from(idx).is_ok(), "table must fit the IR's u8 slot");
     idx as u8
 }
 
@@ -71,7 +71,10 @@ const PADDING_X_MASK: PropMask = PropMask::of(&[Prop::PaddingRight, Prop::Paddin
 #[test]
 fn p4_lowers_to_the_trbl_rem_fanout() {
     let compiled = compile("p-4", &Config::default()).expect("p-4 compiles");
-    assert!(compiled.diagnostics.is_empty(), "no diagnostics: {compiled:?}");
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "no diagnostics: {compiled:?}"
+    );
     let program = compiled.program;
     assert!(program.is_sorted(), "single base layer is trivially sorted");
     let layer = program.layers.first().expect("base layer exists");
@@ -80,10 +83,22 @@ fn p4_lowers_to_the_trbl_rem_fanout() {
     assert_eq!(
         layer.decls,
         [
-            Decl { prop: Prop::PaddingTop, val: Val::Rem(1.0) },
-            Decl { prop: Prop::PaddingRight, val: Val::Rem(1.0) },
-            Decl { prop: Prop::PaddingBottom, val: Val::Rem(1.0) },
-            Decl { prop: Prop::PaddingLeft, val: Val::Rem(1.0) },
+            Decl {
+                prop: Prop::PaddingTop,
+                val: Val::Rem(1.0)
+            },
+            Decl {
+                prop: Prop::PaddingRight,
+                val: Val::Rem(1.0)
+            },
+            Decl {
+                prop: Prop::PaddingBottom,
+                val: Val::Rem(1.0)
+            },
+            Decl {
+                prop: Prop::PaddingLeft,
+                val: Val::Rem(1.0)
+            },
         ]
         .as_slice(),
         "4 × 0.25rem, TRBL order"
@@ -93,21 +108,43 @@ fn p4_lowers_to_the_trbl_rem_fanout() {
 
 #[test]
 fn px_config_bakes_pixels_at_the_configured_rem() {
-    let config = Config { spacing: Spacing::Px, ..Config::default() };
+    let config = Config {
+        spacing: Spacing::Px,
+        ..Config::default()
+    };
     let compiled = compile("p-2", &config).expect("p-2 compiles");
     let decls = base(&compiled.program);
-    assert_eq!(decls[0], Decl { prop: Prop::PaddingTop, val: Val::Px(8.0) });
+    assert_eq!(
+        decls[0],
+        Decl {
+            prop: Prop::PaddingTop,
+            val: Val::Px(8.0)
+        }
+    );
     // The `px` step is one PIXEL in both modes — it is already absolute.
     let compiled = compile("pb-px", &Config::default()).expect("pb-px compiles");
     let decls = base(&compiled.program);
-    assert_eq!(decls[0], Decl { prop: Prop::PaddingBottom, val: Val::Px(1.0) });
+    assert_eq!(
+        decls[0],
+        Decl {
+            prop: Prop::PaddingBottom,
+            val: Val::Px(1.0)
+        }
+    );
 }
 
 #[test]
 fn negated_spacing_negates_the_value() {
     let compiled = compile("-mt-2", &Config::default()).expect("-mt-2 compiles");
     let layer = compiled.program.layers.first().expect("base layer exists");
-    assert_eq!(layer.decls, [Decl { prop: Prop::MarginTop, val: Val::Rem(-0.5) }].as_slice());
+    assert_eq!(
+        layer.decls,
+        [Decl {
+            prop: Prop::MarginTop,
+            val: Val::Rem(-0.5)
+        }]
+        .as_slice()
+    );
     assert!(compiled.diagnostics.is_empty());
 }
 
@@ -115,15 +152,28 @@ fn negated_spacing_negates_the_value() {
 fn fraction_lowers_to_a_percentage() {
     let compiled = compile("w-1/2", &Config::default()).expect("w-1/2 compiles");
     let decls = base(&compiled.program);
-    assert_eq!(decls, [Decl { prop: Prop::Width, val: Val::Pct(50.0) }].as_slice());
+    assert_eq!(
+        decls,
+        [Decl {
+            prop: Prop::Width,
+            val: Val::Pct(50.0)
+        }]
+        .as_slice()
+    );
 }
 
 #[test]
 fn number_scale_is_unitless() {
     let compiled = compile("z-10 opacity-50", &Config::default()).expect("compiles");
     let decls = base(&compiled.program);
-    assert!(decls.contains(&Decl { prop: Prop::ZIndex, val: Val::Num(10.0) }));
-    assert!(decls.contains(&Decl { prop: Prop::Opacity, val: Val::Num(50.0) }));
+    assert!(decls.contains(&Decl {
+        prop: Prop::ZIndex,
+        val: Val::Num(10.0)
+    }));
+    assert!(decls.contains(&Decl {
+        prop: Prop::Opacity,
+        val: Val::Num(50.0)
+    }));
 }
 
 #[test]
@@ -131,14 +181,28 @@ fn keywords_lower_to_the_row_table_slot() {
     let compiled = compile("flex-col", &Config::default()).expect("flex-col compiles");
     let decls = base(&compiled.program);
     let slot = kw_index(tables::FLEX_DIRECTIONS, "col");
-    assert_eq!(decls, [Decl { prop: Prop::FlexDirection, val: Val::Kw(slot) }].as_slice());
+    assert_eq!(
+        decls,
+        [Decl {
+            prop: Prop::FlexDirection,
+            val: Val::Kw(slot)
+        }]
+        .as_slice()
+    );
 }
 
 #[test]
 fn bare_roots_lower_to_slot_zero() {
     let compiled = compile("hidden", &Config::default()).expect("hidden compiles");
     let decls = base(&compiled.program);
-    assert_eq!(decls, [Decl { prop: Prop::Display, val: Val::Kw(0) }].as_slice());
+    assert_eq!(
+        decls,
+        [Decl {
+            prop: Prop::Display,
+            val: Val::Kw(0)
+        }]
+        .as_slice()
+    );
 }
 
 #[test]
@@ -148,7 +212,14 @@ fn size_keywords_resolve_through_the_anyof_arm() {
     let compiled = compile("w-full", &Config::default()).expect("w-full compiles");
     let decls = base(&compiled.program);
     let slot = kw_index(tables::SIZE_KEYWORDS, "full");
-    assert_eq!(decls, [Decl { prop: Prop::Width, val: Val::Kw(slot) }].as_slice());
+    assert_eq!(
+        decls,
+        [Decl {
+            prop: Prop::Width,
+            val: Val::Kw(slot)
+        }]
+        .as_slice()
+    );
 }
 
 #[test]
@@ -161,8 +232,14 @@ fn composite_rows_fan_the_pair_across_their_targets() {
     assert_eq!(
         decls,
         [
-            Decl { prop: Prop::FontSize, val: Val::Kw(slot) },
-            Decl { prop: Prop::LineHeight, val: Val::Kw(slot) },
+            Decl {
+                prop: Prop::FontSize,
+                val: Val::Kw(slot)
+            },
+            Decl {
+                prop: Prop::LineHeight,
+                val: Val::Kw(slot)
+            },
         ]
         .as_slice(),
         "one candidate, two longhands, one slot each"
@@ -198,7 +275,11 @@ fn same_condition_duplicates_surface_as_base_conflicts() {
     // read) and the overlap is EXACTLY the base-conflict bits.
     let compiled = compile("p-4 px-8", &Config::default()).expect("compiles");
     let layer = compiled.program.layers.first().expect("base layer exists");
-    assert_eq!(layer.decls.len(), 6, "the 4+2 fan-out, later declaration wins per prop");
+    assert_eq!(
+        layer.decls.len(),
+        6,
+        "the 4+2 fan-out, later declaration wins per prop"
+    );
     assert_eq!(compiled.program.base_conflicts(), PADDING_X_MASK);
 }
 
@@ -212,10 +293,18 @@ fn stacked_variants_fold_to_the_dominant_condition() {
     // segment; source order breaks ties.
     let compiled = compile("hover:focus:p-0", &Config::default()).expect("compiles");
     assert_eq!(compiled.program.layers.len(), 1);
-    assert_eq!(compiled.program.layers[0].cond, Cond::Focus, "later segment wins the tie");
+    assert_eq!(
+        compiled.program.layers[0].cond,
+        Cond::Focus,
+        "later segment wins the tie"
+    );
 
     let compiled = compile("md:hover:p-0", &Config::default()).expect("compiles");
-    assert_eq!(compiled.program.layers[0].cond, Cond::Bp(Bp::Md), "media outranks probe");
+    assert_eq!(
+        compiled.program.layers[0].cond,
+        Cond::Bp(Bp::Md),
+        "media outranks probe"
+    );
 }
 
 #[test]
@@ -235,13 +324,31 @@ fn unsupported_variants_are_typed_and_skip_the_utility() {
     let d = &compiled.diagnostics[0];
     assert_eq!(
         d.kind,
-        DiagnosticKind::UnsupportedVariant { variant: "has-data-[x]".to_string() }
+        DiagnosticKind::UnsupportedVariant {
+            variant: "has-data-[x]".to_string()
+        }
     );
     assert_eq!(d.span, (0, 12), "the variant segment's own span");
-    assert_eq!(d.code(), "aeolus::compile::unsupported_variant");
-    assert!(d.help().contains("Cond"), "help names the typed surface");
+    assert_eq!(d.kind.code(), "aeolus::compile::unsupported_variant");
+    assert!(
+        d.kind.help().contains("Cond"),
+        "help names the typed surface"
+    );
     let decls = base(&compiled.program);
-    assert!(decls.contains(&Decl { prop: Prop::PaddingTop, val: Val::Rem(1.0) }));
+    // The REFUSED candidate's utility skips (the v0.x oracle's Route::Skip
+    // and the CSS suite's boundaries battery pin the same); the REST of
+    // the string still compiles — p-2's fan-out is the program.
+    assert!(decls.contains(&Decl {
+        prop: Prop::PaddingTop,
+        val: Val::Rem(0.5)
+    }));
+    assert!(
+        !decls.contains(&Decl {
+            prop: Prop::PaddingTop,
+            val: Val::Rem(1.0)
+        }),
+        "the refused candidate's utility does not lower"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -252,8 +359,14 @@ fn unsupported_variants_are_typed_and_skip_the_utility() {
 fn importance_is_a_typed_boundary() {
     let compiled = compile("p-4!", &Config::default()).expect("compiles");
     assert_eq!(compiled.diagnostics.len(), 1);
-    assert_eq!(compiled.diagnostics[0].kind, DiagnosticKind::UnsupportedImportant);
-    assert_eq!(compiled.diagnostics[0].code(), "aeolus::compile::unsupported_important");
+    assert_eq!(
+        compiled.diagnostics[0].kind,
+        DiagnosticKind::UnsupportedImportant
+    );
+    assert_eq!(
+        compiled.diagnostics[0].kind.code(),
+        "aeolus::compile::unsupported_important"
+    );
     assert!(compiled.program.layers.is_empty(), "nothing lowered");
 }
 
@@ -263,9 +376,11 @@ fn modifiers_are_a_typed_boundary() {
     assert_eq!(compiled.diagnostics.len(), 1);
     assert_eq!(
         compiled.diagnostics[0].kind,
-        DiagnosticKind::UnsupportedModifier { modifier: "50".to_string() }
+        DiagnosticKind::UnsupportedModifier {
+            modifier: "50".to_string()
+        }
     );
-    assert!(compiled.diagnostics[0].help().contains("theme pass"));
+    assert!(compiled.diagnostics[0].kind.help().contains("theme pass"));
 }
 
 #[test]
@@ -279,7 +394,10 @@ fn colour_tokens_report_the_theme_pass() {
         &compiled.diagnostics[0].kind,
         DiagnosticKind::UnsupportedValue { reason, .. } if reason.contains("theme pass")
     ));
-    assert_eq!(compiled.diagnostics[0].code(), "aeolus::compile::unsupported_value");
+    assert_eq!(
+        compiled.diagnostics[0].kind.code(),
+        "aeolus::compile::unsupported_value"
+    );
     assert!(compiled.program.layers.is_empty());
 }
 
@@ -301,7 +419,9 @@ fn negation_the_row_refuses_is_typed() {
     assert_eq!(compiled.diagnostics.len(), 1);
     assert_eq!(
         compiled.diagnostics[0].kind,
-        DiagnosticKind::UnsupportedNegation { body: "p-4".to_string() }
+        DiagnosticKind::UnsupportedNegation {
+            body: "p-4".to_string()
+        }
     );
     assert!(compiled.program.layers.is_empty());
 }
@@ -309,7 +429,11 @@ fn negation_the_row_refuses_is_typed() {
 #[test]
 fn unknown_roots_carry_the_lookup_error() {
     let compiled = compile("p-4 not-a-utility w-1/2", &Config::default()).expect("compiles");
-    assert_eq!(compiled.diagnostics.len(), 1, "the miss degrades, the rest compiles");
+    assert_eq!(
+        compiled.diagnostics.len(),
+        1,
+        "the miss degrades, the rest compiles"
+    );
     let d = &compiled.diagnostics[0];
     assert!(matches!(
         &d.kind,
@@ -343,7 +467,7 @@ fn lex_failures_are_spanned_and_degrade() {
         DiagnosticKind::Lex { kind } if kind.message().contains("empty utility element")
     ));
     assert_eq!(d.span, (0, 4));
-    assert_eq!(d.code(), "aeolus::compile::lex");
+    assert_eq!(d.kind.code(), "aeolus::compile::lex");
     let decls = base(&compiled.program);
     assert_eq!(decls.len(), 4, "p-2's fan-out still lowered");
 }
@@ -353,7 +477,10 @@ fn empty_input_is_a_typed_error() {
     let err = compile("", &Config::default()).unwrap_err();
     assert!(matches!(err, CompileError::Empty));
     assert!(err.to_string().contains("empty"), "{err}");
-    assert!(compile("   ", &Config::default()).is_err(), "whitespace-only is empty");
+    assert!(
+        compile("   ", &Config::default()).is_err(),
+        "whitespace-only is empty"
+    );
 }
 
 // ---------------------------------------------------------------------------
