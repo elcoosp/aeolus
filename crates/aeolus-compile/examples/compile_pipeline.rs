@@ -10,11 +10,13 @@
 //! The pipeline reads the three P1 crates end to end: the lexer's
 //! candidates (`lex_candidates` on `aeolus-syntax`), the registry's
 //! rows (`registry_lookup` on `aeolus-data`), and the IR's masks
-//! (`mask_algebra` on `aeolus-ir`) all feed this stage. The next P2
-//! slices — the theme tiers, the IR-level `cn()` merge and the codegen
-//! — consume the `Program` this seam emits.
+//! (`mask_algebra` on `aeolus-ir`) all feed this stage. The landed P2
+//! halves consume the `Program` this seam emits: the theme tiers
+//! (`theme_seam`), the IR-level `cn()` merge (`cn_merge`), the CSS
+//! target (`css_emit`) and the custom-authoring seam
+//! (`custom_seam`).
 
-use aeolus_compile::{compile, Config, Diagnostic, DiagnosticKind, Spacing};
+use aeolus_compile::{Config, Diagnostic, DiagnosticKind, Spacing, compile};
 
 fn main() {
     // The shadcn Button's own vocabulary: scale utilities, keyword
@@ -34,7 +36,10 @@ fn main() {
     //    against the configured rem size — `p-4` is Rem(1.0) above and
     //    Px(16.0) here.
     println!("\n── px compat config (rem_px = 16) ──────────────────────");
-    let config = Config { spacing: Spacing::Px, ..Config::default() };
+    let config = Config {
+        spacing: Spacing::Px,
+        ..Config::default()
+    };
     let compiled = compile("p-4", &config).expect("non-empty input compiles");
     for decl in compiled.program.layers[0].decls {
         println!("  {} = {:?}", decl.prop.name(), decl.val);
@@ -49,7 +54,10 @@ fn main() {
 /// The audit view of one program: layer by layer, condition,
 /// specificity rank, then the longhand fan-out with the value slot.
 fn print_program(program: &aeolus_ir::Program) {
-    println!("── program ({} layers) ─────────────────────────────────", program.layers.len());
+    println!(
+        "── program ({} layers) ─────────────────────────────────",
+        program.layers.len()
+    );
     for layer in program.layers {
         let cond = layer.cond.source_text().unwrap_or("base");
         println!(
@@ -72,7 +80,10 @@ fn print_program(program: &aeolus_ir::Program) {
 /// The honest-boundary view: every non-lowered class with its span,
 /// stable code and help text — the editor-squiggle contract.
 fn print_diagnostics(diagnostics: &[Diagnostic]) {
-    println!("\n── diagnostics ({} did not lower) ─────────────────────", diagnostics.len());
+    println!(
+        "\n── diagnostics ({} did not lower) ─────────────────────",
+        diagnostics.len()
+    );
     for d in diagnostics {
         println!("  {d}");
         println!("    code: {}", d.kind.code());
