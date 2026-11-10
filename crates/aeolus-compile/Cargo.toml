@@ -67,6 +67,20 @@ harness = false
 name = "dyn_cache"
 harness = false
 
+# The interpreter-arm benchmarks (plan §3.1 emit (c)): the per-frame
+# resolve of the SAME shadcn Button program under resting and busy envs,
+# baked and runtime tiers.
+[[bench]]
+name = "interp"
+harness = false
+
+# The static-data emit arm's benchmarks (plan §3.1 emit (b)): freezing
+# the compiled program into the byte-stable static item, against the
+# compile floor.
+[[bench]]
+name = "statics"
+harness = false
+
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
