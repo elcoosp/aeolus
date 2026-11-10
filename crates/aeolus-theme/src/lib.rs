@@ -520,6 +520,49 @@ impl TokenTable {
             },
         }
     }
+
+    /// Resolve a token id to its CONCRETE sRGB colour under one mode —
+    /// the T2 runtime path's "one load from `TokenTable` + one multiply"
+    /// (plan §3.4) as a public primitive, so every host that resolves
+    /// programs against a live table shares the audited math (the
+    /// interpreter arm's built-in [`crate::TokenTable`] source, the
+    /// gpui-component theme bridge, a test double's oracle).
+    ///
+    /// * `Runtime` tier — the ACTIVE half (the `dark` flag selects) is
+    ///   loaded and premultiplied by the clamped alpha
+    ///   ([`Color::mix_with_transparent`], the audited `/N` identity);
+    /// * `Baked` tier — a light-only token is the same premultiplied
+    ///   literal bake [`TokenTable::resolve`] applies; a dark-carrying
+    ///   token is the [`ResolveError::AlphaOnPair`] typed boundary (the
+    ///   pair form has no alpha arm — the pairs resolve mode-selected
+    ///   through [`TokenTable::pair_at`] with no modifier).
+    ///
+    /// The alpha must be finite ([`ResolveError::AlphaNotFinite`]) and
+    /// the id in range ([`ResolveError::UnknownId`]) — the same refusals
+    /// [`TokenTable::resolve`] makes, made before any math runs.
+    ///
+    /// # Errors
+    /// [`ResolveError`] per the three cases above.
+    pub fn resolve_rgba(&self, id: u16, alpha: f32, dark: bool) -> Result<[u8; 4], ResolveError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!(id, alpha, dark, tier = ?self.tier, "token resolve rgba");
+        if !alpha.is_finite() {
+            return Err(ResolveError::AlphaNotFinite(alpha));
+        }
+        let idx = usize::from(id);
+        if idx >= self.names.len() {
+            return Err(ResolveError::UnknownId(id));
+        }
+        if self.tier == Tier::Baked && self.pair_of[idx].is_some() {
+            return Err(ResolveError::AlphaOnPair);
+        }
+        let base = match (dark, &self.dark[idx]) {
+            (true, Some(dark_color)) => dark_color,
+            _ => &self.light[idx],
+        };
+        let a = alpha.clamp(0.0, 1.0);
+        Ok(base.mix_with_transparent(a * 100.0).to_rgba8())
+    }
 }
 
 #[cfg(test)]
