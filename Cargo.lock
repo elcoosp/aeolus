@@ -66,6 +66,7 @@ dependencies = [
 name = "aeolus-compile"
 version = "0.14.0"
 dependencies = [
+ "aeolus-core",
  "aeolus-data",
  "aeolus-ir",
  "aeolus-syntax",
