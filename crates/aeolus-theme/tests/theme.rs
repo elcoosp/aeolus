@@ -355,3 +355,95 @@ fn pair_overflow_carries_miette_code_and_help() {
     let help = err.help().expect("the boundary carries help").to_string();
     assert!(help.contains("Runtime"), "{help}");
 }
+
+// ---------------------------------------------------------------------------
+// 6. The concrete rgba resolve — the interpreter arm's mode-aware
+//    one-load-one-multiply primitive (plan §3.4's T2 runtime cost, made a
+//    public primitive so every host that resolves programs against a live
+//    table shares the audited math).
+//
+//    Written FIRST (the RED spec): the suite fails until `resolve_rgba`
+//    satisfies every pin below.
+// ---------------------------------------------------------------------------
+
+fn runtime_mini() -> TokenTable {
+    TokenTable::runtime(&mini_source()).expect("mini source builds")
+}
+
+fn baked_mini() -> TokenTable {
+    TokenTable::baked(&mini_source()).expect("mini source builds")
+}
+
+#[test]
+fn resolve_rgba_multiplies_the_active_half_at_runtime() {
+    let table = runtime_mini();
+    let id = table
+        .id("surface")
+        .expect("surface is a dark-carrying token");
+    // Alpha 1.0 IS the active half, unmixed — the one load.
+    assert_eq!(
+        table.resolve_rgba(id, 1.0, false).expect("light resolves"),
+        table.light_rgba(id).expect("token in table"),
+        "the light mode at full alpha is the light colour"
+    );
+    assert_eq!(
+        table.resolve_rgba(id, 1.0, true).expect("dark resolves"),
+        table.dark_rgba(id).expect("dark value in table"),
+        "the dark mode at full alpha is the dark colour"
+    );
+    // Half alpha is the premultiplied mix (the audited identity) —
+    // different from the unmixed half, monotone in the modifier.
+    let full = table.resolve_rgba(id, 1.0, false).expect("light resolves");
+    let half = table.resolve_rgba(id, 0.5, false).expect("light resolves");
+    assert_ne!(half, full, "the multiply changes the colour");
+    // Zero alpha is fully transparent, chroma preserved.
+    let zero = table.resolve_rgba(id, 0.0, false).expect("light resolves");
+    assert_eq!(zero[3], 0, "zero alpha bakes a transparent colour");
+}
+
+#[test]
+fn resolve_rgba_baked_literals_premultiply_and_pairs_refuse_alpha() {
+    let table = baked_mini();
+    // A light-only token bakes a literal: full alpha is the literal,
+    // half alpha is its premultiplied mix (the same identity resolve()
+    // applies, in the mode-aware primitive's own form).
+    let brand = table.id("brand").expect("brand is a light-only token");
+    assert_eq!(
+        table.resolve_rgba(brand, 1.0, false).expect("resolves"),
+        table.light_rgba(brand).expect("token in table"),
+    );
+    // A pair token + alpha stays the T1 typed boundary — the pair form
+    // has no alpha arm, in the primitive exactly as in resolve() (the
+    // boundary is unconditional: even a full alpha refuses, and the
+    // pairs themselves resolve mode-selected through pair_at, no
+    // modifier, which `tokens_with_dark_form_mode_pairs` pins).
+    let surface = table.id("surface").expect("surface is a pair token");
+    assert!(matches!(
+        table.resolve_rgba(surface, 0.5, false),
+        Err(ResolveError::AlphaOnPair)
+    ));
+    assert!(matches!(
+        table.resolve_rgba(surface, 1.0, true),
+        Err(ResolveError::AlphaOnPair)
+    ));
+}
+
+#[test]
+fn resolve_rgba_refusals_are_the_typed_set() {
+    let table = runtime_mini();
+    assert!(
+        matches!(
+            table.resolve_rgba(9_999, 1.0, false),
+            Err(ResolveError::UnknownId(9_999))
+        ),
+        "an out-of-range id is the caller bug the type names"
+    );
+    let id = table.id("surface").expect("surface is a token");
+    assert!(
+        matches!(
+            table.resolve_rgba(id, f32::NAN, false),
+            Err(ResolveError::AlphaNotFinite(_))
+        ),
+        "a non-finite alpha refuses instead of baking a NaN literal"
+    );
+}
