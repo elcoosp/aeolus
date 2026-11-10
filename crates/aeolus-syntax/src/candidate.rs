@@ -284,8 +284,11 @@ fn split_body(s: &str) -> Result<(&str, Option<Arb<'_>>, Option<&str>), LexError
 }
 
 /// The v4 type hints (`[length:200px]`); anything else with a `:` in
-/// bracket form is the arbitrary-PROPERTY syntax.
-const HINTS: &[&str] = &[
+/// bracket form is the arbitrary-PROPERTY syntax. Public because the
+/// pipeline's arbitrary-value grammar reads the SAME table (one source
+/// of truth: a hint the lexer classifies, the value pass constrains
+/// with — a drift between the two would be a compile error away).
+pub const HINTS: &[&str] = &[
     "length",
     "color",
     "url",
