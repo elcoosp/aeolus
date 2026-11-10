@@ -6,7 +6,71 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### The P2 slice 4 — the `Target` half's CSS arm (this change)
+### The P2 slice 5 — the custom-authoring seam (this change)
+
+The fifth slice of phase P2 (architecture plan §5.4, the remaining
+`@utility`/`@custom-variant` line): projects REGISTER custom utilities
+and custom variant aliases, and the pipeline lowers and renders them
+exactly like the built-in surface. `Customs` carries the registrations;
+`compile_with`/`compile_theme_with`/`emit_css_with`/
+`emit_css_theme_with` extend the four entry points (empty registrations
+are byte-identical to the theme-less siblings — pinned over a battery).
+A custom utility is the registry row's three-part contract authored at
+runtime — root, value shape, longhand fan-out — with functional forms
+scoped to what the IR holds (`integer`/`number`/`percentage` numeric
+grammars, the `--spacing` scale, and the `--value(color)` theme-token
+form through the tiered `TokenTable`, modifier and all) and fixed
+values guard-checked (non-finite numerics and the row-relative `Kw`
+slot refuse typed). A custom variant is an ALIAS onto the typed `Cond`
+surface — both walks fold and render it identically; the registry wins
+name collisions, and a custom shape rejection reports the custom root
+and its forms through the same `LookupError` shape. The diagnostics
+differential (IR walk ≡ CSS walk) is pinned with customs in play, the
+merge consumes custom-lowered programs, and the registration interns
+into the documented leak pool (bounded, one-time).
+
+- **Added (compile):** the `custom` module — `Customs`,
+  `CustomUtility` (`fixed`/`functional`), `CustomValue`, `CustomForm`
+  (`Integer`/`Number`/`Percentage`/`Spacing`/`Token`),
+  `CustomVariant`, the `ClassifyVariant` seam trait (the fold is
+  generic over it; `Customs` implements it over the registered
+  aliases) — and the four `*_with` entry points, with `tracing` spans
+  on the custom read side.
+- **Fixed (compile, ir, syntax, theme — the pre-handoff breakage):**
+  the tree did not compile at `13402a0` and four authored suites
+  pinned contracts their implementations never satisfied:
+  `aeolus-syntax`'s typed `LexFailure` import was dropped by the CSS
+  arm's commit; `aeolus-compile`'s CSS walk shipped the half-finished
+  refactor (missing import, the `split_once` label mismatch, the
+  `Val::Tok` alpha shadow, the const registry pin's `matches!` on
+  `&str` — not a const trait); the rendered rule body lost its `;`;
+  `Diagnostic::code()`/`help()` drifted to `DiagnosticKind` under the
+  tests; `Program::base_conflicts()` ignored the base layer's own
+  duplicates (`p-4 px-8` pins the raw cascade's overlap); the theme
+  table paired every token because `dark_variant` re-parses the light
+  source (pairing now requires a REAL value override); the F1 fraction
+  was unreachable (`w-1/2` lexes body `w-1` + raw modifier `2` — the
+  joined body now reads FIRST, the oracle's sizing-family precedence,
+  mirrored in both walks); the group/peer heads escaped their probe
+  colons and the baked-pair companion rendered as a compound suffix
+  (the authored fixtures pin `:where(.dark, .dark *)` as a prefixed
+  descendant scope and the peer probe as live selector syntax); and
+  one authored assertion contradicted its own test name and the CSS
+  suite's boundaries battery (the refused-variant candidate skips —
+  the rest of the string compiles).
+- **Added (compile, benches):** `compile_custom_utility_cold` and
+  `compile_custom_token_utility_cold` (divan, stable) — the custom
+  fallback sits ~0.1 µs over the single-utility floor at this sandbox.
+- **Added (compile, examples):** `custom_seam` — the three
+  registration shapes lowering, rendering and refusing.
+- **Changed (docs):** the drift sweep — the architecture plan's P2
+  status and §8 row, the README's crate table/Status/Learn-more, and
+  the `compile_pipeline` example header (which still called the theme
+  tiers and the `cn()` merge "next"); the RED→GREEN evidence file is
+  `reports/10-tdd-evidence/15-custom-seam.md`, with measured bench
+  numbers filed in `reports/08-benchmarks/BENCHMARKS.md`.
+
+### The P2 slice 4 — the `Target` half's CSS arm
 
 The fourth slice of phase P2 (architecture plan §3.1/§3.2): the compile
 signature gains its EMIT half — `Target::Css`, the first arm of the plan
