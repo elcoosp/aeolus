@@ -120,14 +120,37 @@ impl Program {
         m
     }
 
-    /// The longhands a LATER **same-condition** layer re-sets over the
-    /// base layer — the conflicts `cn()` merges away, as bits. Conditional
+    /// The longhands the BASE rule re-sets on a front-to-back read —
+    /// the conflicts `cn()` merges away, as bits. Two shapes count:
+    /// a longhand declared TWICE within the base layer (the raw cascade
+    /// keeps both fan-outs — `p-4 px-8` sorts into one base rule whose
+    /// later duplicates win the read), and a longhand a later
+    /// **same-condition** layer re-sets over the base. Conditional
     /// layers (`hover:`, `md:`, ...) are deliberately excluded: they are
-    /// additive cascade tiers that win only where they fire, so they never
-    /// evict a base declaration (their overlap with base lives in
+    /// additive cascade tiers that win only where they fire, so they
+    /// never evict a base declaration (their overlap with base lives in
     /// [`Program::touched`] instead).
     pub const fn base_conflicts(&self) -> PropMask {
         let mut m = PropMask::EMPTY;
+        // The base layer's own duplicates: a stable cascade-ordered read
+        // keeps the LAST declaration per longhand, so every re-declared
+        // longhand is a re-set.
+        match self.layers.first() {
+            Some(base) => {
+                let mut seen = PropMask::EMPTY;
+                let mut i = 0;
+                while i < base.decls.len() {
+                    let prop = base.decls[i].prop;
+                    if seen.contains(prop) {
+                        m = m.insert(prop);
+                    }
+                    seen = seen.insert(prop);
+                    i += 1;
+                }
+            }
+            // No base layer: nothing to re-set.
+            None => return PropMask::EMPTY,
+        }
         let mut i = 1;
         while i < self.layers.len() {
             if matches!(self.layers[i].cond, Cond::Base) {
