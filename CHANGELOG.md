@@ -1,30 +1,3 @@
-## [0.11.0] - 2026-11-10
-
-### 🚀 Features
-
-- *(theme)* The tiered token table over the audited theme parser
-- *(compile)* Wire the theme half of the compile seam
-- *(examples)* Demonstrate the theme tiers and the theme seam
-- *(bench)* Measure the token-table seam
-
-### 🐛 Bug Fixes
-
-- *(bench)* Build the compile bench without a Default Compiled
-
-### 📚 Documentation
-
-- *(evidence)* File the theme-pass RED-to-GREEN record
-- Align every surface to the theme pass and sweep the drift
-
-### 🧪 Testing
-
-- *(theme)* Pin the tier contracts and the alpha identity
-- *(compile)* Pin the theme-seam and non-finite contracts
-
-### ⚙️ Miscellaneous Tasks
-
-- Pr body
-- *(release)* V0.11.0
 # Changelog
 
 All notable changes to Aeolus are documented here. The format follows
@@ -33,7 +6,70 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### The P2 theme pass — the theme half of the compile signature (this change)
+### The P2 slice 3 — the IR-level `cn()` merge (this change)
+
+The third slice of phase P2 (architecture plan §3.2/§3.3): the compile
+seam hosts the `cn()` engine at IR level — `aeolus_compile::cn(&[&Compiled])`
+merges already-compiled programs RIGHTMOST WINS per longhand. The
+mechanics are the longhand IR's own algebra ("mask algebra + copy",
+§3.3): same-condition layers fold by `Cond` equality, declarations
+concatenate left-then-right, the per-longhand LAST occurrence wins, and
+the result comes out conflict-free (`base_conflicts()` empty),
+specificity-sorted and interned as the dynamic form. The differential
+contract is test-pinned: merging resolves exactly what compiling the
+concatenated string resolves to, and the declarations the merge removes
+are precisely the overlap `Program::base_conflicts()` names on the raw
+cascade (which stays byte-identical to v0.11.0 — the MERGE is what
+dedupes). The audited `tw_merge` conflict table stays at the string
+level (`aeolus_core::cn`, the CLI's `cn` command); the longhand
+fan-outs ARE the groups at this level. The merge is idempotent and
+associative (pinned), diagnostics concatenate in input order with
+their original spans, and theme-tier token values merge with the
+rightmost alpha riding the `Tok` slot.
+
+- **Added (compile):** `cn(&[&Compiled]) -> Result<Compiled,
+  CompileError>` with `tracing` spans on the merge and the new
+  `CompileError::NoInputs` boundary (the empty slice is a caller bug;
+  the `miette` feature wires its code + help). `examples/cn_merge.rs`
+  demonstrates the whole story (raw cascade vs merge, the conflict
+  bits, diagnostics passthrough, the theme-tier merge), and the bench
+  family gains `cn_button_surface_with_override_cold` (divan, stable).
+- **Changed (compile, refactor):** the variant-fold miss is TYPED —
+  `variant::fold` returns `Result<Cond, VariantMiss>` (a struct
+  carrying the refusing segment) instead of a bare `String`. The
+  rendered diagnostics are unchanged (pinned by the existing variant
+  suites); the seam now reports through the same typed shape every
+  other stage uses.
+- **Changed (theme, fix):** the T1 budget refusal is honest —
+  `ThemeError::PairOverflow { pairs }` is its own variant instead of a
+  fabricated `ParseError` smuggled through the parse arm (the crate's
+  own contract: parse errors are carried verbatim, never re-wrapped).
+  Always-on `Display` + source-less `Error` chain; the `miette`
+  feature carries `aeolus::theme::pair_overflow` code + help.
+- **Changed (docs):** the drift sweep — the README's version badge and
+  status paragraph still said v0.10.0 after the v0.11.0 release (the
+  release commit touches the manifests only, the badge follows the
+  next docs pass); the CHANGELOG carried the git-cliff `[0.11.0]`
+  block ABOVE the file title plus an `[Unreleased]` still describing
+  the already-released theme pass — consolidated into one `[0.11.0]`
+  section, the new `[Unreleased]` is this change; the hot-path bullet's
+  test counts were re-counted from the tree by `#[test]` attribute
+  (544; 552 with the instrumentation features — the previous pass
+  printed 535/542 while the tree carried 531/538); the consumer-examples
+  block lists the new cn example (twelve runnable examples); and the
+  README's "1.88 gates core/macro/cli" claim has its CI job back (the
+  `msrv-core` job now checks `-p aeolus-cli`, which it had silently
+  stopped covering).
+
+## [0.11.0] — 2026-11-10 — the P2 theme pass: the theme half of the compile signature
+
+Release summary (the git-cliff block, filed in place): features — the
+tiered token table over the audited theme parser, the compile seam's
+theme half, the theme tiers + theme seam consumer examples, the
+token-table bench; fixes — the compile bench builds without a `Default`
+`Compiled`; docs — the theme-pass RED-to-GREEN evidence record and the
+drift sweep; tests — the tier contracts + alpha identity pins, the
+theme-seam + non-finite pins.
 
 The second slice of phase P2 (architecture plan §3.2/§3.4): `aeolus-theme`,
 the CSS-first theme pass — the SAME `@theme`/`:root`/`.dark` file a web
@@ -91,8 +127,7 @@ carried TWO `[0.10.0]` headers (the git-cliff block plus the prose
 section) and an `[Unreleased]` still describing the already-released
 compile seam — consolidated here; the architecture plan's P2 status
 and §8 row record the theme pass's landed reality; the crate table,
-the examples block and the test counts (535; 542 with the
-instrumentation features) follow the tree.
+the examples block and the test counts follow the tree.
 
 ## [0.10.0] — 2026-11-10 — the P1 consumer handoff, part two + the P2 compile seam
 
