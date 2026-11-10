@@ -6,11 +6,16 @@
 //! highest-specificity segment, source order breaking ties. What folds
 //! today is the typed `Cond` surface (`aeolus_ir::Cond`'s every
 //! constructor: probe states, dark, breakpoints, containers, the
-//! group/peer probes). What does NOT fold (has-/data-/aria-/arbitrary
-//! variants) comes back as a typed unsupported-variant diagnostic —
-//! the next P2 slice's job, never a silent drop.
+//! group/peer probes) PLUS the registered custom-variant aliases (the
+//! `custom` module's [`crate::Customs`] — the pipeline's fold is
+//! generic over the [`crate::ClassifyVariant`] seam, so a host can
+//! supply its own table). What does NOT fold (has-/data-/aria-/
+//! arbitrary variants, unregistered spellings) comes back as a typed
+//! unsupported-variant diagnostic — never a silent drop.
 
 use aeolus_ir::{Bp, Cond};
+
+use crate::custom::ClassifyVariant;
 
 /// Why one variant segment did not fold: the segment is outside the
 /// typed [`Cond`] surface. A struct, not a bare `String` — the miss is
@@ -28,21 +33,26 @@ pub(crate) struct VariantMiss {
 impl VariantMiss {
     /// The miss for one refusing segment.
     pub(crate) fn new(variant: &str) -> Self {
-        Self { variant: variant.to_string() }
+        Self {
+            variant: variant.to_string(),
+        }
     }
 }
 
 /// Fold the variant stack into the one condition the layer fires under.
-/// An EMPTY stack is the bare utility: [`Cond::Base`].
+/// An EMPTY stack is the bare utility: [`Cond::Base`]. The classifier
+/// extends the built-in table with the registered custom-variant
+/// aliases (built-ins win name collisions — the registry is the
+/// oracle, the registrations are additive surface).
 ///
 /// # Errors
-/// The first variant outside the typed surface, as a typed
-/// [`VariantMiss`] — the caller renders it as an unsupported-variant
-/// diagnostic with the segment's own span.
-pub fn fold(variants: &[&str]) -> Result<Cond, VariantMiss> {
+/// The first variant outside the typed surface (built-in or
+/// registered), as a typed [`VariantMiss`] — the caller renders it as
+/// an unsupported-variant diagnostic with the segment's own span.
+pub fn fold(variants: &[&str], classifier: &impl ClassifyVariant) -> Result<Cond, VariantMiss> {
     let mut dominant = Cond::Base;
     for &variant in variants {
-        let cond = classify(variant).ok_or_else(|| VariantMiss::new(variant))?;
+        let cond = classify(variant, classifier).ok_or_else(|| VariantMiss::new(variant))?;
         if cond.specificity() >= dominant.specificity() {
             dominant = cond;
         }
@@ -50,14 +60,22 @@ pub fn fold(variants: &[&str]) -> Result<Cond, VariantMiss> {
     Ok(dominant)
 }
 
-/// The typed classification for ONE variant segment. The named
-/// group/peer label (`group-hover/menu`) folds to its probe: the NAME
-/// has no IR slot yet (cond.rs documents the threading as a
-/// compile-stage job this slice leaves to the codegen). The CSS emit
-/// arm reuses this as the REFUSAL oracle (what a segment IS) while
-/// rendering the selector shape itself (HOW it shows) — the two must
-/// agree, and `tests/css.rs` pins it.
-pub(crate) fn classify(variant: &str) -> Option<Cond> {
+/// The typed classification for ONE variant segment: the built-in
+/// table first, the registered aliases second. The named group/peer
+/// label (`group-hover/menu`) folds to its probe: the NAME has no IR
+/// slot yet (cond.rs documents the threading as a compile-stage job
+/// this slice leaves to the codegen). The CSS emit arm reuses this as
+/// the REFUSAL oracle (what a segment IS) while rendering the selector
+/// shape itself (HOW it shows) — the two must agree, and `tests/css.rs`
+/// pins it.
+pub(crate) fn classify(variant: &str, classifier: &impl ClassifyVariant) -> Option<Cond> {
+    classify_builtin(variant).or_else(|| classifier.classify(variant))
+}
+
+/// The built-in table's classification for ONE variant segment — the
+/// closed spelling set the typed `Cond` surface covers. The custom
+/// aliases ride [`classify`]'s second half, never this table.
+pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
     let (name, _label) = match variant.split_once('/') {
         Some((name, label)) => (name, Some(label)),
         None => (variant, None),
