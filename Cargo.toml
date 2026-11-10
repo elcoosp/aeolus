@@ -18,9 +18,15 @@ members = [
     "crates/aeolus-ir",
     # The V1 pipeline's first seam (plan §3.2, phase P2): lex → lookup →
     # lower → cascade-sorted `Program`, with typed spanned diagnostics.
-    # Same git-only discipline; the theme/target halves of the compile
-    # signature are the next P2 slices.
+    # Same git-only discipline; the Target half of the compile signature
+    # and the IR-level `cn()` merge are the next P2 slices.
     "crates/aeolus-compile",
+    # The theme pass (plan §3.2, phase P2 slice 2): CSS-first theme
+    # sources resolved into tiered token tables (T0 literals, T1 const
+    # pairs, T2 runtime `Tok`s) over the audited v0.x theme reader.
+    # Same git-only discipline; the xtask build-time bake stays with
+    # the remaining P2 slices.
+    "crates/aeolus-theme",
 ]
 
 # cargo-fuzz's own workspace lives here; it must not join this one.
@@ -126,6 +132,10 @@ chunks_exact_to_as_chunks = "allow"
 aeolus-core = { version = "0.10.0", path = "crates/aeolus-core" }
 aeolus-macro = { version = "0.10.0", path = "crates/aeolus-macro" }
 aeolus-ir = { version = "0.10.0", path = "crates/aeolus-ir" }
+# The theme pass joins the lockstep contract (it depends on
+# aeolus-core, a published crate, so cargo enforces its version
+# requirement against the path dependency exactly like aeolus-ir's).
+aeolus-theme = { version = "0.10.0", path = "crates/aeolus-theme" }
 
 # AEOLUS sandbox only: floem hard-depends on muda's `gtk` feature on Linux
 # (floem/Cargo.toml, `[target.'cfg(target_os = "linux")'.dependencies]` has no
