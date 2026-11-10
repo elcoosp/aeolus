@@ -5,6 +5,7 @@
 //! ```text
 //! compile(input, &Config)                        -> Result<Compiled, CompileError>
 //! compile_theme(input, &TokenTable, &Config)     -> Result<Compiled, CompileError>
+//! cn(&[&Compiled, &Compiled, ...])               -> Result<Compiled, CompileError>
 //!   ├─ 1. lex      aeolus_syntax::parse_class_string — borrowed
 //!   │              candidates with byte spans; per-token failures
 //!   │              degrade, never fail the string
@@ -27,12 +28,15 @@
 //! where no theme pass is supplied) colour tokens and modifiers are
 //! typed boundaries, never dropped classes.
 //!
-//! What this slice deliberately is NOT (each is the next P2 slice, and
-//! the seams say so in their rustdocs): the IR-level `cn()` merge (today
-//! the raw cascade is emitted and the overlap is exactly
-//! `Program::base_conflicts()`'s bits), `@utility`/`@custom-variant`,
-//! the `Target` half of the plan §3.2 signature, and the xtask
-//! generator story. The THEME half landed with this slice:
+//! What this slice deliberately is NOT (each is a remaining P2 slice,
+//! and the seams say so in their rustdocs): `@utility`/`@custom-variant`,
+//! the `Target` half of the plan §3.2 signature, and the xtask generator
+//! story. What LANDED here beside the theme half: the IR-level [`cn()`]
+//! merge (plan §3.2's "hosts the `cn()` engine at IR level" — same-condition
+//! layers merge by `Cond` equality, declarations concatenate and the
+//! per-longhand LAST occurrence wins, so the overlap the merge removes is
+//! exactly [`aeolus_ir::Program::base_conflicts`]'s bits on the raw
+//! cascade). The THEME half landed with the previous slice:
 //! [`compile_theme`] takes the plan's second argument — the tiered
 //! `TokenTable` from `aeolus-theme` — and colour tokens plus opacity
 //! modifiers lower through it (`aeolus-compile` depends on
@@ -295,13 +299,16 @@ impl fmt::Display for DiagnosticKind {
     }
 }
 
-/// Why the whole compile failed. Per-class failures are
-/// [`Diagnostic`]s; the only whole-string failure is a caller bug.
+/// Why the whole compile or merge failed. Per-class failures are
+/// [`Diagnostic`]s; the only whole-string failures are caller bugs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CompileError {
     /// The input holds no candidate at all: an empty/whitespace-only
     /// class string.
     Empty,
+    /// [`cn`] was called with no programs to merge — the merge needs at
+    /// least one compiled input.
+    NoInputs,
 }
 
 impl fmt::Display for CompileError {
@@ -309,6 +316,9 @@ impl fmt::Display for CompileError {
         match self {
             CompileError::Empty => {
                 f.write_str("empty class string: compile needs at least one non-whitespace token")
+            }
+            CompileError::NoInputs => {
+                f.write_str("no inputs: cn needs at least one compiled program to merge")
             }
         }
     }
@@ -319,14 +329,23 @@ impl std::error::Error for CompileError {}
 #[cfg(feature = "miette")]
 impl miette::Diagnostic for CompileError {
     fn code(&self) -> Option<Box<dyn fmt::Display + '_>> {
-        Some(Box::new("aeolus::compile::empty_input"))
+        Some(Box::new(match self {
+            CompileError::Empty => "aeolus::compile::empty_input",
+            CompileError::NoInputs => "aeolus::compile::cn_no_inputs",
+        }))
     }
 
     fn help(&self) -> Option<Box<dyn fmt::Display + '_>> {
-        Some(Box::new(
-            "a class string must contain at least one non-whitespace token; \
-             an empty string is a caller bug, not a styling result",
-        ))
+        Some(Box::new(match self {
+            CompileError::Empty => {
+                "a class string must contain at least one non-whitespace token; \
+                 an empty string is a caller bug, not a styling result"
+            }
+            CompileError::NoInputs => {
+                "cn merges one or more already-compiled programs; an empty \
+                 input slice is a caller bug, not a styling result"
+            }
+        }))
     }
 }
 
@@ -399,6 +418,109 @@ pub fn compile_theme(
         "compile_theme: the theme pass is supplied"
     );
     run(input, config, Some(tokens))
+}
+
+/// Merge already-compiled programs, RIGHTMOST WINS per longhand — the
+/// IR-level `cn()` (plan §3.2: "hosts the `cn()` engine at IR level";
+/// §3.3: "mask algebra + copy").
+///
+/// The mechanics are the longhand IR's own algebra, no conflict table
+/// needed at this level (the rows' fan-outs ARE the groups; the audited
+/// `tw_merge` table stays pinned at the string level — the CLI's `cn`
+/// and `aeolus_core::cn`):
+///
+/// * same-condition layers merge by `Cond` equality; disjoint
+///   conditions stay separate layers, re-sorted by specificity (stable,
+///   left-then-right source order breaking ties);
+/// * within a layer the declarations concatenate left-then-right and
+///   the LAST occurrence per longhand wins — `cn(compile("p-4"),
+///   compile("px-8"))` is the four-longhand cascade `p-4 px-8`
+///   resolves to, and the declarations the merge removes are exactly
+///   the overlap [`aeolus_ir::Program::base_conflicts`] names on the
+///   raw concatenation (which stays the [`compile`] contract,
+///   byte-identical to v0.11.0 — the raw cascade keeps both fan-outs;
+///   the MERGE is what dedupes);
+/// * diagnostics concatenate in input order with their original spans
+///   (the inputs are separate strings; the merge never offsets or
+///   drops a report);
+/// * the result is conflict-free (`base_conflicts()` empty),
+///   specificity-sorted, and interned as the IR's documented dynamic
+///   form — the leak-pool dedup (`DynCache`) is the remaining P2
+///   slice's job, so one `cn` per distinct composition is the intended
+///   call pattern, same as [`compile`].
+///
+/// The merge is idempotent and associative (the RED-pinned algebra:
+/// "concatenate in order, last per longhand wins" groups freely).
+///
+/// ```no_run
+/// use aeolus_compile::{cn, compile, Config};
+///
+/// let base = compile("p-4 rounded-md", &Config::default())?;
+/// let user = compile("px-8 rounded-full", &Config::default())?;
+/// let merged = cn(&[&base, &user])?;
+/// // px-8 re-sets left/right over p-4; rounded-full wins the radii.
+/// assert!(merged.diagnostics.is_empty());
+/// # Ok::<(), aeolus_compile::CompileError>(())
+/// ```
+///
+/// # Errors
+/// [`CompileError::NoInputs`] when the slice is empty — the merge needs
+/// at least one program. Per-class reports never fail a merge (they
+/// ride [`Compiled::diagnostics`]).
+pub fn cn(inputs: &[&Compiled]) -> Result<Compiled, CompileError> {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(inputs = inputs.len(), "cn: the ir-level merge");
+
+    if inputs.is_empty() {
+        return Err(CompileError::NoInputs);
+    }
+
+    // Conditions group first-seen (left then right); declarations
+    // concatenate in the same order. The specificity sort + the
+    // per-longhand last-wins dedupe in the assembly step do the rest.
+    let mut conds: Vec<Cond> = Vec::new();
+    let mut groups: Vec<Vec<Decl>> = Vec::new();
+    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    for input in inputs {
+        diagnostics.extend(input.diagnostics.iter().cloned());
+        for layer in input.program.layers {
+            let idx = match conds.iter().position(|&c| c == layer.cond) {
+                Some(idx) => idx,
+                None => {
+                    conds.push(layer.cond);
+                    groups.push(Vec::new());
+                    conds.len() - 1
+                }
+            };
+            groups[idx].extend_from_slice(layer.decls);
+        }
+    }
+
+    // The assembly: stable specificity sort (first-seen order breaks
+    // ties), per-group cascade order (Prop's discriminant IS the sort
+    // order; the stable sort keeps source order within one longhand),
+    // then the merge's own contract — the LAST declaration per longhand
+    // wins, so the dedupe drops exactly the shadowed earlier decls (the
+    // overlap `base_conflicts()` names on the raw concatenation).
+    let mut order: Vec<(Cond, Vec<Decl>)> = conds.into_iter().zip(groups).collect();
+    order.sort_by_key(|(cond, _)| cond.specificity());
+    let mut layers: Vec<Layer> = Vec::with_capacity(order.len());
+    for (cond, mut decls) in order {
+        decls.sort_by_key(|decl: &Decl| decl.prop);
+        let mut merged: Vec<Decl> = Vec::with_capacity(decls.len());
+        for decl in decls {
+            if merged.last().is_some_and(|last: &Decl| last.prop == decl.prop) {
+                merged.pop();
+            }
+            merged.push(decl);
+        }
+        let merged: &'static [Decl] = Box::leak(merged.into_boxed_slice());
+        layers.push(Layer::new(cond, merged));
+    }
+    let layers: &'static [Layer] = Box::leak(layers.into_boxed_slice());
+    #[cfg(feature = "tracing")]
+    tracing::debug!(layers = layers.len(), diagnostics = diagnostics.len(), "cn: merged");
+    Ok(Compiled { program: Program::new(layers), diagnostics })
 }
 
 /// The whole pipeline, theme-less or themed. `tokens` selects whether
@@ -550,13 +672,13 @@ fn normalize_modifier(modifier: &str) -> Option<f32> {
 /// The unsupported-variant report, spanned to the SEGMENT (the same
 /// sequential find the lexer uses; repeated identical segments report
 /// the first occurrence).
-fn variant_diagnostic(candidate: &Candidate<'_>, miss: &str) -> Diagnostic {
-    let offset = candidate.raw.find(miss).unwrap_or(0);
+fn variant_diagnostic(candidate: &Candidate<'_>, miss: &variant::VariantMiss) -> Diagnostic {
+    let offset = candidate.raw.find(&miss.variant).unwrap_or(0);
     let start = candidate.span.0 + offset;
     Diagnostic {
-        span: (start, start + miss.len()),
+        span: (start, start + miss.variant.len()),
         raw: candidate.raw.to_string(),
-        kind: DiagnosticKind::UnsupportedVariant { variant: miss.to_string() },
+        kind: DiagnosticKind::UnsupportedVariant { variant: miss.variant.clone() },
     }
 }
 
