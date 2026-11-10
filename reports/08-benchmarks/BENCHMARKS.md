@@ -243,3 +243,26 @@ correctness-first path (artifact import, tests, tooling), not a per-frame
 path; the hot path stays `resolve_cached_hit` + `diff` (both pinned
 zero-alloc in `tests/alloc_contract.rs`). (2) The bench profile is the
 same one `cargo bench` drives; treat numbers as relative, not absolute.
+
+## V1 compile-seam run (2026-11-10, 2-core sandbox, release profile, divan 0.1.21)
+
+The P2 pipeline's cold paths (`crates/aeolus-compile/benches/compile.rs`),
+captured with the custom-authoring seam's benches in place (P2 slice 5).
+Treat absolute numbers as environment-specific; the ratios are the point.
+
+| benchmark | median | note |
+|---|---|---|
+| `compile_single_utility_cold` | 545 ns | the pipeline's floor (lex, one lookup, one fan-out, one layer) |
+| `compile_unknown_root_cold` | 517 ns | the typed-miss cold path (both read sides miss) |
+| `compile_variant_stack_cold` | 631 ns | `hover:focus:md:` classification + three-condition assembly |
+| `compile_custom_utility_cold` | 659 ns | the custom fallback: the registry miss + the custom read side (~0.1 µs over the floor) |
+| `compile_custom_token_utility_cold` | 750 ns | the `--value(color)` form through the runtime-tier TokenTable |
+| `cn_button_surface_with_override_cold` | 1.27 µs | the 33-class Button + override merge (concat, sort, last-wins, intern) |
+| `compile_button_surface_cold` | 21.5 µs | the full shadcn Button surface incl. the honest degradation paths |
+
+Verdict: the custom seam sits ~0.1 µs over the single-utility floor —
+the cost of one registry miss plus a two-root scan — and the token
+form's resolve rides the built-in colour path's own tier arithmetic.
+The Button surface's number is dominated by the arbitrary-variant and
+colour-token diagnostics battery (the honest degradation), unchanged
+by the seam.
