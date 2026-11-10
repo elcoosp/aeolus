@@ -11,7 +11,7 @@
 //! Numbers land in `reports/08-benchmarks/BENCHMARKS.md` when the gate
 //! environment runs them.
 
-use aeolus_compile::{emit_css, emit_css_theme, Config};
+use aeolus_compile::{Config, emit_css, emit_css_theme};
 use aeolus_theme::{ThemeSource, TokenTable};
 use divan::Bencher;
 
@@ -48,9 +48,8 @@ fn emit_css_single_utility_cold(bencher: Bencher) {
 /// only diagnostics — the linter's cost.
 #[divan::bench]
 fn emit_css_unknown_root_cold(bencher: Bencher) {
-    bencher.bench(|| {
-        emit_css("not-a-utility", &Config::default()).expect("non-empty input renders")
-    });
+    bencher
+        .bench(|| emit_css("not-a-utility", &Config::default()).expect("non-empty input renders"));
 }
 
 /// The responsive + variant surface: the selector build, the escaping
@@ -58,7 +57,10 @@ fn emit_css_unknown_root_cold(bencher: Bencher) {
 #[divan::bench]
 fn emit_css_variant_media_cold(bencher: Bencher) {
     bencher.bench(|| {
-        emit_css("hover:focus:p-0 group-hover/menu:p-4 md:hidden", &Config::default())
-            .expect("non-empty input renders")
+        emit_css(
+            "hover:focus:p-0 group-hover/menu:p-4 md:hidden",
+            &Config::default(),
+        )
+        .expect("non-empty input renders")
     });
 }
