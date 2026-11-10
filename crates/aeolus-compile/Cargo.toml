@@ -1,0 +1,54 @@
+[package]
+name = "aeolus-compile"
+description = "Aeolus V1 compile seam: class strings through the lexer, the registry and the value pass into cascade-sorted longhand Programs, with typed spanned diagnostics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+# Git-only while the V1 pipeline assembles (plan §3.2) — like
+# aeolus-syntax/aeolus-data/aeolus-ir, publish = false until the P2
+# pipeline completes; the backends re-target onto `Program` (§7) before
+# anything here publishes.
+publish = false
+
+[dependencies]
+# The three P1 crates, consumed as the plan §3.2 table says: the lexer
+# segments and spans, the registry interprets the body, the IR carries
+# the result. aeolus-ir rides the workspace pin (the published-trio
+# lockstep contract, root Cargo.toml); aeolus-syntax/aeolus-data are
+# path-only (git-only leaves — no version requirement to keep in
+# lockstep until the pipeline publishes).
+aeolus-syntax = { path = "../aeolus-syntax" }
+aeolus-data = { path = "../aeolus-data" }
+aeolus-ir = { workspace = true }
+# `tracing` feature: spans on the pipeline stages (the same opt-in
+# instrumentation seam the CLI grew in v0.9.1 and the registry in P1).
+# OFF by default so the default graph stays dependency-light
+# (aeolus-syntax + aeolus-data + aeolus-ir only); no subscriber is
+# installed here — the host app owns one.
+tracing = { version = "0.1", optional = true }
+# `miette` feature: the structured `Diagnostic` impl (code + help) on
+# `CompileError`, beside the always-on `code()`/`help()` strings on
+# `DiagnosticKind`. OFF by default; miette's fancy rendering is the
+# host's choice.
+miette = { version = "7", optional = true, default-features = false }
+
+[features]
+default = []
+tracing = ["dep:tracing"]
+miette = ["dep:miette"]
+
+[dev-dependencies]
+# The compile-seam microbenchmarks (divan, stable — the workspace bench
+# idiom). The tests need nothing beyond the crate itself: the tables
+# they pin against are the crate's own public dependencies.
+divan = "0.1"
+
+[[bench]]
+name = "compile"
+harness = false
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true

@@ -16,7 +16,13 @@ members = [
     "crates/aeolus-syntax",
     "crates/aeolus-data",
     "crates/aeolus-ir",
+    # The V1 pipeline's first seam (plan §3.2, phase P2): lex → lookup →
+    # lower → cascade-sorted `Program`, with typed spanned diagnostics.
+    # Same git-only discipline; the theme/target halves of the compile
+    # signature are the next P2 slices.
+    "crates/aeolus-compile",
 ]
+
 # cargo-fuzz's own workspace lives here; it must not join this one.
 exclude = ["fuzz"]
 

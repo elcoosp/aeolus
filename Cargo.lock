@@ -63,6 +63,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aeolus-compile"
+version = "0.10.0"
+dependencies = [
+ "aeolus-data",
+ "aeolus-ir",
+ "aeolus-syntax",
+ "divan",
+ "miette",
+ "tracing",
+]
+
+[[package]]
 name = "aeolus-core"
 version = "0.10.0"
 dependencies = [
