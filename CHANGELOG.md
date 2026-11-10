@@ -1,3 +1,38 @@
+## [0.14.0] - 2026-11-10
+
+### 🚀 Features
+
+- *(theme)* The mode-aware token rgba resolve primitive
+- *(compile)* The program interpreter seam module
+- *(compile)* The static-data emit arm module
+- *(compile)* Wire the interp and static arms into the compile seam
+- *(bench)* Measure the interpreter arm paths
+- *(bench)* Measure the static-data emit
+- *(compile)* Demonstrate the interpreter arm
+- *(compile)* Demonstrate the static-data emit
+
+### 📚 Documentation
+
+- *(readme)* Align the status, crate table, examples and counts
+- *(architecture)* Mark the interp and static-data arms landed
+- *(changelog)* File the emit arms and the drift fixes
+- *(evidence)* File the emit-arms red-to-green record
+- *(benchmarks)* File the emit-arms run numbers
+
+### 🧪 Testing
+
+- *(theme)* Pin the concrete rgba resolve and its refusals
+- *(compile)* Pin the interpreter contracts end to end
+- *(compile)* Pin the static-data emit contracts end to end
+
+### ⚙️ Miscellaneous Tasks
+
+- *(build)* Repair the stale P2 slice comment in the manifest
+- *(release)* V0.14.0
+
+### 💼 Other
+
+- *(compile)* Bench the interp and static arms in the manifest
 ## [0.13.0] - 2026-11-10
 
 ### 🚀 Features
