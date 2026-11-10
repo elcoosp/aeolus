@@ -340,7 +340,7 @@ fn lex_failures_are_spanned_and_degrade() {
     let d = &compiled.diagnostics[0];
     assert!(matches!(
         &d.kind,
-        DiagnosticKind::Lex { message } if message.contains("empty utility element")
+        DiagnosticKind::Lex { kind } if kind.message().contains("empty utility element")
     ));
     assert_eq!(d.span, (0, 4));
     assert_eq!(d.code(), "aeolus::compile::lex");

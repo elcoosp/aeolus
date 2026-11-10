@@ -53,8 +53,11 @@ pub fn fold(variants: &[&str]) -> Result<Cond, VariantMiss> {
 /// The typed classification for ONE variant segment. The named
 /// group/peer label (`group-hover/menu`) folds to its probe: the NAME
 /// has no IR slot yet (cond.rs documents the threading as a
-/// compile-stage job this slice leaves to the codegen).
-fn classify(variant: &str) -> Option<Cond> {
+/// compile-stage job this slice leaves to the codegen). The CSS emit
+/// arm reuses this as the REFUSAL oracle (what a segment IS) while
+/// rendering the selector shape itself (HOW it shows) — the two must
+/// agree, and `tests/css.rs` pins it.
+pub(crate) fn classify(variant: &str) -> Option<Cond> {
     let (name, _label) = match variant.split_once('/') {
         Some((name, label)) => (name, Some(label)),
         None => (variant, None),
@@ -95,15 +98,10 @@ fn classify(variant: &str) -> Option<Cond> {
     }
 }
 
-/// The `--breakpoint-*` defaults, by name (`aeolus_ir::Bp::name`'s
-/// inverse). The theme tier may re-map the rem values, not the names.
-fn breakpoint(name: &str) -> Option<Bp> {
-    match name {
-        "sm" => Some(Bp::Sm),
-        "md" => Some(Bp::Md),
-        "lg" => Some(Bp::Lg),
-        "xl" => Some(Bp::Xl),
-        "2xl" => Some(Bp::Xl2),
-        _ => None,
-    }
+/// The named breakpoint (`"sm"` → `Bp::Sm`) — a reverse walk over
+/// [`Bp::ALL`]/[`Bp::name`], so the IR's own table is the single source
+/// and a new breakpoint cannot drift the compile stage's spelling table
+/// (this used to be a parallel `match` wall; it is the IR's data now).
+pub(crate) fn breakpoint(name: &str) -> Option<Bp> {
+    Bp::ALL.iter().copied().find(|bp| bp.name() == name)
 }

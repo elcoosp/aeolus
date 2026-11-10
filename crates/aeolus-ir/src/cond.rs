@@ -40,6 +40,20 @@ impl Bp {
             Bp::Xl2 => "2xl",
         }
     }
+
+    /// The `--breakpoint-*` default min-width, in rem — the media-query
+    /// half of the emit story (the CSS target renders `@media (min-width:
+    /// Nrem)` from it). The theme tier may re-map the rem VALUES (plan
+    /// §3.4), never the order; these are the v4 defaults the docs pin.
+    pub const fn rem(self) -> f32 {
+        match self {
+            Bp::Sm => 40.0,
+            Bp::Md => 48.0,
+            Bp::Lg => 64.0,
+            Bp::Xl => 80.0,
+            Bp::Xl2 => 96.0,
+        }
+    }
 }
 
 /// The condition a layer fires under. `Copy`, `const`-constructible, no

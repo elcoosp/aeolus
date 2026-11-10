@@ -6,41 +6,51 @@
 //! compile(input, &Config)                        -> Result<Compiled, CompileError>
 //! compile_theme(input, &TokenTable, &Config)     -> Result<Compiled, CompileError>
 //! cn(&[&Compiled, &Compiled, ...])               -> Result<Compiled, CompileError>
+//! emit_css(input, &Config)                       -> Result<CssSheet,  CompileError>
+//! emit_css_theme(input, &TokenTable, &Config)    -> Result<CssSheet,  CompileError>
 //!   ├─ 1. lex      aeolus_syntax::parse_class_string — borrowed
 //!   │              candidates with byte spans; per-token failures
-//!   │              degrade, never fail the string
+//!   │              degrade as TYPED LexFailures, never fail the string
 //!   ├─ 2. fold     the variant stack → the single dominant Cond
-//!   │              (the flat-IR model, cond.rs)
+//!   │              (the flat-IR model, cond.rs); the CSS arm renders
+//!   │              the segments' conjunctive selectors instead
 //!   ├─ 3. read     aeolus_data::registry::lookup_detailed — the typed
 //!   │              registry read side (unknown root vs rejected shape)
 //!   ├─ 4. lower    row + suffix → longhand Decl fan-outs (the value
 //!   │              pass); with a TokenTable, colour tokens and the
 //!   │              /opacity modifier lower through the theme pass —
-//!   │              without one they are typed boundaries, not truncations
+//!   │              without one they are typed boundaries, not truncations.
+//!   │              The CSS arm renders the SAME resolution into text
+//!   │              (the row tables' own CSS strings, the theme tiers)
 //!   └─ 5. assemble stable specificity sort → Layer masks derived →
 //!                  interned as the IR's documented dynamic form
+//!                  (the CSS arm: rules + at-rule grouping instead)
 //! ```
 //!
 //! Everything a class does NOT lower to comes back in
-//! [`Compiled::diagnostics`] with a byte span, a stable code and a help
-//! text — the no-silent-failures rule (CONTRIBUTING §2) applied to the
-//! pipeline: importance, arbitrary values, untyped variants, and (only
-//! where no theme pass is supplied) colour tokens and modifiers are
-//! typed boundaries, never dropped classes.
+//! [`Compiled::diagnostics`] / [`CssSheet::diagnostics`] with a byte
+//! span, a stable code and a help text — the no-silent-failures rule
+//! (CONTRIBUTING §2) applied to the pipeline: importance, arbitrary
+//! values, untyped variants, and (only where no theme pass is supplied)
+//! colour tokens and modifiers are typed boundaries, never dropped
+//! classes. The two walks share the lexer channel, the variant refusal
+//! set, the registry read side and the value pass's boundary set —
+//! `tests/css.rs` pins their diagnostics EQUAL over a battery.
 //!
-//! What this slice deliberately is NOT (each is a remaining P2 slice,
-//! and the seams say so in their rustdocs): `@utility`/`@custom-variant`,
-//! the `Target` half of the plan §3.2 signature, and the xtask generator
-//! story. What LANDED here beside the theme half: the IR-level [`cn()`]
-//! merge (plan §3.2's "hosts the `cn()` engine at IR level" — same-condition
-//! layers merge by `Cond` equality, declarations concatenate and the
-//! per-longhand LAST occurrence wins, so the overlap the merge removes is
-//! exactly [`aeolus_ir::Program::base_conflicts`]'s bits on the raw
-//! cascade). The THEME half landed with the previous slice:
-//! [`compile_theme`] takes the plan's second argument — the tiered
-//! `TokenTable` from `aeolus-theme` — and colour tokens plus opacity
-//! modifiers lower through it (`aeolus-compile` depends on
-//! `aeolus-theme`, which wraps the audited v0.x theme reader).
+//! What this slice deliberately is NOT (each is a remaining P2/P3
+//! slice, and the seams say so in their rustdocs):
+//! `@utility`/`@custom-variant`, the xtask generator story, and the
+//! remaining [`Target`] arms (Rust tokens, static data, the
+//! interpreter). What LANDED here beside the theme half and the
+//! IR-level [`cn()`] merge (plan §3.2's "hosts the `cn()` engine at IR
+//! level" — same-condition layers merge by `Cond` equality,
+//! declarations concatenate and the per-longhand LAST occurrence wins,
+//! so the overlap the merge removes is exactly
+//! [`aeolus_ir::Program::base_conflicts`]'s bits on the raw cascade):
+//! the TARGET half's CSS arm — [`emit_css`]/[`emit_css_theme`] render
+//! the plan §3.1 emit (d) form in-pipeline (the [`Target`] docs carry
+//! the why: the IR's row-relative `Kw` slot cannot recover the row's
+//! CSS text, so the emit renders where the rows still talk).
 //!
 //! Storage note: [`Program`] holds `&'static` slices, so each compile
 //! call interns its program into the leak pool the IR documents as the
@@ -52,6 +62,7 @@
 //! to build against a `REGISTRY_VERSION` other than the one its
 //! lowering was audited against.
 
+mod css;
 mod lower;
 mod variant;
 
@@ -62,7 +73,10 @@ use aeolus_data::LookupError;
 use aeolus_ir::{Cond, Decl, Layer, Program};
 use aeolus_syntax::parse_class_string;
 use aeolus_syntax::Candidate;
+use aeolus_syntax::LexErrorKind;
 use aeolus_theme::TokenTable;
+
+pub use css::{emit_css, emit_css_theme, CssAt, CssRule, CssSheet};
 
 // The lowering audits the rows' meaning; a registry semantics bump must
 // re-audit it. `matches!` on the &str literal is const-evaluable.
@@ -71,6 +85,21 @@ const _: () = assert!(
     "aeolus-compile pins the registry semantics at REGISTRY_VERSION \"1\"; \
      re-audit the value pass before bumping the registry"
 );
+
+/// The emit half of the plan §3.2 compile signature
+/// (`compile(&str, &ThemeSource, &Target) -> Result<Program, Diagnostics>`):
+/// what ARTIFACT the pipeline's emit stage produces from the program.
+/// Slice 4 lands the first arm — [`Target::Css`], rendered by
+/// [`emit_css`]/[`emit_css_theme`]; the plan §3.1 diagram's other emit
+/// forms (Rust tokens, static data, the interpreter) are the P3 codegen
+/// slices and stay named-but-unarmed here until they land.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// The CSS text form (plan §3.1 emit (d)): a rendered stylesheet per
+    /// class string — [`emit_css`]/[`emit_css_theme`] are this arm's
+    /// entry points.
+    Css,
+}
 
 /// How spacing multiples bake (plan §3.3's `spacing = "tailwind" | "px"`
 /// config knob).
@@ -130,7 +159,7 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    fn new(span: (usize, usize), raw: &str, kind: DiagnosticKind) -> Self {
+    pub(crate) fn new(span: (usize, usize), raw: &str, kind: DiagnosticKind) -> Self {
         Self { span, raw: raw.to_string(), kind }
     }
 }
@@ -152,10 +181,13 @@ impl fmt::Display for Diagnostic {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DiagnosticKind {
     /// The lexer rejected the token (`p--4`, `w-[]`): the syntax
-    /// crate's typed miss, carried through with its span.
+    /// crate's typed miss, carried through with its span — the KIND is
+    /// the payload (the stable message renders through
+    /// [`LexErrorKind::message`]); no stringly-typed contract crosses
+    /// the crate boundary.
     Lex {
-        /// The stable lexer message (`LexErrorKind::message`).
-        message: String,
+        /// Which grammar rule rejected the token.
+        kind: LexErrorKind,
     },
     /// No registered root prefixes the body (`not-a-utility`) — the
     /// registry's [`LookupError::UnknownRoot`], spanned.
@@ -270,7 +302,7 @@ impl DiagnosticKind {
 impl fmt::Display for DiagnosticKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DiagnosticKind::Lex { message } => f.write_str(message),
+            DiagnosticKind::Lex { kind } => f.write_str(kind.message()),
             DiagnosticKind::UnknownRoot { body } => {
                 write!(f, "no registered utility root prefixes {body:?}")
             }
@@ -539,27 +571,19 @@ fn run(
     }
 
     // Stage 1: the zero-copy lexer. Per-token failures degrade; the
-    // stage never fails the string (the syntax crate's contract).
+    // stage never fails the string (the syntax crate's contract). The
+    // degraded channel is TYPED: the failure carries the token's own
+    // span inside the input — no re-derivation, no format contract.
     let (candidates, degraded) = parse_class_string(input);
     #[cfg(feature = "tracing")]
     tracing::debug!(tokens = candidates.len(), degraded = degraded.len(), "lexer done");
 
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
-
-    // The lexer's degraded pairs report (raw, message) without spans;
-    // re-derive them with the SAME sequential find the lexer uses to
-    // span its tokens, so the squiggle lands on the right occurrence.
-    let mut cursor = 0usize;
-    for (raw, message) in &degraded {
-        let start = input[cursor..].find(raw.as_str()).map_or(cursor, |i| cursor + i);
-        cursor = start + raw.len();
-        // The pair text is `{raw}: {stable message}`; keep the message.
-        let text = message.strip_prefix(raw.as_str()).unwrap_or(message);
-        let text = text.strip_prefix(": ").unwrap_or(text);
+    for failure in &degraded {
         diagnostics.push(Diagnostic {
-            span: (start, cursor),
-            raw: raw.clone(),
-            kind: DiagnosticKind::Lex { message: text.to_string() },
+            span: failure.span,
+            raw: failure.raw.to_string(),
+            kind: DiagnosticKind::Lex { kind: failure.kind },
         });
     }
 
@@ -659,7 +683,7 @@ fn run(
 /// unparseable modifiers are `None` — the caller keeps the typed
 /// boundary. The clamp itself lives in the audited bake
 /// (`mix_with_transparent`) and the table's resolve.
-fn normalize_modifier(modifier: &str) -> Option<f32> {
+pub(crate) fn normalize_modifier(modifier: &str) -> Option<f32> {
     let bracketed = modifier.starts_with('[') && modifier.ends_with(']');
     let raw = if bracketed { &modifier[1..modifier.len() - 1] } else { modifier };
     let value = raw.parse::<f32>().ok()?;
@@ -672,7 +696,10 @@ fn normalize_modifier(modifier: &str) -> Option<f32> {
 /// The unsupported-variant report, spanned to the SEGMENT (the same
 /// sequential find the lexer uses; repeated identical segments report
 /// the first occurrence).
-fn variant_diagnostic(candidate: &Candidate<'_>, miss: &variant::VariantMiss) -> Diagnostic {
+pub(crate) fn variant_diagnostic(
+    candidate: &Candidate<'_>,
+    miss: &variant::VariantMiss,
+) -> Diagnostic {
     let offset = candidate.raw.find(&miss.variant).unwrap_or(0);
     let start = candidate.span.0 + offset;
     Diagnostic {
@@ -683,7 +710,7 @@ fn variant_diagnostic(candidate: &Candidate<'_>, miss: &variant::VariantMiss) ->
 }
 
 /// The registry read side's typed misses, carried through spanned.
-fn lookup_diagnostic(candidate: &Candidate<'_>, err: LookupError) -> Diagnostic {
+pub(crate) fn lookup_diagnostic(candidate: &Candidate<'_>, err: LookupError) -> Diagnostic {
     let kind = match err {
         LookupError::UnknownRoot { body } => DiagnosticKind::UnknownRoot { body },
         LookupError::ShapeRejected { body, root, tried } => {
@@ -696,7 +723,7 @@ fn lookup_diagnostic(candidate: &Candidate<'_>, err: LookupError) -> Diagnostic 
 /// The value pass's typed refusals, carried through spanned. The
 /// modifier boundary renders the candidate's raw modifier text (the
 /// value pass refuses the WHOLE row when an alpha cannot ride).
-fn reject_diagnostic(
+pub(crate) fn reject_diagnostic(
     candidate: &Candidate<'_>,
     reject: lower::Reject,
     modifier: Option<&str>,

@@ -156,18 +156,38 @@ const fn row(
 
 // -- Shared prebuilt rows (referenced across the table) ----------------------
 
-/// `truncate` — the three-declaration composite (overflow-x/y, the
-/// ellipsis, the nowrap). The oracle leaves `truncate` ungrouped; the
-/// registry-local group keeps the row auditable.
-pub const TRUNCATE_ROW: UtilityRow = row(
+/// `truncate` — the composite utility, split across THREE root-sharing
+/// rows (the registry lowers every accepting row of the winning root, so
+/// one class emits all three declarations). The one-bare-value fan-out
+/// the composite used to model could not carry per-prop values — the
+/// `ellipsis` string rode `overflow-x`/`white-space` too, where it is
+/// not a legal value. The oracle leaves `truncate` ungrouped; the
+/// registry-local group keeps all three rows auditable as one merge
+/// unit.
+pub const TRUNCATE_OVERFLOW_ROW: UtilityRow = row(
+    "truncate",
+    bare("hidden"),
+    &[Prop::OverflowX, Prop::OverflowY],
+    "truncate",
+    false,
+    "utilities.ts truncate (registry-local group; oracle None)",
+);
+
+/// `truncate` — the ellipsis arm (`text-overflow: ellipsis`).
+pub const TRUNCATE_ELLIPSIS_ROW: UtilityRow = row(
     "truncate",
     bare("ellipsis"),
-    &[
-        Prop::OverflowX,
-        Prop::OverflowY,
-        Prop::TextOverflow,
-        Prop::WhiteSpace,
-    ],
+    &[Prop::TextOverflow],
+    "truncate",
+    false,
+    "utilities.ts truncate (registry-local group; oracle None)",
+);
+
+/// `truncate` — the nowrap arm (`white-space: nowrap`).
+pub const TRUNCATE_NOWRAP_ROW: UtilityRow = row(
+    "truncate",
+    bare("nowrap"),
+    &[Prop::WhiteSpace],
     "truncate",
     false,
     "utilities.ts truncate (registry-local group; oracle None)",
@@ -206,10 +226,12 @@ pub const OUTLINE_NONE_ROW: UtilityRow = row(
 
 // -- The registry ---------------------------------------------------------
 
-/// Every registry row, in root order. The P1 port: the 178 utility
-/// patterns the golden corpus + the `tw_merge` surface exercise (the
-/// plan's "top ~150" turned out to be 178 — the audit count the
-/// generated docs render from these rows).
+/// Every registry row, in root order. The P1 port grew to **184 rows**
+/// in-tree: 178 literal `row(...)` entries plus 6 shared row consts
+/// (`GROW_BARE_ROW`, `SHRINK_BARE_ROW`, `OUTLINE_NONE_ROW` and the
+/// three-part `truncate` composite) — the audit count
+/// `registry::generate_docs` renders from these rows. The plan's "top
+/// ~150" was the floor, not the ceiling.
 pub static ROWS: &[UtilityRow] = &[
     // ---- padding (tw_merge: padding family) -----------------------------
     row(
@@ -1565,7 +1587,9 @@ pub static ROWS: &[UtilityRow] = &[
         false,
         "utilities.ts vertical-align",
     ),
-    TRUNCATE_ROW,
+    TRUNCATE_OVERFLOW_ROW,
+    TRUNCATE_ELLIPSIS_ROW,
+    TRUNCATE_NOWRAP_ROW,
     // ---- transforms (oracle None — registry-local groups) -------------------------------
     row(
         "translate-x",

@@ -57,11 +57,6 @@ pub struct LexError {
 }
 
 impl LexError {
-    /// Build an error spanning `start..end`.
-    pub const fn new(start: usize, end: usize, kind: LexErrorKind) -> Self {
-        Self { start, end, kind }
-    }
-
     /// Build an error over the whole token (position-less rejections like
     /// `EmptyHead`).
     pub const fn whole(len: usize, kind: LexErrorKind) -> Self {
@@ -85,3 +80,41 @@ impl fmt::Display for LexError {
 }
 
 impl std::error::Error for LexError {}
+
+/// One degraded token from [`crate::parse_class_string`]: the typed lex
+/// failure carried with the token's own span inside the INPUT string.
+///
+/// This is the stringly-typed `(raw, message)` pair the degraded channel
+/// used to report, un-mangled: the kind IS the meaning (the stable
+/// [`LexErrorKind::message`] renders it), and the span is the real
+/// byte range — consumers no longer re-derive squiggle offsets by
+/// re-finding the raw text, and no `{raw}: {message}` format contract
+/// crosses the crate boundary. The differential harness against the
+/// v0.x oracle keeps its raw-keyed comparison via [`LexFailure::raw`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LexFailure<'a> {
+    /// Byte range of the whole token inside the INPUT string
+    /// (`parse_class_string`'s whitespace-skipped span, the same range
+    /// a successful [`Candidate::span`] would carry).
+    pub span: (usize, usize),
+    /// The raw token text, verbatim (borrowed from the input).
+    pub raw: &'a str,
+    /// Which grammar rule rejected the token.
+    pub kind: LexErrorKind,
+}
+
+impl LexFailure<'_> {
+    /// The stable message (the kind's wording) — the text the old
+    /// stringly-typed channel embedded after `"{raw}: "`.
+    pub const fn message(&self) -> &'static str {
+        self.kind.message()
+    }
+}
+
+impl fmt::Display for LexFailure<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({}..{})", self.kind.message(), self.span.0, self.span.1)
+    }
+}
+
+impl std::error::Error for LexFailure<'_> {}

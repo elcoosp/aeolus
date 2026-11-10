@@ -149,9 +149,9 @@ pub fn parse_candidate(raw: &str) -> Result<Candidate<'_>, LexError> {
 
 /// Parse a class STRING into per-token candidates, tolerating per-class
 /// failures — the honest-degradation contract: unknown syntax never takes
-/// down the whole string, it reports `(raw, message)` pairs. Spans index
-/// into `input`.
-pub fn parse_class_string(input: &str) -> (Vec<Candidate<'_>>, Vec<(String, String)>) {
+/// down the whole string, it reports typed [`LexFailure`]s with the
+/// token's byte span inside `input`. Spans index into `input`.
+pub fn parse_class_string(input: &str) -> (Vec<Candidate<'_>>, Vec<LexFailure<'_>>) {
     let mut tokens = Vec::new();
     let mut errors = Vec::new();
     let mut offset = 0usize;
@@ -165,7 +165,7 @@ pub fn parse_class_string(input: &str) -> (Vec<Candidate<'_>>, Vec<(String, Stri
                 c.span = (start, end);
                 tokens.push(c);
             }
-            Err(e) => errors.push((raw.to_string(), format!("{raw}: {}", e.message()))),
+            Err(e) => errors.push(LexFailure { span: (start, end), raw, kind: e.kind }),
         }
     }
     (tokens, errors)

@@ -350,3 +350,486 @@ fn parse_num(s: &str) -> Result<f32, Reject> {
 fn fan(targets: &'static [Prop], val: Val) -> Vec<Decl> {
     targets.iter().map(|&prop| Decl { prop, val }).collect()
 }
+
+// ---------------------------------------------------------------------------
+// The CSS form (the Target::Css arm — plan §3.1's emit stage, option (d))
+// ---------------------------------------------------------------------------
+
+/// One row's CSS-rendered value: the base-condition text and, when the
+/// value carries a baked `(light, dark)` pair, the dark text the CSS
+/// target renders under its own `:where(.dark, .dark *)` selector.
+/// Token references render as `var(--color-…)` (tier-swapped by the
+/// theme's own `.dark` block), so they are dark-less here by design.
+pub(crate) struct CssValue {
+    /// The value text under the rule's own conditions.
+    pub(crate) base: String,
+    /// The dark-mode text, when the value IS a baked pair (the runtime
+    /// token form carries none — the var is theme-swapped upstream).
+    pub(crate) dark: Option<String>,
+}
+
+/// How a `ValueKind::Number` value renders — the per-root form table
+/// (`NUMBER_FORMS`): the unit suffix, the `repeat()`/`span()` composite
+/// forms the grid rows carry, and the property override where the
+/// longhand's `Prop::name` is the paint slot, not the width slot
+/// (`stroke-2` is `stroke-width`, the `Stroke` prop stays the colour arm).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NumForm {
+    /// `{n}px` — the border/outline/ring/offset widths.
+    Px,
+    /// `{n}deg` — rotate/skew.
+    Deg,
+    /// `{n}%` — opacity and the scale family (v4 renders `opacity: 50%`).
+    Pct,
+    /// `{n}` — the unitless scales (flex-grow, order, z-index, columns).
+    Unit,
+    /// `repeat({n}, minmax(0, 1fr))` — the `grid-cols-N`/`grid-rows-N`
+    /// template composite the row's `Num` models.
+    Repeat,
+    /// `span {n}` — the `col-span-N`/`row-span-N` placement form.
+    Span,
+    /// `{n}` — the grid line numbers (`col-start-2` is line 2; the same
+    /// text as [`NumForm::Unit`], a named arm for the audit table).
+    Line,
+}
+
+/// The `Number`-row rendering table, keyed by root. The registry tests
+/// in `tests/css.rs` walk `ROWS` and fail when a `Number`-bearing root
+/// is missing here (registry/emitter drift is a test failure, never a
+/// wrong stylesheet).
+pub(crate) const NUMBER_FORMS: &[(&str, NumForm, Option<&str>)] = &[
+    ("grow", NumForm::Unit, None),
+    ("shrink", NumForm::Unit, None),
+    ("order", NumForm::Unit, None),
+    ("z", NumForm::Unit, None),
+    ("opacity", NumForm::Pct, None),
+    ("columns", NumForm::Unit, None),
+    ("border", NumForm::Px, None),
+    ("border-t", NumForm::Px, None),
+    ("border-r", NumForm::Px, None),
+    ("border-b", NumForm::Px, None),
+    ("border-l", NumForm::Px, None),
+    ("border-x", NumForm::Px, None),
+    ("border-y", NumForm::Px, None),
+    ("border-s", NumForm::Px, None),
+    ("border-e", NumForm::Px, None),
+    ("outline", NumForm::Px, None),
+    ("outline-offset", NumForm::Px, None),
+    ("ring", NumForm::Px, None),
+    ("ring-offset", NumForm::Px, None),
+    ("underline-offset", NumForm::Px, None),
+    ("rotate", NumForm::Deg, None),
+    ("scale", NumForm::Pct, None),
+    ("scale-x", NumForm::Pct, None),
+    ("scale-y", NumForm::Pct, None),
+    ("skew-x", NumForm::Deg, None),
+    ("skew-y", NumForm::Deg, None),
+    ("stroke", NumForm::Px, Some("stroke-width")),
+    ("grid-cols", NumForm::Repeat, None),
+    ("grid-rows", NumForm::Repeat, None),
+    ("col-span", NumForm::Span, None),
+    ("row-span", NumForm::Span, None),
+    ("col-start", NumForm::Line, None),
+    ("col-end", NumForm::Line, None),
+    ("row-start", NumForm::Line, None),
+    ("row-end", NumForm::Line, None),
+];
+
+/// Lower ONE matched row for one candidate body into CSS-form values —
+/// the [`Target`](crate::Target)`::Css` arm's value pass. The arm walk
+/// is the SAME shape resolution [`row_to_decls`] runs (same negation
+/// guard, same suffix rule, same AnyOf order, same modifier-rides-
+/// colour-only rule, same token overflow routing); what differs is the
+/// RENDERER: the row's own keyword tables carry the CSS text, so the
+/// rendering never needs the IR's row-relative `Kw` slot — the one
+/// ambiguity the in-pipeline emit exists to avoid.
+///
+/// # Errors
+/// The same [`Reject`] set as [`row_to_decls`] (the diagnostic layer
+/// renders them identically for both forms).
+pub(crate) fn row_to_css(
+    row: UtilityRow,
+    body: &str,
+    negative: bool,
+    alpha: Option<f32>,
+    tokens: Option<&TokenTable>,
+    config: &Config,
+) -> Result<Vec<CssDecl>, Reject> {
+    if negative && !row.negative {
+        return Err(Reject::Negation);
+    }
+    let suffix = suffix_of(body, row.root)?;
+    let mut arms = Vec::new();
+    flatten(row.kind, &mut arms);
+    for arm in arms {
+        if !arm.accepts(suffix) {
+            continue;
+        }
+        let rendered =
+            arm_to_css(arm, suffix, negative, alpha, row.root, row.targets, tokens, config)?;
+        // A modifier never half-applies (the same contract as the IR
+        // form): it rides only when EVERY rendered value is colour-form.
+        if alpha.is_some() && !rendered.iter().all(|r| r.colour_form) {
+            return Err(Reject::Modifier);
+        }
+        return Ok(rendered
+            .into_iter()
+            .map(|r| CssDecl { prop: r.prop, prop_name: r.prop_name, value: r.value })
+            .collect());
+    }
+    Err(Reject::Value { reason: REASON_SHAPE_MISMATCH })
+}
+
+/// One rendered declaration: the IR longhand, the CSS property name it
+/// renders as (usually [`Prop::name`]; the `stroke` width arm renders
+/// `stroke-width`), and the value text. The CSS arm's emit unit.
+pub(crate) struct CssDecl {
+    /// The longhand slot (cascade/sort key).
+    pub(crate) prop: Prop,
+    /// The property name in the rendered CSS.
+    pub(crate) prop_name: &'static str,
+    /// The rendered value(s).
+    pub(crate) value: CssValue,
+}
+
+/// One rendered declaration plus its colour-form flag (the modifier
+/// rule's input). Internal to this module's css rendering.
+struct RenderedCss {
+    prop: Prop,
+    prop_name: &'static str,
+    value: CssValue,
+    colour_form: bool,
+}
+
+fn arm_to_css(
+    arm: ValueKind,
+    suffix: Option<&str>,
+    negative: bool,
+    alpha: Option<f32>,
+    root: &'static str,
+    targets: &'static [Prop],
+    tokens: Option<&TokenTable>,
+    config: &Config,
+) -> Result<Vec<RenderedCss>, Reject> {
+    match arm {
+        ValueKind::Bare(css) => {
+            // `bare` is never colour-form: the modifier refuses (the
+            // caller's post-check), matching the IR form's boundary.
+            Ok(targets
+                .iter()
+                .map(|&prop| RenderedCss {
+                    prop,
+                    prop_name: prop.name(),
+                    value: CssValue { base: css.to_string(), dark: None },
+                    colour_form: false,
+                })
+                .collect())
+        }
+        ValueKind::Keywords(table) => match keyword_text(table, suffix) {
+            Ok(css) => Ok(fan_css(targets, &css, false)),
+            // The oversized-table boundary: the theme pass owns it.
+            Err(Reject::TokenOverflow) => match tokens {
+                Some(table) => token_css(suffix, alpha, targets, table),
+                None => Err(Reject::Value { reason: REASON_TOKEN_TABLE }),
+            },
+            Err(other) => Err(other),
+        },
+        ValueKind::Composite(table) => {
+            let slot = composite_slot(table, suffix)?;
+            // One slot, two texts: targets[0] takes the primary value,
+            // targets[1] the secondary (the `text-{size}` pair's
+            // (font-size, line-height)).
+            let (_, primary, secondary) = table[slot as usize];
+            let mut out = Vec::with_capacity(targets.len());
+            for (i, &prop) in targets.iter().enumerate() {
+                out.push(RenderedCss {
+                    prop,
+                    prop_name: prop.name(),
+                    value: CssValue {
+                        base: if i == 0 { primary.to_string() } else { secondary.to_string() },
+                        dark: None,
+                    },
+                    colour_form: false,
+                });
+            }
+            Ok(out)
+        }
+        ValueKind::Spacing => spacing_css(suffix, negative, targets, config),
+        ValueKind::Fraction => {
+            let (n, d) = suffix
+                .and_then(|s| s.split_once('/'))
+                .ok_or(Reject::Value { reason: REASON_SHAPE_MISMATCH })?;
+            let pct = finite(parse_num(n)? / parse_num(d)? * 100.0)?;
+            let pct = if negative { -pct } else { pct };
+            Ok(fan_css(targets, &format!("{pct}%"), false))
+        }
+        ValueKind::Number => {
+            let mut n = parse_num(suffix.unwrap_or_default())?;
+            if negative {
+                n = -n;
+            }
+            number_css(root, n, targets)
+        }
+        ValueKind::Percent => {
+            let s = suffix.unwrap_or_default();
+            let mut pct = parse_num(s.strip_suffix('%').unwrap_or(s))?;
+            if negative {
+                pct = -pct;
+            }
+            Ok(fan_css(targets, &format!("{pct}%"), false))
+        }
+        ValueKind::Arbitrary => Err(Reject::Value { reason: REASON_ARBITRARY }),
+        // Flattened away before the walk (the IR form's own arm).
+        ValueKind::AnyOf(_) => Err(Reject::Value { reason: REASON_SHAPE_MISMATCH }),
+    }
+}
+
+/// Fan one text over the targets.
+fn fan_css(targets: &'static [Prop], text: &str, colour_form: bool) -> Vec<RenderedCss> {
+    targets
+        .iter()
+        .map(|&prop| RenderedCss {
+            prop,
+            prop_name: prop.name(),
+            value: CssValue { base: text.to_string(), dark: None },
+            colour_form,
+        })
+        .collect()
+}
+
+/// The suffix's CSS text inside the row's OWN keyword table — the
+/// rendering-side sibling of [`keyword_slot`] (same overflow guard, the
+/// text instead of the slot index).
+fn keyword_text(
+    table: &'static [(&'static str, &'static str)],
+    suffix: Option<&str>,
+) -> Result<String, Reject> {
+    if table.len() > u8::MAX as usize {
+        return Err(Reject::TokenOverflow);
+    }
+    let s = suffix.unwrap_or_default();
+    table
+        .iter()
+        .find(|&&(name, _)| name == s)
+        .map(|&(_, css)| css.to_string())
+        .ok_or(Reject::Value { reason: REASON_SHAPE_MISMATCH })
+}
+
+/// The spacing scale rendered: `n × 0.25rem` (the `tailwind` config), or
+/// the px bake under the compat config. Same math and refusal set as the
+/// IR form's [`spacing_decls`].
+fn spacing_css(
+    suffix: Option<&str>,
+    negative: bool,
+    targets: &'static [Prop],
+    config: &Config,
+) -> Result<Vec<RenderedCss>, Reject> {
+    let s = suffix.unwrap_or_default();
+    let text = if s == "px" {
+        if negative { "-1px".to_string() } else { "1px".to_string() }
+    } else {
+        let rem = finite(parse_num(s)? * SPACING_STEP_REM)?;
+        match config.spacing {
+            Spacing::Tailwind => {
+                let rem = if negative { -rem } else { rem };
+                format!("{rem}rem")
+            }
+            Spacing::Px => {
+                let px = finite(rem * config.rem_px)?;
+                let px = if negative { -px } else { px };
+                format!("{px}px")
+            }
+        }
+    };
+    Ok(fan_css(targets, &text, false))
+}
+
+/// The `Number`-row rendering: the per-root [`NUMBER_FORMS`] table is the
+/// audit surface (the registry tests pin every `Number`-bearing root into
+/// it). A root missing from the table is the shape-mismatch drift arm —
+/// never a guessed unit.
+fn number_css(
+    root: &'static str,
+    n: f32,
+    targets: &'static [Prop],
+) -> Result<Vec<RenderedCss>, Reject> {
+    let Some(&(_, form, prop_override)) = NUMBER_FORMS.iter().find(|(r, _, _)| *r == root) else {
+        return Err(Reject::Value { reason: REASON_SHAPE_MISMATCH });
+    };
+    let text = match form {
+        NumForm::Px => format!("{n}px"),
+        NumForm::Deg => format!("{n}deg"),
+        NumForm::Pct => format!("{n}%"),
+        NumForm::Unit | NumForm::Line => format!("{n}"),
+        NumForm::Repeat => format!("repeat({n}, minmax(0, 1fr))"),
+        NumForm::Span => format!("span {n}"),
+    };
+    let Some(override_name) = prop_override else {
+        return Ok(fan_css(targets, &text, false));
+    };
+    // The override renames the rendered property for every target (the
+    // `stroke` width arm): the Prop slot stays the IR's, the CSS text
+    // takes the real property name.
+    Ok(targets
+        .iter()
+        .map(|&prop| RenderedCss {
+            prop,
+            prop_name: override_name,
+            value: CssValue { base: text.clone(), dark: None },
+            colour_form: false,
+        })
+        .collect())
+}
+
+/// The colour-token path rendered — the CSS-form sibling of
+/// [`token_decls`]: the tier resolves the token, the alpha rides as the
+/// premultiplied bake (literal), the `color-mix` form (runtime token) or
+/// a typed refusal (alpha on a baked pair, unknown token, non-finite).
+fn token_css(
+    suffix: Option<&str>,
+    alpha: Option<f32>,
+    targets: &'static [Prop],
+    tokens: &TokenTable,
+) -> Result<Vec<RenderedCss>, Reject> {
+    let Some(name) = suffix else {
+        // Unreachable through `lookup` (the colour arm accepts a suffix
+        // only); the refusal stays typed regardless.
+        return Err(Reject::Value { reason: REASON_SHAPE_MISMATCH });
+    };
+    let Some(id) = tokens.id(name) else {
+        return Err(Reject::Value { reason: REASON_NOT_A_TOKEN });
+    };
+    // The resolve's tier decides the rendered form; its refusals map
+    // onto the same boundary set as the IR form's [`reject_resolve`].
+    let rendered = match tokens.resolve(id, alpha) {
+        Ok(Val::Rgba(rgba)) => CssValue { base: rgba_text(rgba), dark: None },
+        Ok(Val::Tok { alpha, .. }) => {
+            // The id came from this name, so the rendered var is the
+            // same token; the RESOLVED alpha rides (the audited clamp,
+            // exactly what the IR form's `Tok` slot carries).
+            CssValue { base: token_text(name, alpha.filter(|a| *a < 1.0)), dark: None }
+        }
+        Ok(Val::ModePair(slot)) => {
+            let Some((light, dark)) = tokens.pair_at(slot) else {
+                // The slot came from this table; a miss is read-side
+                // drift, typed not panned.
+                return Err(Reject::Value { reason: REASON_NOT_A_TOKEN });
+            };
+            CssValue { base: rgba_text(light), dark: Some(rgba_text(dark)) }
+        }
+        // The colour path only resolves colour-form values; a numeric
+        // or keyword escape is lowering drift, typed not rendered.
+        Ok(Val::Px(_) | Val::Rem(_) | Val::Pct(_) | Val::Num(_) | Val::Kw(_)) => {
+            return Err(Reject::Value { reason: REASON_SHAPE_MISMATCH });
+        }
+        Err(ResolveError::UnknownId(_)) => {
+            return Err(Reject::Value { reason: REASON_NOT_A_TOKEN });
+        }
+        Err(ResolveError::AlphaOnPair) => return Err(Reject::Modifier),
+        Err(ResolveError::AlphaNotFinite(_)) => return Err(Reject::Modifier),
+    };
+    Ok(targets
+        .iter()
+        .map(|&prop| RenderedCss {
+            prop,
+            prop_name: prop.name(),
+            value: CssValue { base: rendered.base.clone(), dark: rendered.dark.clone() },
+            colour_form: true,
+        })
+        .collect())
+}
+
+/// An `[u8; 4]` rgba rendered in the modern space-separated form; the
+/// alpha rides as a percentage when the bake left any transparency.
+fn rgba_text(rgba: [u8; 4]) -> String {
+    let [r, g, b, a] = rgba;
+    if a == 255 {
+        format!("rgb({r} {g} {b})")
+    } else {
+        let pct = (a as f32) / 255.0 * 100.0;
+        format!("rgb({r} {g} {b} / {})", pct_text(pct))
+    }
+}
+
+/// A runtime token rendered the way v4 emits it: the `--color-` var, and
+/// the opacity modifier as the `color-mix` identity (plan §2 — mixing
+/// with transparent in the premultiplied space scales alpha only).
+fn token_text(name: &str, alpha: Option<f32>) -> String {
+    let var = format!("var(--color-{name})");
+    match alpha {
+        None => var,
+        Some(a) => format!("color-mix(in oklab, {var} {}%, transparent)", pct_text(a * 100.0)),
+    }
+}
+
+/// The alpha percentage text: the f32 product rounded to three decimals,
+/// trailing zeros trimmed (`0.9 → "90"`, `0.37 → "37"`, the u8 bake's
+/// `229.5/255 → "90.196"`). Deterministic, shortest-to-round-trip is the
+/// IR's own `Display` discipline; three decimals keep the emitted
+/// stylesheet byte-stable across platforms.
+fn pct_text(v: f32) -> String {
+    let rounded = (v * 1000.0).round() / 1000.0;
+    let s = format!("{rounded}");
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The rendering-table audit (the drift catch, test-pinned in place — the
+// table is crate-internal, so the audit lives beside it)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aeolus_data::rows::ROWS;
+    use aeolus_data::ValueKind;
+
+    fn has_number_arm(kind: ValueKind) -> bool {
+        let mut arms = Vec::new();
+        flatten(kind, &mut arms);
+        arms.iter().any(|k| matches!(k, ValueKind::Number))
+    }
+
+    /// Every registry row that lowers `Number` values must have its root
+    /// in [`NUMBER_FORMS`] — a new Number row without a render form is a
+    /// test failure here, never a guessed unit at render time.
+    #[test]
+    fn every_number_row_has_a_render_form() {
+        for row in ROWS {
+            if has_number_arm(row.kind) {
+                assert!(
+                    NUMBER_FORMS.iter().any(|(root, _, _)| *root == row.root),
+                    "root {:?} lowers Number values but has no NUMBER_FORMS entry",
+                    row.root
+                );
+            }
+        }
+    }
+
+    /// The reverse: no phantom render forms for roots the registry
+    /// numbers nowhere.
+    #[test]
+    fn every_render_form_has_a_number_row() {
+        for (root, _, _) in NUMBER_FORMS {
+            assert!(
+                ROWS.iter().any(|row| row.root == *root && has_number_arm(row.kind)),
+                "NUMBER_FORMS root {root:?} has no Number-bearing registry row"
+            );
+        }
+    }
+
+    /// The alpha percentage text: three decimals, trailing zeros
+    /// trimmed — the byte-stable rendering the theme tests pin.
+    #[test]
+    fn alpha_percent_text_is_deterministic() {
+        assert_eq!(pct_text(90.0), "90");
+        assert_eq!(pct_text(37.0), "37");
+        assert_eq!(pct_text(100.0), "100");
+        let a_pct = 230.0_f32 / 255.0 * 100.0;
+        assert_eq!(pct_text(a_pct), "90.196");
+    }
+}

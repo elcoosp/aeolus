@@ -16,8 +16,9 @@ use aeolus_syntax::{Candidate, Form, parse_candidate, parse_class_string};
 
 fn main() {
     // A realistic shadcn-Button-ish class string: stacking variants, an
-    // arbitrary value with a modifier, negation, the v4.1 `(...)` form.
-    let classes = "inline-flex rounded-md p-4 hover:bg-primary/90 dark:-mt-2 w-[32px] bg-(--brand)";
+    // arbitrary value with a modifier, negation, the v4.1 `(...)` form,
+    // and one broken token (`p--4`) riding the TYPED degraded channel.
+    let classes = "inline-flex rounded-md p-4 hover:bg-primary/90 dark:-mt-2 w-[32px] bg-(--brand) p--4";
     println!("class string : {classes}\n");
     let (candidates, degraded) = parse_class_string(classes);
 
@@ -26,8 +27,13 @@ fn main() {
         print_candidate(c);
     }
     // Honest degradation: class STRINGS carry per-class failures; the
-    // rest of the string still lexes.
-    println!("\ndegraded tokens: {}", degraded.len());
+    // rest of the string still lexes. Each failure is TYPED — the
+    // LexErrorKind, the stable message, and the token's own byte span
+    // inside the INPUT (the editor squiggle, no re-derivation).
+    println!("\ndegraded tokens ({}):", degraded.len());
+    for f in &degraded {
+        println!("  {:?} → {} (bytes {}..{})", f.raw, f.message(), f.span.0, f.span.1);
+    }
 
     // The typed miss: `parse_candidate` on one token explains WHAT and
     // WHERE — a byte span inside the token, a stable message.
