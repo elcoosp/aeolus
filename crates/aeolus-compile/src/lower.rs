@@ -17,7 +17,8 @@
 //!   through the [`TokenTable`] when the caller supplies one (plan
 //!   §3.4) — tiered `Rgba`/`ModePair`/`Tok` values, never truncation.
 //!   Without a table the refusal stays typed (`REASON_TOKEN_TABLE`);
-//! * `Arbitrary` → the P2 value pass (unit grammar + type hints).
+//! * `Arbitrary` → the unit grammar (the `arbitrary` module: units,
+//!   hints, colours, var-token references, and the typed boundaries).
 //!
 //! An opacity modifier (`/90`) rides only COLOUR-form values: token
 //! decls carry it (the `Tok` slot's alpha, or the premultiplied bake
@@ -33,8 +34,10 @@
 use aeolus_data::tables::SPACING_STEP_REM;
 use aeolus_data::{UtilityRow, ValueKind};
 use aeolus_ir::{Decl, Prop, Val};
+use aeolus_syntax::Arb;
 use aeolus_theme::{ResolveError, TokenTable};
 
+use crate::arbitrary::{self, ArbVal};
 use crate::{Config, Spacing};
 
 /// Why one row's lowering refused — the typed boundary the diagnostic
@@ -56,9 +59,9 @@ pub(crate) enum Reject {
     Modifier,
 }
 
-/// Arbitrary `[...]`/`(...)` values: the unit grammar is the P2 value pass.
-pub(crate) const REASON_ARBITRARY: &str = "arbitrary values lower in the P2 value pass: the bracket/paren \
-     grammar needs the unit table (length/percentage/colour type hints)";
+// Arbitrary `[...]`/`(...)` values lower through the `arbitrary`
+// module's unit grammar — the typed boundary set lives there (the
+// unit/hint/property/composite/table reasons and the row-class gate).
 
 /// The seam's discovered IR-budget constraint: a keyword table larger
 /// than the u8 `Val::Kw` slot (the colour table's 270 entries) lowers
@@ -91,7 +94,9 @@ pub(crate) const REASON_SHAPE_MISMATCH: &str = "the row's shape contract accepte
 /// shapes accepts the suffix; everything past that guarantee is typed.
 /// `alpha` is the normalized opacity modifier (`/90` → `Some(0.9)`) and
 /// rides COLOUR-form decls only; `tokens` is the theme pass's table
-/// (plan §3.4), which owns the oversized colour-keyword surface.
+/// (plan §3.4), which owns the oversized colour-keyword surface; `arb`
+/// is the candidate's lexed arbitrary group ([`ValueKind::Arbitrary`]
+/// rows lower it through the `arbitrary` module's unit grammar).
 pub(crate) fn row_to_decls(
     row: UtilityRow,
     body: &str,
@@ -99,6 +104,7 @@ pub(crate) fn row_to_decls(
     alpha: Option<f32>,
     tokens: Option<&TokenTable>,
     config: Config,
+    arb: Option<Arb<'_>>,
 ) -> Result<Vec<Decl>, Reject> {
     if negative && !row.negative {
         return Err(Reject::Negation);
@@ -107,10 +113,18 @@ pub(crate) fn row_to_decls(
     let mut arms = Vec::new();
     flatten(row.kind, &mut arms);
     for arm in arms {
+        // A candidate carrying an arbitrary group lowers through the
+        // Arbitrary arm ONLY — the value rode in the group, not the
+        // suffix, so the bare/keyword arms (which accept the bare
+        // root) must not swallow it (`rounded-[3px]` is the radius
+        // value, never the `0.25rem` bare form).
+        if arb.is_some() && !matches!(arm, ValueKind::Arbitrary) {
+            continue;
+        }
         if !arm.accepts(suffix) {
             continue;
         }
-        let decls = arm_to_decls(arm, suffix, negative, alpha, row.targets, tokens, config)?;
+        let decls = arm_to_decls(arm, suffix, negative, alpha, row, tokens, config, arb)?;
         // A modifier never half-applies: it rides only when EVERY decl
         // the row produced is colour-form (the token path already
         // applied it; anything else refuses the whole row).
@@ -166,10 +180,12 @@ fn arm_to_decls(
     suffix: Option<&str>,
     negative: bool,
     alpha: Option<f32>,
-    targets: &'static [Prop],
+    row: UtilityRow,
     tokens: Option<&TokenTable>,
     config: Config,
+    arb: Option<Arb<'_>>,
 ) -> Result<Vec<Decl>, Reject> {
+    let targets = row.targets;
     match arm {
         ValueKind::Bare(_) => Ok(fan(targets, Val::Kw(0))),
         ValueKind::Keywords(table) => match keyword_slot(table, suffix) {
@@ -213,15 +229,66 @@ fn arm_to_decls(
             }
             Ok(fan(targets, Val::Pct(pct)))
         }
-        ValueKind::Arbitrary => Err(Reject::Value {
-            reason: REASON_ARBITRARY,
-        }),
+        ValueKind::Arbitrary => {
+            let Some(text) = arbitrary::text_of(arb, suffix) else {
+                // The shape contract accepted but no group rode — the
+                // drift arm, typed like every other.
+                return Err(Reject::Value {
+                    reason: REASON_SHAPE_MISMATCH,
+                });
+            };
+            match arbitrary::classify(&text, alpha, &row) {
+                Ok(val) => arbitrary_val_decls(val, negative, alpha, row, tokens),
+                Err(rejection) => match arbitrary::map_rejection(rejection) {
+                    // The silent sibling-row skip: this row never
+                    // matched the value's class (another row of the
+                    // root takes it — the run walks' deferred-reason
+                    // pass renders the boundary when none did).
+                    Ok(None) => Ok(Vec::new()),
+                    Ok(Some(reason)) => Err(Reject::Value { reason }),
+                    Err(reject) => Err(reject),
+                },
+            }
+        }
         // Flattened away before the walk; the arm exists so the match
         // stays total without an unreachable panic.
         ValueKind::AnyOf(_) => Err(Reject::Value {
             reason: REASON_SHAPE_MISMATCH,
         }),
     }
+}
+
+/// The classified arbitrary value → the row's declarations (the IR
+/// form's lowering half). Scalars flip under the row-legal negation;
+/// colours arrive baked (the audited parser + premultiplied identity);
+/// token references ride the theme pass's own path.
+fn arbitrary_val_decls(
+    val: ArbVal,
+    negative: bool,
+    alpha: Option<f32>,
+    row: UtilityRow,
+    tokens: Option<&TokenTable>,
+) -> Result<Vec<Decl>, Reject> {
+    let targets = arbitrary::targets_of(&row);
+    match val {
+        ArbVal::Token { name } => match tokens {
+            Some(table) => token_decls(Some(&name), alpha, targets, table),
+            None => Err(Reject::Value {
+                reason: arbitrary::REASON_ARBITRARY_TABLE,
+            }),
+        },
+        ArbVal::Colour { rgba } => Ok(fan(targets, Val::Rgba(rgba))),
+        ArbVal::Px(v) => Ok(fan(targets, Val::Px(flip(v, negative)))),
+        ArbVal::Rem(v) => Ok(fan(targets, Val::Rem(flip(v, negative)))),
+        ArbVal::Pct(v) => Ok(fan(targets, Val::Pct(flip(v, negative)))),
+        ArbVal::Num(v) => Ok(fan(targets, Val::Num(flip(v, negative)))),
+    }
+}
+
+/// The row-legal negation flip (the value's own sign parses naturally;
+/// the utility's `-` prefix flips where the row allows it).
+fn flip(v: f32, negative: bool) -> f32 {
+    if negative { -v } else { v }
 }
 
 /// The colour-token path: the suffix IS the token name (`"red-500"`,
@@ -474,6 +541,7 @@ pub(crate) fn row_to_css(
     alpha: Option<f32>,
     tokens: Option<&TokenTable>,
     config: Config,
+    arb: Option<Arb<'_>>,
 ) -> Result<Vec<CssDecl>, Reject> {
     if negative && !row.negative {
         return Err(Reject::Negation);
@@ -482,19 +550,16 @@ pub(crate) fn row_to_css(
     let mut arms = Vec::new();
     flatten(row.kind, &mut arms);
     for arm in arms {
+        // A candidate carrying an arbitrary group lowers through the
+        // Arbitrary arm ONLY (the IR form's own rule — the two walks
+        // share the arm-selection semantics).
+        if arb.is_some() && !matches!(arm, ValueKind::Arbitrary) {
+            continue;
+        }
         if !arm.accepts(suffix) {
             continue;
         }
-        let rendered = arm_to_css(
-            arm,
-            suffix,
-            negative,
-            alpha,
-            row.root,
-            row.targets,
-            tokens,
-            config,
-        )?;
+        let rendered = arm_to_css(arm, suffix, negative, alpha, row, tokens, config, arb)?;
         // A modifier never half-applies (the same contract as the IR
         // form): it rides only when EVERY rendered value is colour-form.
         if alpha.is_some() && !rendered.iter().all(|r| r.colour_form) {
@@ -540,11 +605,13 @@ fn arm_to_css(
     suffix: Option<&str>,
     negative: bool,
     alpha: Option<f32>,
-    root: &'static str,
-    targets: &'static [Prop],
+    row: UtilityRow,
     tokens: Option<&TokenTable>,
     config: Config,
+    arb: Option<Arb<'_>>,
 ) -> Result<Vec<RenderedCss>, Reject> {
+    let root = row.root;
+    let targets = row.targets;
     match arm {
         ValueKind::Bare(css) => {
             // `bare` is never colour-form: the modifier refuses (the
@@ -623,13 +690,90 @@ fn arm_to_css(
             }
             Ok(fan_css(targets, &format!("{pct}%"), false))
         }
-        ValueKind::Arbitrary => Err(Reject::Value {
-            reason: REASON_ARBITRARY,
-        }),
+        ValueKind::Arbitrary => {
+            let Some(text) = arbitrary::text_of(arb, suffix) else {
+                // The shape contract accepted but no group rode — the
+                // drift arm, typed like every other.
+                return Err(Reject::Value {
+                    reason: REASON_SHAPE_MISMATCH,
+                });
+            };
+            match arbitrary::classify(&text, alpha, &row) {
+                Ok(val) => arbitrary_val_css(&text, val, negative, alpha, row, tokens),
+                Err(rejection) => match arbitrary::map_rejection(rejection) {
+                    // The silent sibling-row skip (the IR form's own arm
+                    // documents it): this row never matched the class.
+                    Ok(None) => Ok(Vec::new()),
+                    Ok(Some(reason)) => Err(Reject::Value { reason }),
+                    Err(reject) => Err(reject),
+                },
+            }
+        }
         // Flattened away before the walk (the IR form's own arm).
         ValueKind::AnyOf(_) => Err(Reject::Value {
             reason: REASON_SHAPE_MISMATCH,
         }),
+    }
+}
+
+/// The classified arbitrary value → the row's rendered declarations
+/// (the CSS form's lowering half — the same resolution the IR form
+/// lowers, rendered from the value's own source of truth: the verbatim
+/// text for colours without a modifier (the corpus's hex form), the
+/// unit text for the scalars, the token path's forms for the var
+/// references, the baked `rgb(r g b / a%)` when the modifier baked).
+fn arbitrary_val_css(
+    text: &arbitrary::ArbText<'_>,
+    val: ArbVal,
+    negative: bool,
+    alpha: Option<f32>,
+    row: UtilityRow,
+    tokens: Option<&TokenTable>,
+) -> Result<Vec<RenderedCss>, Reject> {
+    let targets = arbitrary::targets_of(&row);
+    match val {
+        ArbVal::Token { name } => match tokens {
+            Some(table) => token_css(Some(&name), alpha, targets, table),
+            None => Err(Reject::Value {
+                reason: arbitrary::REASON_ARBITRARY_TABLE,
+            }),
+        },
+        ArbVal::Colour { rgba } => {
+            // The verbatim value text when the value renders as-is (the
+            // corpus's `#0ea5e9` form); the baked space-separated form
+            // when the modifier consumed the literal.
+            let value = match alpha {
+                None => text.value.trim().to_string(),
+                Some(_) => rgba_text(rgba),
+            };
+            Ok(fan_css(targets, &value, true))
+        }
+        ArbVal::Px(v) => Ok(fan_css(
+            targets,
+            &format!("{}px", num_text(flip(v, negative))),
+            false,
+        )),
+        ArbVal::Rem(v) => Ok(fan_css(
+            targets,
+            &format!("{}rem", num_text(flip(v, negative))),
+            false,
+        )),
+        ArbVal::Pct(v) => Ok(fan_css(
+            targets,
+            &format!("{}%", num_text(flip(v, negative))),
+            false,
+        )),
+        ArbVal::Num(v) => Ok(fan_css(targets, &num_text(flip(v, negative)), false)),
+    }
+}
+
+/// The scalar number text: whole values render bare (`32px`, not
+/// `32.0px` — the corpus's form), the shortest round-trip otherwise.
+fn num_text(v: f32) -> String {
+    if v.fract() == 0.0 && v.abs() < 1e9 {
+        format!("{v:.0}")
+    } else {
+        format!("{v}")
     }
 }
 
