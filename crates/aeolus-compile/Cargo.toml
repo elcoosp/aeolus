@@ -1,6 +1,6 @@
 [package]
 name = "aeolus-compile"
-description = "Aeolus V1 compile seam: class strings through the lexer, the registry and the value pass into cascade-sorted longhand Programs, with typed spanned diagnostics"
+description = "Aeolus V1 compile seam: class strings through the lexer, the registry and the value pass into cascade-sorted longhand Programs and the Target::Css rendered stylesheet, with typed spanned diagnostics"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -53,6 +53,11 @@ divan = "0.1"
 
 [[bench]]
 name = "compile"
+harness = false
+
+# The CSS emit arm's benchmarks (the Target half's first artifact form).
+[[bench]]
+name = "css"
 harness = false
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
