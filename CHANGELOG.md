@@ -1,3 +1,38 @@
+## [0.15.0] - 2026-11-10
+
+### 🚀 Features
+
+- *(syntax)* Export the v4 type-hint table
+- *(syntax)* Re-export the hint table from the crate root
+- *(compile)* The arbitrary-value unit grammar module
+- *(compile)* Lower the arbitrary groups in both value forms
+- *(compile)* Thread the arbitrary group through the ir walk
+- *(compile)* Thread the arbitrary group through the css walk
+- *(bench)* Measure the arbitrary-value grammar
+- *(compile)* Demonstrate the arbitrary-value grammar
+
+### 📚 Documentation
+
+- *(data)* Name the landed unit grammar in the shape contract
+- *(readme)* Align the badge, status and table to the grammar
+- *(architecture)* Mark the arbitrary-value unit grammar landed
+- *(changelog)* File the grammar and the drift consolidation
+- *(benchmarks)* File the arbitrary-grammar run numbers
+- *(evidence)* File the arbitrary-values red-to-green record
+
+### 🧪 Testing
+
+- *(compile)* Pin the arbitrary-value contracts end to end
+- *(compile)* Flip the w-[32px] pin to the lowering contract
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.15.0
+
+### 💼 Other
+
+- *(compile)* The colour-parser dep and the grammar bench
+- *(deps)* Lock the aeolus-core edge for the compile seam
 # Changelog
 
 All notable changes to Aeolus are documented here. The format follows
