@@ -25,6 +25,21 @@ mod error;
 pub use candidate::{Arb, Candidate, Form, parse_candidate, parse_class_string};
 pub use error::{LexError, LexErrorKind};
 
-/// The lexer's semantic version, surfaced for the pipeline's cross-crate
-/// assertions.
-pub const VERSION: &str = "0.1.0";
+/// The lexer's semantic version, surfaced for the pipeline's
+/// cross-crate assertions. Derived from the manifest so it cannot drift
+/// from the release it shipped in (the "0.1.0" hardcode predated the
+/// crate joining the versioned workspace).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod tests {
+    /// The version pin: derived from the manifest, parseable as semver —
+    /// the cross-crate assertions the P2 pipeline makes key on it.
+    #[test]
+    fn version_tracks_the_manifest() {
+        assert_eq!(VERSION, env!("CARGO_PKG_VERSION"));
+        let (major, rest) = VERSION.split_once('.').expect("semver major");
+        assert!(!major.is_empty() && major.bytes().all(|b| b.is_ascii_digit()));
+        assert!(rest.split_once('.').is_some(), "at least major.minor");
+    }
+}
