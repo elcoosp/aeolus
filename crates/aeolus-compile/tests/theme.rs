@@ -19,7 +19,7 @@
 //! Written FIRST (the RED spec): the suite fails against the v0.10.0
 //! seam and passes only once `compile_theme` satisfies every pin below.
 
-use aeolus_compile::{compile, compile_theme, CompileError, Config, DiagnosticKind, Spacing};
+use aeolus_compile::{CompileError, Config, DiagnosticKind, Spacing, compile, compile_theme};
 use aeolus_ir::{Cond, Decl, Prop, Val};
 use aeolus_theme::{ThemeSource, TokenTable};
 
@@ -67,22 +67,39 @@ fn colour_tokens_lower_through_the_runtime_table() {
     // theme_pass`) resolves here: `bg-red-500` is a token now.
     let table = runtime_table();
     let compiled =
-        compile_theme("bg-red-500 text-primary p-2", &table, &Config::default())
-            .expect("compiles");
-    assert!(compiled.diagnostics.is_empty(), "no diagnostics: {compiled:?}");
+        compile_theme("bg-red-500 text-primary p-2", &table, &Config::default()).expect("compiles");
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "no diagnostics: {compiled:?}"
+    );
     let decls = base(&compiled);
     let red = table.id("red-500").expect("red-500 is a palette token");
     let primary = table.id("primary").expect("primary is a shadcn token");
     assert!(
-        decls.contains(&Decl { prop: Prop::Background, val: Val::Tok { id: red, alpha: 1.0 } }),
+        decls.contains(&Decl {
+            prop: Prop::Background,
+            val: Val::Tok {
+                id: red,
+                alpha: 1.0
+            }
+        }),
         "bg-red-500 → Tok {{ id, alpha: 1.0 }}: {decls:?}"
     );
     assert!(
-        decls.contains(&Decl { prop: Prop::Color, val: Val::Tok { id: primary, alpha: 1.0 } }),
+        decls.contains(&Decl {
+            prop: Prop::Color,
+            val: Val::Tok {
+                id: primary,
+                alpha: 1.0
+            }
+        }),
         "text-primary → the primary token: {decls:?}"
     );
     assert!(
-        decls.contains(&Decl { prop: Prop::PaddingTop, val: Val::Rem(0.5) }),
+        decls.contains(&Decl {
+            prop: Prop::PaddingTop,
+            val: Val::Rem(0.5)
+        }),
         "p-2 lowers unchanged beside the tokens"
     );
 }
@@ -92,18 +109,25 @@ fn alpha_modifier_becomes_the_token_alpha() {
     // The plan §2 identity: opacity on a known token is one multiply —
     // here it rides the Tok slot, the host applies it per frame.
     let table = runtime_table();
-    let compiled =
-        compile_theme("bg-primary/90", &table, &Config::default()).expect("compiles");
-    assert!(compiled.diagnostics.is_empty(), "the modifier rode: {compiled:?}");
+    let compiled = compile_theme("bg-primary/90", &table, &Config::default()).expect("compiles");
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "the modifier rode: {compiled:?}"
+    );
     let primary = table.id("primary").expect("primary exists");
     let decls = base(&compiled);
-    let Some(&Decl { prop: Prop::Background, val: Val::Tok { id, alpha } }) =
-        decls.first()
+    let Some(&Decl {
+        prop: Prop::Background,
+        val: Val::Tok { id, alpha },
+    }) = decls.first()
     else {
         panic!("a single token decl expected, got {decls:?}");
     };
     assert_eq!(id, primary);
-    assert!((alpha - 0.9).abs() < 1e-6, "/90 normalizes to the 0.9 fraction: {alpha}");
+    assert!(
+        (alpha - 0.9).abs() < 1e-6,
+        "/90 normalizes to the 0.9 fraction: {alpha}"
+    );
 }
 
 #[test]
@@ -112,8 +136,7 @@ fn baked_alpha_uses_the_premultiplied_bake() {
     // own resolve — the audited oracle underneath
     // (Color::mix_with_transparent, corpus-pinned).
     let table = baked_table();
-    let compiled =
-        compile_theme("bg-red-500/50", &table, &Config::default()).expect("compiles");
+    let compiled = compile_theme("bg-red-500/50", &table, &Config::default()).expect("compiles");
     assert!(compiled.diagnostics.is_empty(), "{compiled:?}");
     let red = table.id("red-500").expect("red-500 is light-only");
     let Val::Rgba(expected) = table.resolve(red, Some(0.5)).expect("bakes") else {
@@ -122,7 +145,10 @@ fn baked_alpha_uses_the_premultiplied_bake() {
     let decls = base(&compiled);
     assert_eq!(
         decls.first(),
-        Some(&Decl { prop: Prop::Background, val: Val::Rgba(expected) }),
+        Some(&Decl {
+            prop: Prop::Background,
+            val: Val::Rgba(expected)
+        }),
         "the /50 bake is the table's premultiplied mix"
     );
 }
@@ -135,15 +161,16 @@ fn baked_alpha_uses_the_premultiplied_bake() {
 fn baked_tier_literals_and_dark_pairs() {
     let table = baked_table();
     let compiled =
-        compile_theme("bg-red-500 dark:bg-primary", &table, &Config::default())
-            .expect("compiles");
+        compile_theme("bg-red-500 dark:bg-primary", &table, &Config::default()).expect("compiles");
     assert!(compiled.diagnostics.is_empty(), "{compiled:?}");
     let red = table.id("red-500").expect("red-500 exists");
     let primary = table.id("primary").expect("primary exists");
     let base_decls = base(&compiled);
     assert!(
-        base_decls
-            .contains(&Decl { prop: Prop::Background, val: Val::Rgba(table.light_rgba(red).expect("bytes")) }),
+        base_decls.contains(&Decl {
+            prop: Prop::Background,
+            val: Val::Rgba(table.light_rgba(red).expect("bytes"))
+        }),
         "the light-only token bakes to a literal: {base_decls:?}"
     );
     let dark_layer = compiled
@@ -152,12 +179,16 @@ fn baked_tier_literals_and_dark_pairs() {
         .iter()
         .find(|layer| layer.cond == Cond::Dark)
         .expect("the dark variant forms its own layer");
-    let Some(&Decl { prop: Prop::Background, val: Val::ModePair(slot) }) =
-        dark_layer.decls.first()
+    let Some(&Decl {
+        prop: Prop::Background,
+        val: Val::ModePair(slot),
+    }) = dark_layer.decls.first()
     else {
         panic!("a ModePair expected, got {:?}", dark_layer.decls);
     };
-    let (light, dark) = table.pair_at(slot).expect("the slot indexes the pair table");
+    let (light, dark) = table
+        .pair_at(slot)
+        .expect("the slot indexes the pair table");
     assert_eq!(light, table.light_rgba(primary).expect("light bytes"));
     assert_eq!(dark, table.dark_rgba(primary).expect("dark bytes"));
 }
@@ -172,10 +203,15 @@ fn alpha_on_a_baked_dark_pair_is_typed() {
     assert_eq!(compiled.diagnostics.len(), 1, "{compiled:?}");
     assert_eq!(
         compiled.diagnostics[0].kind,
-        DiagnosticKind::UnsupportedModifier { modifier: "90".to_string() }
+        DiagnosticKind::UnsupportedModifier {
+            modifier: "90".to_string()
+        }
     );
-    assert!(compiled.diagnostics[0].help().contains("theme pass"));
-    assert!(compiled.program.layers.is_empty(), "nothing lowered for the candidate");
+    assert!(compiled.diagnostics[0].kind.help().contains("theme pass"));
+    assert!(
+        compiled.program.layers.is_empty(),
+        "nothing lowered for the candidate"
+    );
 }
 
 #[test]
@@ -185,18 +221,22 @@ fn modifier_on_a_non_colour_lowering_is_still_typed() {
     // unparseable modifier — the same typed boundary, with or without
     // the theme pass.
     let table = runtime_table();
-    let compiled =
-        compile_theme("text-sm/6 p-4", &table, &Config::default()).expect("compiles");
+    let compiled = compile_theme("text-sm/6 p-4", &table, &Config::default()).expect("compiles");
     assert_eq!(compiled.diagnostics.len(), 1, "{compiled:?}");
     assert_eq!(
         compiled.diagnostics[0].kind,
-        DiagnosticKind::UnsupportedModifier { modifier: "6".to_string() }
+        DiagnosticKind::UnsupportedModifier {
+            modifier: "6".to_string()
+        }
     );
-    assert!(base(&compiled).iter().any(|decl| decl.prop == Prop::PaddingTop),
-        "p-4 still lowers beside the report");
+    assert!(
+        base(&compiled)
+            .iter()
+            .any(|decl| decl.prop == Prop::PaddingTop),
+        "p-4 still lowers beside the report"
+    );
 
-    let compiled =
-        compile_theme("bg-primary/[nan]", &table, &Config::default()).expect("compiles");
+    let compiled = compile_theme("bg-primary/[nan]", &table, &Config::default()).expect("compiles");
     assert_eq!(compiled.diagnostics.len(), 1, "{compiled:?}");
     assert!(matches!(
         &compiled.diagnostics[0].kind,
@@ -211,18 +251,25 @@ fn unknown_colour_names_report_the_token_table() {
     // bare-seed table has no such token — the not-a-token miss, whose
     // reason names the checklist.
     let table = bare_table();
-    let compiled =
-        compile_theme("bg-primary p-2", &table, &Config::default()).expect("compiles");
+    let compiled = compile_theme("bg-primary p-2", &table, &Config::default()).expect("compiles");
     assert_eq!(compiled.diagnostics.len(), 1, "{compiled:?}");
     let d = &compiled.diagnostics[0];
-    assert!(matches!(
-        &d.kind,
-        DiagnosticKind::UnsupportedValue { reason, .. } if reason.contains("TokenTable")
-    ), "the reason names the checklist: {:?}", d.kind);
-    assert_eq!(d.code(), "aeolus::compile::unsupported_value");
+    assert!(
+        matches!(
+            &d.kind,
+            DiagnosticKind::UnsupportedValue { reason, .. } if reason.contains("TokenTable")
+        ),
+        "the reason names the checklist: {:?}",
+        d.kind
+    );
+    assert_eq!(d.kind.code(), "aeolus::compile::unsupported_value");
     assert_eq!(d.span, (0, 10), "the candidate's own span");
-    assert!(base(&compiled).iter().any(|decl| decl.prop == Prop::PaddingTop),
-        "p-2 still lowers beside the report");
+    assert!(
+        base(&compiled)
+            .iter()
+            .any(|decl| decl.prop == Prop::PaddingTop),
+        "p-2 still lowers beside the report"
+    );
 }
 
 #[test]
@@ -238,7 +285,11 @@ fn suffixes_outside_the_registry_stay_lookup_misses() {
         &compiled.diagnostics[0].kind,
         DiagnosticKind::ShapeRejected { root: "bg", .. }
     ));
-    assert!(base(&compiled).iter().any(|decl| decl.prop == Prop::PaddingTop));
+    assert!(
+        base(&compiled)
+            .iter()
+            .any(|decl| decl.prop == Prop::PaddingTop)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -260,14 +311,22 @@ fn the_silent_path_is_unchanged_without_a_theme() {
     assert_eq!(compiled.diagnostics.len(), 1);
     assert_eq!(
         compiled.diagnostics[0].kind,
-        DiagnosticKind::UnsupportedModifier { modifier: "50".to_string() }
+        DiagnosticKind::UnsupportedModifier {
+            modifier: "50".to_string()
+        }
     );
-    assert!(compiled.diagnostics[0].help().contains("theme pass"));
+    assert!(compiled.diagnostics[0].kind.help().contains("theme pass"));
     // The px config and the empty-input error are untouched.
-    let config = Config { spacing: Spacing::Px, ..Config::default() };
+    let config = Config {
+        spacing: Spacing::Px,
+        ..Config::default()
+    };
     assert_eq!(
         base(&compile("p-2", &config).expect("compiles"))[0],
-        Decl { prop: Prop::PaddingTop, val: Val::Px(8.0) }
+        Decl {
+            prop: Prop::PaddingTop,
+            val: Val::Px(8.0)
+        }
     );
     assert!(matches!(
         compile("", &Config::default()),
@@ -285,8 +344,7 @@ fn non_finite_suffixes_are_typed_not_lowered() {
     // v4 values. Before the guard they lowered SILENTLY into the IR
     // (`Val::Rem(NaN)`, `Val::Num(inf)`); now they are typed refusals
     // and the rest of the string still compiles.
-    let compiled =
-        compile("p-nan z-inf w-1e40 p-2", &Config::default()).expect("compiles");
+    let compiled = compile("p-nan z-inf w-1e40 p-2", &Config::default()).expect("compiles");
     assert_eq!(compiled.diagnostics.len(), 3, "{compiled:?}");
     for d in &compiled.diagnostics {
         assert!(
@@ -300,7 +358,10 @@ fn non_finite_suffixes_are_typed_not_lowered() {
     }
     let decls = base(&compiled);
     assert!(
-        decls.contains(&Decl { prop: Prop::PaddingTop, val: Val::Rem(0.5) }),
+        decls.contains(&Decl {
+            prop: Prop::PaddingTop,
+            val: Val::Rem(0.5)
+        }),
         "p-2 still lowers: {decls:?}"
     );
     assert!(
@@ -322,10 +383,16 @@ fn negated_and_percent_non_finite_forms_are_typed() {
         .iter()
         .filter(|d| matches!(&d.kind, DiagnosticKind::UnsupportedValue { reason, .. } if reason.contains("non-finite")))
         .count();
-    assert_eq!(finite_misses, 2, "both non-finite forms refuse: {compiled:?}");
+    assert_eq!(
+        finite_misses, 2,
+        "both non-finite forms refuse: {compiled:?}"
+    );
     // And the px bake: a finite parse whose PRODUCT overflows against
     // a huge `rem_px` refuses too.
-    let config = Config { spacing: Spacing::Px, rem_px: 1.0e30, ..Config::default() };
+    let config = Config {
+        spacing: Spacing::Px,
+        rem_px: 1.0e30,
+    };
     let compiled = compile("p-4000000000000 p-2", &config).expect("compiles");
     assert!(
         compiled.diagnostics.iter().any(|d| matches!(
