@@ -2,7 +2,7 @@
 //! diagnostics surfaces build on. These pin the LEXER's own contract
 //! (the differential suite pins the grammar agreement with the oracle).
 
-use aeolus_syntax::{LexErrorKind, parse_candidate, parse_class_string};
+use aeolus_syntax::{LexErrorKind, LexFailure, parse_candidate, parse_class_string};
 
 #[test]
 fn candidate_slices_borrow_the_raw_token() {
@@ -111,7 +111,31 @@ fn per_class_failures_never_take_down_the_string() {
     assert_eq!(tokens[2].body, "p-4");
     assert_eq!(tokens[2].variants, vec!["hover"]);
     assert_eq!(errors.len(), 1, "w-[ reports");
-    assert!(errors[0].0.starts_with("w-["), "the raw rides the error");
+    assert_eq!(errors[0].raw, "w-[", "the raw rides the failure verbatim");
+    assert_eq!(errors[0].kind, LexErrorKind::UnbalancedGroup);
+    // The typed span is the token's own range in the INPUT — the editor
+    // squiggle, no re-derivation: `p-4 w-[ not-a-utility hover:p-4` has
+    // the broken token at bytes 4..7.
+    assert_eq!(errors[0].span, (4, 7));
+    assert_eq!(&input[errors[0].span.0..errors[0].span.1], errors[0].raw);
+    // The stable message renders through the kind (the old stringly-typed
+    // channel embedded it after a "{raw}: " prefix; no more).
+    assert_eq!(errors[0].message(), "unbalanced '[' or '(' in utility");
+}
+
+#[test]
+fn degraded_spans_are_exact_on_repeated_tokens() {
+    // Two IDENTICAL broken tokens: the typed channel reports each token's
+    // own span (the old re-derivation-by-find walked a cursor and could
+    // only approximate; the lexer always knew).
+    let input = "w-[] p-4 w-[]";
+    let (tokens, errors) = parse_class_string(input);
+    assert_eq!(tokens.len(), 1, "p-4 survives");
+    assert_eq!(errors.len(), 2, "both w-[] report");
+    assert_eq!(errors[0].span, (0, 4));
+    assert_eq!(errors[1].span, (9, 13));
+    assert_eq!(&input[errors[1].span.0..errors[1].span.1], "w-[]");
+    assert!(errors.iter().all(|f| f.kind == LexErrorKind::EmptyArbitrary));
 }
 
 #[test]

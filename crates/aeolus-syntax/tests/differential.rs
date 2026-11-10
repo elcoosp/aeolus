@@ -240,15 +240,16 @@ fn corpus_agrees_with_the_oracle() {
                 continue;
             }
             assert!(
-                v1_errors.iter().any(|(r, _)| r == raw),
+                v1_errors.iter().any(|f| f.raw == raw),
                 "core rejects {raw:?} ({msg}) but v1 accepts it (class {class:?})"
             );
         }
-        for (raw, _) in &v1_errors {
+        for f in &v1_errors {
             assert!(
-                core_errors.iter().any(|(r, _)| r == raw)
-                    || core_tokens.iter().any(|t| t.raw == raw),
-                "v1 rejects {raw:?} but the oracle never saw it (class {class:?})"
+                core_errors.iter().any(|(r, _)| r == f.raw)
+                    || core_tokens.iter().any(|t| t.raw == f.raw),
+                "v1 rejects {:?} but the oracle never saw it (class {class:?})",
+                f.raw
             );
         }
         // Every token both accept must carry the same shape.
