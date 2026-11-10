@@ -33,6 +33,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(test)]
 mod tests {
+    use super::VERSION;
+
     /// The version pin: derived from the manifest, parseable as semver —
     /// the cross-crate assertions the P2 pipeline makes key on it.
     #[test]
