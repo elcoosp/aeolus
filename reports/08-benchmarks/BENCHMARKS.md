@@ -314,3 +314,24 @@ compile once, interp per env flip is the intended shape, and the
 runtime tier's multiply costs ~4% over the baked pair index. The
 static-data emit is a build-time artifact cost (5.6 µs for 33 classes),
 not a runtime path.
+
+## Arbitrary-value unit grammar run (2026-11-11, 2-core sandbox, release profile, divan 0.1.21)
+
+The value pass's last named P2 slice (`crates/aeolus-compile/benches/arbitrary.rs`):
+ten arbitrary-valued utilities across the grammar's classes (units,
+percentages, colours, hints, deg rows) against the same roots on the
+spacing/keyword scales, plus the shadcn Button string and the DynCache
+hit path. Environment-specific absolutes; the deltas are the point.
+
+| benchmark | median | note |
+|---|---|---|
+| `compile_arbitrary_battery` | **7.26 µs** | ten arbitrary classes: lex → lookup → classify (units/hints/colours) → fan → intern |
+| `compile_scaled_floor` | 5.76 µs | the same roots on the spacing/keyword scales — the no-arbitrary floor |
+| `compile_button` | 22.8 µs | the 33-class shadcn Button string (two classes ride the grammar in-tree) |
+| `dyn_cache_arbitrary_hit` | **291 ns** | the cached loop: one miss pools the arbitrary battery, hits are pointer-identical |
+
+Verdict: the grammar costs ~1.5 µs over the scaled floor for ten
+classes (~150 ns per classify — one `Color::parse` on the colour
+values, a strip-suffix walk on the units), and the warm hit keeps the
+dyn-cache's sub-µs shape, so the intended call pattern (compile once
+per distinct string, cache the rest) is unaffected.
