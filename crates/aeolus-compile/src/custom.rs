@@ -48,10 +48,11 @@
 //!
 //! What this slice deliberately is NOT: the `/opacity` modifier on a
 //! custom utility (the modifier rides only the audited theme-token
-//! path — a fixed literal has no premultiply bake of its own), the
-//! theme-token functional form (`--value(color)` — the next slice), and
+//! path — a fixed literal has no premultiply bake of its own), and
 //! selector-bearing custom variants (no IR slot; diagnosed, never
-//! dropped).
+//! dropped). The theme-token functional form (`--value(color)`) is IN
+//! this slice: [`CustomForm::Token`] lowers the suffix through the
+//! tiered tables, modifier and all.
 
 use aeolus_data::LookupError;
 use aeolus_ir::{Cond, Prop, Val};
