@@ -66,7 +66,10 @@ pub enum ValueKind {
     /// type hints ride the candidate's arbitrary group verbatim. Shape
     /// acceptance: the bare root (the value rode in the candidate's
     /// arbitrary group — `w-[32px]` lexes body `w`) or a bracket-shaped
-    /// suffix (`w-[-32px]` keeps its brackets in some call paths).
+    /// suffix (`w-[-32px]` keeps its brackets in some call paths). The
+    /// lowering is the compile stage's unit grammar (px/rem/%/deg
+    /// units, colours, hints, var-token references); values the IR
+    /// cannot carry refuse typed there, never here.
     Arbitrary,
     /// A bare percentage suffix (`from-20%`, `via-40%`): the gradient
     /// STOP POSITION utilities — a different conflict group than the
