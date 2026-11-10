@@ -12,7 +12,7 @@
 //! (`examples/theme_tiers.rs`); this one is the pipeline view: lex →
 //! lookup → lower, now with the colour half resolving.
 
-use aeolus_compile::{compile, compile_theme, Config, DiagnosticKind};
+use aeolus_compile::{Config, DiagnosticKind, compile, compile_theme};
 use aeolus_ir::Val;
 use aeolus_theme::{ThemeSource, TokenTable};
 
@@ -25,7 +25,10 @@ fn main() {
     // 1. The theme-less default: colour tokens and modifiers stay typed
     //    boundaries (the honest v0.10.0 contract, unchanged).
     let compiled = compile(classes, &Config::default()).expect("non-empty input compiles");
-    println!("── theme-less ({} diagnostics name the theme pass) ──", compiled.diagnostics.len());
+    println!(
+        "── theme-less ({} diagnostics name the theme pass) ──",
+        compiled.diagnostics.len()
+    );
     for d in &compiled.diagnostics {
         println!("  {d}");
         println!("    code: {}", d.kind.code());
@@ -36,9 +39,12 @@ fn main() {
     //    time, the host's business per frame.
     let source = ThemeSource::shadcn_dark().expect("embedded palettes parse");
     let runtime = TokenTable::runtime(&source).expect("default-seeded source builds");
-    let compiled = compile_theme(classes, &runtime, &Config::default())
-        .expect("non-empty input compiles");
-    println!("\n── runtime tier ({} diagnostics) ──────────────────────", compiled.diagnostics.len());
+    let compiled =
+        compile_theme(classes, &runtime, &Config::default()).expect("non-empty input compiles");
+    println!(
+        "\n── runtime tier ({} diagnostics) ──────────────────────",
+        compiled.diagnostics.len()
+    );
     print_colour_decls(&compiled, &runtime);
 
     // 3. The baked tier (T0/T1): literals for light-only tokens, const
@@ -46,9 +52,16 @@ fn main() {
     //    a dark pair is the typed boundary (the pair form has no alpha
     //    arm; the runtime tier above is the answer).
     let baked = TokenTable::baked(&source).expect("default-seeded source builds");
-    let compiled = compile_theme("bg-primary hover:bg-primary/90 dark:bg-primary", &baked, &Config::default())
-        .expect("non-empty input compiles");
-    println!("\n── baked tier (tier {:?}) ─────────────────────────────", baked.tier());
+    let compiled = compile_theme(
+        "bg-primary hover:bg-primary/90 dark:bg-primary",
+        &baked,
+        &Config::default(),
+    )
+    .expect("non-empty input compiles");
+    println!(
+        "\n── baked tier (tier {:?}) ─────────────────────────────",
+        baked.tier()
+    );
     for d in &compiled.diagnostics {
         println!("  {d} [{}]", d.kind.code());
     }
@@ -66,8 +79,8 @@ fn main() {
     let bare_source =
         ThemeSource::from_css("/* the v4 default seed only */", None).expect("parses");
     let bare = TokenTable::runtime(&bare_source).expect("builds");
-    let compiled = compile_theme("bg-primary", &bare, &Config::default())
-        .expect("non-empty input compiles");
+    let compiled =
+        compile_theme("bg-primary", &bare, &Config::default()).expect("non-empty input compiles");
     println!("\n── a name the bare-seed table lacks ───────────────────");
     for d in &compiled.diagnostics {
         if let DiagnosticKind::UnsupportedValue { reason, .. } = &d.kind {
@@ -85,7 +98,10 @@ fn print_colour_decls(compiled: &aeolus_compile::Compiled, table: &TokenTable) {
             match decl.val {
                 Val::Tok { id, alpha } => {
                     let name = table.name(id).unwrap_or("<unknown>");
-                    println!("  [{cond}] {} = Tok {{ {name}, alpha: {alpha} }}", decl.prop.name());
+                    println!(
+                        "  [{cond}] {} = Tok {{ {name}, alpha: {alpha} }}",
+                        decl.prop.name()
+                    );
                 }
                 Val::Rgba(rgba) => {
                     println!("  [{cond}] {} = Rgba {rgba:?}", decl.prop.name());
