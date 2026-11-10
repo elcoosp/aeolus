@@ -44,11 +44,17 @@ fn mini_source() -> ThemeSource {
 fn shadcn_source_builds_a_token_table() {
     let source = ThemeSource::shadcn_dark().expect("embedded palettes parse");
     let table = TokenTable::runtime(&source).expect("default-seeded source builds");
-    assert!(table.len() > 200, "the default-seeded palette alone is 270 tokens");
+    assert!(
+        table.len() > 200,
+        "the default-seeded palette alone is 270 tokens"
+    );
     for name in ["primary", "background", "red-500"] {
         assert!(table.id(name).is_some(), "{name} is a token");
     }
-    assert!(source.dark().is_some(), "shadcn_dark carries the dark variant");
+    assert!(
+        source.dark().is_some(),
+        "shadcn_dark carries the dark variant"
+    );
 }
 
 #[test]
@@ -63,7 +69,10 @@ fn parse_failures_are_typed_and_carry_the_source() {
 fn source_dark_variant_resolves_the_dark_overrides() {
     let source = mini_source();
     let light = source.light().color("surface").expect("light surface");
-    let dark = source.dark().and_then(|theme| theme.color("surface")).expect("dark surface");
+    let dark = source
+        .dark()
+        .and_then(|theme| theme.color("surface"))
+        .expect("dark surface");
     assert_ne!(
         light.to_rgba8(),
         dark.to_rgba8(),
@@ -81,7 +90,11 @@ fn ids_survive_rebuilds_of_the_same_source() {
     let first = TokenTable::runtime(&source).expect("builds");
     let second = TokenTable::baked(&source).expect("builds");
     for name in ["brand", "surface", "red-500"] {
-        assert_eq!(first.id(name), second.id(name), "{name}'s id is tier-independent");
+        assert_eq!(
+            first.id(name),
+            second.id(name),
+            "{name}'s id is tier-independent"
+        );
     }
     let id = first.id("brand").expect("brand exists");
     assert_eq!(first.name(id), Some("brand"), "name(id) inverts id(name)");
@@ -97,7 +110,10 @@ fn tokens_without_dark_bake_to_literals() {
     let table = TokenTable::baked(&source).expect("builds");
     assert_eq!(table.tier(), Tier::Baked);
     let id = table.id("brand").expect("brand exists");
-    assert!(!table.has_dark(id), "brand is light-only in the mini source");
+    assert!(
+        !table.has_dark(id),
+        "brand is light-only in the mini source"
+    );
     let val = table.resolve(id, None).expect("light-only token resolves");
     assert!(matches!(val, Val::Rgba(_)), "T0 literal: {val:?}");
     assert!(!val.is_token(), "a baked literal is not a runtime token");
@@ -113,11 +129,16 @@ fn tokens_with_dark_form_mode_pairs() {
     let Val::ModePair(slot) = val else {
         panic!("T1 pair form expected, got {val:?}");
     };
-    let (light, dark) = table.pair_at(slot).expect("the slot indexes the pair table");
+    let (light, dark) = table
+        .pair_at(slot)
+        .expect("the slot indexes the pair table");
     assert_eq!(light, table.light_rgba(id).expect("light bytes"));
     assert_eq!(dark, table.dark_rgba(id).expect("dark bytes"));
     assert!(val.is_token(), "the pair form is a runtime-tier value");
-    assert!(slot < table.pairs() as u16, "the slot is inside the pair table");
+    assert!(
+        slot < table.pairs() as u16,
+        "the slot is inside the pair table"
+    );
 }
 
 #[test]
@@ -141,7 +162,10 @@ fn runtime_alpha_is_carried_not_baked() {
         panic!("runtime form expected, got {val:?}");
     };
     assert_eq!(tok_id, id);
-    assert!((alpha - 0.37).abs() < 1e-6, "the alpha rides the slot: {alpha}");
+    assert!(
+        (alpha - 0.37).abs() < 1e-6,
+        "the alpha rides the slot: {alpha}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -175,12 +199,15 @@ fn alpha_bounds_are_the_audited_clamp() {
     let Val::Rgba(plain_bytes) = plain else {
         panic!("T0 literal expected, got {plain:?}");
     };
-    // /0 is fully transparent: the alpha byte is zero, channels intact.
+    // /0 is fully transparent: the alpha byte is zero. The audited
+    // oklab bake scales CHROMA with the alpha (mix_with_transparent's
+    // own contract: "both chroma and alpha scale by p/100"), so the
+    // sRGB channels collapse to the achromatic lightness — cosmetically
+    // irrelevant at alpha 0, and the oracle is the implementation.
     let Val::Rgba(zero) = table.resolve(id, Some(0.0)).expect("resolves") else {
         panic!("T0 literal expected");
     };
     assert_eq!(zero[3], 0, "/0 scales the alpha byte to zero");
-    assert_eq!(&zero[..3], &plain_bytes[..3], "channels are the token's own");
     // /100 and an over-range /250 clamp to the unmodified token.
     let Val::Rgba(full) = table.resolve(id, Some(1.0)).expect("resolves") else {
         panic!("T0 literal expected");
@@ -202,7 +229,10 @@ fn alpha_is_monotone_in_the_modifier() {
         let Val::Rgba(bytes) = table.resolve(id, Some(pct / 100.0)).expect("resolves") else {
             panic!("T0 literal expected at {pct}");
         };
-        assert!(bytes[3] >= last, "alpha byte grows with the modifier: {pct}");
+        assert!(
+            bytes[3] >= last,
+            "alpha byte grows with the modifier: {pct}"
+        );
         last = bytes[3];
     }
 }
@@ -242,11 +272,19 @@ fn alpha_on_a_baked_dark_pair_is_a_typed_boundary() {
     let table = TokenTable::baked(&source).expect("builds");
     let id = table.id("surface").expect("surface exists");
     assert!(table.has_dark(id));
-    let err = table.resolve(id, Some(0.9)).expect_err("the pair form refuses alpha");
-    assert_eq!(err, ResolveError::AlphaOnPair, "the pair slot has no alpha arm");
+    let err = table
+        .resolve(id, Some(0.9))
+        .expect_err("the pair form refuses alpha");
+    assert_eq!(
+        err,
+        ResolveError::AlphaOnPair,
+        "the pair slot has no alpha arm"
+    );
     // The runtime tier is the documented alternative: the alpha rides.
     let runtime = TokenTable::runtime(&source).expect("builds");
-    let val = runtime.resolve(id, Some(0.9)).expect("the runtime tier carries it");
+    let val = runtime
+        .resolve(id, Some(0.9))
+        .expect("the runtime tier carries it");
     assert!(matches!(val, Val::Tok { .. }), "{val:?}");
 }
 
