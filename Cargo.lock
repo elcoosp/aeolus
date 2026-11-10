@@ -69,6 +69,7 @@ dependencies = [
  "aeolus-data",
  "aeolus-ir",
  "aeolus-syntax",
+ "aeolus-theme",
  "divan",
  "miette",
  "tracing",
@@ -175,6 +176,17 @@ version = "0.10.0"
 dependencies = [
  "aeolus-core",
  "divan",
+]
+
+[[package]]
+name = "aeolus-theme"
+version = "0.10.0"
+dependencies = [
+ "aeolus-core",
+ "aeolus-ir",
+ "divan",
+ "miette",
+ "tracing",
 ]
 
 [[package]]

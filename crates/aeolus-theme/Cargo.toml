@@ -1,0 +1,55 @@
+[package]
+name = "aeolus-theme"
+description = "Aeolus V1 theme pass: CSS-first theme sources resolved into tiered token tables (T0 baked, T1 dark pairs, T2 runtime) for the compile seam (docs/AEOLUS_V1_ARCHITECTURE.md §3.4)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+# Git-only while the V1 pipeline assembles (plan §3.2) — like
+# aeolus-syntax/aeolus-data/aeolus-ir/aeolus-compile, publish = false
+# until the pipeline completes and the backends re-target onto `Program`.
+publish = false
+
+[dependencies]
+# The audited v0.x theme/colour parser IS the interim oracle (plan §5.2's
+# differential triangle): `TailwindTheme`'s @theme/:root/.dark reader and
+# `Color`'s oklab machinery (fuzz-pinned by the `color_parse` and
+# `theme_from_css` targets) are what this crate tiers. aeolus-core is
+# itself zero-dependency, so the V1 default graph stays transitive-dep
+# free; the xtask build-time bake (plan §3.4's tracked-path story) is the
+# slice that eventually replaces the runtime parse, not this seam's tier
+# model.
+aeolus-core = { workspace = true }
+# The tier model emits `Val`s: `Rgba` (T0 literals), `ModePair` (T1 const
+# pairs) and `Tok { id, alpha }` (T2 runtime) are the IR's value arms —
+# the crate depends on the IR and nothing else of it.
+aeolus-ir = { workspace = true }
+# `tracing` feature: spans on the table build and the token resolve (the
+# same opt-in instrumentation seam the CLI grew in v0.9.1 and the
+# registry/compile seams carry since P1/P2). OFF by default so the
+# default graph stays dependency-light; no subscriber is installed here —
+# the host app owns one.
+tracing = { version = "0.1", optional = true }
+# `miette` feature: the structured `Diagnostic` impls (code + help) on
+# `ThemeError` and `ResolveError`, beside the always-on Display strings.
+# OFF by default; miette's fancy rendering is the host's choice.
+miette = { version = "7", optional = true, default-features = false }
+
+[features]
+default = []
+tracing = ["dep:tracing"]
+miette = ["dep:miette"]
+
+[dev-dependencies]
+# The token-table microbenchmarks (divan, stable — the workspace bench
+# idiom).
+divan = "0.1"
+
+[[bench]]
+name = "tokens"
+harness = false
+
+# Pedantic clippy, inherited from the workspace (v0.8 §4).
+[lints]
+workspace = true
