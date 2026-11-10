@@ -57,23 +57,20 @@ pub(crate) enum Reject {
 }
 
 /// Arbitrary `[...]`/`(...)` values: the unit grammar is the P2 value pass.
-pub(crate) const REASON_ARBITRARY: &str =
-    "arbitrary values lower in the P2 value pass: the bracket/paren \
+pub(crate) const REASON_ARBITRARY: &str = "arbitrary values lower in the P2 value pass: the bracket/paren \
      grammar needs the unit table (length/percentage/colour type hints)";
 
 /// The seam's discovered IR-budget constraint: a keyword table larger
 /// than the u8 `Val::Kw` slot (the colour table's 270 entries) lowers
 /// through the theme pass's TokenTable when the caller supplies one
 /// (plan §3.4), and refuses typed when not — never truncation.
-pub(crate) const REASON_TOKEN_TABLE: &str =
-    "the keyword table exceeds the IR's u8 keyword slot: colour tokens \
+pub(crate) const REASON_TOKEN_TABLE: &str = "the keyword table exceeds the IR's u8 keyword slot: colour tokens \
      lower through the theme pass's TokenTable (plan §3.4 T2)";
 
 /// The suffix is neither a theme token nor lowerable through the u8
 /// keyword slot — the table-driven miss the linter's "did you mean"
 /// surface renders (`TokenTable::names()` is the checklist).
-pub(crate) const REASON_NOT_A_TOKEN: &str =
-    "the suffix is not a colour token in the supplied TokenTable (see \
+pub(crate) const REASON_NOT_A_TOKEN: &str = "the suffix is not a colour token in the supplied TokenTable (see \
      TokenTable::names()) and the palette table exceeds the u8 keyword slot";
 
 /// The f32 grammar's non-finite spellings (`nan`, `inf`, `1e40`) are
@@ -81,14 +78,12 @@ pub(crate) const REASON_NOT_A_TOKEN: &str =
 /// non-finite literal never reaches the IR (the snapshot writer's
 /// string-encoded infinities exist because the reader is strict; the
 /// IR never expected to carry them in the first place).
-pub(crate) const REASON_NON_FINITE: &str =
-    "the suffix parses as a non-finite f32 (nan/inf): the v4 value grammar \
+pub(crate) const REASON_NON_FINITE: &str = "the suffix parses as a non-finite f32 (nan/inf): the v4 value grammar \
      is finite decimals, so the value pass refuses instead of lowering";
 
 /// The shape contract accepted the suffix but no arm lowered it —
 /// registry/lowering drift, reportable, never a panic.
-pub(crate) const REASON_SHAPE_MISMATCH: &str =
-    "the row's shape contract accepted the suffix but no arm lowered it \
+pub(crate) const REASON_SHAPE_MISMATCH: &str = "the row's shape contract accepted the suffix but no arm lowered it \
      (registry/compile drift — please report)";
 
 /// Lower ONE matched row for one candidate body. The registry guarantees
@@ -103,7 +98,7 @@ pub(crate) fn row_to_decls(
     negative: bool,
     alpha: Option<f32>,
     tokens: Option<&TokenTable>,
-    config: &Config,
+    config: Config,
 ) -> Result<Vec<Decl>, Reject> {
     if negative && !row.negative {
         return Err(Reject::Negation);
@@ -119,14 +114,14 @@ pub(crate) fn row_to_decls(
         // A modifier never half-applies: it rides only when EVERY decl
         // the row produced is colour-form (the token path already
         // applied it; anything else refuses the whole row).
-        if alpha.is_some()
-            && !decls.iter().all(|decl| is_colour_val(decl.val))
-        {
+        if alpha.is_some() && !decls.iter().all(|decl| is_colour_val(decl.val)) {
             return Err(Reject::Modifier);
         }
         return Ok(decls);
     }
-    Err(Reject::Value { reason: REASON_SHAPE_MISMATCH })
+    Err(Reject::Value {
+        reason: REASON_SHAPE_MISMATCH,
+    })
 }
 
 /// The colour-form values — the only ones an opacity modifier rides
@@ -147,7 +142,9 @@ fn suffix_of<'a>(body: &'a str, root: &str) -> Result<Option<&'a str>, Reject> {
     body.strip_prefix(root)
         .and_then(|rest| rest.strip_prefix('-'))
         .map(Some)
-        .ok_or(Reject::Value { reason: REASON_SHAPE_MISMATCH })
+        .ok_or(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        })
 }
 
 /// The AnyOf arms in declaration order (the first ACCEPTING arm lowers —
@@ -171,7 +168,7 @@ fn arm_to_decls(
     alpha: Option<f32>,
     targets: &'static [Prop],
     tokens: Option<&TokenTable>,
-    config: &Config,
+    config: Config,
 ) -> Result<Vec<Decl>, Reject> {
     match arm {
         ValueKind::Bare(_) => Ok(fan(targets, Val::Kw(0))),
@@ -180,7 +177,9 @@ fn arm_to_decls(
             // The oversized-table boundary: the theme pass owns it.
             Err(Reject::TokenOverflow) => match tokens {
                 Some(table) => token_decls(suffix, alpha, targets, table),
-                None => Err(Reject::Value { reason: REASON_TOKEN_TABLE }),
+                None => Err(Reject::Value {
+                    reason: REASON_TOKEN_TABLE,
+                }),
             },
             Err(other) => Err(other),
         },
@@ -192,7 +191,9 @@ fn arm_to_decls(
         ValueKind::Fraction => {
             let (n, d) = suffix
                 .and_then(|s| s.split_once('/'))
-                .ok_or(Reject::Value { reason: REASON_SHAPE_MISMATCH })?;
+                .ok_or(Reject::Value {
+                    reason: REASON_SHAPE_MISMATCH,
+                })?;
             let pct = finite(parse_num(n)? / parse_num(d)? * 100.0)?;
             let pct = if negative { -pct } else { pct };
             Ok(fan(targets, Val::Pct(pct)))
@@ -212,10 +213,14 @@ fn arm_to_decls(
             }
             Ok(fan(targets, Val::Pct(pct)))
         }
-        ValueKind::Arbitrary => Err(Reject::Value { reason: REASON_ARBITRARY }),
+        ValueKind::Arbitrary => Err(Reject::Value {
+            reason: REASON_ARBITRARY,
+        }),
         // Flattened away before the walk; the arm exists so the match
         // stays total without an unreachable panic.
-        ValueKind::AnyOf(_) => Err(Reject::Value { reason: REASON_SHAPE_MISMATCH }),
+        ValueKind::AnyOf(_) => Err(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        }),
     }
 }
 
@@ -234,10 +239,14 @@ fn token_decls(
     let Some(name) = suffix else {
         // Unreachable through `lookup` (the colour arm accepts a suffix
         // only); the refusal stays typed regardless.
-        return Err(Reject::Value { reason: REASON_SHAPE_MISMATCH });
+        return Err(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        });
     };
     let Some(id) = tokens.id(name) else {
-        return Err(Reject::Value { reason: REASON_NOT_A_TOKEN });
+        return Err(Reject::Value {
+            reason: REASON_NOT_A_TOKEN,
+        });
     };
     let val = tokens.resolve(id, alpha).map_err(reject_resolve)?;
     Ok(fan(targets, val))
@@ -250,7 +259,9 @@ fn token_decls(
 /// rides the diagnostic).
 fn reject_resolve(err: ResolveError) -> Reject {
     match err {
-        ResolveError::UnknownId(_) => Reject::Value { reason: REASON_NOT_A_TOKEN },
+        ResolveError::UnknownId(_) => Reject::Value {
+            reason: REASON_NOT_A_TOKEN,
+        },
         ResolveError::AlphaOnPair | ResolveError::AlphaNotFinite(_) => Reject::Modifier,
     }
 }
@@ -263,7 +274,7 @@ fn spacing_decls(
     suffix: Option<&str>,
     negative: bool,
     targets: &'static [Prop],
-    config: &Config,
+    config: Config,
 ) -> Result<Vec<Decl>, Reject> {
     let s = suffix.unwrap_or_default();
     let val = if s == "px" {
@@ -301,7 +312,9 @@ fn keyword_slot(
         .iter()
         .position(|&(name, _)| name == s)
         .map(|idx| idx as u8)
-        .ok_or(Reject::Value { reason: REASON_SHAPE_MISMATCH })
+        .ok_or(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        })
 }
 
 /// The composite table's sibling (`text-{size}`'s (name, size,
@@ -314,32 +327,38 @@ fn composite_slot(
         // A composite table is NOT theme-eligible (the token path lowers
         // colour keywords only), so the oversized-composite refusal is
         // typed here, never routed through the token seam.
-        return Err(Reject::Value { reason: REASON_TOKEN_TABLE });
+        return Err(Reject::Value {
+            reason: REASON_TOKEN_TABLE,
+        });
     }
     let s = suffix.unwrap_or_default();
     table
         .iter()
         .position(|&(name, _, _)| name == s)
         .map(|idx| idx as u8)
-        .ok_or(Reject::Value { reason: REASON_SHAPE_MISMATCH })
+        .ok_or(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        })
 }
 
 /// The finite guard: a value that overflowed to ±inf (or arrived NaN)
 /// is a typed refusal, never a non-finite literal in the IR. `parse_num`
 /// guards the PARSES; this guards the PRODUCTS (`1e38 / 1e-38`, the
 /// px bake against a large `rem_px`).
-fn finite(val: f32) -> Result<f32, Reject> {
+pub(crate) fn finite(val: f32) -> Result<f32, Reject> {
     if val.is_finite() {
         Ok(val)
     } else {
-        Err(Reject::Value { reason: REASON_NON_FINITE })
+        Err(Reject::Value {
+            reason: REASON_NON_FINITE,
+        })
     }
 }
 
-fn parse_num(s: &str) -> Result<f32, Reject> {
-    let n = s
-        .parse::<f32>()
-        .map_err(|_| Reject::Value { reason: REASON_SHAPE_MISMATCH })?;
+pub(crate) fn parse_num(s: &str) -> Result<f32, Reject> {
+    let n = s.parse::<f32>().map_err(|_| Reject::Value {
+        reason: REASON_SHAPE_MISMATCH,
+    })?;
     // `f32::from_str` accepts `nan`/`inf`/`infinity` (any case) — legal
     // parses, illegal v4 values.
     finite(n)
@@ -347,7 +366,7 @@ fn parse_num(s: &str) -> Result<f32, Reject> {
 
 /// Fan the value out over the row's longhand targets, in the row's own
 /// TRBL / TL-TR-BR-BL order (the layer re-sorts into cascade order).
-fn fan(targets: &'static [Prop], val: Val) -> Vec<Decl> {
+pub(crate) fn fan(targets: &'static [Prop], val: Val) -> Vec<Decl> {
     targets.iter().map(|&prop| Decl { prop, val }).collect()
 }
 
@@ -360,6 +379,7 @@ fn fan(targets: &'static [Prop], val: Val) -> Vec<Decl> {
 /// target renders under its own `:where(.dark, .dark *)` selector.
 /// Token references render as `var(--color-…)` (tier-swapped by the
 /// theme's own `.dark` block), so they are dark-less here by design.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CssValue {
     /// The value text under the rule's own conditions.
     pub(crate) base: String,
@@ -453,7 +473,7 @@ pub(crate) fn row_to_css(
     negative: bool,
     alpha: Option<f32>,
     tokens: Option<&TokenTable>,
-    config: &Config,
+    config: Config,
 ) -> Result<Vec<CssDecl>, Reject> {
     if negative && !row.negative {
         return Err(Reject::Negation);
@@ -465,8 +485,16 @@ pub(crate) fn row_to_css(
         if !arm.accepts(suffix) {
             continue;
         }
-        let rendered =
-            arm_to_css(arm, suffix, negative, alpha, row.root, row.targets, tokens, config)?;
+        let rendered = arm_to_css(
+            arm,
+            suffix,
+            negative,
+            alpha,
+            row.root,
+            row.targets,
+            tokens,
+            config,
+        )?;
         // A modifier never half-applies (the same contract as the IR
         // form): it rides only when EVERY rendered value is colour-form.
         if alpha.is_some() && !rendered.iter().all(|r| r.colour_form) {
@@ -474,10 +502,16 @@ pub(crate) fn row_to_css(
         }
         return Ok(rendered
             .into_iter()
-            .map(|r| CssDecl { prop: r.prop, prop_name: r.prop_name, value: r.value })
+            .map(|r| CssDecl {
+                prop: r.prop,
+                prop_name: r.prop_name,
+                value: r.value,
+            })
             .collect());
     }
-    Err(Reject::Value { reason: REASON_SHAPE_MISMATCH })
+    Err(Reject::Value {
+        reason: REASON_SHAPE_MISMATCH,
+    })
 }
 
 /// One rendered declaration: the IR longhand, the CSS property name it
@@ -509,7 +543,7 @@ fn arm_to_css(
     root: &'static str,
     targets: &'static [Prop],
     tokens: Option<&TokenTable>,
-    config: &Config,
+    config: Config,
 ) -> Result<Vec<RenderedCss>, Reject> {
     match arm {
         ValueKind::Bare(css) => {
@@ -520,7 +554,10 @@ fn arm_to_css(
                 .map(|&prop| RenderedCss {
                     prop,
                     prop_name: prop.name(),
-                    value: CssValue { base: css.to_string(), dark: None },
+                    value: CssValue {
+                        base: css.to_string(),
+                        dark: None,
+                    },
                     colour_form: false,
                 })
                 .collect())
@@ -530,7 +567,9 @@ fn arm_to_css(
             // The oversized-table boundary: the theme pass owns it.
             Err(Reject::TokenOverflow) => match tokens {
                 Some(table) => token_css(suffix, alpha, targets, table),
-                None => Err(Reject::Value { reason: REASON_TOKEN_TABLE }),
+                None => Err(Reject::Value {
+                    reason: REASON_TOKEN_TABLE,
+                }),
             },
             Err(other) => Err(other),
         },
@@ -546,7 +585,11 @@ fn arm_to_css(
                     prop,
                     prop_name: prop.name(),
                     value: CssValue {
-                        base: if i == 0 { primary.to_string() } else { secondary.to_string() },
+                        base: if i == 0 {
+                            primary.to_string()
+                        } else {
+                            secondary.to_string()
+                        },
                         dark: None,
                     },
                     colour_form: false,
@@ -558,7 +601,9 @@ fn arm_to_css(
         ValueKind::Fraction => {
             let (n, d) = suffix
                 .and_then(|s| s.split_once('/'))
-                .ok_or(Reject::Value { reason: REASON_SHAPE_MISMATCH })?;
+                .ok_or(Reject::Value {
+                    reason: REASON_SHAPE_MISMATCH,
+                })?;
             let pct = finite(parse_num(n)? / parse_num(d)? * 100.0)?;
             let pct = if negative { -pct } else { pct };
             Ok(fan_css(targets, &format!("{pct}%"), false))
@@ -578,9 +623,13 @@ fn arm_to_css(
             }
             Ok(fan_css(targets, &format!("{pct}%"), false))
         }
-        ValueKind::Arbitrary => Err(Reject::Value { reason: REASON_ARBITRARY }),
+        ValueKind::Arbitrary => Err(Reject::Value {
+            reason: REASON_ARBITRARY,
+        }),
         // Flattened away before the walk (the IR form's own arm).
-        ValueKind::AnyOf(_) => Err(Reject::Value { reason: REASON_SHAPE_MISMATCH }),
+        ValueKind::AnyOf(_) => Err(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        }),
     }
 }
 
@@ -591,7 +640,10 @@ fn fan_css(targets: &'static [Prop], text: &str, colour_form: bool) -> Vec<Rende
         .map(|&prop| RenderedCss {
             prop,
             prop_name: prop.name(),
-            value: CssValue { base: text.to_string(), dark: None },
+            value: CssValue {
+                base: text.to_string(),
+                dark: None,
+            },
             colour_form,
         })
         .collect()
@@ -612,7 +664,9 @@ fn keyword_text(
         .iter()
         .find(|&&(name, _)| name == s)
         .map(|&(_, css)| css.to_string())
-        .ok_or(Reject::Value { reason: REASON_SHAPE_MISMATCH })
+        .ok_or(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        })
 }
 
 /// The spacing scale rendered: `n × 0.25rem` (the `tailwind` config), or
@@ -622,11 +676,15 @@ fn spacing_css(
     suffix: Option<&str>,
     negative: bool,
     targets: &'static [Prop],
-    config: &Config,
+    config: Config,
 ) -> Result<Vec<RenderedCss>, Reject> {
     let s = suffix.unwrap_or_default();
     let text = if s == "px" {
-        if negative { "-1px".to_string() } else { "1px".to_string() }
+        if negative {
+            "-1px".to_string()
+        } else {
+            "1px".to_string()
+        }
     } else {
         let rem = finite(parse_num(s)? * SPACING_STEP_REM)?;
         match config.spacing {
@@ -654,7 +712,9 @@ fn number_css(
     targets: &'static [Prop],
 ) -> Result<Vec<RenderedCss>, Reject> {
     let Some(&(_, form, prop_override)) = NUMBER_FORMS.iter().find(|(r, _, _)| *r == root) else {
-        return Err(Reject::Value { reason: REASON_SHAPE_MISMATCH });
+        return Err(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        });
     };
     let text = match form {
         NumForm::Px => format!("{n}px"),
@@ -675,7 +735,10 @@ fn number_css(
         .map(|&prop| RenderedCss {
             prop,
             prop_name: override_name,
-            value: CssValue { base: text.clone(), dark: None },
+            value: CssValue {
+                base: text.clone(),
+                dark: None,
+            },
             colour_form: false,
         })
         .collect())
@@ -694,36 +757,60 @@ fn token_css(
     let Some(name) = suffix else {
         // Unreachable through `lookup` (the colour arm accepts a suffix
         // only); the refusal stays typed regardless.
-        return Err(Reject::Value { reason: REASON_SHAPE_MISMATCH });
+        return Err(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        });
     };
     let Some(id) = tokens.id(name) else {
-        return Err(Reject::Value { reason: REASON_NOT_A_TOKEN });
+        return Err(Reject::Value {
+            reason: REASON_NOT_A_TOKEN,
+        });
     };
     // The resolve's tier decides the rendered form; its refusals map
     // onto the same boundary set as the IR form's [`reject_resolve`].
     let rendered = match tokens.resolve(id, alpha) {
-        Ok(Val::Rgba(rgba)) => CssValue { base: rgba_text(rgba), dark: None },
-        Ok(Val::Tok { alpha, .. }) => {
+        Ok(Val::Rgba(rgba)) => CssValue {
+            base: rgba_text(rgba),
+            dark: None,
+        },
+        Ok(Val::Tok {
+            alpha: slot_alpha, ..
+        }) => {
             // The id came from this name, so the rendered var is the
             // same token; the RESOLVED alpha rides (the audited clamp,
-            // exactly what the IR form's `Tok` slot carries).
-            CssValue { base: token_text(name, alpha.filter(|a| *a < 1.0)), dark: None }
+            // exactly what the IR form's `Tok` slot carries). The slot's
+            // alpha is f32 (1.0 when no modifier rode); it re-enters the
+            // option form only when it is a real transparency — a plain
+            // `var()` renders otherwise.
+            CssValue {
+                base: token_text(name, (slot_alpha < 1.0).then_some(slot_alpha)),
+                dark: None,
+            }
         }
         Ok(Val::ModePair(slot)) => {
             let Some((light, dark)) = tokens.pair_at(slot) else {
                 // The slot came from this table; a miss is read-side
                 // drift, typed not panned.
-                return Err(Reject::Value { reason: REASON_NOT_A_TOKEN });
+                return Err(Reject::Value {
+                    reason: REASON_NOT_A_TOKEN,
+                });
             };
-            CssValue { base: rgba_text(light), dark: Some(rgba_text(dark)) }
+            CssValue {
+                base: rgba_text(light),
+                dark: Some(rgba_text(dark)),
+            }
         }
         // The colour path only resolves colour-form values; a numeric
         // or keyword escape is lowering drift, typed not rendered.
         Ok(Val::Px(_) | Val::Rem(_) | Val::Pct(_) | Val::Num(_) | Val::Kw(_)) => {
-            return Err(Reject::Value { reason: REASON_SHAPE_MISMATCH });
+            return Err(Reject::Value {
+                reason: REASON_SHAPE_MISMATCH,
+            });
         }
         Err(ResolveError::UnknownId(_)) => {
-            return Err(Reject::Value { reason: REASON_NOT_A_TOKEN });
+            return Err(Reject::Value {
+                reason: REASON_NOT_A_TOKEN,
+            });
         }
         Err(ResolveError::AlphaOnPair) => return Err(Reject::Modifier),
         Err(ResolveError::AlphaNotFinite(_)) => return Err(Reject::Modifier),
@@ -733,7 +820,10 @@ fn token_css(
         .map(|&prop| RenderedCss {
             prop,
             prop_name: prop.name(),
-            value: CssValue { base: rendered.base.clone(), dark: rendered.dark.clone() },
+            value: CssValue {
+                base: rendered.base.clone(),
+                dark: rendered.dark.clone(),
+            },
             colour_form: true,
         })
         .collect())
@@ -741,7 +831,7 @@ fn token_css(
 
 /// An `[u8; 4]` rgba rendered in the modern space-separated form; the
 /// alpha rides as a percentage when the bake left any transparency.
-fn rgba_text(rgba: [u8; 4]) -> String {
+pub(crate) fn rgba_text(rgba: [u8; 4]) -> String {
     let [r, g, b, a] = rgba;
     if a == 255 {
         format!("rgb({r} {g} {b})")
@@ -754,11 +844,14 @@ fn rgba_text(rgba: [u8; 4]) -> String {
 /// A runtime token rendered the way v4 emits it: the `--color-` var, and
 /// the opacity modifier as the `color-mix` identity (plan §2 — mixing
 /// with transparent in the premultiplied space scales alpha only).
-fn token_text(name: &str, alpha: Option<f32>) -> String {
+pub(crate) fn token_text(name: &str, alpha: Option<f32>) -> String {
     let var = format!("var(--color-{name})");
     match alpha {
         None => var,
-        Some(a) => format!("color-mix(in oklab, {var} {}%, transparent)", pct_text(a * 100.0)),
+        Some(a) => format!(
+            "color-mix(in oklab, {var} {}%, transparent)",
+            pct_text(a * 100.0)
+        ),
     }
 }
 
@@ -785,8 +878,8 @@ fn pct_text(v: f32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aeolus_data::rows::ROWS;
     use aeolus_data::ValueKind;
+    use aeolus_data::rows::ROWS;
 
     fn has_number_arm(kind: ValueKind) -> bool {
         let mut arms = Vec::new();
@@ -816,7 +909,8 @@ mod tests {
     fn every_render_form_has_a_number_row() {
         for (root, _, _) in NUMBER_FORMS {
             assert!(
-                ROWS.iter().any(|row| row.root == *root && has_number_arm(row.kind)),
+                ROWS.iter()
+                    .any(|row| row.root == *root && has_number_arm(row.kind)),
                 "NUMBER_FORMS root {root:?} has no Number-bearing registry row"
             );
         }
