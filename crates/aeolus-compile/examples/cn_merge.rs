@@ -15,21 +15,32 @@
 //! COMPILED merge: the longhand fan-outs are the groups, so the merge
 //! is mask algebra + copy (plan §3.3), idempotent and associative.
 
-use aeolus_compile::{cn, compile, compile_theme, Config};
+use aeolus_compile::{Config, cn, compile, compile_theme};
 use aeolus_ir::Val;
 use aeolus_theme::{ThemeSource, TokenTable};
 
 fn main() {
     // 1. The component's table and the user's override, compiled
     //    separately — the `cn(base, user)` shape the merge exists for.
-    let base = compile("p-4 rounded-md bg-primary text-primary-foreground", &Config::default())
-        .expect("non-empty input compiles");
-    let user = compile("px-8 rounded-full bg-red-500 hover:bg-red-600", &Config::default())
-        .expect("non-empty input compiles");
+    let base = compile(
+        "p-4 rounded-md bg-primary text-primary-foreground",
+        &Config::default(),
+    )
+    .expect("non-empty input compiles");
+    let user = compile(
+        "px-8 rounded-full bg-red-500 hover:bg-red-600",
+        &Config::default(),
+    )
+    .expect("non-empty input compiles");
 
     println!("── base: p-4 rounded-md bg-primary text-primary-foreground ──");
     for layer in base.program.layers {
-        println!("  {:?}: {} decls, mask {:?}", layer.cond, layer.decls.len(), layer.mask);
+        println!(
+            "  {:?}: {} decls, mask {:?}",
+            layer.cond,
+            layer.decls.len(),
+            layer.mask
+        );
     }
 
     // 2. The raw cascade keeps every fan-out (the v0.11.0 compile
@@ -42,8 +53,10 @@ fn main() {
     .expect("non-empty input compiles");
     println!("\n── the raw concatenation ──");
     println!("  base decls: {}", concat.program.layers[0].decls.len());
-    println!("  base conflicts (the bits a later same-condition group re-sets): {:?}",
-        concat.program.base_conflicts());
+    println!(
+        "  base conflicts (the bits a later same-condition group re-sets): {:?}",
+        concat.program.base_conflicts()
+    );
 
     // 3. The merge: same-condition layers fold, declarations cascade in
     //    Prop order, the LAST occurrence per longhand wins.
@@ -63,8 +76,24 @@ fn main() {
     // 4. The differential contract: cn(a, b) resolves like compiling
     //    the concatenation — same slots, fewer duplicate decls.
     println!("\n── the differential contract ──");
-    println!("  merged decls (all layers): {}", merged.program.layers.iter().map(|l| l.decls.len()).sum::<usize>());
-    println!("  concat decls (all layers): {}", concat.program.layers.iter().map(|l| l.decls.len()).sum::<usize>());
+    println!(
+        "  merged decls (all layers): {}",
+        merged
+            .program
+            .layers
+            .iter()
+            .map(|l| l.decls.len())
+            .sum::<usize>()
+    );
+    println!(
+        "  concat decls (all layers): {}",
+        concat
+            .program
+            .layers
+            .iter()
+            .map(|l| l.decls.len())
+            .sum::<usize>()
+    );
     println!("  (equal resolved slots; the duplicates the merge drops are the conflict bits)");
 
     // 5. Diagnostics ride the merge honestly: left's reports first with
@@ -82,8 +111,8 @@ fn main() {
     //    alpha rides the token slot (T2's one-multiply contract).
     let source = ThemeSource::shadcn_dark().expect("embedded palettes parse");
     let tokens = TokenTable::runtime(&source).expect("default-seeded source builds");
-    let themed_base = compile_theme("bg-primary", &tokens, &Config::default())
-        .expect("non-empty input compiles");
+    let themed_base =
+        compile_theme("bg-primary", &tokens, &Config::default()).expect("non-empty input compiles");
     let themed_user = compile_theme("bg-primary/40", &tokens, &Config::default())
         .expect("non-empty input compiles");
     let themed = cn(&[&themed_base, &themed_user]).expect("merge");
