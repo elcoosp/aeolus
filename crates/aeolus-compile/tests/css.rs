@@ -9,7 +9,7 @@
 //! renders every pin below.
 
 use aeolus_compile::{
-    compile, compile_theme, emit_css, emit_css_theme, CompileError, Config, Spacing,
+    CompileError, Config, Spacing, compile, compile_theme, emit_css, emit_css_theme,
 };
 use aeolus_theme::{ThemeSource, TokenTable};
 
@@ -55,12 +55,18 @@ fn baked_tokens() -> TokenTable {
 fn spacing_bakes_rem_and_sorts_by_cascade() {
     let sheet = emit_css("p-4", &Config::default()).expect("non-empty input renders");
     assert!(sheet.diagnostics.is_empty());
-    assert_eq!(sheet.to_string(), ".p-4 {\n  padding-top: 1rem;\n  padding-right: 1rem;\n  padding-bottom: 1rem;\n  padding-left: 1rem;\n}\n");
+    assert_eq!(
+        sheet.to_string(),
+        ".p-4 {\n  padding-top: 1rem;\n  padding-right: 1rem;\n  padding-bottom: 1rem;\n  padding-left: 1rem;\n}\n"
+    );
 }
 
 #[test]
 fn px_compat_config_bakes_pixels() {
-    let config = Config { spacing: Spacing::Px, ..Config::default() };
+    let config = Config {
+        spacing: Spacing::Px,
+        ..Config::default()
+    };
     let sheet = emit_css("p-4", &config).expect("non-empty input renders");
     assert!(sheet.to_string().contains("padding-top: 16px;"));
 }
@@ -91,8 +97,8 @@ fn fraction_renders_percent() {
 
 #[test]
 fn keywords_render_the_row_tables() {
-    let sheet = emit_css("flex flex-col font-sans", &Config::default())
-        .expect("non-empty input renders");
+    let sheet =
+        emit_css("flex flex-col font-sans", &Config::default()).expect("non-empty input renders");
     assert_eq!(
         sheet.to_string(),
         ".flex {\n  display: flex;\n}\n.flex-col {\n  flex-direction: column;\n}\n.font-sans {\n  font-family: var(--font-sans);\n}\n",
@@ -110,13 +116,19 @@ fn composite_renders_both_halves() {
 
 #[test]
 fn number_forms_render_their_units() {
-    let sheet = emit_css("rotate-45 opacity-50 stroke-2 grid-cols-2 z-10", &Config::default())
-        .expect("non-empty input renders");
+    let sheet = emit_css(
+        "rotate-45 opacity-50 stroke-2 grid-cols-2 z-10",
+        &Config::default(),
+    )
+    .expect("non-empty input renders");
     let text = sheet.to_string();
     assert!(text.contains("--tw-rotate: 45deg;"), "{text}");
     assert!(text.contains("opacity: 50%;"), "{text}");
     assert!(text.contains("stroke-width: 2px;"), "{text}");
-    assert!(text.contains("grid-template-columns: repeat(2, minmax(0, 1fr));"), "{text}");
+    assert!(
+        text.contains("grid-template-columns: repeat(2, minmax(0, 1fr));"),
+        "{text}"
+    );
     assert!(text.contains("z-index: 10;"), "{text}");
 }
 
@@ -141,7 +153,10 @@ fn truncate_renders_all_three_registry_arms() {
 fn probe_variants_stack_conjunctively() {
     let sheet = emit_css("hover:focus:p-4", &Config::default()).expect("non-empty input renders");
     let text = sheet.to_string();
-    assert!(text.starts_with(".hover\\:focus\\:p-4:hover:focus {\n"), "{text}");
+    assert!(
+        text.starts_with(".hover\\:focus\\:p-4:hover:focus {\n"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -158,8 +173,11 @@ fn named_group_and_peer_render_combinators() {
     let sheet = emit_css("group-hover/menu:p-4 peer-focus:p-2", &Config::default())
         .expect("non-empty input renders");
     let text = sheet.to_string();
-    assert!(text.contains(".group\\/menu:hover .group-hover\\/menu\\:p-4 {"), "{text}");
-    assert!(text.contains(".peer\\:focus ~ .peer-focus\\:p-2 {"), "{text}");
+    assert!(
+        text.contains(".group\\/menu:hover .group-hover\\/menu\\:p-4 {"),
+        "{text}"
+    );
+    assert!(text.contains(".peer:focus ~ .peer-focus\\:p-2 {"), "{text}");
 }
 
 #[test]
@@ -167,7 +185,11 @@ fn max_media_uses_the_range_form() {
     let sheet = emit_css("max-md:p-4", &Config::default()).expect("non-empty input renders");
     assert!(sheet.to_string().starts_with("@media (width < 48rem) {\n"));
     let sheet = emit_css("@lg:p-4", &Config::default()).expect("non-empty input renders");
-    assert!(sheet.to_string().starts_with("@container (min-width: 64rem) {\n"));
+    assert!(
+        sheet
+            .to_string()
+            .starts_with("@container (min-width: 64rem) {\n")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -200,11 +222,15 @@ fn runtime_tokens_without_a_modifier_render_the_bare_var() {
 #[test]
 fn baked_pairs_render_light_and_dark_companions() {
     let tokens = baked_tokens();
-    let sheet = emit_css_theme("bg-primary", &tokens, &Config::default())
-        .expect("non-empty input renders");
+    let sheet =
+        emit_css_theme("bg-primary", &tokens, &Config::default()).expect("non-empty input renders");
     assert!(sheet.diagnostics.is_empty(), "{:?}", sheet.diagnostics);
-    let light = tokens.light_rgba(tokens.id("primary").expect("the token exists")).expect("light");
-    let dark = tokens.dark_rgba(tokens.id("primary").expect("the token exists")).expect("dark");
+    let light = tokens
+        .light_rgba(tokens.id("primary").expect("the token exists"))
+        .expect("light");
+    let dark = tokens
+        .dark_rgba(tokens.id("primary").expect("the token exists"))
+        .expect("dark");
     assert_eq!(
         sheet.to_string(),
         format!(
@@ -223,7 +249,10 @@ fn dark_candidates_render_the_dark_half_only() {
     let sheet = emit_css_theme("dark:bg-primary", &tokens, &Config::default())
         .expect("non-empty input renders");
     let text = sheet.to_string();
-    assert!(text.contains(".dark\\:bg-primary:where(.dark, .dark *) {"), "{text}");
+    assert!(
+        text.contains(".dark\\:bg-primary:where(.dark, .dark *) {"),
+        "{text}"
+    );
     assert!(!text.contains(".bg-primary {"), "{text}");
 }
 
@@ -231,12 +260,17 @@ fn dark_candidates_render_the_dark_half_only() {
 fn baked_literals_render_rgb() {
     let source = ThemeSource::shadcn().expect("the embedded light source parses");
     let tokens = TokenTable::baked(&source).expect("the table builds");
-    let sheet = emit_css_theme("bg-primary", &tokens, &Config::default())
-        .expect("non-empty input renders");
-    let light = tokens.light_rgba(tokens.id("primary").expect("the token exists")).expect("light");
+    let sheet =
+        emit_css_theme("bg-primary", &tokens, &Config::default()).expect("non-empty input renders");
+    let light = tokens
+        .light_rgba(tokens.id("primary").expect("the token exists"))
+        .expect("light");
     assert_eq!(
         sheet.to_string(),
-        format!(".bg-primary {{\n  background-color: {};\n}}\n", rgb_text(light)),
+        format!(
+            ".bg-primary {{\n  background-color: {};\n}}\n",
+            rgb_text(light)
+        ),
     );
 }
 
@@ -254,7 +288,10 @@ fn baked_literal_alpha_renders_the_premultiplied_bake() {
     };
     assert_eq!(
         sheet.to_string(),
-        format!(".bg-primary\\/90 {{\n  background-color: {};\n}}\n", rgb_text(rgba)),
+        format!(
+            ".bg-primary\\/90 {{\n  background-color: {};\n}}\n",
+            rgb_text(rgba)
+        ),
     );
 }
 
@@ -300,7 +337,10 @@ fn lex_failures_are_spanned_in_the_sheet() {
     assert_eq!(sheet.diagnostics.len(), 1);
     assert_eq!(sheet.diagnostics[0].span, (0, 4));
     assert_eq!(sheet.diagnostics[0].kind.code(), "aeolus::compile::lex");
-    assert!(sheet.to_string().contains(".p-2 {"), "the rest still renders");
+    assert!(
+        sheet.to_string().contains(".p-2 {"),
+        "the rest still renders"
+    );
 }
 
 #[test]
@@ -352,10 +392,10 @@ fn the_two_walks_report_identically_themed() {
         "border-2 border-primary",
     ];
     for input in battery {
-        let compiled = compile_theme(input, &tokens, &Config::default())
-            .expect("non-empty input compiles");
-        let sheet = emit_css_theme(input, &tokens, &Config::default())
-            .expect("non-empty input renders");
+        let compiled =
+            compile_theme(input, &tokens, &Config::default()).expect("non-empty input compiles");
+        let sheet =
+            emit_css_theme(input, &tokens, &Config::default()).expect("non-empty input renders");
         assert_eq!(
             compiled.diagnostics, sheet.diagnostics,
             "diagnostic drift between the IR form and the CSS form on {input:?}"
