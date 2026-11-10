@@ -12,17 +12,37 @@
 
 use aeolus_ir::{Bp, Cond};
 
+/// Why one variant segment did not fold: the segment is outside the
+/// typed [`Cond`] surface. A struct, not a bare `String` — the miss is
+/// DATA (one meaning: this segment refused) with the segment text as
+/// its payload, the same typed shape every other seam in the pipeline
+/// reports through. The diagnostics layer renders
+/// [`VariantMiss::variant`] verbatim as an unsupported-variant
+/// diagnostic.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct VariantMiss {
+    /// The variant segment that refused, verbatim (`"has-data-[x]"`).
+    pub(crate) variant: String,
+}
+
+impl VariantMiss {
+    /// The miss for one refusing segment.
+    pub(crate) fn new(variant: &str) -> Self {
+        Self { variant: variant.to_string() }
+    }
+}
+
 /// Fold the variant stack into the one condition the layer fires under.
 /// An EMPTY stack is the bare utility: [`Cond::Base`].
 ///
 /// # Errors
-/// The first variant outside the typed surface, verbatim — the caller
-/// renders it as an unsupported-variant diagnostic with the segment's
-/// own span.
-pub fn fold(variants: &[&str]) -> Result<Cond, String> {
+/// The first variant outside the typed surface, as a typed
+/// [`VariantMiss`] — the caller renders it as an unsupported-variant
+/// diagnostic with the segment's own span.
+pub fn fold(variants: &[&str]) -> Result<Cond, VariantMiss> {
     let mut dominant = Cond::Base;
     for &variant in variants {
-        let cond = classify(variant).ok_or_else(|| variant.to_string())?;
+        let cond = classify(variant).ok_or_else(|| VariantMiss::new(variant))?;
         if cond.specificity() >= dominant.specificity() {
             dominant = cond;
         }
