@@ -6,6 +6,11 @@
 //! degradation path, which is PART of the measured cost), and the
 //! typed-miss cold path the linter hits.
 //!
+//! The bench bodies `expect` on the compile: a non-empty class string
+//! always produces a `Compiled` (only the empty input hard-fails), and
+//! `Compiled` deliberately has no `Default` — an "empty compile" no
+//! string produced is not a value this seam should fabricate.
+//!
 //! Numbers land in `reports/08-benchmarks/BENCHMARKS.md` when the gate
 //! environment runs them (see `reports/10-tdd-evidence/13-compile-seam.md`
 //! for the method note).
@@ -26,14 +31,15 @@ const BUTTON_CLASSES: &str = "inline-flex shrink-0 items-center justify-center g
 /// one 4-decl fan-out, one layer).
 #[divan::bench]
 fn compile_single_utility_cold(bencher: Bencher) {
-    bencher.bench(|| compile("p-4", &Config::default()).unwrap_or_default());
+    bencher.bench(|| compile("p-4", &Config::default()).expect("non-empty input compiles"));
 }
 
 /// A stacked variant fold (`hover:focus:md:`) — the classification walk
 /// per segment plus the three-condition assembly.
 #[divan::bench]
 fn compile_variant_stack_cold(bencher: Bencher) {
-    bencher.bench(|| compile("hover:focus:md:p-0", &Config::default()).unwrap_or_default());
+    bencher
+        .bench(|| compile("hover:focus:md:p-0", &Config::default()).expect("non-empty input compiles"));
 }
 
 /// The full shadcn Button surface: scale/keyword lowering AND the
@@ -41,12 +47,12 @@ fn compile_variant_stack_cold(bencher: Bencher) {
 /// measured pass — the number backends will key on.
 #[divan::bench]
 fn compile_button_surface_cold(bencher: Bencher) {
-    bencher.bench(|| compile(BUTTON_CLASSES, &Config::default()).unwrap_or_default());
+    bencher.bench(|| compile(BUTTON_CLASSES, &Config::default()).expect("non-empty input compiles"));
 }
 
 /// The typed-miss cold path (`UnknownRoot`): the linter's "did you
 /// mean" seed with its diagnostic allocation.
 #[divan::bench]
 fn compile_unknown_root_cold(bencher: Bencher) {
-    bencher.bench(|| compile("not-a-utility", &Config::default()).unwrap_or_default());
+    bencher.bench(|| compile("not-a-utility", &Config::default()).expect("non-empty input compiles"));
 }
