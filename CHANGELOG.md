@@ -1,3 +1,30 @@
+## [0.11.0] - 2026-11-10
+
+### 🚀 Features
+
+- *(theme)* The tiered token table over the audited theme parser
+- *(compile)* Wire the theme half of the compile seam
+- *(examples)* Demonstrate the theme tiers and the theme seam
+- *(bench)* Measure the token-table seam
+
+### 🐛 Bug Fixes
+
+- *(bench)* Build the compile bench without a Default Compiled
+
+### 📚 Documentation
+
+- *(evidence)* File the theme-pass RED-to-GREEN record
+- Align every surface to the theme pass and sweep the drift
+
+### 🧪 Testing
+
+- *(theme)* Pin the tier contracts and the alpha identity
+- *(compile)* Pin the theme-seam and non-finite contracts
+
+### ⚙️ Miscellaneous Tasks
+
+- Pr body
+- *(release)* V0.11.0
 # Changelog
 
 All notable changes to Aeolus are documented here. The format follows
