@@ -235,9 +235,9 @@ impl fmt::Display for ResolveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ResolveError::UnknownId(id) => write!(f, "token id {id} is outside the table"),
-            ResolveError::AlphaOnPair => f.write_str(
-                "an opacity modifier cannot ride the baked (light, dark) pair slot",
-            ),
+            ResolveError::AlphaOnPair => {
+                f.write_str("an opacity modifier cannot ride the baked (light, dark) pair slot")
+            }
             ResolveError::AlphaNotFinite(alpha) => {
                 write!(f, "token alpha {alpha} is not finite")
             }
@@ -349,8 +349,16 @@ impl TokenTable {
                 continue;
             };
             let dark_color = source.dark.as_ref().and_then(|theme| theme.color(name));
+            // A token pairs only on a REAL dark override: the dark
+            // variant re-parses the light source (the `@theme inline`
+            // propagation, `dark_variant`'s contract), so it re-answers
+            // every light name — a same-value re-answer is the light
+            // literal by value, not a mode pair (T0 serves both modes;
+            // the audited approximate colour equality is the compare).
+            let dark_override =
+                dark_color.filter(|dark| Some(dark) != source.light.color(name).as_ref());
             light.push(color);
-            dark.push(dark_color);
+            dark.push(dark_override);
             kept.push(name.clone());
         }
         let mut pairs: Vec<(Color, Color)> = Vec::new();
@@ -364,9 +372,8 @@ impl TokenTable {
                     // keyword budget — refused honestly through its own
                     // typed variant, never truncated and never smuggled
                     // through the parse arm.
-                    let slot = u16::try_from(pairs.len() - 1).map_err(|_| {
-                        ThemeError::PairOverflow { pairs: pairs.len() }
-                    })?;
+                    let slot = u16::try_from(pairs.len() - 1)
+                        .map_err(|_| ThemeError::PairOverflow { pairs: pairs.len() })?;
                     pair_of.push(Some(slot));
                 }
                 None => pair_of.push(None),
@@ -378,7 +385,14 @@ impl TokenTable {
             pairs = pairs.len(),
             "token table: built"
         );
-        Ok(Self { tier, names: kept, light, dark, pairs, pair_of })
+        Ok(Self {
+            tier,
+            names: kept,
+            light,
+            dark,
+            pairs,
+            pair_of,
+        })
     }
 
     /// The tier this table resolves to (set at build time).
@@ -420,12 +434,16 @@ impl TokenTable {
     /// The token's light colour as sRGB u8 channels (the baked literal's
     /// bytes).
     pub fn light_rgba(&self, id: u16) -> Option<[u8; 4]> {
-        self.light.get(usize::from(id)).map(|color| color.to_rgba8())
+        self.light
+            .get(usize::from(id))
+            .map(|color| color.to_rgba8())
     }
 
     /// True when the token carries a dark value (the T1 pair form).
     pub fn has_dark(&self, id: u16) -> bool {
-        self.pair_of.get(usize::from(id)).is_some_and(Option::is_some)
+        self.pair_of
+            .get(usize::from(id))
+            .is_some_and(Option::is_some)
     }
 
     /// The token's dark colour, when the source's dark variant defines
@@ -441,7 +459,9 @@ impl TokenTable {
     /// data the codegen indexes per mode (plan §3.4 T1: 1 index, 0
     /// multiplies).
     pub fn pair_at(&self, slot: u16) -> Option<([u8; 4], [u8; 4])> {
-        self.pairs.get(usize::from(slot)).map(|(l, d)| (l.to_rgba8(), d.to_rgba8()))
+        self.pairs
+            .get(usize::from(slot))
+            .map(|(l, d)| (l.to_rgba8(), d.to_rgba8()))
     }
 
     /// How many const pairs the table carries (the T1 surface).
@@ -476,7 +496,10 @@ impl TokenTable {
             return Err(ResolveError::UnknownId(id));
         }
         match self.tier {
-            Tier::Runtime => Ok(Val::Tok { id, alpha: alpha.unwrap_or(1.0) }),
+            Tier::Runtime => Ok(Val::Tok {
+                id,
+                alpha: alpha.unwrap_or(1.0),
+            }),
             Tier::Baked => match alpha {
                 None => match self.pair_of[idx] {
                     Some(slot) => Ok(Val::ModePair(slot)),
@@ -490,7 +513,9 @@ impl TokenTable {
                         return Err(ResolveError::AlphaOnPair);
                     }
                     let a = a.clamp(0.0, 1.0);
-                    Ok(Val::Rgba(self.light[idx].mix_with_transparent(a * 100.0).to_rgba8()))
+                    Ok(Val::Rgba(
+                        self.light[idx].mix_with_transparent(a * 100.0).to_rgba8(),
+                    ))
                 }
             },
         }
