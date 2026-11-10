@@ -1,39 +1,3 @@
-## [0.10.0] - 2026-11-10
-
-### 🚀 Features
-
-- Aeolus v1 crates
-- *(data)* Typed lookup failures on the registry seam
-- *(examples)* Demonstrate the lexer, registry and theme seam
-- *(compile)* Wire the lex-registry-IR compile seam
-- *(examples)* Demonstrate the compile pipeline
-
-### 🐛 Bug Fixes
-
-- *(build)* Keep intra-workspace pins in lockstep with the release
-- *(ci)* Sweep all six fuzz targets in the smoke loop
-- *(v1)* Sync the crate VERSION consts with the manifests
-
-### 📚 Documentation
-
-- Align the surfaces to the in-tree v0.9.0 reality
-- Align every surface to the P2 seam and v0.10.0
-
-### 🚜 Refactor
-
-- *(core)* Drop guarded unwraps on reachable parse paths
-- *(syntax)* Drop the dead signed_body accessor
-
-### 🧪 Testing
-
-- *(compile)* Pin the seam contracts end to end
-
-### ⚙️ Miscellaneous Tasks
-
-- Pr body
-- *(release)* V0.10.0
-- *(repo)* Ignore the ship delivery manifest
-- Pr body
 # Changelog
 
 All notable changes to Aeolus are documented here. The format follows
@@ -42,7 +6,70 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### The P2 seam — the compile pipeline's first slice (this change)
+### The P2 theme pass — the theme half of the compile signature (this change)
+
+The second slice of phase P2 (architecture plan §3.2/§3.4): `aeolus-theme`,
+the CSS-first theme pass — the SAME `@theme`/`:root`/`.dark` file a web
+Tailwind v4 project uses resolves into a tiered `TokenTable`, and
+`compile_theme(&str, &TokenTable, &Config)` lowers colour tokens and
+`/opacity` modifiers through it. This resolves the boundary the compile
+seam discovered and pinned (the 270-entry colour table does not fit the
+IR's u8 `Val::Kw` slot): tokens ride the u16 `Val::Tok` slot, tiered
+exactly per the plan's §3.4 table — T0 literals, T1 light/dark const
+pairs, T2 runtime slots with the audited premultiplied `/N` identity
+(one multiply). The theme-less `compile` keeps the v0.10.0 contract
+byte-for-byte: colour tokens and modifiers stay typed boundaries.
+
+- **Added (theme):** the crate. `ThemeSource::from_css`/`shadcn`/
+  `shadcn_dark` parse through the audited v0.x reader (the interim
+  oracle, `dark_variant` propagating `@theme inline` chains into the
+  dark variant); `TokenTable::baked`/`runtime` snapshot the colours with
+  sorted-name stable ids (they ride compiled `Program`s — a contract,
+  test-pinned); `resolve(id, alpha)` emits the tier's `Val` and refuses
+  typed on unknown ids, non-finite alphas and an alpha on a T1 pair
+  slot. Two OFF-by-default instrumentation features land with it, the
+  workspace's pattern: `tracing` (build/resolve spans) and `miette`
+  (code + help on `ThemeError`/`ResolveError`). Benched
+  (`benches/tokens.rs`: the build, the runtime and baked hot paths) and
+  demonstrated (`examples/theme_tiers.rs`).
+- **Added (compile):** the theme half. `compile_theme` takes the plan
+signature's second argument; the value pass routes the oversized colour
+keyword table through the supplied `TokenTable` (tier-aware), the
+`/opacity` modifier normalizes once per candidate (`"90"` → 0.9,
+`"[0.37]"` → 0.37) and rides COLOUR-form decls only — a modifier on a
+non-colour lowering or on a baked dark pair stays the typed
+`UnsupportedModifier` boundary, never a half-applied alpha. Two new
+reasons join the diagnostic set (`not-a-token`, `non-finite`); the
+theme-less path is byte-identical to v0.10.0 (pinned).
+- **Fixed (bench):** `benches/compile.rs` could not build — four
+`unwrap_or_default()` calls on `Result<Compiled, _>` while `Compiled`
+has no `Default` (an "empty compile" no string produced is not a value
+the seam fabricates). The bodies `expect` like the examples do;
+`cargo test --benches` builds again.
+- **Fixed (compile):** the f32 grammar's non-finite spellings
+(`p-nan`, `z-inf`, `w-1e40`) are legal PARSES and lowered SILENTLY
+into the IR as `NaN`/`inf` values — a no-silent-failures violation.
+The value pass now refuses them typed (`REASON_NON_FINITE`) on every
+numeric arm (spacing, the negated forms, fractions, percents, numbers
+and the px bake's overflow), with the rest of the string still
+compiling; test-pinned end to end.
+- **Added (examples):** the theme seam's consumer demonstrations —
+`crates/aeolus-theme/examples/theme_tiers.rs` (a source → tiers end
+to end) and `crates/aeolus-compile/examples/theme_seam.rs` (the same
+string theme-less vs. runtime-tier vs. baked-tier).
+- **Changed (docs):** the drift pass — the README's fuzz bullet said
+CI fuzzes "four of them" while CI sweeps all six (fixed in v0.10.0);
+CONTRIBUTING's fuzz smoke listed 4 of the 6 targets; the CHANGELOG
+carried TWO `[0.10.0]` headers (the git-cliff block plus the prose
+section) and an `[Unreleased]` still describing the already-released
+compile seam — consolidated here; the architecture plan's P2 status
+and §8 row record the theme pass's landed reality; the crate table,
+the examples block and the test counts (535; 542 with the
+instrumentation features) follow the tree.
+
+## [0.10.0] — 2026-11-10 — the P1 consumer handoff, part two + the P2 compile seam
+
+### The P2 seam — the compile pipeline's first slice
 
 The first slice of phase P2 (architecture plan §3.1/§3.2): `aeolus-compile`,
 the pure function `compile(&str, &Config) -> Result<Compiled, CompileError>`
@@ -89,8 +116,6 @@ values, untyped variants) comes back as a spanned, coded, helped
   (`prop.rs`'s "96 longhands" → 110; `hash_classes`' "used by both cache
   and interner" → what actually uses it; the `tw!` span-preservation
   promise → the honest nightly-only ceiling).
-
-## [0.10.0] — 2026-11-09 — the P1 consumer handoff, part two: typed registry seam, examples, drift alignment
 
 ### The P1 consumer handoff, part two: typed registry seam, examples, drift alignment
 
