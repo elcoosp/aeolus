@@ -14,9 +14,10 @@
 //!    fold to the dominant condition; unknown variants are typed
 //!    diagnostics, never silent drops.
 //! 4. **Honest boundaries** — everything this slice does NOT lower
-//!    (importance, modifiers, colour tokens, arbitrary values) comes
-//!    back as a spanned diagnostic with a stable code and help text,
-//!    per the no-silent-failures rule (CONTRIBUTING §2).
+//!    (importance, modifiers, colour tokens theme-less, the arbitrary
+//!    composite forms) comes back as a spanned diagnostic with a stable
+//!    code and help text, per the no-silent-failures rule
+//!    (CONTRIBUTING §2).
 //!
 //! Written FIRST (the RED spec): the suite fails against a stub crate
 //! and passes only once `compile()` satisfies every pin below.
@@ -402,13 +403,21 @@ fn colour_tokens_report_the_theme_pass() {
 }
 
 #[test]
-fn arbitrary_values_report_the_value_pass() {
+fn arbitrary_values_lower_through_the_unit_grammar() {
+    // The arbitrary-value unit grammar landed (the value pass's last
+    // named P2 slice): `w-[32px]` lowers onto the row's longhand — the
+    // full contract battery lives in tests/arbitrary.rs.
     let compiled = compile("w-[32px]", &Config::default()).expect("compiles");
-    assert_eq!(compiled.diagnostics.len(), 1);
-    assert!(matches!(
-        &compiled.diagnostics[0].kind,
-        DiagnosticKind::UnsupportedValue { reason, .. } if reason.contains("value pass")
-    ));
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    let layer = compiled.program.layers[0];
+    assert!(layer
+        .decls
+        .iter()
+        .any(|decl| decl.prop == aeolus_ir::Prop::Width && decl.val == aeolus_ir::Val::Px(32.0)));
 }
 
 #[test]
