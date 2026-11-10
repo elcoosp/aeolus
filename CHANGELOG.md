@@ -1,3 +1,36 @@
+## [0.13.0] - 2026-11-10
+
+### 🚀 Features
+
+- *(compile)* The dyn-cache store seam and bounded two-gen cache
+- *(compile)* Wire the dyn cache into the compile seam
+- *(bench)* Measure the dyn cache hit and miss paths
+- *(compile)* Demonstrate the dyn cache
+- *(egui)* Demonstrate the frame and widget-visuals lowering
+- *(floem)* Demonstrate the style lowering
+- *(iced)* Demonstrate the container and button styles
+- *(slint)* Demonstrate the snippet generation
+
+### 📚 Documentation
+
+- *(compile)* Align the custom-seam header to the token form
+- *(readme)* Align the crate table and examples to the dyn cache
+- *(architecture)* Mark the dyn-cache seam landed
+- *(changelog)* File the dyn cache and the drift fixes
+- *(benchmarks)* File the dyn-cache bench numbers
+- *(evidence)* File the dyn-cache red-to-green record
+
+### 🧪 Testing
+
+- *(compile)* Pin the dyn-cache contracts end to end
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.13.0
+
+### 💼 Other
+
+- *(compile)* Bench the dyn cache in the manifest
 ## [Unreleased]
 
 ### 🚀 Features
