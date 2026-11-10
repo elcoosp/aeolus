@@ -42,16 +42,18 @@
 
 use std::fmt;
 
+use aeolus_data::LookupError;
 use aeolus_data::registry::lookup_detailed;
 use aeolus_ir::Bp;
 use aeolus_syntax::parse_class_string;
 use aeolus_theme::TokenTable;
 
+use crate::custom::{self, ClassifyVariant};
 use crate::lower;
 use crate::variant::{self, VariantMiss};
 use crate::{
-    lookup_diagnostic, normalize_modifier, reject_diagnostic, CompileError, Config, Diagnostic,
-    DiagnosticKind,
+    CompileError, Config, Customs, Diagnostic, DiagnosticKind, lookup_diagnostic,
+    normalize_modifier, reject_diagnostic, variant_diagnostic,
 };
 
 /// One @-rule condition a rule can sit under. Slice 1 carries ONE per
@@ -165,7 +167,43 @@ fn write_rule(f: &mut fmt::Formatter<'_>, rule: &CssRule, indent: &str) -> fmt::
 /// The same [`CompileError`] as [`compile`](crate::compile) (only the
 /// empty input). Per-class reports never fail an emit.
 pub fn emit_css(input: &str, config: &Config) -> Result<CssSheet, CompileError> {
-    run_css(input, config, None)
+    run_css(input, *config, None, &Customs::new())
+}
+
+/// [`emit_css`] with the custom-authoring seam supplied (plan §5.4's
+/// `@utility`/`@custom-variant` surface): registered custom utilities
+/// render their rules through the same value-text forms and registered
+/// variant aliases render their condition's selector shape — the same
+/// diagnostics, the same spans, the same rule ordering.
+///
+/// ```no_run
+/// use aeolus_compile::{emit_css_with, Config, CustomForm, CustomUtility, Customs};
+/// use aeolus_ir::Prop;
+///
+/// let customs = Customs::new().utility(CustomUtility::functional(
+///     "brand-p",
+///     CustomForm::Spacing,
+///     &[Prop::PaddingTop, Prop::PaddingRight, Prop::PaddingBottom, Prop::PaddingLeft],
+/// ));
+/// let sheet = emit_css_with("brand-p-4", &customs, &Config::default())?;
+/// assert!(sheet.diagnostics.is_empty()); // the registration rendered
+/// # Ok::<(), aeolus_compile::CompileError>(())
+/// ```
+///
+/// # Errors
+/// The same [`CompileError`] as [`emit_css`] (only the empty input).
+pub fn emit_css_with(
+    input: &str,
+    customs: &Customs,
+    config: &Config,
+) -> Result<CssSheet, CompileError> {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        utilities = customs.utilities().len(),
+        variants = customs.variants().len(),
+        "emit_css_with: the custom seam is supplied"
+    );
+    run_css(input, *config, None, customs)
 }
 
 /// Render the `Target::Css` form of a class string with the theme pass
@@ -200,20 +238,60 @@ pub fn emit_css_theme(
         tier = ?tokens.tier(),
         "emit_css_theme: the theme pass is supplied"
     );
-    run_css(input, config, Some(tokens))
+    run_css(input, *config, Some(tokens), &Customs::new())
+}
+
+/// [`emit_css_theme`] with the custom-authoring seam supplied: colour
+/// tokens render through the tiered `TokenTable` AND registered custom
+/// utilities/variants render through the same pipeline (see
+/// [`emit_css_with`] for the seam's contract).
+///
+/// ```no_run
+/// use aeolus_compile::{emit_css_theme_with, Config, CustomVariant, Customs};
+/// use aeolus_ir::Cond;
+/// use aeolus_theme::{ThemeSource, TokenTable};
+///
+/// let source = ThemeSource::shadcn_dark()?;
+/// let tokens = TokenTable::runtime(&source)?;
+/// let customs = Customs::new().variant(CustomVariant::new("night", Cond::Dark));
+/// let sheet = emit_css_theme_with("night:bg-primary", &tokens, &customs, &Config::default())?;
+/// assert!(sheet.diagnostics.is_empty()); // the alias and the token rendered
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// # Errors
+/// The same [`CompileError`] as [`emit_css`] (only the empty input).
+pub fn emit_css_theme_with(
+    input: &str,
+    tokens: &TokenTable,
+    customs: &Customs,
+    config: &Config,
+) -> Result<CssSheet, CompileError> {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        tokens = tokens.len(),
+        tier = ?tokens.tier(),
+        utilities = customs.utilities().len(),
+        variants = customs.variants().len(),
+        "emit_css_theme_with: the theme pass and the custom seam are supplied"
+    );
+    run_css(input, *config, Some(tokens), customs)
 }
 
 /// The whole emit walk, theme-less or themed. `tokens` selects whether
 /// the colour/modifier surfaces render (the theme pass) or stay typed
-/// boundaries (the honest default). Mirrors the IR walk's stages; the
-/// two walks share the lexer channel,
-/// the variant refusal set, the registry read side and the value pass's
-/// boundary set, and `tests/css.rs` pins their diagnostics EQUAL over a
-/// battery of strings.
+/// boundaries (the honest default); `customs` is the registered
+/// custom-authoring surface (empty registrations change nothing — the
+/// differential pins it). Mirrors the IR walk's stages; the two walks
+/// share the lexer channel, the variant refusal set (built-in AND
+/// registered), the registry read side, the custom read side and the
+/// value pass's boundary set, and `tests/css.rs`/`tests/custom.rs` pin
+/// their diagnostics EQUAL over batteries of strings.
 pub(crate) fn run_css(
     input: &str,
-    config: &Config,
+    config: Config,
     tokens: Option<&TokenTable>,
+    customs: &Customs,
 ) -> Result<CssSheet, CompileError> {
     #[cfg(feature = "tracing")]
     tracing::debug!(input_len = input.len(), "emit_css: lex -> lookup -> render");
@@ -226,7 +304,11 @@ pub(crate) fn run_css(
     // ride the failure, no re-derivation).
     let (candidates, degraded) = parse_class_string(input);
     #[cfg(feature = "tracing")]
-    tracing::debug!(tokens = candidates.len(), degraded = degraded.len(), "lexer done");
+    tracing::debug!(
+        tokens = candidates.len(),
+        degraded = degraded.len(),
+        "lexer done"
+    );
 
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
     for failure in &degraded {
@@ -250,43 +332,115 @@ pub(crate) fn run_css(
             ));
             continue;
         }
-        let alpha = match candidate.modifier {
-            None => None,
-            Some(modifier) => match normalize_modifier(modifier).filter(|_| tokens.is_some()) {
-                Some(alpha) => Some(alpha),
-                None => {
-                    diagnostics.push(Diagnostic::new(
-                        candidate.span,
-                        candidate.raw,
-                        DiagnosticKind::UnsupportedModifier { modifier: modifier.to_string() },
-                    ));
-                    continue;
-                }
-            },
-        };
-        let set = match classify_segments(&candidate.variants) {
+        let set = match classify_segments(&candidate.variants, customs) {
             Ok(set) => set,
             Err(missed) => {
                 diagnostics.push(variant_diagnostic(candidate, &VariantMiss::new(&missed)));
                 continue;
             }
         };
-        let rows = match lookup_detailed(candidate.body) {
-            Ok(rows) => rows,
-            Err(err) => {
-                diagnostics.push(lookup_diagnostic(candidate, err));
-                continue;
+        // The fraction re-attachment, byte-identical to the IR walk's
+        // (the audited oracle's F1: the raw `/modifier` is the
+        // DENOMINATOR for fraction-shaped rows). The two walks share
+        // the read side, the gate order and the refusal set — the
+        // diagnostics-equal batteries pin the agreement.
+        let joined = candidate
+            .modifier
+            .map(|modifier| format!("{}/{}", candidate.body, modifier));
+        let (rows, effective_body, fraction_ride) = match &joined {
+            // The joined body reads FIRST (the sizing family's own
+            // precedence — a bare `w-1` also reads as spacing, so the
+            // denominator reading must win the arm choice when a raw
+            // modifier rides); a joined miss falls back to the lexed
+            // body and the modifier goes through the opacity gate.
+            Some(text) => match lookup_detailed(text) {
+                Ok(retried) => (Ok(retried), text.as_str(), true),
+                Err(_) => (lookup_detailed(candidate.body), candidate.body, false),
+            },
+            None => (lookup_detailed(candidate.body), candidate.body, false),
+        };
+        let alpha = if fraction_ride {
+            None
+        } else {
+            match candidate.modifier {
+                None => None,
+                Some(modifier) => match normalize_modifier(modifier).filter(|_| tokens.is_some()) {
+                    Some(alpha) => Some(alpha),
+                    None => {
+                        diagnostics.push(Diagnostic::new(
+                            candidate.span,
+                            candidate.raw,
+                            DiagnosticKind::UnsupportedModifier {
+                                modifier: modifier.to_string(),
+                            },
+                        ));
+                        continue;
+                    }
+                },
             }
         };
         let mut decls: Vec<lower::CssDecl> = Vec::new();
-        for row in rows {
-            match lower::row_to_css(*row, candidate.body, candidate.negative, alpha, tokens, config)
-            {
-                Ok(mut rendered) => decls.append(&mut rendered),
-                Err(reject) => {
-                    diagnostics.push(reject_diagnostic(candidate, reject, candidate.modifier));
+        match rows {
+            Ok(rows) => {
+                for row in rows {
+                    match lower::row_to_css(
+                        *row,
+                        effective_body,
+                        candidate.negative,
+                        alpha,
+                        tokens,
+                        config,
+                    ) {
+                        Ok(mut rendered) => decls.append(&mut rendered),
+                        Err(reject) => {
+                            diagnostics.push(reject_diagnostic(
+                                candidate,
+                                effective_body,
+                                reject,
+                                candidate.modifier,
+                            ));
+                        }
+                    }
                 }
             }
+            // The registry is the oracle; the customs are additive
+            // surface consulted on the registry's unknown-root miss
+            // only — the SAME read side the IR walk consults, the SAME
+            // boundary set and the SAME more-specific-miss rule (the
+            // differential pins the two walks' diagnostics EQUAL with
+            // customs in play).
+            Err(builtin_err) => match customs.lookup(candidate.body) {
+                Ok(utilities) => {
+                    for utility in utilities {
+                        match custom::utility_to_css(
+                            utility,
+                            candidate.body,
+                            candidate.negative,
+                            alpha,
+                            tokens,
+                            config,
+                        ) {
+                            Ok(mut rendered) => decls.append(&mut rendered),
+                            Err(reject) => {
+                                diagnostics.push(reject_diagnostic(
+                                    candidate,
+                                    effective_body,
+                                    reject,
+                                    candidate.modifier,
+                                ));
+                            }
+                        }
+                    }
+                }
+                Err(custom_err) => {
+                    let err = match custom_err {
+                        LookupError::ShapeRejected { .. } => custom_err,
+                        LookupError::UnknownRoot { .. } => builtin_err,
+                    };
+                    diagnostics.push(lookup_diagnostic(candidate, err));
+                    continue;
+                }
+            },
         }
         if decls.is_empty() {
             // Every row refused: the reports ride, no rule renders.
@@ -297,7 +451,11 @@ pub(crate) fn run_css(
     }
 
     #[cfg(feature = "tracing")]
-    tracing::debug!(rules = rules.len(), diagnostics = diagnostics.len(), "css emitted");
+    tracing::debug!(
+        rules = rules.len(),
+        diagnostics = diagnostics.len(),
+        "css emitted"
+    );
     Ok(CssSheet { rules, diagnostics })
 }
 
@@ -322,17 +480,28 @@ struct CondSet {
 }
 
 /// Classify the variant segments into the selector shape. The FIRST
-/// segment outside the typed surface refuses (the same typed miss the
-/// IR fold reports, with the segment text for the spanned diagnostic).
-fn classify_segments(variants: &[&str]) -> Result<CondSet, String> {
+/// segment outside the typed surface (built-in table AND registered
+/// aliases) refuses — the same typed miss the IR fold reports, with
+/// the segment text for the spanned diagnostic. A registered alias
+/// renders its condition's own selector shape (`apply_cond_shape`).
+fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, String> {
     let mut set = CondSet::default();
     for &seg in variants {
         // The refusal agreement: the IR fold's typed surface decides
         // what a segment IS; the css render only chooses HOW it shows.
-        if variant::classify(seg).is_none() {
-            return Err(seg.to_string());
+        if variant::classify_builtin(seg).is_none() {
+            match customs.classify(seg) {
+                Some(cond) => {
+                    apply_cond_shape(&mut set, cond);
+                    continue;
+                }
+                None => return Err(seg.to_string()),
+            }
         }
-        let (name, label) = seg.split_once('/').unwrap_or((seg, None));
+        // The named-group/peer label (`group-hover/menu`): the empty
+        // string is the unnamed form (`split_once` gives no arm for
+        // the missing half; `is_empty` is the label test).
+        let (name, label) = seg.split_once('/').unwrap_or((seg, ""));
         match name {
             "dark" => set.dark = true,
             "hover" => set.pseudos.push(":hover"),
@@ -349,16 +518,16 @@ fn classify_segments(variants: &[&str]) -> Result<CondSet, String> {
             "group-hover" | "group-focus" => {
                 let probe = name.strip_prefix("group-").unwrap_or(name);
                 set.parent = Some(match label {
-                    Some(l) => format!(".group/{l}:{probe}"),
-                    None => format!(".group:{probe}"),
+                    "" => format!(".group:{probe}"),
+                    l => format!(".group/{l}:{probe}"),
                 });
                 set.peer = false;
             }
             "peer-hover" | "peer-focus" => {
                 let probe = name.strip_prefix("peer-").unwrap_or(name);
                 set.parent = Some(match label {
-                    Some(l) => format!(".peer/{l}:{probe}"),
-                    None => format!(".peer:{probe}"),
+                    "" => format!(".peer:{probe}"),
+                    l => format!(".peer/{l}:{probe}"),
                 });
                 set.peer = true;
             }
@@ -370,6 +539,50 @@ fn classify_segments(variants: &[&str]) -> Result<CondSet, String> {
         }
     }
     Ok(set)
+}
+
+/// The registered alias's condition rendered into the selector shape —
+/// the same edits the built-in segment spellings make, derived from the
+/// typed [`Cond`] itself (an alias carries no group/peer LABEL, so the
+/// unnamed head forms render; a `Cond::Base` alias renders no
+/// condition, the flat model's honest reading).
+fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
+    use aeolus_ir::Cond;
+    match cond {
+        Cond::Base => {}
+        Cond::Dark => set.dark = true,
+        Cond::Hover => set.pseudos.push(":hover"),
+        Cond::Focus => set.pseudos.push(":focus"),
+        Cond::FocusVisible => set.pseudos.push(":focus-visible"),
+        Cond::FocusWithin => set.pseudos.push(":focus-within"),
+        Cond::Active => set.pseudos.push(":active"),
+        Cond::Disabled => set.pseudos.push(":disabled"),
+        Cond::Visited => set.pseudos.push(":visited"),
+        Cond::Checked => set.pseudos.push(":checked"),
+        Cond::PlaceholderShown => set.pseudos.push(":placeholder-shown"),
+        Cond::Selection => set.pseudos.push("::selection"),
+        Cond::Placeholder => set.pseudos.push("::placeholder"),
+        Cond::GroupHover => {
+            set.parent = Some(".group:hover".to_string());
+            set.peer = false;
+        }
+        Cond::GroupFocus => {
+            set.parent = Some(".group:focus".to_string());
+            set.peer = false;
+        }
+        Cond::PeerHover => {
+            set.parent = Some(".peer:hover".to_string());
+            set.peer = true;
+        }
+        Cond::PeerFocus => {
+            set.parent = Some(".peer:focus".to_string());
+            set.peer = true;
+        }
+        Cond::Bp(bp) | Cond::Min(bp) => set.at = Some(CssAt::MediaMin(bp)),
+        Cond::Max(bp) => set.at = Some(CssAt::MediaMax(bp)),
+        Cond::Container(bp) => set.at = Some(CssAt::ContainerMin(bp)),
+        Cond::MaxContainer(bp) => set.at = Some(CssAt::ContainerMax(bp)),
+    }
 }
 
 /// The responsive/container spellings → the @-rule form (the IR's
@@ -407,16 +620,35 @@ fn escape_class(raw: &str) -> String {
 }
 
 /// Build one rule's selector: the optional parent/peer head with its
-/// combinator, the escaped class, the probe suffixes, the dark suffix.
+/// combinator, the escaped class, the probe suffixes, the dark scope.
 /// `dark_companion` renders the baked-pair rule's `:where(.dark, .dark *)`
-/// even when the candidate itself carried no `dark:` segment. The head's
-/// own leading class dot stays unescaped (it IS the selector dot); the
-/// rest of the head escapes like any class text.
+/// as a PREFIXED descendant scope (the companion resolves the pair's
+/// dark half under the theme's own `.dark` block — an ancestor scope,
+/// not a compound of the class), while the candidate's OWN `dark:`
+/// segment keeps the compound suffix form. The head is
+/// `.<class>[:<probe>]`: the class half escapes like any class text,
+/// the probe half renders raw (a pseudo-class is selector syntax, not
+/// class text).
 fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
     let mut out = String::new();
+    if dark_companion {
+        out.push_str(":where(.dark, .dark *) ");
+    }
     if let Some(head) = &set.parent {
-        out.push('.');
-        out.push_str(&escape_class(&head[1..]));
+        match head.rsplit_once(':') {
+            Some((class_half, probe)) => {
+                out.push('.');
+                out.push_str(&escape_class(&class_half[1..]));
+                // rsplit consumed the delimiter; the probe re-attaches
+                // with its own colon (selector syntax, raw).
+                out.push(':');
+                out.push_str(probe);
+            }
+            None => {
+                out.push('.');
+                out.push_str(&escape_class(&head[1..]));
+            }
+        }
         out.push_str(if set.peer { " ~ " } else { " " });
     }
     out.push('.');
@@ -424,7 +656,7 @@ fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
     for pseudo in &set.pseudos {
         out.push_str(pseudo);
     }
-    if set.dark || dark_companion {
+    if set.dark {
         out.push_str(":where(.dark, .dark *)");
     }
     out
@@ -445,7 +677,7 @@ fn push_rules(rules: &mut Vec<CssRule>, raw: &str, set: &CondSet, decls: &[lower
                 } else {
                     &decl.value.base
                 };
-                format!("{}: {}", decl.prop_name, value)
+                format!("{}: {};", decl.prop_name, value)
             })
             .collect::<Vec<_>>()
             .join("\n")
