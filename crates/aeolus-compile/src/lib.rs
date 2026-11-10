@@ -1,9 +1,10 @@
-//! The Aeolus V1 compile seam (architecture plan §3.1/§3.2, phase P2's
-//! first slice): class strings in, cascade-sorted [`Program`]s out —
-//! one pure function, no global state.
+//! The Aeolus V1 compile seam (architecture plan §3.1/§3.2, phase P2):
+//! class strings in, cascade-sorted [`Program`]s out — one pure
+//! function, no global state.
 //!
 //! ```text
-//! compile(input, &Config) -> Result<Compiled, CompileError>
+//! compile(input, &Config)                        -> Result<Compiled, CompileError>
+//! compile_theme(input, &TokenTable, &Config)     -> Result<Compiled, CompileError>
 //!   ├─ 1. lex      aeolus_syntax::parse_class_string — borrowed
 //!   │              candidates with byte spans; per-token failures
 //!   │              degrade, never fail the string
@@ -12,7 +13,9 @@
 //!   ├─ 3. read     aeolus_data::registry::lookup_detailed — the typed
 //!   │              registry read side (unknown root vs rejected shape)
 //!   ├─ 4. lower    row + suffix → longhand Decl fan-outs (the value
-//!   │              pass; tokens/arbitrary values report, not truncate)
+//!   │              pass); with a TokenTable, colour tokens and the
+//!   │              /opacity modifier lower through the theme pass —
+//!   │              without one they are typed boundaries, not truncations
 //!   └─ 5. assemble stable specificity sort → Layer masks derived →
 //!                  interned as the IR's documented dynamic form
 //! ```
@@ -20,18 +23,20 @@
 //! Everything a class does NOT lower to comes back in
 //! [`Compiled::diagnostics`] with a byte span, a stable code and a help
 //! text — the no-silent-failures rule (CONTRIBUTING §2) applied to the
-//! pipeline: importance, modifiers, colour tokens, arbitrary values and
-//! untyped variants are typed boundaries, never dropped classes.
+//! pipeline: importance, arbitrary values, untyped variants, and (only
+//! where no theme pass is supplied) colour tokens and modifiers are
+//! typed boundaries, never dropped classes.
 //!
 //! What this slice deliberately is NOT (each is the next P2 slice, and
-//! the seams say so in their rustdocs): `aeolus-theme` (the T0–T2 theme
-//! tiers own `Val::Tok`), the IR-level `cn()` merge (today the raw
-//! cascade is emitted and the overlap is exactly
+//! the seams say so in their rustdocs): the IR-level `cn()` merge (today
+//! the raw cascade is emitted and the overlap is exactly
 //! `Program::base_conflicts()`'s bits), `@utility`/`@custom-variant`,
-//! and the xtask generator story. The plan §3.2 signature
-//! `compile(&str, &ThemeSource, &Target)` gains its theme/target halves
-//! with those slices; the shape — a pure function over the three P1
-//! crates — is what this slice pins.
+//! the `Target` half of the plan §3.2 signature, and the xtask
+//! generator story. The THEME half landed with this slice:
+//! [`compile_theme`] takes the plan's second argument — the tiered
+//! `TokenTable` from `aeolus-theme` — and colour tokens plus opacity
+//! modifiers lower through it (`aeolus-compile` depends on
+//! `aeolus-theme`, which wraps the audited v0.x theme reader).
 //!
 //! Storage note: [`Program`] holds `&'static` slices, so each compile
 //! call interns its program into the leak pool the IR documents as the
@@ -53,6 +58,7 @@ use aeolus_data::LookupError;
 use aeolus_ir::{Cond, Decl, Layer, Program};
 use aeolus_syntax::parse_class_string;
 use aeolus_syntax::Candidate;
+use aeolus_theme::TokenTable;
 
 // The lowering audits the rows' meaning; a registry semantics bump must
 // re-audit it. `matches!` on the &str literal is const-evaluable.
@@ -171,8 +177,10 @@ pub enum DiagnosticKind {
     },
     /// The v4 `!` importance flag: the IR has no slot for it yet.
     UnsupportedImportant,
-    /// The `/modifier` suffix: opacity/leading arithmetic is the theme
-    /// pass (plan §3.4 T2).
+    /// The `/modifier` suffix: opacity on a known token lowers through
+    /// [`compile_theme`]'s TokenTable (one f32 multiply, plan §3.4);
+    /// leading and `var()` modifiers stay with the codegen host.
+    /// Without a table the whole modifier is this boundary.
     UnsupportedModifier {
         /// The raw modifier text (`"50"`, `"[0.37]"`).
         modifier: String,
@@ -238,16 +246,18 @@ impl DiagnosticKind {
                  codegen pass (P3)"
             }
             DiagnosticKind::UnsupportedModifier { .. } => {
-                "modifier arithmetic (opacity on a known token is one f32 \
-                 multiply) is the theme pass (plan §3.4 T2)"
+                "the modifier arithmetic is the theme pass: compile_theme() \
+                 lowers opacity on a known token (one f32 multiply, plan \
+                 §3.4); leading and var() modifiers stay with the codegen host"
             }
             DiagnosticKind::UnsupportedNegation { .. } => {
                 "drop the leading `-`; the root's row carries `negative = \
                  false` (the registry is the legality oracle)"
             }
             DiagnosticKind::UnsupportedValue { .. } => {
-                "the value half is the next P2 slice (unit grammar and \
-                 type hints) or the theme pass (tokens)"
+                "the value half is the next P2 slice (unit grammar and type \
+                 hints); colour tokens lower through compile_theme's \
+                 TokenTable (aeolus-theme, plan §3.4)"
             }
         }
     }
@@ -330,6 +340,11 @@ impl miette::Diagnostic for CompileError {
 /// into the leak pool (see the crate docs) — one compile per distinct
 /// class string is the intended call pattern.
 ///
+/// This is the theme-less form: colour tokens and opacity modifiers
+/// stay typed boundaries (their diagnostics name
+/// [`compile_theme`] as the lowering path). Pass a `TokenTable` to
+/// lower them.
+///
 /// ```no_run
 /// use aeolus_compile::{compile, Config};
 ///
@@ -343,6 +358,57 @@ impl miette::Diagnostic for CompileError {
 /// # Ok::<(), aeolus_compile::CompileError>(())
 /// ```
 pub fn compile(input: &str, config: &Config) -> Result<Compiled, CompileError> {
+    run(input, config, None)
+}
+
+/// Compile a class string with the theme pass supplied (plan §3.2's
+/// signature gaining its second half): colour tokens lower through the
+/// tiered `TokenTable` (`bg-red-500` → the tier's `Val` form), and the
+/// `/opacity` modifier rides colour-form values — the premultiplied
+/// bake for a baked literal, the slot's alpha for a runtime token
+/// (plan §3.4, the audited `mix_with_transparent` identity).
+///
+/// Without a table every other contract is byte-identical to
+/// [`compile`]: the same diagnostics, the same spans, the same program
+/// shape. A modifier that cannot ride (a non-colour lowering, or an
+/// alpha on a baked dark pair) stays the typed `UnsupportedModifier`
+/// boundary — never a half-applied modifier.
+///
+/// ```no_run
+/// use aeolus_compile::{compile_theme, Config};
+/// use aeolus_theme::{ThemeSource, TokenTable};
+///
+/// let source = ThemeSource::shadcn_dark()?;
+/// let tokens = TokenTable::runtime(&source)?;
+/// let compiled = compile_theme("bg-primary/90", &tokens, &Config::default())?;
+/// assert!(compiled.diagnostics.is_empty()); // the token lowered
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// # Errors
+/// The same [`CompileError`] as [`compile`] (only the empty input).
+pub fn compile_theme(
+    input: &str,
+    tokens: &TokenTable,
+    config: &Config,
+) -> Result<Compiled, CompileError> {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        tokens = tokens.len(),
+        tier = ?tokens.tier(),
+        "compile_theme: the theme pass is supplied"
+    );
+    run(input, config, Some(tokens))
+}
+
+/// The whole pipeline, theme-less or themed. `tokens` selects whether
+/// the colour/modifier surfaces lower (the theme pass) or stay typed
+/// boundaries (the honest default).
+fn run(
+    input: &str,
+    config: &Config,
+    tokens: Option<&TokenTable>,
+) -> Result<Compiled, CompileError> {
     #[cfg(feature = "tracing")]
     tracing::debug!(input_len = input.len(), "compile: lex -> lookup -> lower");
 
@@ -377,7 +443,9 @@ pub fn compile(input: &str, config: &Config) -> Result<Compiled, CompileError> {
 
     // Stages 2-4: fold the variant stack, read the registry, lower each
     // matched row. Conditions group first-seen; the specificity sort is
-    // the assembly step's.
+    // the assembly step's. The modifier normalizes once per candidate:
+    // a modifier that does not parse (or names a var) stays the typed
+    // boundary — with or without the theme pass.
     let mut conds: Vec<Cond> = Vec::new();
     let mut groups: Vec<Vec<Decl>> = Vec::new();
     for candidate in &candidates {
@@ -392,14 +460,23 @@ pub fn compile(input: &str, config: &Config) -> Result<Compiled, CompileError> {
             ));
             continue;
         }
-        if let Some(modifier) = candidate.modifier {
-            diagnostics.push(Diagnostic::new(
-                candidate.span,
-                candidate.raw,
-                DiagnosticKind::UnsupportedModifier { modifier: modifier.to_string() },
-            ));
-            continue;
-        }
+        let alpha = match candidate.modifier {
+            None => None,
+            Some(modifier) => match normalize_modifier(modifier).filter(|_| tokens.is_some()) {
+                Some(alpha) => Some(alpha),
+                None => {
+                    // Unparseable/var-named modifiers always; parseable
+                    // modifiers without the theme pass too (the boundary
+                    // is the theme-less default).
+                    diagnostics.push(Diagnostic::new(
+                        candidate.span,
+                        candidate.raw,
+                        DiagnosticKind::UnsupportedModifier { modifier: modifier.to_string() },
+                    ));
+                    continue;
+                }
+            },
+        };
         let cond = match variant::fold(&candidate.variants) {
             Ok(cond) => cond,
             Err(miss) => {
@@ -415,7 +492,8 @@ pub fn compile(input: &str, config: &Config) -> Result<Compiled, CompileError> {
             }
         };
         for row in rows {
-            match lower::row_to_decls(*row, candidate.body, candidate.negative, config) {
+            match lower::row_to_decls(*row, candidate.body, candidate.negative, alpha, tokens, config)
+            {
                 Ok(decls) => {
                     let idx = match conds.iter().position(|&c| c == cond) {
                         Some(idx) => idx,
@@ -427,7 +505,9 @@ pub fn compile(input: &str, config: &Config) -> Result<Compiled, CompileError> {
                     };
                     groups[idx].extend(decls);
                 }
-                Err(reject) => diagnostics.push(reject_diagnostic(candidate, reject)),
+                Err(reject) => {
+                    diagnostics.push(reject_diagnostic(candidate, reject, candidate.modifier));
+                }
             }
         }
     }
@@ -449,6 +529,22 @@ pub fn compile(input: &str, config: &Config) -> Result<Compiled, CompileError> {
     #[cfg(feature = "tracing")]
     tracing::debug!(layers = layers.len(), "program interned");
     Ok(Compiled { program: Program::new(layers), diagnostics })
+}
+
+/// The `/modifier` text → the alpha fraction the theme pass carries:
+/// bare digits are percent (`"90"` → `0.9`), a `[...]`-bracketed value
+/// is the literal fraction (`"[0.37]"` → `0.37`). Non-finite or
+/// unparseable modifiers are `None` — the caller keeps the typed
+/// boundary. The clamp itself lives in the audited bake
+/// (`mix_with_transparent`) and the table's resolve.
+fn normalize_modifier(modifier: &str) -> Option<f32> {
+    let bracketed = modifier.starts_with('[') && modifier.ends_with(']');
+    let raw = if bracketed { &modifier[1..modifier.len() - 1] } else { modifier };
+    let value = raw.parse::<f32>().ok()?;
+    if !value.is_finite() {
+        return None;
+    }
+    Some(if bracketed { value } else { value / 100.0 })
 }
 
 /// The unsupported-variant report, spanned to the SEGMENT (the same
@@ -475,8 +571,14 @@ fn lookup_diagnostic(candidate: &Candidate<'_>, err: LookupError) -> Diagnostic 
     Diagnostic::new(candidate.span, candidate.raw, kind)
 }
 
-/// The value pass's typed refusals, carried through spanned.
-fn reject_diagnostic(candidate: &Candidate<'_>, reject: lower::Reject) -> Diagnostic {
+/// The value pass's typed refusals, carried through spanned. The
+/// modifier boundary renders the candidate's raw modifier text (the
+/// value pass refuses the WHOLE row when an alpha cannot ride).
+fn reject_diagnostic(
+    candidate: &Candidate<'_>,
+    reject: lower::Reject,
+    modifier: Option<&str>,
+) -> Diagnostic {
     let kind = match reject {
         lower::Reject::Negation => {
             DiagnosticKind::UnsupportedNegation { body: candidate.body.to_string() }
@@ -484,6 +586,15 @@ fn reject_diagnostic(candidate: &Candidate<'_>, reject: lower::Reject) -> Diagno
         lower::Reject::Value { reason } => {
             DiagnosticKind::UnsupportedValue { body: candidate.body.to_string(), reason }
         }
+        lower::Reject::Modifier => DiagnosticKind::UnsupportedModifier {
+            modifier: modifier.unwrap_or_default().to_string(),
+        },
+        // Internal marker: `row_to_decls` resolves it (the token path or
+        // the typed REASON_TOKEN_TABLE value) before returning.
+        lower::Reject::TokenOverflow => DiagnosticKind::UnsupportedValue {
+            body: candidate.body.to_string(),
+            reason: lower::REASON_TOKEN_TABLE,
+        },
     };
     Diagnostic::new(candidate.span, candidate.raw, kind)
 }

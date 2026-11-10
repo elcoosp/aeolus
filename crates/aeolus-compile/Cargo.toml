@@ -22,10 +22,16 @@ publish = false
 aeolus-syntax = { path = "../aeolus-syntax" }
 aeolus-data = { path = "../aeolus-data" }
 aeolus-ir = { workspace = true }
+# The theme pass (P2 slice 2, plan §3.4): the tiered TokenTable
+# `compile_theme` lowers colour tokens and opacity modifiers through.
+# It rides the workspace pin like aeolus-ir (it depends on aeolus-core,
+# a published crate, so it joins the lockstep contract).
+aeolus-theme = { workspace = true }
 # `tracing` feature: spans on the pipeline stages (the same opt-in
 # instrumentation seam the CLI grew in v0.9.1 and the registry in P1).
 # OFF by default so the default graph stays dependency-light
-# (aeolus-syntax + aeolus-data + aeolus-ir only); no subscriber is
+# (aeolus-syntax + aeolus-data + aeolus-ir + aeolus-theme, each of
+# which is itself dependency-light); no subscriber is
 # installed here — the host app owns one.
 tracing = { version = "0.1", optional = true }
 # `miette` feature: the structured `Diagnostic` impl (code + help) on
