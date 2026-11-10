@@ -1,6 +1,6 @@
 [package]
 name = "aeolus-compile"
-description = "Aeolus V1 compile seam: class strings through the lexer, the registry and the value pass into cascade-sorted longhand Programs and the Target::Css rendered stylesheet, with typed spanned diagnostics"
+description = "Aeolus V1 compile seam: class strings through the lexer, the registry and the value pass into cascade-sorted longhand Programs, with typed spanned diagnostics and the Target emit arms (CSS text, interpreter, static data, and the arbitrary-value unit grammar)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -27,6 +27,12 @@ aeolus-ir = { workspace = true }
 # It rides the workspace pin like aeolus-ir (it depends on aeolus-core,
 # a published crate, so it joins the lockstep contract).
 aeolus-theme = { workspace = true }
+# The arbitrary-value unit grammar parses COLOUR values through the
+# audited `aeolus_core::Color` (the same parser the v0.x oracle and the
+# fuzzer exercise) and bakes `/opacity` modifiers through the audited
+# `mix_with_transparent` premultiplied identity — the theme pass already
+# pulls aeolus-core in, so the workspace pin adds no new graph edge.
+aeolus-core = { workspace = true }
 # `tracing` feature: spans on the pipeline stages (the same opt-in
 # instrumentation seam the CLI grew in v0.9.1 and the registry in P1).
 # OFF by default so the default graph stays dependency-light
@@ -79,6 +85,13 @@ harness = false
 # compile floor.
 [[bench]]
 name = "statics"
+harness = false
+
+# The arbitrary-value unit grammar's benchmarks (the value pass's last
+# P2 slice): compiling arbitrary-valued utilities against the spacing
+# scale's own floor.
+[[bench]]
+name = "arbitrary"
 harness = false
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
