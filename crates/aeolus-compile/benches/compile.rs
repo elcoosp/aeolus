@@ -15,7 +15,11 @@
 //! environment runs them (see `reports/10-tdd-evidence/13-compile-seam.md`
 //! for the method note).
 
-use aeolus_compile::{cn, compile, Config};
+use aeolus_compile::{
+    Config, CustomForm, CustomUtility, Customs, cn, compile, compile_theme_with, compile_with,
+};
+use aeolus_ir::Prop;
+use aeolus_theme::{ThemeSource, TokenTable};
 use divan::Bencher;
 
 fn main() {
@@ -31,7 +35,8 @@ const BUTTON_CLASSES: &str = "inline-flex shrink-0 items-center justify-center g
 /// exists for: shape-overlapping utilities (`rounded-full`, `px-6`)
 /// plus a theme-token colour with a dark variant — the knobs the
 /// last-wins dedupe turns.
-const USER_OVERRIDE_CLASSES: &str = "rounded-full px-6 py-3 bg-red-500 dark:bg-primary/40 text-base";
+const USER_OVERRIDE_CLASSES: &str =
+    "rounded-full px-6 py-3 bg-red-500 dark:bg-primary/40 text-base";
 
 /// One utility, no variants — the pipeline's floor (lex, one lookup,
 /// one 4-decl fan-out, one layer).
@@ -44,8 +49,9 @@ fn compile_single_utility_cold(bencher: Bencher) {
 /// per segment plus the three-condition assembly.
 #[divan::bench]
 fn compile_variant_stack_cold(bencher: Bencher) {
-    bencher
-        .bench(|| compile("hover:focus:md:p-0", &Config::default()).expect("non-empty input compiles"));
+    bencher.bench(|| {
+        compile("hover:focus:md:p-0", &Config::default()).expect("non-empty input compiles")
+    });
 }
 
 /// The full shadcn Button surface: scale/keyword lowering AND the
@@ -53,14 +59,16 @@ fn compile_variant_stack_cold(bencher: Bencher) {
 /// measured pass — the number backends will key on.
 #[divan::bench]
 fn compile_button_surface_cold(bencher: Bencher) {
-    bencher.bench(|| compile(BUTTON_CLASSES, &Config::default()).expect("non-empty input compiles"));
+    bencher
+        .bench(|| compile(BUTTON_CLASSES, &Config::default()).expect("non-empty input compiles"));
 }
 
 /// The typed-miss cold path (`UnknownRoot`): the linter's "did you
 /// mean" seed with its diagnostic allocation.
 #[divan::bench]
 fn compile_unknown_root_cold(bencher: Bencher) {
-    bencher.bench(|| compile("not-a-utility", &Config::default()).expect("non-empty input compiles"));
+    bencher
+        .bench(|| compile("not-a-utility", &Config::default()).expect("non-empty input compiles"));
 }
 
 /// The IR-level `cn()` merge (plan §3.2 "hosts the `cn()` engine at IR
@@ -71,6 +79,47 @@ fn compile_unknown_root_cold(bencher: Bencher) {
 #[divan::bench]
 fn cn_button_surface_with_override_cold(bencher: Bencher) {
     let base = compile(BUTTON_CLASSES, &Config::default()).expect("non-empty input compiles");
-    let user = compile(USER_OVERRIDE_CLASSES, &Config::default()).expect("non-empty input compiles");
+    let user =
+        compile(USER_OVERRIDE_CLASSES, &Config::default()).expect("non-empty input compiles");
     bencher.bench(|| cn(&[&base, &user]).expect("non-empty inputs merge"));
+}
+
+/// The custom-authoring seam's registrations (plan §5.4's
+/// `@utility`/`@custom-variant` surface): one functional spacing
+/// utility over the padding fan-out — the same lowering shape as the
+/// built-in `p-*` row, read through the custom fallback.
+#[divan::bench]
+fn compile_custom_utility_cold(bencher: Bencher) {
+    let customs = Customs::new().utility(CustomUtility::functional(
+        "brand-p",
+        CustomForm::Spacing,
+        &[
+            Prop::PaddingTop,
+            Prop::PaddingRight,
+            Prop::PaddingBottom,
+            Prop::PaddingLeft,
+        ],
+    ));
+    bencher.bench(|| {
+        compile_with("brand-p-4", &customs, &Config::default()).expect("non-empty input compiles")
+    });
+}
+
+/// The custom seam's theme-token functional form (`--value(color)`):
+/// the suffix resolves through the runtime-tier `TokenTable` — the
+/// built-in colour path's own resolve, read through the custom
+/// fallback.
+#[divan::bench]
+fn compile_custom_token_utility_cold(bencher: Bencher) {
+    let source = ThemeSource::shadcn_dark().expect("the embedded shadcn source parses");
+    let tokens = TokenTable::runtime(&source).expect("the pair surface fits the u16 slot");
+    let customs = Customs::new().utility(CustomUtility::functional(
+        "brand-ink",
+        CustomForm::Token,
+        &[Prop::Color],
+    ));
+    bencher.bench(|| {
+        compile_theme_with("brand-ink-primary", &tokens, &customs, &Config::default())
+            .expect("non-empty input compiles")
+    });
 }
