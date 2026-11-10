@@ -25,15 +25,18 @@ env:
   RUSTDOCFLAGS: -D warnings
 
 jobs:
-  # F9 (v0.2): the MSRV gate is SPLIT — aeolus-core/aeolus-macro stay at
-  # 1.88 (zero-dep), while the backend crates need 1.96 (masonry 0.4's
-  # requirement, which v0.1's full-workspace MSRV claim violated).
+  # F9 (v0.2): the MSRV gate is SPLIT — aeolus-core/aeolus-macro/aeolus-cli
+  # stay at 1.88 (the CLI keeps the core's zero-dependency discipline; its
+  # manifest's rust-version is gated HERE, not just claimed — the README's
+  # "1.88 gates core/macro/cli" line had no CI job behind it),
+  # while the backend crates need 1.96 (masonry 0.4's requirement, which
+  # v0.1's full-workspace MSRV claim violated).
   msrv-core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88
-      - run: cargo check -p aeolus-core -p aeolus-macro
+      - run: cargo check -p aeolus-core -p aeolus-macro -p aeolus-cli
 
   msrv-backends:
     runs-on: ubuntu-latest
