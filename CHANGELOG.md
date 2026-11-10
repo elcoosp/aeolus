@@ -1,3 +1,31 @@
+# Changelog
+
+All notable changes to Aeolus are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### 🚀 Features
+
+- *(compile)* The arbitrary-value unit grammar (the value pass's last named P2 slice): the bracket/paren groups the registry rows always accepted now LOWER — px/rem/%/deg units into the IR's own slots, colours through the audited `aeolus_core::Color` parser, `/opacity` through the audited premultiplied bake, `var()`/`(--var)` references through the theme pass's token path, and the `length:`/`percentage:`/`number:`/`color:` hints constraining the parse; every value the IR cannot carry (multi-token composites, the arbitrary-property form, keyword values on the row-relative `Val::Kw` slots) refuses typed, and the sibling-row class gate keeps the diagnostics quiet where another row of the root takes the class
+- *(syntax)* Export the lexer's v4 type-hint table (`HINTS`) — one source of truth for the lexer's hint classification and the value pass's hinted grammar
+- *(bench)* Measure the arbitrary-value grammar against the spacing-scale floor, the shadcn Button string and the DynCache hit path
+- *(compile)* Demonstrate the arbitrary-value grammar end to end (`examples/arbitrary_values.rs`)
+
+### 📚 Documentation
+
+- *(readme)* Align the badge, the status version and the crate table to 0.14.0 (the emit-arms release they predate); the status carries the grammar
+- *(architecture)* Mark the arbitrary-value unit grammar landed
+- *(workspace)* Consolidate the release-tooling drift: the git-cliff blocks sat above the file title and two `[Unreleased]` sections described the already-released 0.13.0/0.14.0 slices — refiled under the title, the stale blocks removed
+- *(benchmarks)* File the arbitrary-grammar run numbers
+- *(evidence)* File the arbitrary-values red-to-green record
+
+### 🧪 Testing
+
+- *(compile)* Pin the arbitrary-value contracts end to end (`tests/arbitrary.rs`: units, hints, colours, the audited bake, var references, the sibling-row gate, the two walks' diagnostics equality, cn/interp/statics composition)
+- *(compile)* Flip the `w-[32px]` boundary pin to the lowering contract (the grammar landed)
+
 ## [0.14.0] - 2026-11-10
 
 ### 🚀 Features
@@ -66,52 +94,6 @@
 ### 💼 Other
 
 - *(compile)* Bench the dyn cache in the manifest
-## [Unreleased]
-
-### 🚀 Features
-
-- *(compile)* The interpreter arm (plan §3.1 emit (c): `interp`/`interp_theme` resolve a compiled `Program` to its effective declarations under a probe `Env`, theme dynamism through the `TokenSource` seam, honest exclusion notes)
-- *(compile)* The static-data emit arm (plan §3.1 emit (b): `emit_static` freezes the program into the IR's own byte-stable `static` item)
-- *(theme)* The mode-aware one-load-one-multiply primitive (`TokenTable::resolve_rgba`) the interpreter's built-in source resolves through
-- *(compile)* Wire the interpreter and static-data arms into the `Target` surface and the `Compiled` convenience methods
-- *(bench)* Measure the interpreter paths and the static-data emit
-- *(compile)* Demonstrate the interpreter and the static-data emit
-
-### 📚 Documentation
-
-- *(readme)* Align the badge, the status version, the crate table, the examples and the test counts to 0.13.0 and the emit arms
-- *(architecture)* Mark the interp and static-data emit arms landed; the Rust-tokens arm and the xtask story remain
-- *(workspace)* Repair the stale P2 slice comment (`@utility`/`@custom-variant` landed as P2 slice 5)
-- *(benchmarks)* File the emit-arms run numbers
-- *(evidence)* File the emit-arms red-to-green record
-
-### 🧪 Testing
-
-- *(compile)* Pin the interpreter contracts end to end
-- *(compile)* Pin the static-data emit contracts end to end
-- *(theme)* Pin the concrete rgba resolve refusals and the active-half multiply
-
-
-### 🚀 Features
-
-- *(compile)* The dyn-cache seam module (the leak-pool dedupe: `DynCache` over the `DynStore` trait, built-in `TwoGenStore`)
-- *(compile)* Wire the dyn cache into the compile seam and the themed/customized session entry points
-- *(bench)* Measure the dyn cache hit and miss paths
-- *(examples)* Demonstrate the dyn cache
-
-### 🐛 Bug Fixes
-
-- *(compile)* Point the value-boundary help at the unit-grammar slice (the value pass landed; the remaining boundary is the arbitrary-value grammar)
-
-### 📚 Documentation
-
-- *(compile)* Align the crate and custom-seam headers to the landed `--value(color)` form
-- *(readme)* Align the crate table, status and example list to the dyn cache (and file the css_emit/custom_seam examples)
-- *(architecture)* Mark the dyn-cache seam landed
-- *(changelog)* File the dyn cache and the drift fixes
-- *(benchmarks)* File the dyn-cache bench numbers
-- *(evidence)* File the dyn-cache red-to-green record
-
 ## [0.12.0] - 2026-11-10
 
 ### 🚀 Features
@@ -184,136 +166,6 @@
 - *(release)* V0.12.0
 - Gitignore
 - Gate the v1 crates' 1.88 msrv and sweep the header drift
-# Changelog
-
-All notable changes to Aeolus are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
-adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### The P2 slice 5 — the custom-authoring seam (this change)
-
-The fifth slice of phase P2 (architecture plan §5.4, the remaining
-`@utility`/`@custom-variant` line): projects REGISTER custom utilities
-and custom variant aliases, and the pipeline lowers and renders them
-exactly like the built-in surface. `Customs` carries the registrations;
-`compile_with`/`compile_theme_with`/`emit_css_with`/
-`emit_css_theme_with` extend the four entry points (empty registrations
-are byte-identical to the theme-less siblings — pinned over a battery).
-A custom utility is the registry row's three-part contract authored at
-runtime — root, value shape, longhand fan-out — with functional forms
-scoped to what the IR holds (`integer`/`number`/`percentage` numeric
-grammars, the `--spacing` scale, and the `--value(color)` theme-token
-form through the tiered `TokenTable`, modifier and all) and fixed
-values guard-checked (non-finite numerics and the row-relative `Kw`
-slot refuse typed). A custom variant is an ALIAS onto the typed `Cond`
-surface — both walks fold and render it identically; the registry wins
-name collisions, and a custom shape rejection reports the custom root
-and its forms through the same `LookupError` shape. The diagnostics
-differential (IR walk ≡ CSS walk) is pinned with customs in play, the
-merge consumes custom-lowered programs, and the registration interns
-into the documented leak pool (bounded, one-time).
-
-- **Added (compile):** the `custom` module — `Customs`,
-  `CustomUtility` (`fixed`/`functional`), `CustomValue`, `CustomForm`
-  (`Integer`/`Number`/`Percentage`/`Spacing`/`Token`),
-  `CustomVariant`, the `ClassifyVariant` seam trait (the fold is
-  generic over it; `Customs` implements it over the registered
-  aliases) — and the four `*_with` entry points, with `tracing` spans
-  on the custom read side.
-- **Fixed (compile, ir, syntax, theme — the pre-handoff breakage):**
-  the tree did not compile at `13402a0` and four authored suites
-  pinned contracts their implementations never satisfied:
-  `aeolus-syntax`'s typed `LexFailure` import was dropped by the CSS
-  arm's commit; `aeolus-compile`'s CSS walk shipped the half-finished
-  refactor (missing import, the `split_once` label mismatch, the
-  `Val::Tok` alpha shadow, the const registry pin's `matches!` on
-  `&str` — not a const trait); the rendered rule body lost its `;`;
-  `Diagnostic::code()`/`help()` drifted to `DiagnosticKind` under the
-  tests; `Program::base_conflicts()` ignored the base layer's own
-  duplicates (`p-4 px-8` pins the raw cascade's overlap); the theme
-  table paired every token because `dark_variant` re-parses the light
-  source (pairing now requires a REAL value override); the F1 fraction
-  was unreachable (`w-1/2` lexes body `w-1` + raw modifier `2` — the
-  joined body now reads FIRST, the oracle's sizing-family precedence,
-  mirrored in both walks); the group/peer heads escaped their probe
-  colons and the baked-pair companion rendered as a compound suffix
-  (the authored fixtures pin `:where(.dark, .dark *)` as a prefixed
-  descendant scope and the peer probe as live selector syntax); and
-  one authored assertion contradicted its own test name and the CSS
-  suite's boundaries battery (the refused-variant candidate skips —
-  the rest of the string compiles).
-- **Added (compile, benches):** `compile_custom_utility_cold` and
-  `compile_custom_token_utility_cold` (divan, stable) — the custom
-  fallback sits ~0.1 µs over the single-utility floor at this sandbox.
-- **Added (compile, examples):** `custom_seam` — the three
-  registration shapes lowering, rendering and refusing.
-- **Changed (docs):** the drift sweep — the architecture plan's P2
-  status and §8 row, the README's crate table/Status/Learn-more, and
-  the `compile_pipeline` example header (which still called the theme
-  tiers and the `cn()` merge "next"); the RED→GREEN evidence file is
-  `reports/10-tdd-evidence/15-custom-seam.md`, with measured bench
-  numbers filed in `reports/08-benchmarks/BENCHMARKS.md`.
-
-### The P2 slice 4 — the `Target` half's CSS arm
-
-The fourth slice of phase P2 (architecture plan §3.1/§3.2): the compile
-signature gains its EMIT half — `Target::Css`, the first arm of the plan
-§3.1 diagram's emit stage, rendered by `aeolus_compile::emit_css` /
-`emit_css_theme`: class strings in, a rendered stylesheet out. The emit
-runs IN the pipeline (not over the `Compiled` artifact) because the IR's
-`Val::Kw` slot indexes the ROW'S OWN keyword table — the row context is
-what recovers the CSS text (`flex-col` → `column`), the variant
-SEGMENTS are what render conditions the flat `Cond` model folds (the
-named `group-hover/menu:` label, conjunctive probe stacks), and the
-theme tiers are what choose the form (baked literals `rgb(r g b / a%)`,
-runtime `var(--color-…)` with the §2 `color-mix` identity under an
-`/opacity` modifier, baked dark pairs as light + `:where(.dark, .dark *)`
-companion rules). Breakpoints render v4 range-syntax media queries and
-`@container` blocks; the class text escapes as v4 escapes it.
-
-- **Added (compile):** `Target` (the plan §3.2 signature's emit half;
-  the P3 forms — Rust tokens, static data, the interpreter — stay named
-  but unarmed), `CssSheet`/`CssRule`/`CssAt` and `emit_css` /
-  `emit_css_theme` (the theme-less default keeps colour tokens and
-  modifiers typed boundaries, exactly like `compile`), with `tracing`
-  spans on the emit stages. `examples/css_emit.rs` demonstrates the
-  whole story (a real `@theme` file through the runtime and baked
-  tables, the dark companions, the boundary walk), and the bench family
-  gains `emit_css_*` (divan, stable).
-- **Added (ir):** `Bp::rem` — the documented `--breakpoint-*` defaults
-  the media queries render from (the theme tier re-maps the values, not
-  the order).
-- **Changed (syntax, refactor):** the lexer's degraded channel is TYPED
-  — `parse_class_string` reports `LexFailure { span, raw, kind }`
-  instead of `(String, String)` pairs whose `{raw}: {message}` format
-  contract consumers had to un-parse, and `DiagnosticKind::Lex` carries
-  the `LexErrorKind` (the stable message renders through it). Spans are
-  now the lexer's own (exact on repeated tokens — pinned), no
-  re-derivation by `find()`. The differential harness keeps its
-  raw-keyed comparison.
-- **Changed (data, fix):** the `truncate` composite splits into THREE
-  root-sharing rows — the one-bare-value fan-out could not carry
-  per-prop values and rode `ellipsis` onto `overflow-x`/`white-space`,
-  where it is not a legal value. The registry is now 184 rows (178
-  literal + 6 shared consts); the count is stated, not implied.
-- **Changed (compile, refactor):** the breakpoint spelling table now
-  walks `Bp::ALL`/`Bp::name` — the IR's own table is the single source,
-  the parallel `match` wall is gone (the dead-code item this slice was
-  carrying), and the css arm reuses the same oracle for its refusal set.
-- **Changed (docs):** the drift sweep — the README badge and status
-  paragraph still said v0.11.0 after the v0.12.0 release and its
-  "Learn more" line still planned the landed `cn()` merge; the root
-  Cargo.toml still announced the `cn()` merge as "next"; the CI header
-  still counted four fuzz targets (six since the sweep fix) and
-  described a three-backend workspace (14 members); the architecture
-  plan's P1 row still said "three git-only crates" (five) and "178
-  registry rows" (184); SECURITY's supported-versions table stopped at
-  0.1.x; the CHANGELOG carried the git-cliff `[0.12.0]` block ABOVE the
-  file title with an `[Unreleased]` describing the already-released
-  slice — consolidated here; and the five V1 crates' `rust-version =
-  1.88` claim has its CI job now (`msrv-core` checks them).
 
 ## [0.12.0] — 2026-11-10 — the P2 slice 3: the IR-level `cn()` merge
 
