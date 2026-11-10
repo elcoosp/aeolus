@@ -15,7 +15,7 @@
 //! environment runs them (see `reports/10-tdd-evidence/13-compile-seam.md`
 //! for the method note).
 
-use aeolus_compile::{compile, Config};
+use aeolus_compile::{cn, compile, Config};
 use divan::Bencher;
 
 fn main() {
@@ -26,6 +26,12 @@ fn main() {
 /// size, `crates/aeolus-shadcn/src/classes.rs` @ 4aaea19) — the same
 /// 33-class string the v0.x hot-path benchmarks key on.
 const BUTTON_CLASSES: &str = "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2 has-[>svg]:px-3";
+
+/// A user-override string in the `cn(base, user)` shape the merge
+/// exists for: shape-overlapping utilities (`rounded-full`, `px-6`)
+/// plus a theme-token colour with a dark variant — the knobs the
+/// last-wins dedupe turns.
+const USER_OVERRIDE_CLASSES: &str = "rounded-full px-6 py-3 bg-red-500 dark:bg-primary/40 text-base";
 
 /// One utility, no variants — the pipeline's floor (lex, one lookup,
 /// one 4-decl fan-out, one layer).
@@ -55,4 +61,16 @@ fn compile_button_surface_cold(bencher: Bencher) {
 #[divan::bench]
 fn compile_unknown_root_cold(bencher: Bencher) {
     bencher.bench(|| compile("not-a-utility", &Config::default()).expect("non-empty input compiles"));
+}
+
+/// The IR-level `cn()` merge (plan §3.2 "hosts the `cn()` engine at IR
+/// level"): the shadcn Button surface merged with a user override,
+/// rightmost-wins — concatenate, cascade-sort, last-wins dedupe,
+/// intern. The cold path the backends' `cn(base, user)` composition
+/// rides.
+#[divan::bench]
+fn cn_button_surface_with_override_cold(bencher: Bencher) {
+    let base = compile(BUTTON_CLASSES, &Config::default()).expect("non-empty input compiles");
+    let user = compile(USER_OVERRIDE_CLASSES, &Config::default()).expect("non-empty input compiles");
+    bencher.bench(|| cn(&[&base, &user]).expect("non-empty inputs merge"));
 }
