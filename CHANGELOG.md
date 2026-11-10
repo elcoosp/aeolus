@@ -1,3 +1,25 @@
+## [Unreleased]
+
+### 🚀 Features
+
+- *(compile)* The dyn-cache seam module (the leak-pool dedupe: `DynCache` over the `DynStore` trait, built-in `TwoGenStore`)
+- *(compile)* Wire the dyn cache into the compile seam and the themed/customized session entry points
+- *(bench)* Measure the dyn cache hit and miss paths
+- *(examples)* Demonstrate the dyn cache
+
+### 🐛 Bug Fixes
+
+- *(compile)* Point the value-boundary help at the unit-grammar slice (the value pass landed; the remaining boundary is the arbitrary-value grammar)
+
+### 📚 Documentation
+
+- *(compile)* Align the crate and custom-seam headers to the landed `--value(color)` form
+- *(readme)* Align the crate table, status and example list to the dyn cache (and file the css_emit/custom_seam examples)
+- *(architecture)* Mark the dyn-cache seam landed
+- *(changelog)* File the dyn cache and the drift fixes
+- *(benchmarks)* File the dyn-cache bench numbers
+- *(evidence)* File the dyn-cache red-to-green record
+
 ## [0.12.0] - 2026-11-10
 
 ### 🚀 Features
