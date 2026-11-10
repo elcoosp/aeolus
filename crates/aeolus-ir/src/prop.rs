@@ -11,7 +11,7 @@
 //! generalizes to the whole longhand surface: dominance (`p-4 ⊕ px-8`),
 //! layer overlap (`hover:px-8` vs `p-4`) and conflict eviction are bit
 //! operations, not table walks. 128 bits cover the full v4 longhand set
-//! this pipeline ports; the type asserts the budget in [`crate::tests`].
+//! this pipeline ports; the type asserts the budget in the crate's test module.
 
 /// Every CSS **longhand** the V1 pipeline lowers to. Shorthands (`padding`,
 /// `border-width`, `inset`, `gap`, `place-*`) never appear: a utility that
