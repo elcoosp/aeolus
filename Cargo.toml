@@ -19,8 +19,10 @@ members = [
     # The V1 pipeline's first seam (plan §3.2, phase P2): lex → lookup →
     # lower → cascade-sorted `Program`, with typed spanned diagnostics.
     # Same git-only discipline; the Target half's CSS emit arm (P2 slice
-    # 4: `emit_css`/`emit_css_theme`) is in-tree, and `@utility`/
-    # `@custom-variant` is the next P2 slice.
+    # 4: `emit_css`/`emit_css_theme`), the interp arm (emit (c)) and the
+    # static-data arm (emit (b)) are in-tree — `@utility`/`@custom-variant`
+    # landed 2026-11 as the custom-authoring seam (P2 slice 5), and the
+    # Rust-tokens arm is the remaining emit form.
     "crates/aeolus-compile",
     # The theme pass (plan §3.2, phase P2 slice 2): CSS-first theme
     # sources resolved into tiered token tables (T0 literals, T1 const
