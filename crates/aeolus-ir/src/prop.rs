@@ -506,8 +506,8 @@ impl Prop {
 /// declarations set, so two layers' interaction (`p-4` vs `hover:px-8`,
 /// `size-4` vs `w-4`) is `union`/`contains` — no per-backend tables.
 ///
-/// The v4 longhand surface this pipeline ports is 96 longhands; the
-/// remaining 32 bits are headroom (append-only [`Prop`] growth). The
+/// The v4 longhand surface this pipeline ports is 110 longhands; the
+/// remaining 18 bits are headroom (append-only [`Prop`] growth). The
 /// budget is asserted, not assumed: see `prop_mask_fits_u128` in tests.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(C)]
@@ -578,7 +578,7 @@ impl PropMask {
         let mut bits = self.0;
         while bits != 0 {
             let idx = bits.trailing_zeros() as u16;
-            // `from_idx` is total: every bit below 96 is a valid Prop.
+            // `from_idx` is total: every bit below 110 is a valid Prop.
             f(Self::from_idx(idx));
             bits &= bits - 1; // clear the lowest set bit
         }

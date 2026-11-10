@@ -93,7 +93,10 @@ impl Hasher for FastHasher {
 /// (zero dependencies, 8 bytes/round hashing).
 pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
 
-/// Build the hash of a class string (used by both cache and interner).
+/// Build the hash of a class string. The cache and the interner key
+/// their maps with `FastMap` directly (a second pass over the same
+/// bytes); this helper is the pure form the cache's unit tests pin the
+/// hashing with.
 pub fn hash_classes(s: &str) -> u64 {
     let mut h = FastHasher::default();
     h.write(s.as_bytes());

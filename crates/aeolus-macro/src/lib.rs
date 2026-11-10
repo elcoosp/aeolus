@@ -153,7 +153,11 @@ fn unescape(s: &str) -> String {
 }
 
 fn compile_error(input: &TokenStream, msg: &str) -> TokenStream {
-    // Preserve the span by attaching to the first token when possible.
+    // Span preservation is deliberately NOT implemented here: attaching
+    // to the input's first token needs proc-macro span APIs this syn-free
+    // crate avoids, and sub-literal spans are nightly-only (the V1 plan
+    // §9 documents the same ceiling). The message carries the class text,
+    // which keeps the error actionable at the call site.
     let _ = input;
     format!("compile_error!({msg:?})").parse().unwrap()
 }

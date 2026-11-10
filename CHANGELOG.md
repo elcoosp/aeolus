@@ -6,7 +6,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### The P1 consumer handoff, part two: typed registry seam, examples, drift alignment (this change)
+### The P2 seam — the compile pipeline's first slice (this change)
+
+The first slice of phase P2 (architecture plan §3.1/§3.2): `aeolus-compile`,
+the pure function `compile(&str, &Config) -> Result<Compiled, CompileError>`
+that runs class strings through the three P1 crates end to end — the
+zero-copy lexer, the typed registry read side, the longhand value pass —
+and emits cascade-sorted `Program`s with the IR's masks as data. Everything
+a class does not lower to (importance, modifiers, colour tokens, arbitrary
+values, untyped variants) comes back as a spanned, coded, helped
+`Diagnostic` — never a silent drop.
+
+- **Added (compile):** the seam. The registry semantics are pinned at
+  `REGISTRY_VERSION = "1"` by a const assert (the value pass audits the
+  rows' meaning); the spacing config knob lands with it (rem by default,
+  the px compat config baking against `rem_px`, plan §3.3); the
+  flat-`Cond` variant fold (dominant condition, source order breaks
+  ties — cond.rs's own contract, now implemented); benched
+  (`benches/compile.rs`: single utility, variant stack, the shadcn Button
+  surface, the typed miss) and demonstrated
+  (`examples/compile_pipeline.rs`). Two OFF-by-default instrumentation
+  features land with it, exactly the CLI's v0.9.1 / registry's P1
+  pattern: `tracing` (spans on the pipeline stages) and `miette` (code +
+  help on `CompileError`; the always-on `code()`/`help()` strings live
+  on `DiagnosticKind`).
+- **Discovered and pinned (ir):** the seam surfaced the first concrete IR
+  budget: the colour keyword table is 270 entries and `Val::Kw` is a u8
+  slot — colour tokens lower through the theme pass's `TokenTable`
+  (plan §3.4 T2), typed and reported, never truncated.
+- **Removed (syntax):** `Candidate::signed_body` — dead code (zero
+  callers across the workspace) whose doc contradicted its own
+  implementation: it returned the sign-STRIPPED body while claiming to
+  restore the sign; the sign rides the `negative` flag by design
+  (`Candidate::negative`).
+- **Fixed (v1):** the `VERSION` consts in `aeolus-syntax` and
+  `aeolus-ir` derive from the manifests now (`env!("CARGO_PKG_VERSION")`)
+  — the hardcoded `"0.1.0"` drifted three releases behind the
+  workspace; each crate pins the derivation with a test.
+- **Changed (docs):** the drift pass — the README's version badge says
+  0.10.0 (it still said 0.7.0), the status paragraph moved to v0.10.0
+  with the P2 seam noted, the consumer-examples block lists all nine
+  examples (it still listed four), the test count is the real one (509;
+  513 with the instrumentation features), the crate table carries
+  `aeolus-compile`, the architecture plan records the P2 seam's landed
+  reality beside P1's, and the rustdocs stopped contradicting the code
+  (`prop.rs`'s "96 longhands" → 110; `hash_classes`' "used by both cache
+  and interner" → what actually uses it; the `tw!` span-preservation
+  promise → the honest nightly-only ceiling).
+
+## [0.10.0] — 2026-11-09 — the P1 consumer handoff, part two: typed registry seam, examples, drift alignment
+
+### The P1 consumer handoff, part two: typed registry seam, examples, drift alignment
 
 - **Fixed (build):** the v0.9.0 release bump left `[workspace.dependencies]`'s
   intra-workspace pins at 0.8.0 while `[workspace.package]` moved to 0.9.0
@@ -50,7 +100,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "~150"); the V1 architecture plan's P1 status and §8 row record the
   landed reality (178 rows in-tree, the xtask generator explicitly P2).
 
-### V1 phase P1 — the data-driven core lands (this change)
+### V1 phase P1 — the data-driven core lands
 
 The first slice of the zero-runtime track (`docs/AEOLUS_V1_ARCHITECTURE.md`
 §8, phase P1) is now in-tree, git-only (`publish = false`), zero new
