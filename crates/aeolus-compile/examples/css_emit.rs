@@ -15,36 +15,35 @@
 //! boundaries. The IR form of the same strings lives in
 //! `compile_pipeline`; `theme_seam` shows the table tiers alone.
 
-use aeolus_compile::{emit_css, emit_css_theme, Config};
+use aeolus_compile::{Config, emit_css, emit_css_theme};
 use aeolus_theme::{ThemeSource, TokenTable};
 
 /// A realistic project theme file — the `@theme` token block, the same
 /// shape a web Tailwind v4 project checks in.
-const APP_CSS: &str = r#"
+const APP_CSS: &str = r"
 @theme {
     --color-primary: oklch(0.208 0.042 265.755);
     --color-primary-foreground: oklch(0.984 0.003 256.848);
     --color-muted: oklch(0.968 0.007 247.896);
     --color-ring: oklch(0.551 0.027 264.364);
 }
-"#;
+";
 
 /// The `.dark` override block — the same file's dark half, passed
 /// through `from_css`'s dark slot (the theme pass's dark variant).
-const DARK_CSS: &str = r#"
+const DARK_CSS: &str = r"
 .dark {
     --color-primary: oklch(0.9219 0.034 255.508);
     --color-primary-foreground: oklch(0.208 0.042 265.755);
     --color-muted: oklch(0.279 0.041 260.031);
     --color-ring: oklch(0.446 0.043 257.281);
 }
-"#;
+";
 
 fn main() {
     // 1. The theme pass: the CSS file resolves into a tiered token
     //    table — the SAME file a web project uses, unchanged.
-    let source = ThemeSource::from_css(APP_CSS, Some(DARK_CSS))
-        .expect("the theme file parses");
+    let source = ThemeSource::from_css(APP_CSS, Some(DARK_CSS)).expect("the theme file parses");
     let tokens = TokenTable::runtime(&source).expect("the table builds");
     println!(
         "theme file    : {} colour tokens, {} tier\n",
@@ -71,9 +70,8 @@ fn main() {
     //    becomes TWO rules (light under the rule's own selector, dark
     //    under `:where(.dark, .dark *)`).
     let baked = TokenTable::baked(&source).expect("the table builds");
-    let sheet =
-        emit_css_theme("bg-primary rounded-md", &baked, &Config::default())
-            .expect("non-empty input renders");
+    let sheet = emit_css_theme("bg-primary rounded-md", &baked, &Config::default())
+        .expect("non-empty input renders");
     println!("\n── baked table (T0/T1): literals + the dark companion ──\n");
     print!("{sheet}");
 
