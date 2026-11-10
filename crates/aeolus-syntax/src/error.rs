@@ -95,7 +95,7 @@ impl std::error::Error for LexError {}
 pub struct LexFailure<'a> {
     /// Byte range of the whole token inside the INPUT string
     /// (`parse_class_string`'s whitespace-skipped span, the same range
-    /// a successful [`Candidate::span`] would carry).
+    /// a successful `Candidate::span` would carry).
     pub span: (usize, usize),
     /// The raw token text, verbatim (borrowed from the input).
     pub raw: &'a str,
@@ -113,7 +113,13 @@ impl LexFailure<'_> {
 
 impl fmt::Display for LexFailure<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ({}..{})", self.kind.message(), self.span.0, self.span.1)
+        write!(
+            f,
+            "{} ({}..{})",
+            self.kind.message(),
+            self.span.0,
+            self.span.1
+        )
     }
 }
 
