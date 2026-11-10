@@ -1,3 +1,32 @@
+## [0.12.0] - 2026-11-10
+
+### 🚀 Features
+
+- *(compile)* Wire the ir-level cn merge
+- *(bench)* Measure the cn merge
+- *(examples)* Demonstrate the ir-level cn merge
+
+### 🐛 Bug Fixes
+
+- *(theme)* Give the pair overflow its typed refusal
+
+### 📚 Documentation
+
+- Align every surface to the cn merge and sweep the drift
+
+### 🚜 Refactor
+
+- *(compile)* Type the variant-fold miss
+
+### 🧪 Testing
+
+- *(compile)* Pin the ir-level cn contracts
+
+### ⚙️ Miscellaneous Tasks
+
+- Gate the cli's 1.88 msrv claim
+- Pr body
+- *(release)* V0.12.0
 # Changelog
 
 All notable changes to Aeolus are documented here. The format follows
