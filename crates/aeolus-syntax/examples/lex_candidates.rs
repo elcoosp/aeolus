@@ -18,7 +18,8 @@ fn main() {
     // A realistic shadcn-Button-ish class string: stacking variants, an
     // arbitrary value with a modifier, negation, the v4.1 `(...)` form,
     // and one broken token (`p--4`) riding the TYPED degraded channel.
-    let classes = "inline-flex rounded-md p-4 hover:bg-primary/90 dark:-mt-2 w-[32px] bg-(--brand) p--4";
+    let classes =
+        "inline-flex rounded-md p-4 hover:bg-primary/90 dark:-mt-2 w-[32px] bg-(--brand) p--4";
     println!("class string : {classes}\n");
     let (candidates, degraded) = parse_class_string(classes);
 
@@ -32,7 +33,13 @@ fn main() {
     // inside the INPUT (the editor squiggle, no re-derivation).
     println!("\ndegraded tokens ({}):", degraded.len());
     for f in &degraded {
-        println!("  {:?} → {} (bytes {}..{})", f.raw, f.message(), f.span.0, f.span.1);
+        println!(
+            "  {:?} → {} (bytes {}..{})",
+            f.raw,
+            f.message(),
+            f.span.0,
+            f.span.1
+        );
     }
 
     // The typed miss: `parse_candidate` on one token explains WHAT and
