@@ -34,12 +34,24 @@ pub use prop::{Prop, PropMask};
 pub use val::Val;
 
 /// The IR's semantic version, surfaced for diagnostics and the P2
-/// pipeline's cross-crate assertions.
-pub const VERSION: &str = "0.1.0";
+/// pipeline's cross-crate assertions. Derived from the manifest so it
+/// cannot drift from the release it shipped in (the "0.1.0" hardcode
+/// predated the crate joining the versioned workspace).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The version pin: derived from the manifest, parseable as semver —
+    /// the cross-crate assertions the P2 pipeline makes key on it.
+    #[test]
+    fn version_tracks_the_manifest() {
+        assert_eq!(VERSION, env!("CARGO_PKG_VERSION"));
+        let (major, rest) = VERSION.split_once('.').expect("semver major");
+        assert!(!major.is_empty() && major.bytes().all(|b| b.is_ascii_digit()));
+        assert!(rest.split_once('.').is_some(), "at least major.minor");
+    }
 
     /// The static form must never touch the heap: every IR type is `Copy`
     /// and the value type fits the plan's 12-byte budget (§3.3).
