@@ -1,89 +1,110 @@
-# feat: p2-compile-seam — the lex-registry-IR compile seam, typed diagnostics
+# feat: p2-theme-pass — the theme pass, tiered tokens
 
-## Milestone — P2's first slice: the compile pipeline's first seam
+## Milestone — P2's second slice: the theme half of the compile signature
 
-The V1 data-driven core (phase P1: `aeolus-syntax`, `aeolus-data`,
-`aeolus-ir`) landed git-only; this change lands the first slice of P2
-(architecture plan §3.1/§3.2): **`aeolus-compile`**, the pure function
+The V1 pipeline's first seam (`aeolus-compile`) landed with one honest
+boundary test-pinned: the registry's colour keyword table is 270
+entries and the IR's `Val::Kw` slot is a u8, so colour tokens refused
+typed instead of truncating. This change lands the slice every seam
+said was next (architecture plan §3.2/§3.4): **`aeolus-theme`**, the
+CSS-first theme pass —
 
 ```rust
-compile(&str, &Config) -> Result<Compiled, CompileError>
+ThemeSource::from_css(light, dark)?        // the web project's own file
+let tokens = TokenTable::runtime(&source)? // T2: Tok { id, alpha }
+let tokens = TokenTable::baked(&source)?;  // T0 literals / T1 pairs
+compile_theme(input, &tokens, &Config)?;   // the signature's theme half
 ```
 
-that runs class strings through the three P1 crates end to end — the
-zero-copy lexer, the typed registry read side, the longhand value pass —
-and emits cascade-sorted `Program`s with the IR's masks as data. The
-theme and target halves of the plan's signature (`aeolus-theme` T0–T2,
-the IR-level `cn()` merge, `@utility`/`@custom-variant`, the xtask
-generator) are the remaining P2 slices; every seam this change touches
-says so in its rustdoc. Nothing in the v0.x surface changes and no
-default dependency graph grows (the new crate's default graph is
-aeolus-syntax + aeolus-data + aeolus-ir only).
+— and with it `bg-red-500` lowers, `/90` becomes one premultiplied
+multiply (the audited `mix_with_transparent` identity, corpus-pinned),
+and `dark:bg-primary` forms the T1 const pair. The tiers are exactly
+the plan's §3.4 table: T0 literals, T1 light/dark pairs, T2 runtime
+slots — pay only for the dynamism you use. The theme-less `compile`
+keeps the v0.10.0 contract byte-for-byte (pinned), and nothing in the
+v0.x surface changes: `aeolus-theme` wraps the audited v0.x reader as
+the interim oracle, exactly the differential discipline P1 used.
 
 ### What changed
 
-- **`aeolus-compile`** (git-only, `publish = false`): the five-stage
-  pipeline — lex (borrowed candidates, byte spans), variant fold (the
-  flat-`Cond` model: dominant condition, source order breaks ties —
-  `cond.rs`'s own contract, now implemented), registry read (the typed
-  `lookup_detailed` miss modes, spanned), value pass (spacing rem/px
-  configs per plan §3.3, fractions, numbers, row-table keyword slots),
-  assembly (stable specificity sort, `Layer::new`-derived masks,
-  interned as the IR's documented dynamic form). The registry semantics
-  are pinned by a const assert at `REGISTRY_VERSION = "1"` — a registry
-  semantics bump must re-audit the value pass, and the build says so.
-- **Every class that does not lower comes back typed**: `Diagnostic`
-  carries the token's byte span, a stable `aeolus::compile::*` code and
-  a help text (CONTRIBUTING §2 applied to the pipeline). Boundaries:
-  importance (`!`), `/modifiers`, colour tokens, arbitrary values,
-  untyped variants (`has-`, `[a&]`, …) — each its own variant, never a
-  dropped class. Two OFF-by-default instrumentation features land with
-  the crate, exactly the CLI's v0.9.1 / registry's P1 pattern:
-  `tracing` (spans on the stages) and `miette` (code + help on
-  `CompileError`; the always-on `code()`/`help()` strings live on
-  `DiagnosticKind`).
-- **The seam surfaced the first concrete IR budget**: the colour
-  keyword table is **270 entries** and `Val::Kw` is a **u8 slot** —
-  colour tokens lower through the theme pass's `TokenTable`
-  (plan §3.4 T2), typed and reported, never truncated. Also surfaced:
-  the named group/peer label has no IR slot yet (the probe folds, the
-  name threading is the codegen's), and the lexer's degraded pairs lost
-  their spans (the seam re-derives them with the lexer's own sequential
-  find). All three are test-pinned, documented in
-  `reports/10-tdd-evidence/13-compile-seam.md`.
-- **TDD order preserved; gates capture at handoff.** The suite
-  (`tests/compile.rs`, 23 ungated + 2 feature-gated) was authored FIRST
-  as the RED spec, the implementation second, the bench
-  (`benches/compile.rs`: single utility, variant stack, the shadcn
-  Button surface, the typed miss — divan, stable) and the consumer
-  example (`examples/compile_pipeline.rs`) last. This handoff's sandbox
-  has no Rust toolchain, so the RED→GREEN capture and the gate outputs
-  below run with the first cargo invocation in the gate environment;
-  the `Cargo.lock` entry for `aeolus-compile` is already in place so
-  that run is `--locked`-clean.
-- **Micro-debt cleanup (CONTRIBUTING §2/§3):**
-  - `Candidate::signed_body` removed — dead code (zero callers across
-    the workspace) whose doc contradicted its own implementation (it
-    returned the sign-STRIPPED body while claiming to restore the sign;
-    the sign rides `Candidate::negative` by design).
-  - The `VERSION` consts in `aeolus-syntax` and `aeolus-ir` derive from
-    the manifests now (`env!("CARGO_PKG_VERSION")`) — the hardcoded
-    `"0.1.0"` had drifted three releases behind the workspace; each
-    crate pins the derivation with a test.
-- **Docs drift, everywhere it was found:** the README's version badge
-  said **0.7.0** (three releases stale), the status paragraph said
-  **v0.9.0** after the v0.10.0 release commit, the consumer-examples
-  block listed 4 of the tree's 8 examples, and the test-count claim was
-  stale (now the real 509; 513 with the instrumentation features); the
-  crate table carries `aeolus-compile`. The CHANGELOG cuts **[0.10.0]**
-  — the release commit shipped without its section — and this change
-  gets its own `[Unreleased]`. The architecture plan records the P2
-  seam's landed reality beside P1's (a P2 status block + the §8 row).
-  Rustdocs stopped contradicting the code: `prop.rs`'s "96 longhands" →
-  110 (and "32 bits" of headroom → 18), `hash_classes`' "used by both
-  cache and interner" → what actually uses it, and the `tw!`
-  span-preservation promise → the honest nightly-only ceiling (V1 plan
-  §9 documents the same constraint).
+- **`aeolus-theme`** (git-only, `publish = false`, default graph
+  aeolus-core + aeolus-ir only): `ThemeSource::from_css`/`shadcn`/
+  `shadcn_dark` parse through `TailwindTheme` (fuzz-pinned by
+  `color_parse`/`theme_from_css`; `dark_variant` propagates
+  `@theme inline` chains into the dark variant); `TokenTable::baked`/
+  `runtime` snapshot the colours with sorted-name STABLE ids (ids ride
+  compiled `Program`s — a contract, test-pinned); `resolve(id, alpha)`
+  emits the tier's `Val` and refuses typed on unknown ids, non-finite
+  alphas and an alpha on a T1 pair slot. The u16 `Tok` slot is the
+  budget fix the u8 `Kw` discovery forced; the u16 `ModePair` pair
+  table is guarded at build the same way. Two OFF-by-default
+  instrumentation features land with the crate, the workspace's
+  pattern: `tracing` (build/resolve spans) and `miette` (code + help on
+  `ThemeError`/`ResolveError`).
+- **The compile seam gains its theme half**: `compile_theme(input,
+  &TokenTable, &Config)` (plan §3.2's second argument; the `Target`
+  half stays future). The value pass routes the oversized colour table
+  through the supplied table (tier-aware); the `/opacity` modifier
+  normalizes once per candidate (`"90"` → 0.9, `"[0.37]"` → 0.37) and
+  rides COLOUR-form decls only — a modifier on a non-colour lowering
+  (`text-sm/6`) or on a baked dark pair stays the typed
+  `UnsupportedModifier` boundary with the raw text, never a
+  half-applied alpha. Two new reasons join the diagnostic set
+  (`not-a-token`, `non-finite`); the theme-less path is pinned
+  byte-identical to v0.10.0, and a registry-level miss
+  (`bg-not-a-token`) stays the lookup's `ShapeRejected` — the theme
+  pass does not shadow the registry read side.
+- **Micro-debt cleanup (CONTRIBUTING §2/§3), both verified by
+  reading, no toolchain needed:**
+  - `crates/aeolus-compile/benches/compile.rs` could not BUILD: four
+    `unwrap_or_default()` calls on `Result<Compiled, CompileError>`
+    while `Compiled` has no `Default` — `cargo test --benches` /
+    `cargo bench -p aeolus-compile` failed to compile, so the
+    "gates green pre-handoff" claim broke at the bench gate. The bench
+    bodies `expect` like the examples do (a non-empty string always
+    produces a `Compiled`; only the empty input hard-fails), and the
+    bench doc records why no `Default` is deliberate.
+  - The f32 grammar's non-finite spellings lowered SILENTLY into the
+    IR: `p-nan`, `z-inf`, `w-1e40` are legal `f32::from_str` parses
+    (`nan`/`inf`/`infinity`, any case, and overflow-to-inf), the
+    spacing/number shape contracts accepted them, and `Val::Rem(NaN)` /
+    `Val::Num(inf)` reached the program — a no-silent-failures
+    violation. The value pass now refuses them typed
+    (`REASON_NON_FINITE`) on every numeric arm (spacing, the negated
+    forms, fractions, percents, numbers, and the px bake's overflow
+    against a large `rem_px`), with the rest of the string still
+    compiling; pinned end to end.
+- **Docs drift, everywhere it was found:**
+  - The README's hot-path bullet said CI fuzzes "four of them" while
+    CI has swept all six targets since v0.10.0 (`3794b82`); it now says
+    six. CONTRIBUTING's local fuzz smoke listed 4 of the 6 targets;
+    it lists all six.
+  - The CHANGELOG carried TWO `## [0.10.0]` headers (a git-cliff block
+    dated 2026-11-10 at the top AND a prose section dated 2026-11-09)
+    plus an `[Unreleased]` still describing the already-released
+    compile seam — consolidated into one `[0.10.0]`; the new
+    `[Unreleased]` is this change.
+  - The architecture plan's P2 status block and §8 row record the
+    theme pass's landed reality (and mark the colour-table boundary
+    RESOLVED by the u16 `Tok` slot); the README's crate table, the
+    consumer-examples block (nine → eleven runnable examples), the
+    status paragraph and the test counts follow the tree (535 tests;
+    542 with the instrumentation features — the authored +26 ungated
+    and +3 gated, added to v0.10.0's 509/513).
+  - The stale `golden.json` fixture (the v0.4-era 157-entry artifact;
+    the harness reads `golden.corpus`, 193 `@entry` lines) is left as
+    the generator's own output with this note: regenerating it is the
+    tool's job (`tools/gen_golden.mjs`), not a hand edit.
+- **TDD order preserved; gates capture at handoff.** The suites were
+  authored FIRST as the RED specs (15 theme-side tests incl. the
+  crate's inline id-order pin + 12 compile-side, 3 of them gated), the
+  implementations second, the bench and the two consumer examples
+  (`examples/theme_tiers.rs`, `examples/theme_seam.rs`) last. This
+  handoff's sandbox has no Rust toolchain, so the RED→GREEN capture
+  and the gate outputs below run with the first cargo invocation in
+  the gate environment; the `Cargo.lock` entries (`aeolus-theme` as a
+  member, `aeolus-compile`'s new dep edge) are already in place so the
+  run is `--locked`-clean.
 
 ### Gates (static verification in the no-toolchain sandbox; executable capture at handoff)
 
@@ -91,56 +112,66 @@ aeolus-syntax + aeolus-data + aeolus-ir only).
   forbids toolchain execution in this sandbox). Authored to rustfmt
   style; capture at handoff.
 - `cargo clippy --workspace --all-targets --all-features -- -D
-  warnings` — **not run here**. Pedantic is enforced through the
-  workspace `[lints.clippy]` table (`pedantic = warn`, priority −1,
-  per-lint exceptions with rationale) denied by `-D warnings` — the
-  manifest-driven gate is the one that preserves this repo's documented
-  lint contract (a literal `-W pedantic` on the command line both
-  deprecation-errors on current clippy and would override the
-  manifest's rationale-backed exceptions). Verified statically: the
-  `[lints.clippy]` table is intact, and the
-  `#!?\[(allow|expect)\(|cfg_attr\([^)]*_allow\(` grep over `crates/`
-  is **empty** (the new crate included; zero allowances in code, all
+  warnings -W pedantic` — **not run here**. Statically: pedantic is
+  enabled by the workspace `[lints.clippy]` table (`pedantic = warn`,
+  priority −1) and every exception lives in that manifest table with
+  its rationale — a per-lint exception always outranks its group in
+  rustc's lint resolution regardless of flag order, so the manifest's
+  exceptions hold after the CLI's `-W pedantic` (and the group levels
+  agree: warn either way). The zero-allowance contract is grep-verified
+  below; the empirical override check (and, if a future clippy ever
+  flips the order, moving `-W pedantic` ahead of `--`) stays part of
+  the gate capture.
+- Allowance grep (RUN here, it is not a toolchain execution):
+  `grep -rnE '#!?\[(allow|expect)\(|cfg_attr\([^)]*_allow\(' src/
+  crates/ tests/ benches/ examples/ build.rs xtask/` → **empty** (the
+  new crate and suites included; zero allowances in code, all
   exceptions in the manifest tables with rationale).
 - `cargo test --workspace --all-features` — **not run here**. The net
-  new is 25 tests (23 ungated + 2 gated) in `aeolus-compile` plus the
-  2 version-pin tests (syntax, ir): the suite count moves 482 → 509
-  (513 with the instrumentation features). Every test's registry rows,
-  tables and prop targets were cross-checked against the committed
-  rows/tables by hand (TRBL orders, keyword slots, the 270-entry
-  colour table).
-- `cargo test --benches --all-features` — **not run here**. All benches
-  in the workspace remain divan and stable; the new bench adds no
-  nightly gating. **No nightly-only benches exist** — the only nightly
-  surface is the `cargo-fuzz` job, which is CI-gated and not a bench.
+  new is 26 ungated tests (15 theme-side incl. the inline id pin + 11
+  compile-side) plus 3 gated (2 theme, 1 compile): the suite count
+  moves 509 → 535 (542 with the instrumentation features). Every
+  test's registry rows, tables and token names were cross-checked
+  against the committed data by hand (the 270-entry colour table
+  carries the shadcn app names — `bg-primary` is shape-legal; the
+  TRBL orders; the sorted-id contract).
+- `cargo test --benches --all-features` — **not run here**. All
+  benches in the workspace remain divan and stable; the new bench adds
+  no nightly gating. **No nightly-only benches exist** — the only
+  nightly surface is the `cargo-fuzz` job (six targets), which is
+  CI-gated and not a bench.
 - Feature matrix: **no mutually-exclusive features exist anywhere in
-  the workspace** (cli/data/compile carry the additive
+  the workspace** (cli/data/compile/theme carry the additive
   `tracing`/`miette` optional-dep switches; macro's
   `verbose-diagnostics` is additive) — so `--all-features` is safe and
-  there is no `ci-bundle` to assemble.
-- Cargo.lock: the `aeolus-compile` member entry is in place
-  (version 0.10.0, deps + optionals + dev-deps, alphabetical order
-  preserved) so `cargo test --locked` resolves before the first
-  update.
+  there is no `ci-bundle` to assemble. The one deliberately
+  non-portable wiring remains `[patch.crates-io] muda = { path =
+  "crates/muda-stub" }` — the dev-sandbox stub that must never ship
+  (PUBLISHING.md), unchanged here.
+- Cargo.lock: the `aeolus-theme` member entry (version 0.10.0, deps +
+  optionals + dev-dep, alphabetical order preserved) and
+  `aeolus-compile`'s new dep edge are in place so `cargo test
+  --locked` resolves before the first update.
 
 ### Per-file history lives on the branch
 
 Merging is `--rebase` with **one commit per logical change** landed as
-Conventional-Commit commits on `feat/p2-compile-seam` (the compile-seam
-feat carrying its workspace wiring, lock entry and bench, the test pin,
-the examples feat, the dead-code refactor, the VERSION fix, the docs
-alignment, the gitignore chore, the pr-body chore) — the grouping is
-declared in `ship.toml` at the repo root, so the per-file history
-survives the rebase onto `origin/main`; the review shows the same tree
-this PR body describes. **No commits have been made on the base branch
-for this work** — the whole change ships as the branch's commits
-authored by ship from the dirty tree it was handed.
+Conventional-Commit commits on `feat/p2-theme-pass` (the crate feat
+carrying its workspace wiring and lock entry, the test pins, the
+compile-seam feat, the bench fix, the examples feat, the token bench,
+the evidence record, the docs alignment, the pr-body chore) — the
+grouping is declared in `ship.toml` at the repo root, so the per-file
+history survives the rebase onto `origin/main`; the review shows the
+same tree this PR body describes. **No commits have been made on the
+base branch for this work** — the whole change ships as the branch's
+commits authored by ship from the dirty tree it was handed.
 
 ### Verify locally
 
 ```sh
-cargo run -p aeolus-compile --example compile_pipeline
+cargo run -p aeolus-theme  --example theme_tiers
+cargo run -p aeolus-compile --example theme_seam
 cargo test --workspace --all-features
 cargo test --benches --all-features
-cargo bench -p aeolus-compile
+cargo bench -p aeolus-theme
 ```
