@@ -14,9 +14,24 @@ the typed `lookup_detailed`/`LookupError` read seam) and `aeolus-ir`
 `PropMask` bitset algebra) workspace crates, git-only while the
 pipeline assembles. The §8 row's "registry + generator" generator
 story (xtask-emitted phf/trie) stayed in P2: the committed tables ARE
-the P1 source of truth, as §3.2 always said. P2 (`aeolus-compile`),
-P3 (codegen/GPUI) and `xtask` remain planned; the sketches below are
-their contracts, not their implementations.
+the P1 source of truth, as §3.2 always said.
+
+**P2 status (2026-11).** The pipeline's first seam is in-tree:
+`aeolus-compile` — the §3.1 pure function as
+`compile(&str, &Config) -> Result<Compiled, CompileError>` — runs
+class strings through the P1 crates end to end (lex → registry lookup
+→ longhand lowering) and emits cascade-sorted `Program`s with typed,
+spanned diagnostics for every class that does not lower. The theme and
+target halves of the §3.2 signature are the remaining P2 slices
+(`aeolus-theme` T0–T2, the IR-level `cn()` merge,
+`@utility`/`@custom-variant`); the xtask generator story stays with
+them. The seam surfaced two honest boundaries, both test-pinned: the
+IR's u8 `Val::Kw` slot cannot index the 270-entry colour table (tokens
+lower through the theme pass's `TokenTable`), and the flat `Cond`
+model folds stacked variants to the dominant condition (the named
+group/peer label has no IR slot yet). P3 (codegen/GPUI) and `xtask`
+remain planned; the sketches below are their contracts where still
+unimplemented.
 
 **Status of evidence.** Everything in §1 comes from reading `elcoosp/aeolus` at the
 v0.9-in-tree rev (`47ecfba`, 2026-11 — the v0.8 set-mask + the variant & grid engine
@@ -363,7 +378,7 @@ Do **not** block on these: the design works today and simply gets cheaper if the
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------- |
 | **P0 – Prove it**         | Bench harness; hand-write the ideal GPUI output for 5 representative strings; compare (a) current runtime, (b) gpui-rsx static, (c) builder chain, (d) cloned `static` refinement, (e) outlined fn | Real numbers replace §4 targets; pick emit strategy; confirm GPUI pin           | 1       |
 | **P1 – Data-driven core** | `aeolus-syntax`, `aeolus-data` registry + generator, `aeolus-ir`; port top ~150 utilities (LANDED 2026-11 as the three git-only crates — 178 registry rows; the generator moved to P2)                                                                                                         | New compiler == old `Resolver` == golden corpus on those utilities              | 3–4     |
-| **P2 – Full pipeline**    | `aeolus-compile`, `aeolus-theme` (T0–T2), IR-level `cn()`, `@utility`/`@custom-variant`                                                                                                            | Full 193-entry corpus + property/fuzz suites green; `/N` identity property test | 3       |
+| **P2 – Full pipeline**    | `aeolus-compile`, `aeolus-theme` (T0–T2), IR-level `cn()`, `@utility`/`@custom-variant` — **the compile seam landed 2026-11** (`aeolus-compile`: lex → registry lookup → longhand lowering → cascade-sorted `Program`, typed spanned diagnostics, the spacing config knob; theme tiers, the IR-level `cn()` merge and `@utility` remain)                  | Full 193-entry corpus + property/fuzz suites green; `/N` identity property test | 3       |
 | **P3 – GPUI static**      | `aeolus-codegen-gpui`, `aeolus-macros` (`tw!`, `cn!`, `variants!`, `theme!`), `aeolus-gpui` (`TwExt`)                                                                                              | `iai` parity with hand-written; 0-alloc/0-lock contract tests; demo app         | 3       |
 | **P4 – Env variants**     | `AeolusRoot`/`Env`, `dark:`, breakpoints, group/state bits, aria/data                                                                                                                              | Conformance score published for GPUI; diagnostics for unsupported variants      | 2       |
 | **P5 – Ecosystem**        | gpui-rsx integration PR, LSP/CLI, gpui-component bridge, docs book, public benchmarks, `1.0-rc`                                                                                                    | Third-party app migrated; migration guide; CI perf gates                        | 2–3     |
