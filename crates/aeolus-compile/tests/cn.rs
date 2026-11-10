@@ -24,7 +24,7 @@
 //! Written FIRST (the RED spec): the suite fails against a tree without
 //! `cn()` and passes only once the merge satisfies every pin below.
 
-use aeolus_compile::{cn, compile, compile_theme, CompileError, Config, DiagnosticKind};
+use aeolus_compile::{Config, DiagnosticKind, cn, compile, compile_theme};
 use aeolus_ir::{Bp, Cond, Decl, Prop, Val};
 use aeolus_theme::{ThemeSource, TokenTable};
 
@@ -69,9 +69,17 @@ fn cn_conflict_free_inputs_pass_through() {
     let b = compile("hover:p-1", &Config::default()).expect("hover:p-1 compiles");
     let merged = cn(&[&a, &b]).expect("two conflict-free programs merge");
     assert!(merged.diagnostics.is_empty());
-    assert_eq!(merged.program.layers.len(), 2, "base + hover stay two layers");
+    assert_eq!(
+        merged.program.layers.len(),
+        2,
+        "base + hover stay two layers"
+    );
     let expected = [slots(&a.program), slots(&b.program)].concat();
-    assert_eq!(slots(&merged.program), expected, "the merge is the slot union, in order");
+    assert_eq!(
+        slots(&merged.program),
+        expected,
+        "the merge is the slot union, in order"
+    );
     // The pass-through is the normalization too: a single input comes
     // back with the same resolved slots.
     let single = cn(&[&a]).expect("one program merges");
@@ -88,16 +96,32 @@ fn cn_base_overlap_dedupes_rightmost_wins() {
     let b = compile("px-8", &Config::default()).expect("px-8 compiles");
     let merged = cn(&[&a, &b]).expect("merge");
     let decls = base(&merged.program);
-    assert_eq!(decls.len(), 4, "the overlap is merged away, not appended: {decls:?}");
+    assert_eq!(
+        decls.len(),
+        4,
+        "the overlap is merged away, not appended: {decls:?}"
+    );
     let value_of = |prop: Prop| decls.iter().find(|d| d.prop == prop).map(|d| d.val);
-    assert_eq!(value_of(Prop::PaddingTop), Some(Val::Rem(1.0)), "top/bottom keep p-4");
-    assert_eq!(value_of(Prop::PaddingBottom), Some(Val::Rem(1.0)), "top/bottom keep p-4");
+    assert_eq!(
+        value_of(Prop::PaddingTop),
+        Some(Val::Rem(1.0)),
+        "top/bottom keep p-4"
+    );
+    assert_eq!(
+        value_of(Prop::PaddingBottom),
+        Some(Val::Rem(1.0)),
+        "top/bottom keep p-4"
+    );
     assert_eq!(
         value_of(Prop::PaddingLeft),
         Some(Val::Rem(2.0)),
         "left/right ride the rightmost program (rightmost wins)"
     );
-    assert_eq!(value_of(Prop::PaddingRight), Some(Val::Rem(2.0)), "rightmost wins");
+    assert_eq!(
+        value_of(Prop::PaddingRight),
+        Some(Val::Rem(2.0)),
+        "rightmost wins"
+    );
 }
 
 #[test]
@@ -107,10 +131,17 @@ fn cn_normalizes_a_single_overlapping_input() {
     // emits the raw cascade (six base decls, the documented v0.11.0
     // contract); `cn` on it merges the six down to four.
     let compiled = compile("p-4 px-8", &Config::default()).expect("compiles");
-    assert_eq!(base(&compiled.program).len(), 6, "the raw cascade keeps both fan-outs");
+    assert_eq!(
+        base(&compiled.program).len(),
+        6,
+        "the raw cascade keeps both fan-outs"
+    );
     let merged = cn(&[&compiled]).expect("one input merges");
     assert_eq!(base(&merged.program).len(), 4, "the overlap dedupes");
-    assert!(merged.program.base_conflicts().is_empty(), "no conflicts survive the merge");
+    assert!(
+        merged.program.base_conflicts().is_empty(),
+        "no conflicts survive the merge"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +162,11 @@ fn cn_removes_exactly_the_base_conflict_bits() {
         merged.program.base_conflicts().is_empty(),
         "the merge leaves the conflict bits empty"
     );
-    assert_eq!(merged.program.touched(), concat.program.touched(), "same longhand surface");
+    assert_eq!(
+        merged.program.touched(),
+        concat.program.touched(),
+        "same longhand surface"
+    );
 }
 
 #[test]
@@ -164,10 +199,18 @@ fn cn_conditional_layers_merge_by_cond_equality() {
     let a = compile("hover:p-4", &Config::default()).expect("a compiles");
     let b = compile("hover:px-8", &Config::default()).expect("b compiles");
     let merged = cn(&[&a, &b]).expect("merge");
-    assert_eq!(merged.program.layers.len(), 1, "equal conditions fold into ONE layer");
+    assert_eq!(
+        merged.program.layers.len(),
+        1,
+        "equal conditions fold into ONE layer"
+    );
     let layer = &merged.program.layers[0];
     assert_eq!(layer.cond, Cond::Hover);
-    assert_eq!(layer.decls.len(), 4, "hover:p-4 ⊕ hover:px-8 is the four-longhand cascade");
+    assert_eq!(
+        layer.decls.len(),
+        4,
+        "hover:p-4 ⊕ hover:px-8 is the four-longhand cascade"
+    );
 }
 
 #[test]
@@ -178,7 +221,11 @@ fn cn_disjoint_conditions_stay_separate_and_specificity_sorted() {
     let b = compile("md:px-8", &Config::default()).expect("b compiles");
     let merged = cn(&[&a, &b]).expect("merge");
     let conds: Vec<Cond> = merged.program.layers.iter().map(|l| l.cond).collect();
-    assert_eq!(conds, vec![Cond::Hover, Cond::Bp(Bp::Md)], "specificity order, stable");
+    assert_eq!(
+        conds,
+        vec![Cond::Hover, Cond::Bp(Bp::Md)],
+        "specificity order, stable"
+    );
     assert!(merged.program.is_sorted());
 }
 
@@ -197,7 +244,11 @@ fn cn_diagnostics_concatenate_in_input_order() {
     let merged = cn(&[&a, &b]).expect("merge");
     assert_eq!(merged.diagnostics.len(), 2, "both reports ride the merge");
     assert_eq!(merged.diagnostics[0].raw, "not-a-utility");
-    assert_eq!(merged.diagnostics[0].span, (0, 13), "the span is the ORIGINAL input's bytes");
+    assert_eq!(
+        merged.diagnostics[0].span,
+        (0, 13),
+        "the span is the ORIGINAL input's bytes"
+    );
     assert!(matches!(
         merged.diagnostics[1].kind,
         DiagnosticKind::UnsupportedVariant { .. }
@@ -212,7 +263,10 @@ fn cn_diagnostics_concatenate_in_input_order() {
 fn cn_is_idempotent() {
     let x = compile("p-4 hover:p-1", &Config::default()).expect("x compiles");
     let merged = cn(&[&x, &x]).expect("merge");
-    assert_eq!(merged, x, "cn(x, x) == x (conflict-free input, so normalization is a no-op)");
+    assert_eq!(
+        merged, x,
+        "cn(x, x) == x (conflict-free input, so normalization is a no-op)"
+    );
 }
 
 #[test]
@@ -246,7 +300,10 @@ fn cn_theme_tokens_merge_with_the_rightmost_alpha_winning() {
     let id = tokens.id("primary").expect("primary is a token");
     assert_eq!(
         decls[0],
-        Decl { prop: Prop::Background, val: Val::Tok { id, alpha: 0.5 } },
+        Decl {
+            prop: Prop::Background,
+            val: Val::Tok { id, alpha: 0.5 }
+        },
         "the rightmost program's alpha rides the token slot"
     );
 }
