@@ -142,8 +142,8 @@ impl ThemeSource {
 
 /// Why a theme source or a token table failed to build. An empty colour
 /// surface cannot occur (every theme is default-seeded with the full v4
-/// palette), so the only failure mode is a parse failure — carried
-/// verbatim, never stringly re-wrapped.
+/// palette), so the failure modes are a parse failure (carried verbatim,
+/// never stringly re-wrapped) and the T1 budget boundary below.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ThemeError {
     /// The light CSS or the dark overrides did not parse (the audited
@@ -152,12 +152,28 @@ pub enum ThemeError {
         /// The underlying theme-parse failure.
         source: ParseError,
     },
+    /// The dark pair surface exceeds the IR's u16 [`Val::ModePair`]
+    /// slot — the T1 budget boundary, the same shape of constraint the
+    /// compile seam's u8 keyword budget pins. The count is the number
+    /// of const pairs the source would bake; the remedy is fewer paired
+    /// tokens (or the `Runtime` tier, whose slots are not const-paired).
+    /// A BUILD boundary, not a parse failure — it carries its own
+    /// variant instead of smuggling a fabricated `ParseError` through
+    /// the parse arm.
+    PairOverflow {
+        /// The pair count the source would bake.
+        pairs: usize,
+    },
 }
 
 impl fmt::Display for ThemeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ThemeError::Parse { source } => write!(f, "theme CSS: {source}"),
+            ThemeError::PairOverflow { pairs } => write!(
+                f,
+                "the dark pair surface ({pairs} pairs) exceeds the IR's u16 ModePair slot"
+            ),
         }
     }
 }
@@ -166,6 +182,9 @@ impl std::error::Error for ThemeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             ThemeError::Parse { source } => Some(source),
+            // A budget boundary has no underlying failure to delegate
+            // to — the boundary IS the failure.
+            ThemeError::PairOverflow { .. } => None,
         }
     }
 }
@@ -173,15 +192,25 @@ impl std::error::Error for ThemeError {
 #[cfg(feature = "miette")]
 impl miette::Diagnostic for ThemeError {
     fn code(&self) -> Option<Box<dyn fmt::Display + '_>> {
-        Some(Box::new("aeolus::theme::parse"))
+        Some(Box::new(match self {
+            ThemeError::Parse { .. } => "aeolus::theme::parse",
+            ThemeError::PairOverflow { .. } => "aeolus::theme::pair_overflow",
+        }))
     }
 
     fn help(&self) -> Option<Box<dyn fmt::Display + '_>> {
-        Some(Box::new(
-            "the theme source must be @theme/:root/.dark CSS with custom-property \
-             declarations; every var() referenced inside calc() must be defined in \
-             the same file (the audited v4 reader is the oracle)",
-        ))
+        Some(Box::new(match self {
+            ThemeError::Parse { .. } => {
+                "the theme source must be @theme/:root/.dark CSS with custom-property \
+                 declarations; every var() referenced inside calc() must be defined in \
+                 the same file (the audited v4 reader is the oracle)"
+            }
+            ThemeError::PairOverflow { .. } => {
+                "the Runtime tier is the alternative: its Tok slots carry id + alpha and \
+                 are not const-paired; or bake fewer paired tokens (the budget is the \
+                 IR's u16 ModePair slot, the T1 tier's shape)"
+            }
+        }))
     }
 }
 
@@ -277,9 +306,11 @@ impl TokenTable {
     /// const pairs.
     ///
     /// # Errors
-    /// [`ThemeError`] is impossible here (the source is already parsed);
-    /// the `Result` keeps the build seam symmetric for the xtask bake
-    /// that replaces the runtime parse.
+    /// [`ThemeError::PairOverflow`] when the dark pair surface exceeds
+    /// the IR's u16 `ModePair` slot (the T1 budget boundary; practically
+    /// unreachable for real sources, honest regardless). The `Result`
+    /// also keeps the build seam symmetric for the xtask bake that
+    /// replaces the runtime parse.
     pub fn baked(source: &ThemeSource) -> Result<Self, ThemeError> {
         Self::build(source, Tier::Baked)
     }
@@ -330,11 +361,11 @@ impl TokenTable {
                     pairs.push((light[idx], *dark));
                     // The T1 budget: `Val::ModePair`'s slot is a u16. The
                     // same shape of constraint as the compile seam's u8
-                    // keyword budget — refused honestly, never truncated.
-                    let slot = u16::try_from(pairs.len() - 1).map_err(|_| ThemeError::Parse {
-                        source: ParseError::new(
-                            "the dark pair surface exceeds the IR's u16 ModePair slot",
-                        ),
+                    // keyword budget — refused honestly through its own
+                    // typed variant, never truncated and never smuggled
+                    // through the parse arm.
+                    let slot = u16::try_from(pairs.len() - 1).map_err(|_| {
+                        ThemeError::PairOverflow { pairs: pairs.len() }
                     })?;
                     pair_of.push(Some(slot));
                 }

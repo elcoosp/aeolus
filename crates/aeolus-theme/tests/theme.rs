@@ -286,3 +286,34 @@ fn building_and_resolving_under_tracing_keeps_the_contract() {
     let val = table.resolve(id, None).expect("resolves");
     assert!(matches!(val, Val::ModePair(_)), "{val:?}");
 }
+
+#[test]
+fn pair_overflow_refuses_with_its_own_typed_variant() {
+    // The T1 budget refusal is a BUILD boundary, not a parse failure:
+    // it carries its own `ThemeError::PairOverflow` variant instead of
+    // smuggling a fabricated `ParseError` through the parse arm (the
+    // crate's own contract: parse errors are carried verbatim, never
+    // re-wrapped). The build path itself is practically unreachable
+    // (>65535 paired tokens), so the pin is the typed surface: the
+    // always-on Display names the boundary and the count.
+    let err = ThemeError::PairOverflow { pairs: 65_536 };
+    let text = err.to_string();
+    assert!(
+        text.contains("65536") && text.contains("u16 ModePair"),
+        "the Display names the budget and the count: {text}"
+    );
+    // And the `std::error::Error` chain stays source-less: there is no
+    // parse failure to delegate to — the boundary IS the failure.
+    assert!(std::error::Error::source(&err).is_none());
+}
+
+#[cfg(feature = "miette")]
+#[test]
+fn pair_overflow_carries_miette_code_and_help() {
+    use miette::Diagnostic;
+    let err = ThemeError::PairOverflow { pairs: 65_536 };
+    let code = err.code().map(|c| c.to_string());
+    assert_eq!(code.as_deref(), Some("aeolus::theme::pair_overflow"));
+    let help = err.help().expect("the boundary carries help").to_string();
+    assert!(help.contains("Runtime"), "{help}");
+}
