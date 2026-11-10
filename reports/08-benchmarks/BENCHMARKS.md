@@ -289,3 +289,28 @@ compile (the store's lock + the entry build), which is the price of
 the pool dedupe on the first call only. The themed hit shows the
 session-identity design: one table address in the key, no per-call
 content hashing of the table, the theme resolve skipped on repeats.
+
+## V1 emit-arms run (2026-11-11, 2-core sandbox, release profile, divan 0.1.21)
+
+The interpreter arm (plan §3.1 emit (c),
+`crates/aeolus-compile/benches/interp.rs`) and the static-data arm
+(emit (b), `benches/statics.rs`), over the SAME shadcn Button program
+the dyn-cache run keys on. Treat absolute numbers as
+environment-specific; the ratios are the point.
+
+| benchmark | median | note |
+|---|---|---|
+| `interp_baked_button_resting` | **679 ns** | base rule only: pairs select the light half |
+| `interp_baked_button_busy` | **886 ns** | every conditional layer fires (hover/focus-visible/disabled/dark/wide) — the full cascade read |
+| `interp_runtime_button_busy` | **919 ns** | the T2 tier: one load + one multiply rides every token declaration (plan §3.4's runtime cost, measured) |
+| `interp_themeless_button_busy` | 273 ns | the typed token boundary stops the walk — the refusal's cost |
+| `emit_static_button` | **5.59 µs** | freezing the Button program into the byte-stable `static` item (the artifact cost) |
+| `compile_uncached_button` | 21.4 µs | the compile floor beside it (the emit-vs-compile ratio in one place) |
+
+Verdict: the per-frame loop the interpreter exists for sits ~40× under
+the uncached compile (679–919 ns against 21.4 µs) and ~1.4–1.9× over
+the dyn-cache's warm hit (985 ns INCLUDES the interp-free path) —
+compile once, interp per env flip is the intended shape, and the
+runtime tier's multiply costs ~4% over the baked pair index. The
+static-data emit is a build-time artifact cost (5.6 µs for 33 classes),
+not a runtime path.
