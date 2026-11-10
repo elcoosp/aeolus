@@ -1,3 +1,75 @@
+## [0.12.0] - 2026-11-10
+
+### 🚀 Features
+
+- *(compile)* Wire the ir-level cn merge
+- *(bench)* Measure the cn merge
+- *(examples)* Demonstrate the ir-level cn merge
+- *(compile)* Wire the css target arm
+- *(bench)* Measure the css target
+- *(examples)* Demonstrate the css target
+- *(compile)* The custom-authoring seam module
+- *(compile)* Thread the ClassifyVariant seam through the fold
+- *(compile)* Wire the customs read side and the with entry points
+- *(compile)* Bench the custom seam cold paths
+- *(compile)* Demonstrate the custom-authoring seam
+
+### 🐛 Bug Fixes
+
+- *(theme)* Give the pair overflow its typed refusal
+- *(syntax)* Restore the typed lex-failure import
+- *(syntax)* Import VERSION in the inline version-pin test
+- *(ir)* Count the base rule's own re-sets in base_conflicts
+- *(ir)* Repair the crate-tests doc link under -D warnings
+- *(theme)* Pair a token only on a real dark override
+- *(compile)* The value pass alpha shadow and the token form
+- *(compile)* Finish the css walk refactor and the render contract
+- *(syntax)* Rustfmt the error display and its doc link
+- *(compile)* Drop the raw-string hashes clippy denies
+
+### 📚 Documentation
+
+- Align every surface to the cn merge and sweep the drift
+- Align every surface to the css target and the drift
+- *(compile)* Align the pipeline example header to the slices
+- *(changelog)* File the custom seam and the breakage record
+- *(readme)* Align the crate table and status to slice 5
+- *(architecture)* Mark the custom-authoring seam landed
+- *(benchmarks)* File the v1 compile-seam bench numbers
+- *(evidence)* File the custom-seam red-to-green record
+
+### 🚜 Refactor
+
+- *(compile)* Type the variant-fold miss
+
+### 🎨 Styling
+
+- *(syntax)* Apply rustfmt to the lexer example
+- *(theme)* Apply rustfmt to the tiers example
+- *(compile)* Apply rustfmt to the css bench
+- *(compile)* Apply rustfmt to the cn example
+- *(compile)* Apply rustfmt to the theme example
+
+### 🧪 Testing
+
+- *(compile)* Pin the ir-level cn contracts
+- *(syntax)* Pin the typed degraded-lexer channel
+- *(compile)* Pin the css target contracts
+- *(compile)* Pin the custom seam contracts end to end
+- *(compile)* Repair the diagnostic accessor and variant pins
+- *(compile)* Pin the probe heads and the dark companion fixtures
+- *(compile)* Repair the theme-seam accessor and config pins
+- *(compile)* Drop the unused import under -D warnings
+- *(syntax)* Drop the unused LexFailure import
+- *(theme)* Rustfmt the suite and pin the /0 clamp
+
+### ⚙️ Miscellaneous Tasks
+
+- Gate the cli's 1.88 msrv claim
+- Pr body
+- *(release)* V0.12.0
+- Gitignore
+- Gate the v1 crates' 1.88 msrv and sweep the header drift
 # Changelog
 
 All notable changes to Aeolus are documented here. The format follows
