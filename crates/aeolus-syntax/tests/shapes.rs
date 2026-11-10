@@ -2,7 +2,7 @@
 //! diagnostics surfaces build on. These pin the LEXER's own contract
 //! (the differential suite pins the grammar agreement with the oracle).
 
-use aeolus_syntax::{LexErrorKind, LexFailure, parse_candidate, parse_class_string};
+use aeolus_syntax::{LexErrorKind, parse_candidate, parse_class_string};
 
 #[test]
 fn candidate_slices_borrow_the_raw_token() {
@@ -135,7 +135,11 @@ fn degraded_spans_are_exact_on_repeated_tokens() {
     assert_eq!(errors[0].span, (0, 4));
     assert_eq!(errors[1].span, (9, 13));
     assert_eq!(&input[errors[1].span.0..errors[1].span.1], "w-[]");
-    assert!(errors.iter().all(|f| f.kind == LexErrorKind::EmptyArbitrary));
+    assert!(
+        errors
+            .iter()
+            .all(|f| f.kind == LexErrorKind::EmptyArbitrary)
+    );
 }
 
 #[test]
