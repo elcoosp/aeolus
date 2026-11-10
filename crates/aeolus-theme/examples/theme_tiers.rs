@@ -21,7 +21,11 @@ fn main() {
     let source = ThemeSource::shadcn_dark().expect("embedded palettes parse");
     println!(
         "theme source: shadcn light{}",
-        if source.dark().is_some() { " + dark" } else { "" }
+        if source.dark().is_some() {
+            " + dark"
+        } else {
+            ""
+        }
     );
 
     // 2. The T2 runtime table: sorted-name ids, the u16 Tok slot — the
@@ -38,23 +42,34 @@ fn main() {
             println!("  {name:<12} — not a token");
             continue;
         };
-        println!("  {name:<12} id {id:<4} {:?}", runtime.resolve(id, None).expect("resolves"));
+        println!(
+            "  {name:<12} id {id:<4} {:?}",
+            runtime.resolve(id, None).expect("resolves")
+        );
     }
 
     // 3. The T0/T1 baked table: literals for light-only tokens, const
     //    pairs where the dark variant overrides.
     let baked = TokenTable::baked(&source).expect("default-seeded source builds");
-    println!("\n── baked table (tier {:?}) ─────────────────────────────", baked.tier());
+    println!(
+        "\n── baked table (tier {:?}) ─────────────────────────────",
+        baked.tier()
+    );
     for name in ["primary", "background"] {
         let Some(id) = baked.id(name) else { continue };
-        println!("  {name:<12} {:?}", baked.resolve(id, None).expect("resolves"));
+        println!(
+            "  {name:<12} {:?}",
+            baked.resolve(id, None).expect("resolves")
+        );
     }
 
     // 4. The /opacity identity, on a light-only token (the v4 palette
     //    tokens carry no .dark override): the premultiplied bake is one
     //    multiply, pinned against the audited oracle
     //    (Color::mix_with_transparent).
-    let id = baked.id("red-500").expect("red-500 is a light-only palette token");
+    let id = baked
+        .id("red-500")
+        .expect("red-500 is a light-only palette token");
     match (baked.resolve(id, None), baked.resolve(id, Some(0.5))) {
         (Ok(Val::Rgba(plain)), Ok(Val::Rgba(half))) => {
             println!("\n── the /N identity (baked tier) ────────────────────────");
@@ -69,11 +84,19 @@ fn main() {
     //    boundary), and a Tok slot when runtime (the alpha rides).
     let id = baked.id("primary").expect("primary exists");
     println!("\n── one token, the tier forms ───────────────────────────");
-    println!("  T1 baked  : {:?}", baked.resolve(id, None).expect("resolves"));
+    println!(
+        "  T1 baked  : {:?}",
+        baked.resolve(id, None).expect("resolves")
+    );
     println!(
         "  T1 + /90  : {:?} (the typed boundary)",
-        baked.resolve(id, Some(0.9)).expect_err("the pair form refuses alpha")
+        baked
+            .resolve(id, Some(0.9))
+            .expect_err("the pair form refuses alpha")
     );
     let id = runtime.id("primary").expect("primary exists");
-    println!("  T2 runtime: {:?}", runtime.resolve(id, Some(0.9)).expect("resolves"));
+    println!(
+        "  T2 runtime: {:?}",
+        runtime.resolve(id, Some(0.9)).expect("resolves")
+    );
 }
