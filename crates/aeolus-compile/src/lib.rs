@@ -39,9 +39,9 @@
 //!
 //! What this slice deliberately is NOT (each is a remaining P2/P3
 //! slice, and the seams say so in their rustdocs): the xtask generator
-//! story, the remaining [`Target`] arm (Rust tokens), the
-//! arbitrary-value unit grammar and the has-/data-/
-//! aria- variant folding. What LANDED here beside the theme half, the
+//! story, the remaining [`Target`] arm (Rust tokens) and the
+//! has-/data-/aria- variant folding. What LANDED here beside the theme
+//! half, the
 //! IR-level [`cn()`] merge (plan §3.2's "hosts the `cn()` engine at IR
 //! level" — same-condition layers merge by `Cond` equality,
 //! declarations concatenate and the per-longhand LAST occurrence wins,
@@ -77,7 +77,21 @@
 //! [`Program`] into the IR's OWN static form — one compilable,
 //! byte-stable `static` item over `Layer::new` constructors, the
 //! artifact the plan §3.3 "the static form is a `static` item"
-//! story ships.
+//! story ships — and the ARBITRARY-VALUE UNIT GRAMMAR (the value
+//! pass's last named P2 slice): the bracket/paren groups the registry
+//! rows always accepted now LOWER — px/rem/%/deg units into the IR's
+//! own slots, colours through the audited [`aeolus_core::Color`]
+//! parser, `/opacity` through the audited premultiplied bake,
+//! `var()`/`(--var)` references through the theme pass's token path,
+//! the `length:`/`percentage:`/`number:`/`color:` hints constraining
+//! the parse — and every value the IR cannot carry (multi-token
+//! composites, the arbitrary-property form, keyword values on the
+//! row-relative `Val::Kw` slots) refuses TYPED, with the sibling-row
+//! class gate keeping the diagnostics quiet where another row of the
+//! root takes the class (`text-[13px]` is the font-size row's alone;
+//! `text-[#0f0f0f]` the colour row's). The `arbitrary` module's docs
+//! carry the grammar and the boundary set; `tests/arbitrary.rs` pins
+//! the contracts.
 //!
 //! Storage note: [`Program`] holds `&'static` slices, so each compile
 //! call interns its program into the leak pool the IR documents as the
@@ -95,6 +109,7 @@
 //! to build against a `REGISTRY_VERSION` other than the one its
 //! lowering was audited against.
 
+mod arbitrary;
 mod css;
 mod custom;
 mod dyn_cache;
@@ -335,11 +350,13 @@ pub enum DiagnosticKind {
         /// The body WITHOUT the sign (what refused it).
         body: String,
     },
-    /// The value half does not lower in this slice — the arbitrary-value
-    /// unit grammar (bracket/paren forms) is its remaining P2 slice; the
-    /// numeric and keyword halves landed, and oversized keyword tables
-    /// (colour tokens) lower through the theme pass. The reason string
-    /// says which boundary fired.
+    /// The value half does not lower in this slice — the numeric,
+    /// keyword and arbitrary-unit halves landed (the unit grammar's
+    /// boundary set lives in the `arbitrary` module), and oversized
+    /// keyword tables (colour tokens) lower through the theme pass. The
+    /// reason string says which boundary fired (the composite/
+    /// property/keyword/hint/table refusals, the shape-mismatch drift
+    /// arm, or the non-finite guard).
     UnsupportedValue {
         /// The offending body, verbatim.
         body: String,
@@ -401,10 +418,11 @@ impl DiagnosticKind {
                  false` (the registry is the legality oracle)"
             }
             DiagnosticKind::UnsupportedValue { .. } => {
-                "the numeric and keyword value halves lower today; the \
-                 remaining boundary is the arbitrary-value unit grammar \
-                 (bracket/paren forms). Colour tokens lower through \
-                 compile_theme's TokenTable (aeolus-theme, plan §3.4)"
+                "the numeric, keyword and arbitrary-unit value halves lower today (px/rem/%/deg \
+                 units, colours, the length:/percentage:/number:/color: hints, var() token \
+                 references through the theme pass); the remaining boundaries are the multi-token \
+                 composite forms (calc(), underscore joins, url/image values), the arbitrary-property \
+                 form and keyword values on the row-relative keyword slots — the codegen host's surface"
             }
         }
     }
@@ -799,7 +817,12 @@ fn run(
     // matched row. Conditions group first-seen; the specificity sort is
     // the assembly step's. The modifier normalizes once per candidate:
     // a modifier that does not parse (or names a var) stays the typed
-    // boundary — with or without the theme pass.
+    // boundary — with or without the theme pass. Arbitrary-valued
+    // candidates track their row outputs: the sibling rows that never
+    // matched the value's class skip SILENTLY, and the boundary
+    // reasons defer to one deduped report per candidate (one class,
+    // one boundary — never a per-sibling diagnostic pile, never a
+    // silent drop when NO row took the class).
     let mut conds: Vec<Cond> = Vec::new();
     let mut groups: Vec<Vec<Decl>> = Vec::new();
     for candidate in &candidates {
@@ -870,6 +893,9 @@ fn run(
                 },
             }
         };
+        let mut produced = 0usize;
+        let mut deferred: Vec<&'static str> = Vec::new();
+        let mut reported = false;
         match rows {
             Ok(rows) => {
                 for row in rows {
@@ -880,6 +906,7 @@ fn run(
                         alpha,
                         tokens,
                         config,
+                        candidate.arbitrary,
                     ) {
                         Ok(decls) => {
                             let idx = match conds.iter().position(|&c| c == cond) {
@@ -890,9 +917,23 @@ fn run(
                                     conds.len() - 1
                                 }
                             };
+                            produced += decls.len();
                             groups[idx].extend(decls);
                         }
                         Err(reject) => {
+                            reported = true;
+                            // The arbitrary boundary set defers: the
+                            // sibling rows share one miss, and the
+                            // report renders once, deduped, below.
+                            if let (true, lower::Reject::Value { reason }) =
+                                (candidate.arbitrary.is_some(), &reject)
+                                && arbitrary::is_boundary_reason(reason)
+                            {
+                                if !deferred.contains(reason) {
+                                    deferred.push(reason);
+                                }
+                                continue;
+                            }
                             diagnostics.push(reject_diagnostic(
                                 candidate,
                                 effective_body,
@@ -900,6 +941,35 @@ fn run(
                                 candidate.modifier,
                             ));
                         }
+                    }
+                }
+                // The catch-all: an arbitrary candidate whose NO row
+                // took (every sibling skipped silently) and that no
+                // other report answered still reports — the
+                // no-silent-failures rule, applied to the class gate's
+                // quiet half. Deferred boundaries render here, deduped
+                // (one class, one boundary).
+                if candidate.arbitrary.is_some() && produced == 0 {
+                    if !deferred.is_empty() {
+                        for reason in deferred {
+                            diagnostics.push(Diagnostic::new(
+                                candidate.span,
+                                candidate.raw,
+                                DiagnosticKind::UnsupportedValue {
+                                    body: effective_body.to_string(),
+                                    reason,
+                                },
+                            ));
+                        }
+                    } else if !reported {
+                        diagnostics.push(Diagnostic::new(
+                            candidate.span,
+                            candidate.raw,
+                            DiagnosticKind::UnsupportedValue {
+                                body: effective_body.to_string(),
+                                reason: arbitrary::REASON_ARBITRARY_UNIT,
+                            },
+                        ));
                     }
                 }
             }
