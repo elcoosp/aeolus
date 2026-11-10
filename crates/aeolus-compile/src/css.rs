@@ -380,6 +380,12 @@ pub(crate) fn run_css(
             }
         };
         let mut decls: Vec<lower::CssDecl> = Vec::new();
+        // The arbitrary candidates' deferred boundary set (the IR walk's
+        // own tracking — the diagnostics stay EQUAL over the battery):
+        // silent sibling-row skips, one deduped report per candidate,
+        // the catch-all when no row took the class.
+        let mut deferred: Vec<&'static str> = Vec::new();
+        let mut reported = false;
         match rows {
             Ok(rows) => {
                 for row in rows {
@@ -390,9 +396,20 @@ pub(crate) fn run_css(
                         alpha,
                         tokens,
                         config,
+                        candidate.arbitrary,
                     ) {
                         Ok(mut rendered) => decls.append(&mut rendered),
                         Err(reject) => {
+                            reported = true;
+                            if let (true, lower::Reject::Value { reason }) =
+                                (candidate.arbitrary.is_some(), &reject)
+                                && crate::arbitrary::is_boundary_reason(reason)
+                            {
+                                if !deferred.contains(reason) {
+                                    deferred.push(reason);
+                                }
+                                continue;
+                            }
                             diagnostics.push(reject_diagnostic(
                                 candidate,
                                 effective_body,
@@ -400,6 +417,29 @@ pub(crate) fn run_css(
                                 candidate.modifier,
                             ));
                         }
+                    }
+                }
+                if candidate.arbitrary.is_some() && decls.is_empty() {
+                    if !deferred.is_empty() {
+                        for reason in deferred {
+                            diagnostics.push(Diagnostic::new(
+                                candidate.span,
+                                candidate.raw,
+                                DiagnosticKind::UnsupportedValue {
+                                    body: effective_body.to_string(),
+                                    reason,
+                                },
+                            ));
+                        }
+                    } else if !reported {
+                        diagnostics.push(Diagnostic::new(
+                            candidate.span,
+                            candidate.raw,
+                            DiagnosticKind::UnsupportedValue {
+                                body: effective_body.to_string(),
+                                reason: crate::arbitrary::REASON_ARBITRARY_UNIT,
+                            },
+                        ));
                     }
                 }
             }
