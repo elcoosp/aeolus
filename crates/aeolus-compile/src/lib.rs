@@ -39,31 +39,42 @@
 //!
 //! What this slice deliberately is NOT (each is a remaining P2/P3
 //! slice, and the seams say so in their rustdocs): the xtask generator
-//! story, the theme-token functional custom form (`--value(color)`, the
-//! next custom-seam slice) and the remaining [`Target`] arms (Rust
-//! tokens, static data, the interpreter). What LANDED here beside the
-//! theme half, the IR-level [`cn()`] merge (plan §3.2's "hosts the
-//! `cn()` engine at IR level" — same-condition layers merge by `Cond`
-//! equality, declarations concatenate and the per-longhand LAST
-//! occurrence wins, so the overlap the merge removes is exactly
+//! story, the remaining [`Target`] arms (Rust tokens, static data, the
+//! interpreter), the arbitrary-value unit grammar and the has-/data-/
+//! aria- variant folding. What LANDED here beside the theme half, the
+//! IR-level [`cn()`] merge (plan §3.2's "hosts the `cn()` engine at IR
+//! level" — same-condition layers merge by `Cond` equality,
+//! declarations concatenate and the per-longhand LAST occurrence wins,
+//! so the overlap the merge removes is exactly
 //! [`aeolus_ir::Program::base_conflicts`]'s bits on the raw cascade)
 //! and the TARGET half's CSS arm — [`emit_css`]/[`emit_css_theme`]
 //! render the plan §3.1 emit (d) form in-pipeline (the [`Target`] docs
 //! carry the why: the IR's row-relative `Kw` slot cannot recover the
 //! row's CSS text, so the emit renders where the rows still talk) — is
 //! the CUSTOM-AUTHORING seam (plan §5.4's `@utility`/`@custom-variant`
-//! surface): [`Customs`] register custom utilities (fixed literals and
-//! functional forms) and custom variant aliases, and
-//! [`compile_with`]/[`compile_theme_with`]/[`emit_css_with`]/
+//! surface): [`Customs`] register custom utilities (fixed literals,
+//! the functional `integer`/`number`/`percentage`/`spacing` forms and
+//! the theme-token `--value(color)` form) and custom variant aliases,
+//! and [`compile_with`]/[`compile_theme_with`]/[`emit_css_with`]/
 //! [`emit_css_theme_with`] lower and render them through the SAME
 //! typed read side, value pass, diagnostics and emit paths as the
-//! built-in surface (the `custom` module's docs carry the design).
+//! built-in surface (the `custom` module's docs carry the design) —
+//! and the DYN-CACHE seam: [`DynCache`] is the content-keyed, bounded,
+//! thread-safe cache over this pipeline (the leak-pool dedupe the
+//! storage note below promises), with the storage swappable through
+//! [`DynStore`] and the built-in [`TwoGenStore`].
 //!
 //! Storage note: [`Program`] holds `&'static` slices, so each compile
 //! call interns its program into the leak pool the IR documents as the
 //! dynamic form's storage ("one interned `Box<[Decl]>` shared by
-//! reference"). P2's `DynCache` dedupes the pool later; until then one
-//! compile per distinct class string is the intended call pattern.
+//! reference"). P2's `DynCache` keeps the pool's growth rate bounded:
+//! [`DynCache::compile`] is the content-keyed, bounded, thread-safe
+//! cache over the same pipeline — a hit hands back the SAME interned
+//! slices the miss pooled (pointer-identical, the tests pin the
+//! addresses), so a repeated class string pools exactly once while the
+//! cache holds it (see the `dyn_cache` module's docs; the built-in
+//! [`TwoGenStore`] is the v0.x `PlanCache`'s two-generation boundedness
+//! story, and the storage is a SEAM — [`DynStore`]).
 //!
 //! The registry semantics are pinned at compile time: the crate refuses
 //! to build against a `REGISTRY_VERSION` other than the one its
@@ -71,6 +82,7 @@
 
 mod css;
 mod custom;
+mod dyn_cache;
 mod lower;
 mod variant;
 
@@ -88,6 +100,9 @@ pub use css::{
     CssAt, CssRule, CssSheet, emit_css, emit_css_theme, emit_css_theme_with, emit_css_with,
 };
 pub use custom::{ClassifyVariant, CustomForm, CustomUtility, CustomValue, CustomVariant, Customs};
+pub use dyn_cache::{
+    CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity, DynStore, TwoGenStore,
+};
 
 // The lowering audits the rows' meaning; a registry semantics bump must
 // re-audit it. Byte-wise const compare — `&str` equality is not a const
@@ -253,9 +268,11 @@ pub enum DiagnosticKind {
         /// The body WITHOUT the sign (what refused it).
         body: String,
     },
-    /// The value half does not lower in this slice — arbitrary values
-    /// wait for the P2 value pass, oversized keyword tables (colour
-    /// tokens) for the theme pass. The reason string says which.
+    /// The value half does not lower in this slice — the arbitrary-value
+    /// unit grammar (bracket/paren forms) is its remaining P2 slice; the
+    /// numeric and keyword halves landed, and oversized keyword tables
+    /// (colour tokens) lower through the theme pass. The reason string
+    /// says which boundary fired.
     UnsupportedValue {
         /// The offending body, verbatim.
         body: String,
@@ -317,9 +334,10 @@ impl DiagnosticKind {
                  false` (the registry is the legality oracle)"
             }
             DiagnosticKind::UnsupportedValue { .. } => {
-                "the value half is the next P2 slice (unit grammar and type \
-                 hints); colour tokens lower through compile_theme's \
-                 TokenTable (aeolus-theme, plan §3.4)"
+                "the numeric and keyword value halves lower today; the \
+                 remaining boundary is the arbitrary-value unit grammar \
+                 (bracket/paren forms). Colour tokens lower through \
+                 compile_theme's TokenTable (aeolus-theme, plan §3.4)"
             }
         }
     }
