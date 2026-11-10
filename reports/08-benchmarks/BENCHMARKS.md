@@ -266,3 +266,26 @@ form's resolve rides the built-in colour path's own tier arithmetic.
 The Button surface's number is dominated by the arbitrary-variant and
 colour-token diagnostics battery (the honest degradation), unchanged
 by the seam.
+
+## V1 dyn-cache run (2026-11-11, 2-core sandbox, release profile, divan 0.1.21)
+
+The P2 slice 6 hot paths (`crates/aeolus-compile/benches/dyn_cache.rs`),
+captured with the dyn-cache seam in place. Treat absolute numbers as
+environment-specific; the ratios are the point.
+
+| benchmark | median | note |
+|---|---|---|
+| `compile_uncached_button` | 21.1 µs | the uncached floor (33 classes, honest degradation battery) |
+| `dyn_cache_miss_cold_button` | 25.0 µs | fresh cache per call: probe + pipeline + store (the honest first-call cost) |
+| `dyn_cache_hit_warm_button` | **985 ns** | the steady state: one composed-key probe, the SAME interned slices handed back — **21× over the uncached compile** |
+| `compile_uncached_single_utility` | 546 ns | the pipeline's floor |
+| `dyn_cache_hit_warm_single_utility` | **251 ns** | the hit floor (2.2× over the uncached utility) |
+| `dyn_cache_hit_warm_themed` | **261 ns** | the themed session's hit: the table resolve is skipped too |
+
+Verdict: the hit path sits where the v0.x `resolve_cached_hit` story
+sits (405 ns in the v0.5 table) — the composed-key `format!` + one
+SipHash probe + an `Arc` bump; the miss pays ~15–20% over the uncached
+compile (the store's lock + the entry build), which is the price of
+the pool dedupe on the first call only. The themed hit shows the
+session-identity design: one table address in the key, no per-call
+content hashing of the table, the theme resolve skipped on repeats.
