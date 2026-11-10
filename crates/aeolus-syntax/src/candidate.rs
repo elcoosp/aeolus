@@ -72,13 +72,6 @@ pub struct Candidate<'a> {
 }
 
 impl Candidate<'_> {
-    /// The utility body WITH its negation sign restored — the shape the
-    /// registry's `lookup` disambiguates on (`"-mt-4"` → `"mt-4"` body,
-    /// `negative` flag; the sign rides the flag, not the body).
-    pub fn signed_body(&self) -> &str {
-        self.body
-    }
-
     /// The variant segments joined by `:` — the merge key prefix the
     /// `cn()` engine keys on (empty for bare utilities).
     pub fn variant_prefix(&self) -> String {
