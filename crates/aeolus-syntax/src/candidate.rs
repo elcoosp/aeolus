@@ -13,7 +13,7 @@
 //!    belongs to the utility, not the lexer (plan §3.1: fixes F1/F6/F7
 //!    at the source).
 
-use crate::error::{LexError, LexErrorKind};
+use crate::error::{LexError, LexErrorKind, LexFailure};
 
 /// Which arbitrary syntax a value used (`[...]` vs the v4.1 `(...)`
 /// shorthand). Mirrors the oracle's `ArbForm`.
@@ -165,7 +165,11 @@ pub fn parse_class_string(input: &str) -> (Vec<Candidate<'_>>, Vec<LexFailure<'_
                 c.span = (start, end);
                 tokens.push(c);
             }
-            Err(e) => errors.push(LexFailure { span: (start, end), raw, kind: e.kind }),
+            Err(e) => errors.push(LexFailure {
+                span: (start, end),
+                raw,
+                kind: e.kind,
+            }),
         }
     }
     (tokens, errors)
