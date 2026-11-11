@@ -42,7 +42,9 @@
 //!
 //! What this slice deliberately is NOT (each is a remaining P2/P3
 //! slice, and the seams say so in their rustdocs): the xtask generator
-//! story and the has-/data-/aria- variant folding. What LANDED here beside the theme
+//! story. The has-/data-/aria- variant folding landed 2026-11 (the
+//! attribute-probe families fold onto the typed `Cond` surface — see
+//! the `variant` module's docs and `tests/attr_variants.rs`). What LANDED here beside the theme
 //! half, the
 //! IR-level [`cn()`] merge (plan §3.2's "hosts the `cn()` engine at IR
 //! level" — same-condition layers merge by `Cond` equality,
@@ -353,7 +355,11 @@ pub enum DiagnosticKind {
         tried: Vec<&'static str>,
     },
     /// The variant segment is outside the typed `Cond` surface
-    /// (`has-data-[x]:`, `[@media(print)]:`) — the next P2 slice.
+    /// (`[@media(print)]:`, `group-data-open:`, `has-[p:hover]:`) — the
+    /// element-own and parent-relative attribute probes fold (the
+    /// `variant` module's docs carry the grammar); what remains outside
+    /// is the arbitrary-variant form, the structural family and the
+    /// parent×attribute compositions.
     UnsupportedVariant {
         /// The segment text, verbatim.
         variant: String,
@@ -424,9 +430,11 @@ impl DiagnosticKind {
             }
             DiagnosticKind::UnsupportedVariant { .. } => {
                 "the typed Cond surface covers probe states, dark, \
-                 breakpoints, containers and the group/peer probes; \
-                 has-/data-/aria-/arbitrary variants fold in the next P2 \
-                 slice"
+                 breakpoints, containers, the group/peer probes and the \
+                 data-/aria-/has- attribute probes (the `variant` module's \
+                 docs carry the fold's grammar); arbitrary variants, the \
+                 structural family and the parent×attribute compositions \
+                 stay typed refusals"
             }
             DiagnosticKind::UnsupportedImportant => {
                 "the IR has no importance slot; the `!` flag rides the \
