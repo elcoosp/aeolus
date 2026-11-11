@@ -129,6 +129,7 @@ mod custom;
 mod dyn_cache;
 mod interp;
 mod lower;
+mod plan;
 mod rust;
 mod statics;
 mod variant;
@@ -154,6 +155,10 @@ pub use interp::{
     AttrBit, AttrKind, AttrProbe, AttrState, Env, InterpError, InterpNote, Interped, TokenSource,
     interp, interp_probes, interp_theme, interp_theme_probes,
 };
+pub use plan::{
+    PlanNote, PlanNoteKind, PlanSheet, emit_plan, emit_plan_theme, emit_plan_theme_with,
+    emit_plan_with,
+};
 pub use rust::{
     RustFragment, RustSheet, emit_rust, emit_rust_theme, emit_rust_theme_with, emit_rust_with,
 };
@@ -178,11 +183,13 @@ const _: () = assert!(
 /// The emit half of the plan §3.2 compile signature
 /// (`compile(&str, &ThemeSource, &Target) -> Result<Program, Diagnostics>`):
 /// what ARTIFACT the pipeline's emit stage produces from the program.
-/// All four of the plan §3.1 diagram's emit forms are armed —
+/// All FIVE of the plan §3.1 diagram's emit forms are armed —
 /// [`Target::Css`] (slice 4, rendered by [`emit_css`]/[`emit_css_theme`]),
 /// [`Target::Rust`] (the Rust-tokens arm, [`emit_rust`]/[`emit_rust_theme`]),
-/// [`Target::Interp`] (the interpreter, [`interp`]/[`interp_theme`]) and
-/// [`Target::Static`] (the static-data form, [`emit_static`]). The
+/// [`Target::Interp`] (the interpreter, [`interp`]/[`interp_theme`]),
+/// [`Target::Static`] (the static-data form, [`emit_static`]) and
+/// [`Target::Plan`] (the v0.x plan bridge, [`emit_plan`]/[`emit_plan_theme`]
+/// — the §7 migration seam the backends' `StylePlan` consumers ride). The
 /// backend METHOD calls the Rust-tokens arm's end form implies are the
 /// P3 codegen crate's surface — the arm renders the IR's own token
 /// shape, annotated where only the pipeline can see.
@@ -207,6 +214,12 @@ pub enum Target {
     /// `aeolus-ir` is a dependency — [`emit_static`] is this arm's
     /// entry point.
     Static,
+    /// The v0.x plan bridge (architecture plan §7's migration seam):
+    /// the compiled artifact lowered into the `StylePlan` the five
+    /// backend crates already consume — [`emit_plan`]/[`emit_plan_theme`]
+    /// are this arm's entry points, the boundary set riding the typed
+    /// [`PlanNote`]s.
+    Plan,
 }
 
 /// How spacing multiples bake (plan §3.3's `spacing = "tailwind" | "px"`
