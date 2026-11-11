@@ -1,0 +1,11 @@
+# The workspace's generator driver (plan §3.2's generator story): the
+# `xtask` crate lives at crates/xtask and drives aeolus-data's
+# `codegen::GeneratedArtifact` seam.
+#
+#   cargo xtask gen-tables     — regenerate the committed artifacts
+#                                (the roots index, the registry docs
+#                                page) from the committed rows
+#   cargo xtask verify-tables  — the drift gate: exit 1 on any drift
+#                                (the tests pin the same bytes)
+[alias]
+xtask = "run -p xtask --"
