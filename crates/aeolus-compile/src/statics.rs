@@ -45,9 +45,12 @@
 //!
 //! The name `PROGRAM` is the emitter's one fixed choice — a host
 //! emitting several programs renames or wraps the item. What this slice
-//! deliberately is NOT: the Rust-TOKENS arm (plan §3.1 emit (a) — the
-//! backend method calls are the P3 codegen crate's surface) and the
-//! xtask bake that turns this output into committed source.
+//! deliberately is NOT: the Rust-TOKENS arm's per-class fragments (plan
+//! §3.1 emit (a) — landed as [`emit_rust`](crate::emit_rust), the
+//! in-pipeline sibling that annotates the keyword/token slots with the
+//! names only the rows and the table know; the backend method calls are
+//! still the P3 codegen crate's surface) and the xtask bake that turns
+//! this output into committed source.
 
 use aeolus_ir::{Program, Val};
 
@@ -121,8 +124,10 @@ pub fn emit_static(program: &Program) -> String {
 
 /// One `Val` variant's constructor text — the auditable wall: one arm
 /// per variant, none wildcarded (a new `Val` variant is a compile
-/// error here, by design).
-fn val_literal(val: Val) -> String {
+/// error here, by design). `pub(crate)`: the rust-tokens arm renders
+/// the same constructor text (one float contract, two consumers — the
+/// emitters cannot drift apart).
+pub(crate) fn val_literal(val: Val) -> String {
     // Whole floats keep `.0` (`1` is not a valid f32 literal); the
     // shortest round-trip form otherwise; the non-finite slots the
     // pipeline's finite guard refuses emit as the f32 constructors —
