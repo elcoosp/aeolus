@@ -109,3 +109,76 @@ fn interp_themeless_button_busy(bencher: Bencher) {
         let _ = interp(&compiled.program, &env);
     });
 }
+
+// ---------------------------------------------------------------------------
+// The attribute-probe seam (the plan §3.5 state-bits surface)
+// ---------------------------------------------------------------------------
+
+use aeolus_compile::{AttrBit, AttrKind, AttrState, interp_probes, interp_theme_probes};
+
+/// The element's typed attribute bits: the aria-invalid state the
+/// Button string's own layers ask for (`aria-invalid:border-…`,
+/// `aria-invalid:ring-…`) plus a data bit nothing fires on — the
+/// source-answered miss rides the same walk.
+fn invalid_state() -> AttrState<'static> {
+    AttrState::new(&[
+        AttrBit {
+            kind: AttrKind::Aria,
+            name: "invalid",
+            value: "true",
+        },
+        AttrBit {
+            kind: AttrKind::Data,
+            name: "state",
+            value: "closed",
+        },
+    ])
+}
+
+/// The themed walk WITH the probe seam: the Button's aria-invalid
+/// layers fire under the element's typed bits (the per-frame resolve
+/// carries both sources — the DynCache loop's real shape).
+#[divan::bench]
+fn interp_theme_probes_button_busy(bencher: Bencher) {
+    let table = runtime_table();
+    let compiled = button_program(&table);
+    let env = busy_env();
+    bencher.bench(|| {
+        interp_theme_probes(&compiled.program, &table, &env, &invalid_state())
+            .expect("the program resolves")
+    });
+}
+
+/// The probe walk over a token-free program (the theme-less probe
+/// form): one probe layer fires, one source-answered miss stays quiet,
+/// one descendant probe reports — the seam's per-layer costs in one
+/// pass.
+#[divan::bench]
+fn interp_probes_mixed(bencher: Bencher) {
+    let cache = DynCache::new();
+    let compiled = cache
+        .compile(
+            "p-4 data-[state=open]:p-8 data-[state=closed]:py-2 has-focus:p-8",
+            &Config::default(),
+        )
+        .expect("non-empty input compiles");
+    let env = Env::default();
+    bencher.bench(|| {
+        interp_probes(&compiled.program, &env, &invalid_state()).expect("the program resolves")
+    });
+}
+
+/// The same program through the SOURCELESS walk: every attribute layer
+/// is the reported exclusion — the note path's cost, for the record.
+#[divan::bench]
+fn interp_sourceless_mixed(bencher: Bencher) {
+    let cache = DynCache::new();
+    let compiled = cache
+        .compile(
+            "p-4 data-[state=open]:p-8 data-[state=closed]:py-2 has-focus:p-8",
+            &Config::default(),
+        )
+        .expect("non-empty input compiles");
+    let env = Env::default();
+    bencher.bench(|| interp(&compiled.program, &env).expect("the program resolves"));
+}
