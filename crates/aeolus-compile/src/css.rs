@@ -41,6 +41,7 @@
 //! the value pass's typed rejection boundaries).
 
 use std::fmt;
+use std::fmt::Write as _;
 
 use aeolus_data::LookupError;
 use aeolus_data::registry::lookup_detailed;
@@ -509,11 +510,22 @@ pub(crate) fn run_css(
 struct CondSet {
     /// The probe-state suffixes, source order (`:hover`, `::selection`).
     pseudos: Vec<&'static str>,
+    /// The attribute probes and `:has()` fragments, source order
+    /// (`[data-state="open"]`, `:has(*:focus)`) — the attribute-probe
+    /// families' selector text, derived from the folded [`Cond`]
+    /// payloads (one grammar with the fold, two consumers).
+    probes: Vec<String>,
     /// The `dark:` tier (the `:where(.dark, .dark *)` suffix).
     dark: bool,
     /// The parent/peer head, unescaped (`.group/menu:hover`) and whether
     /// it combines as a SIBLING (`.peer:… ~`) or an ancestor (`.group:… `).
     parent: Option<String>,
+    /// Whether `parent` is PRE-RENDERED — the class half already
+    /// escaped, the probe half raw. The has-probe heads
+    /// (`.group:has(*:focus)`) carry colons inside `:has(...)` that the
+    /// default head's `rsplit_once(':')` class/probe split cannot see
+    /// past, so those heads render themselves.
+    parent_prerendered: bool,
     peer: bool,
     /// The one @-rule the rule sits under.
     at: Option<CssAt>,
@@ -529,7 +541,8 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, St
     for &seg in variants {
         // The refusal agreement: the IR fold's typed surface decides
         // what a segment IS; the css render only chooses HOW it shows.
-        if variant::classify_builtin(seg).is_none() {
+        let builtin = variant::classify_builtin(seg);
+        if builtin.is_none() {
             match customs.classify(seg) {
                 Some(cond) => {
                     apply_cond_shape(&mut set, cond);
@@ -538,10 +551,55 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, St
                 None => return Err(seg.to_string()),
             }
         }
+        // The attribute probes render their selector fragments straight
+        // from the folded cond (the same payload text the fold's own
+        // grammar produced — the render cannot drift the fold).
+        if let Some(cond) = builtin
+            && matches!(
+                cond,
+                aeolus_ir::Cond::Data { .. }
+                    | aeolus_ir::Cond::Aria { .. }
+                    | aeolus_ir::Cond::Has(_)
+            )
+        {
+            apply_cond_shape(&mut set, cond);
+            continue;
+        }
         // The named-group/peer label (`group-hover/menu`): the empty
         // string is the unnamed form (`split_once` gives no arm for
         // the missing half; `is_empty` is the label test).
         let (name, label) = seg.split_once('/').unwrap_or((seg, ""));
+        // The parent-relative has-probes keep the label-aware render:
+        // the head is `.group[/label]:has(...)`, pre-rendered (the
+        // fragment's colons ride inside `:has(...)`), and the inner
+        // reads through the SAME grammar the fold used — the refusal
+        // sets cannot drift.
+        if let Some(rest) = name.strip_prefix("group-has-") {
+            let frag = variant::has_inner_fragment(rest).ok_or_else(|| seg.to_string())?;
+            set.parent = Some(match label {
+                "" => ".group".to_string(),
+                l => format!(".{}", escape_class(&format!("group/{l}"))),
+            });
+            if let Some(head) = &mut set.parent {
+                let _ = write!(head, ":has({frag})");
+            }
+            set.parent_prerendered = true;
+            set.peer = false;
+            continue;
+        }
+        if let Some(rest) = name.strip_prefix("peer-has-") {
+            let frag = variant::has_inner_fragment(rest).ok_or_else(|| seg.to_string())?;
+            set.parent = Some(match label {
+                "" => ".peer".to_string(),
+                l => format!(".{}", escape_class(&format!("peer/{l}"))),
+            });
+            if let Some(head) = &mut set.parent {
+                let _ = write!(head, ":has({frag})");
+            }
+            set.parent_prerendered = true;
+            set.peer = true;
+            continue;
+        }
         match name {
             "dark" => set.dark = true,
             "hover" => set.pseudos.push(":hover"),
@@ -618,6 +676,31 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
             set.parent = Some(".peer:focus".to_string());
             set.peer = true;
         }
+        // The attribute probes: the corpus's attribute-test form (the
+        // value quotes, the presence test stays bare, the has- inner
+        // rides inside `:has(...)`).
+        Cond::Data { name, value } => {
+            set.probes.push(variant::attr_selector("data", name, value));
+        }
+        Cond::Aria { name, value } => {
+            set.probes.push(variant::attr_selector("aria", name, value));
+        }
+        Cond::Has(inner) => set.probes.push(format!(":has({inner})")),
+        // The parent-relative has-probes: the same conjunctive head the
+        // group/peer state probes render, pre-escaped (the `:has(...)`
+        // fragment carries colons the default head split cannot see
+        // past). The LABEL forms render in the segment walk (the label
+        // is head decoration, not an IR slot).
+        Cond::GroupHas(inner) => {
+            set.parent = Some(format!(".group:has({inner})"));
+            set.parent_prerendered = true;
+            set.peer = false;
+        }
+        Cond::PeerHas(inner) => {
+            set.parent = Some(format!(".peer:has({inner})"));
+            set.parent_prerendered = true;
+            set.peer = true;
+        }
         Cond::Bp(bp) | Cond::Min(bp) => set.at = Some(CssAt::MediaMin(bp)),
         Cond::Max(bp) => set.at = Some(CssAt::MediaMax(bp)),
         Cond::Container(bp) => set.at = Some(CssAt::ContainerMin(bp)),
@@ -675,18 +758,24 @@ fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
         out.push_str(":where(.dark, .dark *) ");
     }
     if let Some(head) = &set.parent {
-        match head.rsplit_once(':') {
-            Some((class_half, probe)) => {
-                out.push('.');
-                out.push_str(&escape_class(&class_half[1..]));
-                // rsplit consumed the delimiter; the probe re-attaches
-                // with its own colon (selector syntax, raw).
-                out.push(':');
-                out.push_str(probe);
-            }
-            None => {
-                out.push('.');
-                out.push_str(&escape_class(&head[1..]));
+        if set.parent_prerendered {
+            // The has-probe heads render themselves (the class half is
+            // escaped at build time, the probe half is selector text).
+            out.push_str(head);
+        } else {
+            match head.rsplit_once(':') {
+                Some((class_half, probe)) => {
+                    out.push('.');
+                    out.push_str(&escape_class(&class_half[1..]));
+                    // rsplit consumed the delimiter; the probe re-attaches
+                    // with its own colon (selector syntax, raw).
+                    out.push(':');
+                    out.push_str(probe);
+                }
+                None => {
+                    out.push('.');
+                    out.push_str(&escape_class(&head[1..]));
+                }
             }
         }
         out.push_str(if set.peer { " ~ " } else { " " });
@@ -695,6 +784,12 @@ fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
     out.push_str(&escape_class(raw));
     for pseudo in &set.pseudos {
         out.push_str(pseudo);
+    }
+    // The attribute probes compound after the pseudo suffixes (the flat
+    // arm's documented order: the source-stacked same-tier conditions
+    // render pseudo-first, probe-second, the dark scope last).
+    for probe in &set.probes {
+        out.push_str(probe);
     }
     if set.dark {
         out.push_str(":where(.dark, .dark *)");
