@@ -74,7 +74,8 @@ fn assert_cascade_order(interp: &Interped) {
 fn note_for(interp: &Interped, cond: Cond) -> Option<&InterpNote> {
     interp.notes.iter().find(|note| match note {
         InterpNote::PseudoElement { cond: c, .. }
-        | InterpNote::ContainerUnqueried { cond: c, .. } => *c == cond,
+        | InterpNote::ContainerUnqueried { cond: c, .. }
+        | InterpNote::AttributeUnqueried { cond: c, .. } => *c == cond,
     })
 }
 
