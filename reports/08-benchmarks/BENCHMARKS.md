@@ -360,3 +360,28 @@ fragment render (one String per class). Like the static-data emit it is
 a BUILD-time artifact cost, not a runtime path; the intended consumers
 (the `tw!`-style macro, the P3 codegen) run it once per class string at
 generation time.
+
+## Attribute-probe variant fold run (2026-11-11, 2-core sandbox, release profile, divan 0.1.21)
+
+The variant surface's P2 slice (`crates/aeolus-compile/benches/attr_variants.rs`):
+the `data-`/`aria-`/`has-` fold against the state fold and the base
+compile floor. The probe payloads intern into the leak pool per folded
+segment, so the interesting number is the COLD fold — one compile per
+distinct probe spelling is the intended call pattern, and the dyn-cache
+benches cover the warm repeat. Environment-specific absolutes; the
+ratios are the point.
+
+| benchmark | median | note |
+|---|---|---|
+| `compile_base` | **556 ns** | one bare utility (`p-4`) — the no-variant floor |
+| `compile_state_fold` | 1.23 µs | one state segment (`hover:bg-primary`) — the established rank-2 path |
+| `compile_probe_fold` | **4.06 µs** | four probe segments (`data-[state=open]:bg-green-500 aria-busy:opacity-50 has-focus:ring-2 has-data-[slot=card-action]:grid-cols-2`) — four folds, four payload interns, four lowerings |
+
+Verdict: the probe fold sits on par with the state fold PER SEGMENT
+(~1.0 µs per probe class vs ~1.2 µs for the state class, both measured
+over the same base floor) — the fold adds one string walk + one leak-
+pool intern per distinct payload, and the lowering/render side is the
+same machinery the state segments already pay. The aggregate string
+sits ~7.3× over the bare floor because it carries four variant classes
+against the floor's zero, not because the probe grammar is expensive.
+Like every compile path the dyn-cache dedupes the warm repeat.
