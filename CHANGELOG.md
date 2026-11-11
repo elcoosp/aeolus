@@ -2,12 +2,20 @@
 
 ### 🚀 Features
 
+- *(compile)* The attribute-probe variant fold — the `data-*`/`aria-*`/`has-*` spellings onto the typed `Cond` surface (`Cond::Data`/`Cond::Aria`/`Cond::Has` with interned payloads, the v0.x oracle's `has_atom`/`parse_attr`/`attr_test` grammar, the parent-relative `group-has-*`/`peer-has-*` on the parent tier)
+- *(ir)* The attribute-probe `Cond` variants (`Data`/`Aria`/`Has` on the state tier, `GroupHas`/`PeerHas` on the parent tier, payload equality over text not pointers)
 - *(compile)* The rust-tokens emit arm module (`emit_rust`/`emit_rust_theme` and the custom-seam siblings: one embeddable `Layer::new` expression per lowered class, keyword slots resolved to their row text, token slots to their table names)
 - *(compile)* Arm `Target::Rust` — the plan §3.1 emit (a) form, the `Target` surface's last arm
 - *(compile)* The row-table annotation pass (`lower::kw_annotations`) and the shared `val_literal` float contract
 
 ### 📚 Documentation
 
+- *(compile)* The `variant` module docs (the attribute-probe families' fold grammar and the differential oracle) and the interp note's state-bits story
+- *(ir)* The probe conds' payload/storage contracts on the `Cond` docs
+- *(readme)* File the attribute-probe fold in the status note (v0.16.0) and the crate table
+- *(architecture)* Mark the attribute-probe variant fold landed in the P2 row
+- *(benchmarks)* File the attribute-probe-fold run numbers
+- *(evidence)* File the attribute-probe-fold red-to-green record (M1 element-own probes, M2 parent-relative has-probes)
 - *(compile)* The `rust` module docs (the in-pipeline rationale, the compiled-shape doc test) and the statics/interp cross-references
 - *(readme)* Align the badge and status to 0.15.0 (the drift the grammar release left) and name the rust-tokens arm
 - *(architecture)* Mark the rust-tokens emit arm landed
@@ -17,11 +25,15 @@
 
 ### 🧪 Testing
 
+- *(compile)* Pin the attribute-probe contracts end to end (`tests/attr_variants.rs`: the fold's one-condition identities, the grammar's honest refusals, the corpus selector forms, the interp notes, the payload emission, the merge/custom generality, the parent-relative heads)
+- *(compile)* Move the unsupported-variant pins to the new boundary (`tests/compile.rs`, `tests/cn.rs`: the bare `has-[x]` form) and match the attribute note in the interp finder (`tests/interp.rs`)
+- *(bench)* Measure the attribute-probe fold (`benches/attr_variants.rs`)
 - *(compile)* Pin the rust-tokens contracts end to end (`tests/rust_tokens.rs`: the verbatim fragment and sheet, determinism, the keyword/composite/bare annotations, the token-name annotations, the 22-cond totality battery, the diagnostics-equal battery, the custom differential)
 - *(bench)* Measure the rust-tokens emit (`benches/rust_tokens.rs`)
 
 ### 💼 Other
 
+- *(compile)* Demonstrate the attribute-probe fold (`examples/attr_variants.rs`)
 - *(compile)* Demonstrate the rust-tokens arm (`examples/rust_tokens.rs`)
 
 ## [0.15.0] - 2026-11-10
