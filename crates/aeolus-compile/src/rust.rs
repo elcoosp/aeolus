@@ -89,9 +89,11 @@
 //!
 //! What this arm deliberately is NOT: the BACKEND method calls (the
 //! plan §3.1 emit (a) end form — `FlexDirection::Column`, builder
-//! chains — are the P3 codegen crate's surface, per-backend), the
-//! has-/data-/aria- variant folding (the next typed-variant slice) and
-//! the xtask bake that commits this output as source.
+//! chains — are the P3 codegen crate's surface, per-backend) and
+//! the xtask bake that commits this output as source. The
+//! has-/data-/aria- variant folding landed 2026-11: the probe conds
+//! render through this arm's own `Debug`-driven cond text (the
+//! statics arm's name-table contract).
 
 use std::fmt;
 
