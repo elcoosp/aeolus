@@ -108,6 +108,13 @@ harness = false
 name = "attr_variants"
 harness = false
 
+# The plan-lowering arm's benchmarks (the §7 migration seam): the v0.x
+# StylePlan write over the shadcn Button core, the theme-less boundary
+# path and the single-utility floor.
+[[bench]]
+name = "plan_bridge"
+harness = false
+
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
