@@ -149,7 +149,7 @@ fn is_colour_val(val: Val) -> bool {
 /// The suffix after the root — the registry's own longest-prefix rule,
 /// mirrored (`"4"` for `p-4`, `None` for `hidden`). The lookup already
 /// matched the body against the root, so a miss here is the drift arm.
-fn suffix_of<'a>(body: &'a str, root: &str) -> Result<Option<&'a str>, Reject> {
+pub(crate) fn suffix_of<'a>(body: &'a str, root: &str) -> Result<Option<&'a str>, Reject> {
     if body == root {
         return Ok(None);
     }
