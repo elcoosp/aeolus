@@ -2,11 +2,39 @@
 
 ### 🚀 Features
 
+- *(data)* The `codegen::GeneratedArtifact` seam — the generator story's one trait every committed derived artifact implements, with `RootsIndex` (the seeded-FNV perfect-hash over the rows' distinct roots) and `RegistryDocs` (the markdown audit page) as the landing artifacts
+- *(data)* The generated roots index wired into the registry read side (`lookup`/`lookup_detailed` walk the phf probe; the pre-index linear scan stays as the documented `lookup_linear` differential oracle)
+- *(xtask)* The generator driver (`cargo xtask gen-tables`/`verify-tables`/`list`, the `run(args, out, err) -> code` contract, `--root` for test-only temp roots) and the `cargo xtask` alias
+- *(compile)* The attribute-probe interp surface (plan §3.5's typed state bits): `AttrProbe` (the one question a host answers), the built-in `AttrState` bit table, and the `interp_probes`/`interp_theme_probes` entry points — probe layers fire, answered misses stay CSS-quiet, the descendant probes stay the diagnosed boundary
+
+### 📚 Documentation
+
+- *(readme)* Align the badge and status to v0.17.0 (the drift the 0.16/0.17 releases left) and file the generator story and the probe surface
+- *(architecture)* Mark the xtask generator story landed (the P2 row, the remaining-slices line, the P1 status paragraph)
+- *(changelog)* Give the shipped 0.16.0 and 0.17.0 their release headers (the items sat in Unreleased since the tags)
+- *(data)* The `codegen` module docs (the seam, the determinism contract, the artifacts that grow on it) and the registry read side's index/oracle story
+- *(compile)* The `interp` module docs (the probe seam's firing semantics, the quiet-miss rule, the has- diagnosed boundary) and the note's two unqueried cases
+
+### 🧪 Testing
+
+- *(data)* Pin the generator contracts (`tests/codegen.rs`: the seam list, the committed-bytes drift pins, the index's partition/reachability/load-factor invariants, the differential battery over roots/composites/adversarial misses and a deterministic 4000-body fuzz, the typed-miss parity)
+- *(data)* Battery the index against the linear oracle in the lookup bench (hit, multi-dash hit, shape-rejected miss)
+- *(xtask)* Pin the driver's exit-code contract and the write/verify cycle against a temp root (`tests/driver.rs`)
+- *(compile)* Pin the probe seam end to end (`tests/probes.rs`: the firing semantics, the CSS-quiet miss, the sourceless back-compat notes, the has- boundary, the cascade order, the themed combo, the custom-alias composition, the ergonomic half, purity)
+- *(bench)* Measure the probe seam (`benches/interp.rs`: themed+probes Button, mixed probe program, the sourceless note path)
+
+### 💼 Other
+
+- *(data)* Demonstrate the generator story (`examples/codegen_artifacts.rs`)
+- *(compile)* Demonstrate the probe seam (`examples/probes.rs`)
+- *(ci)* Fix the push branch filter (the `ain]` typo that disabled the push-to-main gate) and gate `xtask` in the 1.88 MSRV job
+
+## [0.17.0] - 2026-11-11
+
+### 🚀 Features
+
 - *(compile)* The attribute-probe variant fold — the `data-*`/`aria-*`/`has-*` spellings onto the typed `Cond` surface (`Cond::Data`/`Cond::Aria`/`Cond::Has` with interned payloads, the v0.x oracle's `has_atom`/`parse_attr`/`attr_test` grammar, the parent-relative `group-has-*`/`peer-has-*` on the parent tier)
 - *(ir)* The attribute-probe `Cond` variants (`Data`/`Aria`/`Has` on the state tier, `GroupHas`/`PeerHas` on the parent tier, payload equality over text not pointers)
-- *(compile)* The rust-tokens emit arm module (`emit_rust`/`emit_rust_theme` and the custom-seam siblings: one embeddable `Layer::new` expression per lowered class, keyword slots resolved to their row text, token slots to their table names)
-- *(compile)* Arm `Target::Rust` — the plan §3.1 emit (a) form, the `Target` surface's last arm
-- *(compile)* The row-table annotation pass (`lower::kw_annotations`) and the shared `val_literal` float contract
 
 ### 📚 Documentation
 
@@ -16,6 +44,27 @@
 - *(architecture)* Mark the attribute-probe variant fold landed in the P2 row
 - *(benchmarks)* File the attribute-probe-fold run numbers
 - *(evidence)* File the attribute-probe-fold red-to-green record (M1 element-own probes, M2 parent-relative has-probes)
+
+### 🧪 Testing
+
+- *(compile)* Pin the attribute-probe contracts end to end (`tests/attr_variants.rs`: the fold's one-condition identities, the grammar's honest refusals, the corpus selector forms, the interp notes, the payload emission, the merge/custom generality, the parent-relative heads)
+- *(compile)* Move the unsupported-variant pins to the new boundary (`tests/compile.rs`, `tests/cn.rs`: the bare `has-[x]` form) and match the attribute note in the interp finder (`tests/interp.rs`)
+- *(bench)* Measure the attribute-probe fold (`benches/attr_variants.rs`)
+
+### 💼 Other
+
+- *(compile)* Demonstrate the attribute-probe fold (`examples/attr_variants.rs`)
+
+## [0.16.0] - 2026-11-11
+
+### 🚀 Features
+
+- *(compile)* The rust-tokens emit arm module (`emit_rust`/`emit_rust_theme` and the custom-seam siblings: one embeddable `Layer::new` expression per lowered class, keyword slots resolved to their row text, token slots to their table names)
+- *(compile)* Arm `Target::Rust` — the plan §3.1 emit (a) form, the `Target` surface's last arm
+- *(compile)* The row-table keyword annotation pass (`lower::kw_annotations`) and the shared `val_literal` float contract
+
+### 📚 Documentation
+
 - *(compile)* The `rust` module docs (the in-pipeline rationale, the compiled-shape doc test) and the statics/interp cross-references
 - *(readme)* Align the badge and status to 0.15.0 (the drift the grammar release left) and name the rust-tokens arm
 - *(architecture)* Mark the rust-tokens emit arm landed
@@ -25,15 +74,11 @@
 
 ### 🧪 Testing
 
-- *(compile)* Pin the attribute-probe contracts end to end (`tests/attr_variants.rs`: the fold's one-condition identities, the grammar's honest refusals, the corpus selector forms, the interp notes, the payload emission, the merge/custom generality, the parent-relative heads)
-- *(compile)* Move the unsupported-variant pins to the new boundary (`tests/compile.rs`, `tests/cn.rs`: the bare `has-[x]` form) and match the attribute note in the interp finder (`tests/interp.rs`)
-- *(bench)* Measure the attribute-probe fold (`benches/attr_variants.rs`)
 - *(compile)* Pin the rust-tokens contracts end to end (`tests/rust_tokens.rs`: the verbatim fragment and sheet, determinism, the keyword/composite/bare annotations, the token-name annotations, the 22-cond totality battery, the diagnostics-equal battery, the custom differential)
 - *(bench)* Measure the rust-tokens emit (`benches/rust_tokens.rs`)
 
 ### 💼 Other
 
-- *(compile)* Demonstrate the attribute-probe fold (`examples/attr_variants.rs`)
 - *(compile)* Demonstrate the rust-tokens arm (`examples/rust_tokens.rs`)
 
 ## [0.15.0] - 2026-11-10
