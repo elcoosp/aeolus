@@ -1502,7 +1502,7 @@ impl Resolver<'_> {
                     "center" => "center",
                     "right" | "end" => "right",
                     "justify" => "justify",
-                    _ => unreachable!(),
+                    _ => unreachable!("the matches! guard above proved the text-align value set"),
                 };
                 Ok(Applied::Text(
                     TextProperty::TextAlign,
@@ -1823,7 +1823,7 @@ impl Resolver<'_> {
                         d.width = Some(dim);
                         d.height = Some(dim);
                     }
-                    _ => unreachable!(),
+                    _ => unreachable!("the sizing family's head guard above proved this arm set"),
                 }
                 let slot = match head {
                     "min-w" | "min-h" => Slot::MinDimensions,
@@ -2447,7 +2447,7 @@ impl Resolver<'_> {
                         bottom: None,
                         left: None,
                     },
-                    _ => unreachable!(),
+                    _ => unreachable!("the inset arm's guard above proved the edge value set"),
                 })
             }
             "z" => {
@@ -3518,7 +3518,7 @@ fn padding_applied(head: &str, v: f32) -> Applied {
             bottom: None,
             left: Some(v),
         },
-        _ => unreachable!(),
+        _ => unreachable!("the padding family's caller guard proved the head set"),
     }
 }
 
@@ -3567,7 +3567,7 @@ fn margin_applied(head: &str, v: f32) -> Applied {
             bottom: None,
             left: Some(v),
         },
-        _ => unreachable!(),
+        _ => unreachable!("the margin family's caller guard proved the head set"),
     }
 }
 
