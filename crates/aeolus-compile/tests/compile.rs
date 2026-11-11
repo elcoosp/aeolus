@@ -319,17 +319,19 @@ fn named_group_variants_fold_to_the_probe() {
 #[test]
 fn unsupported_variants_are_typed_and_skip_the_utility() {
     // The lexer accepts the segment; the typed Cond surface does not
-    // cover it yet. Honest report, the REST of the string still compiles.
-    let compiled = compile("has-data-[x]:p-4 p-2", &Config::default()).expect("compiles");
+    // cover it (a bare unknown has- inner names no state and no
+    // data-/aria- compound). Honest report, the REST of the string
+    // still compiles.
+    let compiled = compile("has-[x]:p-4 p-2", &Config::default()).expect("compiles");
     assert_eq!(compiled.diagnostics.len(), 1, "one report: {compiled:?}");
     let d = &compiled.diagnostics[0];
     assert_eq!(
         d.kind,
         DiagnosticKind::UnsupportedVariant {
-            variant: "has-data-[x]".to_string()
+            variant: "has-[x]".to_string()
         }
     );
-    assert_eq!(d.span, (0, 12), "the variant segment's own span");
+    assert_eq!(d.span, (0, 7), "the variant segment's own span");
     assert_eq!(d.kind.code(), "aeolus::compile::unsupported_variant");
     assert!(
         d.kind.help().contains("Cond"),
