@@ -44,7 +44,7 @@ jobs:
       - run: >-
           cargo check -p aeolus-core -p aeolus-macro -p aeolus-cli
           -p aeolus-syntax -p aeolus-data -p aeolus-ir
-          -p aeolus-compile -p aeolus-theme
+          -p aeolus-compile -p aeolus-theme -p xtask
 
   msrv-backends:
     runs-on: ubuntu-latest
