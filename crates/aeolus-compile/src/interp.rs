@@ -31,6 +31,22 @@
 //! they refuse per longhand with a typed error, exactly like the
 //! theme-less compile walk, never a silent passthrough.
 //!
+//! The ATTRIBUTE-PROBE layers (the `data-*`/`aria-*` families the
+//! variant fold lands on the typed `Cond` surface) resolve through the
+//! plan §3.5 answer the [`InterpNote::AttributeUnqueried`] note named:
+//! typed state bits passed WITH the element — the [`AttrProbe`] seam
+//! (one question: what value does the element carry for this
+//! attribute?), the built-in [`AttrState`] static-bit table, and the
+//! [`interp_probes`]/[`interp_theme_probes`] entry points the
+//! `*_with` convention carries (the [`compile_with`](crate::compile_with)
+//! precedent). A probe layer FIRES when the element carries the
+//! attribute (the presence spelling) or carries it with the folded
+//! value (the bracketed spelling); a miss is a QUIET skip — a CSS
+//! selector that does not match, not an exclusion. The descendant
+//! probes (`has-`/`group-has-`/`peer-has-`) stay the plan §3.5 row's
+//! diagnosed boundary — reported, honest failure kept — because the
+//! descendant shape is not an attribute bit.
+//!
 //! Observability follows the crate's opt-in instrumentation seam: the
 //! `tracing` feature spans the walk and logs every fired layer and
 //! reported note (no subscriber is installed here — the host app owns
@@ -107,6 +123,84 @@ pub struct Env {
     /// ([`Cond::Container`]/[`Cond::MaxContainer`]). `None` — no
     /// container context — means those layers never match, reported.
     pub container_rem: Option<f32>,
+}
+
+// ---------------------------------------------------------------------------
+// The attribute-probe seam: AttrProbe
+// ---------------------------------------------------------------------------
+
+/// The element-own attribute family a probe asks about — the families
+/// the variant fold lands on the typed `Cond` surface
+/// ([`Cond::Data`]/[`Cond::Aria`]). The descendant probes
+/// (`has-`/`group-has-`/`peer-has-`) are NOT here: the plan §3.5 row
+/// keeps them the diagnosed boundary (the descendant shape is not an
+/// attribute bit).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttrKind {
+    /// The `data-*` family ([`Cond::Data`] — `data-[state=open]:`).
+    Data,
+    /// The `aria-*` family ([`Cond::Aria`] — `aria-busy:`/`aria-[sort=asc]:`).
+    Aria,
+}
+
+/// One typed attribute bit: the element carries this attribute with
+/// this value — the plan §3.5 "typed state bits passed WITH the
+/// element", one row per bit. The bit's value is what a value probe
+/// compares against; a presence probe only asks whether the bit exists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AttrBit<'t> {
+    /// The family the attribute belongs to.
+    pub kind: AttrKind,
+    /// The attribute name WITHOUT the family prefix (`"state"` for
+    /// `data-state`) — the folded [`Cond`]'s own payload shape.
+    pub name: &'t str,
+    /// The attribute's value (`"open"`), verbatim.
+    pub value: &'t str,
+}
+
+/// The attribute-probe SEAM the interpreter walks through for the
+/// element-own `data-*`/`aria-*` layers: where a probe's answer comes
+/// from. The same shape as the token seam's [`TokenSource`], the
+/// custom seam's [`ClassifyVariant`](crate::ClassifyVariant) and the
+/// cache's [`DynStore`](crate::DynStore): the walk is generic over the
+/// source, [`AttrState`] is the built-in (a static bit table), and a
+/// host implements the ONE question itself (a DOM-backed bridge, a
+/// component-state map, a test double recording what it was asked).
+pub trait AttrProbe {
+    /// The value the element carries for this attribute, or `None`
+    /// when it carries none. The answer drives the CSS semantics the
+    /// probes encode: a presence probe fires iff the answer exists, a
+    /// value probe fires iff the answer EQUALS the folded value.
+    fn probe(&self, kind: AttrKind, name: &str) -> Option<&str>;
+}
+
+/// The built-in [`AttrProbe`]: the element's attribute bits as a
+/// borrowed, static table — the zero-allocation form of the plan §3.5
+/// "typed state bits passed with the element". A per-frame host
+/// borrows its bit rows into one table (the same borrow shape the
+/// `Env`'s own fields take); an empty table is the no-bits element.
+#[derive(Clone, Copy, Debug)]
+pub struct AttrState<'t> {
+    bits: &'t [AttrBit<'t>],
+}
+
+impl<'t> AttrState<'t> {
+    /// The element's attribute bits, in table order (the first
+    /// matching bit answers; a host that never repeats a
+    /// (kind, name) pair needs no order — and the table is small by
+    /// construction, one bit per probed attribute).
+    pub const fn new(bits: &'t [AttrBit<'t>]) -> Self {
+        Self { bits }
+    }
+}
+
+impl AttrProbe for AttrState<'_> {
+    fn probe(&self, kind: AttrKind, name: &str) -> Option<&str> {
+        self.bits
+            .iter()
+            .find(|bit| bit.kind == kind && bit.name == name)
+            .map(|bit| bit.value)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -325,13 +419,22 @@ pub enum InterpNote {
         /// The longhands the unqueried layer sets.
         props: PropMask,
     },
-    /// An attribute-probe layer ([`Cond::Data`]/[`Cond::Aria`]/
-    /// [`Cond::Has`]) evaluated under an [`Env`] that answers element
-    /// STATES, not DOM questions: the probe's attribute values and
-    /// descendant shape live in the host's tree, and the plan §3.5
-    /// answer for them is typed state bits passed WITH the element —
-    /// the follow-up surface this note names. Until then the layer
-    /// never fires, reported so the exclusion is never silent.
+    /// An attribute-probe layer evaluated under conditions the probe
+    /// surface cannot answer — one of the two UNQUERIED cases:
+    ///
+    /// * the entry point carries no [`AttrProbe`] source (the plain
+    ///   [`interp`]/[`interp_theme`] forms — the [`interp_probes`]/
+    ///   [`interp_theme_probes`] forms carry the plan §3.5 typed
+    ///   state bits, and their `data-*`/`aria-*` layers fire), or
+    /// * the probe is a DESCENDANT shape ([`Cond::Has`]/
+    ///   [`Cond::GroupHas`]/[`Cond::PeerHas`]) — the descendant shape
+    ///   is not an attribute bit, and the plan §3.5 row keeps those
+    ///   the diagnosed boundary (honest failure, kept).
+    ///
+    /// Either way the layer never fires, reported so the exclusion is
+    /// never silent. A source-ANSWERED miss (the element does not
+    /// carry the attribute, or carries another value) is NOT this
+    /// note — a CSS selector that does not match is CSS-quiet.
     AttributeUnqueried {
         /// The unqueried layer's condition.
         cond: Cond,
@@ -420,8 +523,12 @@ enum Fire {
 /// One condition's answer under the env. Min-width forms fire AT and
 /// above their breakpoint's rem (`min-width: Nrem`); max forms strictly
 /// below it (`width < Nrem`) — the CSS boundary semantics the tests
-/// pin at the exact rem values.
-fn decide(cond: Cond, env: &Env, props: PropMask) -> Fire {
+/// pin at the exact rem values. The element-own attribute probes ask
+/// the [`AttrProbe`] seam when a source rides ([`interp_probes`]/
+/// [`interp_theme_probes`]) — a hit FIRES, a miss is a quiet skip (a
+/// CSS selector that does not match); with no source the layer is
+/// excluded and REPORTED (the note the follow-up surface was named by).
+fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>, props: PropMask) -> Fire {
     let fires = |yes: bool| if yes { Fire::Yes } else { Fire::No };
     match cond {
         Cond::Base => Fire::Yes,
@@ -449,16 +556,29 @@ fn decide(cond: Cond, env: &Env, props: PropMask) -> Fire {
             Some(width) => fires(width < bp.rem()),
             None => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
         },
-        // The attribute probes ask about the host's DOM tree (attribute
-        // values, descendant shapes) — questions the Env's element-state
-        // answers cannot cover (the plan §3.5 state-bits surface is the
-        // follow-up). The layers are excluded and REPORTED — never
-        // folded in, never an error, never silent.
-        Cond::Data { .. }
-        | Cond::Aria { .. }
-        | Cond::Has(_)
-        | Cond::GroupHas(_)
-        | Cond::PeerHas(_) => Fire::Note(InterpNote::AttributeUnqueried { cond, props }),
+        // The element-own attribute probes answer through the seam
+        // (plan §3.5's typed state bits): presence fires on any value,
+        // the value spelling fires on equality, a miss is CSS-quiet.
+        // The descendant shapes (`has-`/`group-has-`/`peer-has-`) are
+        // NOT attribute bits — the plan §3.5 row keeps them diagnosed
+        // (reported, honest failure kept), with or without a source.
+        Cond::Data { name, value } => match probes {
+            Some(source) => fires(match source.probe(AttrKind::Data, name) {
+                Some(answer) => value.is_none_or(|folded| answer == folded),
+                None => false,
+            }),
+            None => Fire::Note(InterpNote::AttributeUnqueried { cond, props }),
+        },
+        Cond::Aria { name, value } => match probes {
+            Some(source) => fires(match source.probe(AttrKind::Aria, name) {
+                Some(answer) => value.is_none_or(|folded| answer == folded),
+                None => false,
+            }),
+            None => Fire::Note(InterpNote::AttributeUnqueried { cond, props }),
+        },
+        Cond::Has(_) | Cond::GroupHas(_) | Cond::PeerHas(_) => {
+            Fire::Note(InterpNote::AttributeUnqueried { cond, props })
+        }
         // The pseudo-elements are render TARGETS, not element state: the
         // interp resolves the element's own cascade, so these layers are
         // excluded and reported — never folded in, never an error.
@@ -470,10 +590,13 @@ fn decide(cond: Cond, env: &Env, props: PropMask) -> Fire {
 
 /// The shared front-to-back walk: fire the layers the env answers yes
 /// to, resolve their values through the caller's resolver, keep the
-/// last value per longhand in `Prop` order.
+/// last value per longhand in `Prop` order. The attribute-probe seam
+/// rides along as the (optional) probe source — `None` keeps the
+/// sourceless exclusion notes, `Some` answers the element-own probes.
 fn walk(
     program: &Program,
     env: &Env,
+    probes: Option<&dyn AttrProbe>,
     resolve: impl Fn(Prop, Val) -> Result<Val, InterpError>,
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
@@ -481,7 +604,7 @@ fn walk(
     let mut decls: Vec<Decl> = Vec::new();
     let mut notes = Vec::new();
     for layer in program.layers {
-        match decide(layer.cond, env, layer.mask) {
+        match decide(layer.cond, env, probes, layer.mask) {
             Fire::Yes => {
                 for decl in layer.decls {
                     let val = resolve(decl.prop, decl.val)?;
@@ -529,7 +652,7 @@ fn walk(
 pub fn interp(program: &Program, env: &Env) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp_themeless", layers = program.layers.len()).entered();
-    walk(program, env, |prop, val| match val {
+    walk(program, env, None, |prop, val| match val {
         Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
         concrete => Ok(concrete),
     })
@@ -553,9 +676,76 @@ pub fn interp_theme(
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp_theme", layers = program.layers.len()).entered();
-    walk(program, env, |_, val| match val {
+    walk(program, env, None, |_, val| match val {
         Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
         Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
         concrete => Ok(concrete),
     })
+}
+
+/// Resolve a compiled [`Program`] to its effective declarations under
+/// one probe situation and one [`AttrProbe`] — the attribute-probe
+/// half of the seam family (the `compile_with` convention's `*_with`
+/// shape): the element-own `data-*`/`aria-*` layers ask the source
+/// (the built-in [`AttrState`] carries the element's attribute bits; a
+/// host wires its own). A hit FIRES the layer; a miss is a QUIET skip
+/// — a CSS selector that does not match, never an exclusion — and the
+/// descendant probes (`has-`/`group-has-`/`peer-has-`) stay the plan
+/// §3.5 diagnosed boundary: reported as
+/// [`InterpNote::AttributeUnqueried`], honest failure kept.
+///
+/// The walk stays pure: same program + env + probe source, same
+/// answer.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes`] for the themed form).
+pub fn interp_probes(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!("interp_probes", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_probes`]: one [`TokenSource`] resolves
+/// the theme forms, one [`AttrProbe`] answers the element-own
+/// attribute probes — both seams ride one walk (the DynCache loop
+/// compiles once and interps per frame with both).
+///
+/// # Errors
+/// The token source's own typed failures ([`InterpError::UnknownToken`],
+/// [`InterpError::UnknownPair`], [`InterpError::AlphaOnPair`],
+/// [`InterpError::AlphaNotFinite`] under the built-in table) — the walk
+/// stops and reports, never second-guesses.
+pub fn interp_theme_probes(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_theme_probes", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
 }
