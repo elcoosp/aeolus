@@ -8,6 +8,8 @@
 //! cn(&[&Compiled, &Compiled, ...])               -> Result<Compiled, CompileError>
 //! emit_css(input, &Config)                       -> Result<CssSheet,  CompileError>
 //! emit_css_theme(input, &TokenTable, &Config)    -> Result<CssSheet,  CompileError>
+//! emit_rust(input, &Config)                      -> Result<RustSheet, CompileError>
+//! emit_rust_theme(input, &TokenTable, &Config)   -> Result<RustSheet, CompileError>
 //!   ├─ 1. lex      aeolus_syntax::parse_class_string — borrowed
 //!   │              candidates with byte spans; per-token failures
 //!   │              degrade as TYPED LexFailures, never fail the string
@@ -28,7 +30,8 @@
 //! ```
 //!
 //! Everything a class does NOT lower to comes back in
-//! [`Compiled::diagnostics`] / [`CssSheet::diagnostics`] with a byte
+//! [`Compiled::diagnostics`] / [`CssSheet::diagnostics`] / [`RustSheet::diagnostics`]
+//! with a byte
 //! span, a stable code and a help text — the no-silent-failures rule
 //! (CONTRIBUTING §2) applied to the pipeline: importance, arbitrary
 //! values, untyped variants, and (only where no theme pass is supplied)
@@ -39,8 +42,7 @@
 //!
 //! What this slice deliberately is NOT (each is a remaining P2/P3
 //! slice, and the seams say so in their rustdocs): the xtask generator
-//! story, the remaining [`Target`] arm (Rust tokens) and the
-//! has-/data-/aria- variant folding. What LANDED here beside the theme
+//! story and the has-/data-/aria- variant folding. What LANDED here beside the theme
 //! half, the
 //! IR-level [`cn()`] merge (plan §3.2's "hosts the `cn()` engine at IR
 //! level" — same-condition layers merge by `Cond` equality,
@@ -91,7 +93,17 @@
 //! root takes the class (`text-[13px]` is the font-size row's alone;
 //! `text-[#0f0f0f]` the colour row's). The `arbitrary` module's docs
 //! carry the grammar and the boundary set; `tests/arbitrary.rs` pins
-//! the contracts.
+//! the contracts — and the RUST-TOKENS arm (plan §3.1 emit (a), the
+//! LAST arm of the [`Target`] surface):
+//! [`emit_rust`]/[`emit_rust_theme`] render one
+//! [`Layer::new`](aeolus_ir::Layer::new) expression per lowered class,
+//! the keyword slots resolved to their ROW text and the token slots to
+//! their TABLE names — the two annotations a bare `Program` cannot
+//! recover (the in-pipeline emit renders where the rows still talk,
+//! the CSS arm's stated rationale), the sheet assembling into the
+//! compilable static item the static-data arm names. The `rust`
+//! module's docs carry the design; `tests/rust_tokens.rs` pins the
+//! contracts.
 //!
 //! Storage note: [`Program`] holds `&'static` slices, so each compile
 //! call interns its program into the leak pool the IR documents as the
@@ -115,6 +127,7 @@ mod custom;
 mod dyn_cache;
 mod interp;
 mod lower;
+mod rust;
 mod statics;
 mod variant;
 
@@ -136,6 +149,9 @@ pub use dyn_cache::{
     CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity, DynStore, TwoGenStore,
 };
 pub use interp::{Env, InterpError, InterpNote, Interped, TokenSource, interp, interp_theme};
+pub use rust::{
+    RustFragment, RustSheet, emit_rust, emit_rust_theme, emit_rust_theme_with, emit_rust_with,
+};
 pub use statics::emit_static;
 
 // The lowering audits the rows' meaning; a registry semantics bump must
@@ -157,18 +173,26 @@ const _: () = assert!(
 /// The emit half of the plan §3.2 compile signature
 /// (`compile(&str, &ThemeSource, &Target) -> Result<Program, Diagnostics>`):
 /// what ARTIFACT the pipeline's emit stage produces from the program.
-/// Three of the plan §3.1 diagram's four emit forms are armed —
+/// All four of the plan §3.1 diagram's emit forms are armed —
 /// [`Target::Css`] (slice 4, rendered by [`emit_css`]/[`emit_css_theme`]),
+/// [`Target::Rust`] (the Rust-tokens arm, [`emit_rust`]/[`emit_rust_theme`]),
 /// [`Target::Interp`] (the interpreter, [`interp`]/[`interp_theme`]) and
-/// [`Target::Static`] (the static-data form, [`emit_static`]) — and the
-/// remaining one (Rust tokens) stays named-but-unarmed here until the
-/// P3 codegen slices land.
+/// [`Target::Static`] (the static-data form, [`emit_static`]). The
+/// backend METHOD calls the Rust-tokens arm's end form implies are the
+/// P3 codegen crate's surface — the arm renders the IR's own token
+/// shape, annotated where only the pipeline can see.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     /// The CSS text form (plan §3.1 emit (d)): a rendered stylesheet per
     /// class string — [`emit_css`]/[`emit_css_theme`] are this arm's
     /// entry points.
     Css,
+    /// The Rust-tokens form (plan §3.1 emit (a)): one embeddable
+    /// [`Layer::new`](aeolus_ir::Layer::new) expression per lowered
+    /// class, the keyword/token slots annotated with the names only the
+    /// pipeline can see — [`emit_rust`]/[`emit_rust_theme`] are this
+    /// arm's entry points.
+    Rust,
     /// The resolved-declaration form (plan §3.1 emit (c)): the program's
     /// EFFECTIVE declarations under one probe situation and one token
     /// source — [`interp`]/[`interp_theme`] are this arm's entry points.
