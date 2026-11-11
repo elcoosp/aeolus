@@ -18,11 +18,13 @@ members = [
     "crates/aeolus-ir",
     # The V1 pipeline's first seam (plan §3.2, phase P2): lex → lookup →
     # lower → cascade-sorted `Program`, with typed spanned diagnostics.
-    # Same git-only discipline; the Target half's four emit forms are
+    # Same git-only discipline; the Target half's FIVE emit forms are
     # all in-tree — the CSS emit arm (P2 slice 4: `emit_css`/
     # `emit_css_theme`), the interp arm (emit (c)), the static-data arm
-    # (emit (b)) and the Rust-tokens arm (emit (a), landed 2026-11 as
-    # the last arm) — `@utility`/`@custom-variant` landed 2026-11 as the
+    # (emit (b)), the Rust-tokens arm (emit (a)) and the plan-lowering
+    # arm (the §7 migration seam: `emit_plan`/`emit_plan_theme` lower
+    # the artifact into the v0.x `StylePlan` the backends consume,
+    # landed 2026-11) — `@utility`/`@custom-variant` landed 2026-11 as the
     # custom-authoring seam (P2 slice 5), and the attribute-probe
     # variant fold (the has-/data-/aria- families onto the typed `Cond`
     # surface) landed 2026-11; with the xtask generator story landed
