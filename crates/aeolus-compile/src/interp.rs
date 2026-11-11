@@ -325,6 +325,19 @@ pub enum InterpNote {
         /// The longhands the unqueried layer sets.
         props: PropMask,
     },
+    /// An attribute-probe layer ([`Cond::Data`]/[`Cond::Aria`]/
+    /// [`Cond::Has`]) evaluated under an [`Env`] that answers element
+    /// STATES, not DOM questions: the probe's attribute values and
+    /// descendant shape live in the host's tree, and the plan §3.5
+    /// answer for them is typed state bits passed WITH the element —
+    /// the follow-up surface this note names. Until then the layer
+    /// never fires, reported so the exclusion is never silent.
+    AttributeUnqueried {
+        /// The unqueried layer's condition.
+        cond: Cond,
+        /// The longhands the unqueried layer sets.
+        props: PropMask,
+    },
 }
 
 impl fmt::Display for InterpNote {
@@ -333,7 +346,8 @@ impl fmt::Display for InterpNote {
         // for readers (the mask itself rides the struct for programs).
         let names: Vec<&str> = match self {
             InterpNote::PseudoElement { props, .. }
-            | InterpNote::ContainerUnqueried { props, .. } => {
+            | InterpNote::ContainerUnqueried { props, .. }
+            | InterpNote::AttributeUnqueried { props, .. } => {
                 props.to_vec().iter().map(|p| p.name()).collect()
             }
         };
@@ -348,6 +362,11 @@ impl fmt::Display for InterpNote {
                 f,
                 "the {cond:?} layer never matched: the Env carries no \
                  container context ({props} unset)"
+            ),
+            InterpNote::AttributeUnqueried { cond, .. } => write!(
+                f,
+                "the {cond:?} layer never matched: the Env answers element \
+                 states, not attribute/DOM probes ({props} unset)"
             ),
         }
     }
@@ -430,6 +449,16 @@ fn decide(cond: Cond, env: &Env, props: PropMask) -> Fire {
             Some(width) => fires(width < bp.rem()),
             None => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
         },
+        // The attribute probes ask about the host's DOM tree (attribute
+        // values, descendant shapes) — questions the Env's element-state
+        // answers cannot cover (the plan §3.5 state-bits surface is the
+        // follow-up). The layers are excluded and REPORTED — never
+        // folded in, never an error, never silent.
+        Cond::Data { .. }
+        | Cond::Aria { .. }
+        | Cond::Has(_)
+        | Cond::GroupHas(_)
+        | Cond::PeerHas(_) => Fire::Note(InterpNote::AttributeUnqueried { cond, props }),
         // The pseudo-elements are render TARGETS, not element state: the
         // interp resolves the element's own cascade, so these layers are
         // excluded and reported — never folded in, never an error.
