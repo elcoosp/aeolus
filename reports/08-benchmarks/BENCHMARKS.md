@@ -335,3 +335,28 @@ classes (~150 ns per classify — one `Color::parse` on the colour
 values, a strip-suffix walk on the units), and the warm hit keeps the
 dyn-cache's sub-µs shape, so the intended call pattern (compile once
 per distinct string, cache the rest) is unaffected.
+
+## Rust-tokens emit arm run (2026-11-11, 2-core sandbox, release profile, divan 0.1.21)
+
+The plan §3.1 emit (a) arm (`crates/aeolus-compile/benches/rust_tokens.rs`),
+the Target surface's last form: the compile seam's own walk plus the
+per-class annotated fragment render, over the SAME shadcn Button
+program every arm's benches key on. Environment-specific absolutes; the
+ratios are the point.
+
+| benchmark | median | note |
+|---|---|---|
+| `emit_rust_button` | **31.8 µs** | the full walk + one annotated `Layer::new` fragment per lowered class (the emit (a) artifact cost) |
+| `compile_uncached_button` | 22.3 µs | the compile floor beside it (same run, same sandbox) |
+| `compile_cached_button` | **613 ns** | the dyn-cache loop under the emit (compile once, render per build) |
+
+For the ratio against the sibling arm (re-run in the same session):
+`emit_static_button` 4.49 µs / `compile_uncached_button` 21.7 µs.
+
+Verdict: the rust-tokens emit sits ~1.45× over the uncached compile
+floor — the delta is the annotation pass (the row tables' keyword texts
+and the token table's names, read at the lowering site) plus the
+fragment render (one String per class). Like the static-data emit it is
+a BUILD-time artifact cost, not a runtime path; the intended consumers
+(the `tw!`-style macro, the P3 codegen) run it once per class string at
+generation time.
