@@ -6,10 +6,12 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version = "1.88"
-# Git-only while the V1 pipeline assembles (plan §3.2); the generator
-# story (xtask-emitted phf/trie + generated docs/linter tables) grows
-# from these rows in P2 — the committed tables ARE the source of truth
-# this round, and `generate_docs()` proves the one-source-of-truth claim.
+# Git-only while the V1 pipeline assembles (plan §3.2). The generator
+# story landed 2026-11 as P2's last named slice: the committed tables
+# ARE the source of truth, `codegen::GeneratedArtifact` renders the
+# derived artifacts from them (the roots index the read side consults,
+# the docs page), and `crates/xtask` (`gen-tables`/`verify-tables`)
+# is the driver — the drift pins run in plain `cargo test`.
 publish = false
 
 [dependencies]
