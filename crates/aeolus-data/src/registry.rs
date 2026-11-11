@@ -1,5 +1,15 @@
 //! The registry read side: root listing, longest-prefix lookup and the
 //! docs generator that proves the one-source-of-truth claim.
+//!
+//! The read path consults the GENERATED roots index first
+//! (`crate::roots_index` — plan §3.2's generator story: the phf table
+//! `cargo xtask gen-tables` derives from these rows): the longest
+//! dash-aligned prefix probe answers WHICH root a body addresses, the
+//! per-row shape contract (`ValueKind::accepts`) stays here. The
+//! pre-index linear scan is kept VERBATIM below as
+//! [`lookup_linear`] — the documented differential oracle the tests
+//! and the lookup bench battery the indexed path against; the two
+//! cannot drift apart silently.
 
 use crate::UtilityRow;
 use crate::rows::ROWS;
@@ -22,12 +32,42 @@ pub fn roots() -> Vec<&'static str> {
 /// row whose [`crate::ValueKind`] accepts the suffix shape matches (a
 /// root can carry several arms — `bg` colour vs gradient image).
 ///
+/// The winner comes from the GENERATED roots index
+/// ([`crate::roots_index::longest_prefix`] — the phf probe), the
+/// per-row shape filter from here; [`lookup_linear`] is the same
+/// answer from the pre-index scan, the differential oracle.
+///
 /// The value half (does `4` fit the spacing scale? which keyword table
 /// holds `full`?) is the shape contract in `ValueKind::accepts`; the
 /// lowering to `aeolus_ir::Val` is P2's compile stage.
 pub fn lookup(body: &str) -> impl Iterator<Item = &'static UtilityRow> {
-    // Longest root that prefixes the body wins; ties (several rows of the
-    // same root) all return, in registry order.
+    // The index hands back the winning root's row indices in registry
+    // order (the scan's own order); the shape filter is unchanged.
+    let matched: Vec<&'static UtilityRow> = match crate::roots_index::longest_prefix(body) {
+        Some(entry) => entry
+            .rows
+            .iter()
+            .map(|&index| &ROWS[index as usize])
+            .filter(|row| kind_accepts(row.kind, body, row.root))
+            .collect(),
+        None => Vec::new(),
+    };
+    matched.into_iter()
+}
+
+/// The pre-index linear scan — the documented DIFFERENTIAL ORACLE.
+/// Byte-for-byte the read path the registry shipped before the
+/// generated roots index landed: the longest root that prefixes the
+/// body wins, every winning-root row whose shape accepts the suffix
+/// returns in registry order. Production reads go through
+/// [`lookup`]/[`lookup_detailed`] (the index's fast path); the oracle
+/// stays public so the tests and the lookup bench can battery the two
+/// against each other over the roots, the composites, the adversarial
+/// misses and the deterministic fuzz — the semantics cannot drift
+/// with the fast path.
+pub fn lookup_linear(body: &str) -> impl Iterator<Item = &'static UtilityRow> {
+    // Longest root that prefixes the body wins; ties (several rows of
+    // the same root) all return, in registry order.
     let best = ROWS
         .iter()
         .filter(|row| body_matches_root(body, row.root))
@@ -70,29 +110,23 @@ pub fn lookup_root(root: &str) -> impl Iterator<Item = &'static UtilityRow> {
 pub fn lookup_detailed(body: &str) -> Result<Vec<&'static UtilityRow>, LookupError> {
     #[cfg(feature = "tracing")]
     tracing::debug!(body = %body, "registry lookup (detailed)");
-    let best = ROWS
-        .iter()
-        .filter(|row| body_matches_root(body, row.root))
-        .map(|row| row.root.len())
-        .max();
-    let Some(len) = best else {
+    // The winning root from the generated index (the linear scan's
+    // `best` computation is the oracle's job now); the rest of the
+    // typed seam — the shape filter, the tried-labels error — reads
+    // the winning root's rows exactly as before.
+    let Some(entry) = crate::roots_index::longest_prefix(body) else {
         #[cfg(feature = "tracing")]
         tracing::debug!(body = %body, "no registered root prefixes the body");
         return Err(LookupError::UnknownRoot {
             body: body.to_string(),
         });
     };
-    let root_rows: Vec<&'static UtilityRow> = ROWS
+    let root = entry.root;
+    let root_rows: Vec<&'static UtilityRow> = entry
+        .rows
         .iter()
-        .filter(|row| row.root.len() == len && body_matches_root(body, row.root))
+        .map(|&index| &ROWS[index as usize])
         .collect();
-    let Some(root) = root_rows.first().map(|row| row.root) else {
-        // `best` came from the same filter, so this arm cannot fire; it
-        // exists so the reachable public path carries no panic.
-        return Err(LookupError::UnknownRoot {
-            body: body.to_string(),
-        });
-    };
     let rows: Vec<&'static UtilityRow> = root_rows
         .iter()
         .copied()
