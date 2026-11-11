@@ -1,6 +1,6 @@
 [package]
 name = "aeolus-compile"
-description = "Aeolus V1 compile seam: class strings through the lexer, the registry and the value pass into cascade-sorted longhand Programs, with typed spanned diagnostics and the Target emit arms (CSS text, interpreter, static data, and the arbitrary-value unit grammar)"
+description = "Aeolus V1 compile seam: class strings through the lexer, the registry and the value pass into cascade-sorted longhand Programs, with typed spanned diagnostics and the Target emit arms (CSS text, rust tokens, interpreter, static data, and the arbitrary-value unit grammar)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -85,6 +85,13 @@ harness = false
 # compile floor.
 [[bench]]
 name = "statics"
+harness = false
+
+# The rust-tokens emit arm's benchmarks (plan §3.1 emit (a)): the
+# per-class fragment render over the same shadcn Button program the
+# other arm benches key on, against the compile floor.
+[[bench]]
+name = "rust_tokens"
 harness = false
 
 # The arbitrary-value unit grammar's benchmarks (the value pass's last
