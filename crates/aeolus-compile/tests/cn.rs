@@ -239,7 +239,7 @@ fn cn_diagnostics_concatenate_in_input_order() {
     // come first with their own input's spans, then right's.
     let a = compile("not-a-utility p-4", &Config::default()).expect("a degrades, not fails");
     assert_eq!(a.diagnostics.len(), 1, "the unknown root is one report");
-    let b = compile("has-data-[x]:p-4", &Config::default()).expect("b degrades, not fails");
+    let b = compile("has-[x]:p-4", &Config::default()).expect("b degrades, not fails");
     assert_eq!(b.diagnostics.len(), 1, "the untyped variant is one report");
     let merged = cn(&[&a, &b]).expect("merge");
     assert_eq!(merged.diagnostics.len(), 2, "both reports ride the merge");
