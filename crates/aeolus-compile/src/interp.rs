@@ -42,11 +42,13 @@
 //! What this slice deliberately is NOT (each documented where it
 //! belongs): the keyword names ([`Val::Kw`] is row-relative by design —
 //! the codegen crate owns the names, so the interp resolves THEME
-//! dynamism and passes keywords through), the named group/peer label
-//! (no IR slot yet — the Env answers the probe, not the label), the
+//! dynamism and passes keywords through; the rust-tokens arm renders
+//! them where the rows still talk), the named group/peer label
+//! (no IR slot yet — the Env answers the probe, not the label) and the
 //! per-pseudo-element render targets (the notes report them; resolving
-//! `::selection`'s own cascade is its own slice) and the Rust-tokens /
-//! static-data emit arms.
+//! `::selection`'s own cascade is its own slice). The static-data and
+//! rust-tokens emit arms are the pipeline's other program forms
+//! (`emit_static`, `emit_rust`).
 
 use std::fmt;
 
