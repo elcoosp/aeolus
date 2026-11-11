@@ -24,10 +24,13 @@
 //! a backend emits `1rem` (or `16px`, or the window's rem) is the
 //! backend's job — exactly the moat the plan §1.3 keeps.
 
+pub mod codegen;
 pub mod registry;
+pub mod roots_index;
 pub mod rows;
 pub mod tables;
 
+pub use codegen::{GeneratedArtifact, RegistryDocs, RootsIndex};
 pub use registry::{LookupError, lookup_detailed};
 
 use aeolus_ir::Prop;
