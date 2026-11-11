@@ -61,6 +61,16 @@ impl Bp {
 ///
 /// Specificity (the [`Cond::specificity`] rank) mirrors the v4 cascade:
 /// base < mode < probe states < parent-relative < media < container.
+///
+/// The three attribute-probe variants ([`Cond::Data`], [`Cond::Aria`],
+/// [`Cond::Has`]) carry their payload as `&'static str`: a spelling the
+/// compile stage folds interns the payload into the same leak pool the
+/// program's slices use (the IR's documented dynamic-form storage —
+/// "one interned `Box<[Decl]>` shared by reference"), and a literal
+/// spelling is `&'static` outright, so the static form stays a `static`
+/// item end to end. Equality and hashing compare the PAYLOAD TEXT, not
+/// the pointer: two spellings that name the same probe (`data-open:` and
+/// `data-[open]:`) are one condition and one layer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Cond {
@@ -100,6 +110,56 @@ pub enum Cond {
     PeerHover,
     /// `peer-focus:`.
     PeerFocus,
+    /// `data-*:` — the element's own `data-` attribute probe (plan §3.5's
+    /// "typed state bits, not string probes" row; the probe IS the typed
+    /// bit the plan names, the payload its name). `data-open:` folds to
+    /// `Data { name: "open", value: None }` — the presence test the v4
+    /// corpus renders as `[data-open]`; `data-[state=open]:` folds to
+    /// `Data { name: "state", value: Some("open") }` — the value test the
+    /// corpus renders as `[data-state="open"]`. The payload is the
+    /// ATTRIBUTE text (name, optional value verbatim), not the rendered
+    /// selector: a renderer derives its own form, a host probe asks the
+    /// pair.
+    Data {
+        /// The attribute name without the `data-` prefix (`"state"`).
+        name: &'static str,
+        /// The attribute value, verbatim (`Some("open")`), `None` for the
+        /// presence form.
+        value: Option<&'static str>,
+    },
+    /// `aria-*:` — the element's own `aria-` attribute probe. Bare
+    /// `aria-busy:` names the "true" value (the v4 corpus renders
+    /// `[aria-busy="true"]`), so the fold normalizes it to
+    /// `Aria { name: "busy", value: Some("true") }`; the bracketed
+    /// `aria-[sort=asc]:` form carries its value verbatim. Bare and
+    /// bracketed true are ONE condition — they render identically.
+    Aria {
+        /// The attribute name without the `aria-` prefix (`"busy"`).
+        name: &'static str,
+        /// The attribute value, verbatim; bare spellings normalize to
+        /// `Some("true")` (the corpus's own reading).
+        value: Option<&'static str>,
+    },
+    /// `has-*:` — a descendant of the element matches the probe
+    /// (`has-focus:`, `has-data-[slot=card-action]:`). The payload is the
+    /// RENDERED `:has(...)` inner fragment — `*:focus`,
+    /// `*[data-slot="card-action"]` — because the has- inner is selector
+    /// text by grammar (the arbitrary form's inner passes into `:has()`
+    /// as-is, star-prefixed per the v4 corpus's own output: non-tag
+    /// inners read `*`, tags stay bare). There is no row table for a
+    /// has- inner to be relative to — the row-text boundary that keeps
+    /// `Val::Kw` row-relative does not apply here.
+    Has(&'static str),
+    /// `group-has-*:` — a `.group` ancestor HAS a descendant matching
+    /// the probe (the parent-relative composition of [`Cond::Has`]; the
+    /// named `group-has-x/label` form folds to the same probe, the
+    /// label riding the CSS head only, the group-hover precedent). The
+    /// payload is the same rendered `:has()` fragment [`Cond::Has`]
+    /// carries.
+    GroupHas(&'static str),
+    /// `peer-has-*:` — a `.peer` sibling HAS a descendant matching the
+    /// probe. Same payload contract as [`Cond::GroupHas`].
+    PeerHas(&'static str),
     /// `sm:` / `md:` / ... — min-width media query.
     Bp(Bp),
     /// `min-md:` — explicit min-width form.
@@ -132,7 +192,14 @@ impl Cond {
             | Cond::Checked
             | Cond::PlaceholderShown
             | Cond::Selection
-            | Cond::Placeholder => 2,
+            | Cond::Placeholder
+            // The attribute probes compound on the element itself, the
+            // same tier the pseudo-class states occupy (the corpus's
+            // output nests them on the `&` alongside `:hover`).
+            | Cond::Data { .. }
+            | Cond::Aria { .. }
+            | Cond::Has(_) => 2,
+            Cond::GroupHas(_) | Cond::PeerHas(_) => 3,
             Cond::GroupHover | Cond::GroupFocus | Cond::PeerHover | Cond::PeerFocus => 3,
             Cond::Bp(_) | Cond::Min(_) | Cond::Max(_) => 4,
             Cond::Container(_) | Cond::MaxContainer(_) => 5,
@@ -160,6 +227,16 @@ impl Cond {
             Cond::GroupFocus => Some("group-focus"),
             Cond::PeerHover => Some("peer-hover"),
             Cond::PeerFocus => Some("peer-focus"),
+            // The attribute probes carry their spelling in the payload —
+            // the segment text itself (`data-[state=open]`, `has-focus`),
+            // which no const table reconstructs. `source_text` returns
+            // None for them: the diagnostic surfaces carry the payload
+            // when a reader needs the probe text.
+            Cond::Data { .. }
+            | Cond::Aria { .. }
+            | Cond::Has(_)
+            | Cond::GroupHas(_)
+            | Cond::PeerHas(_) => None,
             // Breakpoint names need the u8 formatting — not const. The
             // non-const wrapper covers them (see `source_text`).
             Cond::Bp(_)
