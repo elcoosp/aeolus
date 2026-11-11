@@ -1,3 +1,29 @@
+## [Unreleased]
+
+### 🚀 Features
+
+- *(compile)* The rust-tokens emit arm module (`emit_rust`/`emit_rust_theme` and the custom-seam siblings: one embeddable `Layer::new` expression per lowered class, keyword slots resolved to their row text, token slots to their table names)
+- *(compile)* Arm `Target::Rust` — the plan §3.1 emit (a) form, the `Target` surface's last arm
+- *(compile)* The row-table annotation pass (`lower::kw_annotations`) and the shared `val_literal` float contract
+
+### 📚 Documentation
+
+- *(compile)* The `rust` module docs (the in-pipeline rationale, the compiled-shape doc test) and the statics/interp cross-references
+- *(readme)* Align the badge and status to 0.15.0 (the drift the grammar release left) and name the rust-tokens arm
+- *(architecture)* Mark the rust-tokens emit arm landed
+- *(changelog)* File the rust-tokens arm
+- *(benchmarks)* File the rust-tokens-arm run numbers
+- *(evidence)* File the rust-tokens red-to-green record (M2: has-/data-/aria- folding identified and deferred)
+
+### 🧪 Testing
+
+- *(compile)* Pin the rust-tokens contracts end to end (`tests/rust_tokens.rs`: the verbatim fragment and sheet, determinism, the keyword/composite/bare annotations, the token-name annotations, the 22-cond totality battery, the diagnostics-equal battery, the custom differential)
+- *(bench)* Measure the rust-tokens emit (`benches/rust_tokens.rs`)
+
+### 💼 Other
+
+- *(compile)* Demonstrate the rust-tokens arm (`examples/rust_tokens.rs`)
+
 ## [0.15.0] - 2026-11-10
 
 ### 🚀 Features
