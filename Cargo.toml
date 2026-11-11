@@ -25,8 +25,8 @@ members = [
     # the last arm) — `@utility`/`@custom-variant` landed 2026-11 as the
     # custom-authoring seam (P2 slice 5), and the attribute-probe
     # variant fold (the has-/data-/aria- families onto the typed `Cond`
-    # surface) landed 2026-11; the xtask generator story is the
-    # remaining P2 slice.
+    # surface) landed 2026-11; with the xtask generator story landed
+    # 2026-11 below, every named P2 slice is in-tree.
     "crates/aeolus-compile",
     # The theme pass (plan §3.2, phase P2 slice 2): CSS-first theme
     # sources resolved into tiered token tables (T0 literals, T1 const
@@ -34,6 +34,13 @@ members = [
     # Same git-only discipline; the xtask build-time bake stays with
     # the remaining P2 slices.
     "crates/aeolus-theme",
+    # The generator story's driver (plan §3.2's row for aeolus-data,
+    # the LAST named P2 slice, landed 2026-11): walks the crate's
+    # `codegen::GeneratedArtifact` seam — `cargo xtask gen-tables`
+    # regenerates the committed artifacts from the rows (the roots
+    # index the read side consults, the docs page), `cargo xtask
+    # verify-tables` is the drift gate the tests pin beside.
+    "crates/xtask",
 ]
 
 # cargo-fuzz's own workspace lives here; it must not join this one.
