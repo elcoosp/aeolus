@@ -101,6 +101,13 @@ harness = false
 name = "arbitrary"
 harness = false
 
+# The attribute-probe fold's benchmarks (the variant surface's P2
+# slice): the data-/aria-/has- fold against the state fold and the
+# base compile floor.
+[[bench]]
+name = "attr_variants"
+harness = false
+
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
