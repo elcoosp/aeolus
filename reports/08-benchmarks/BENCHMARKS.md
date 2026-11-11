@@ -385,3 +385,57 @@ same machinery the state segments already pay. The aggregate string
 sits ~7.3× over the bare floor because it carries four variant classes
 against the floor's zero, not because the probe grammar is expensive.
 Like every compile path the dyn-cache dedupes the warm repeat.
+
+## Registry roots-index run (2026-11-11, 2-core sandbox, release profile, divan 0.1.21)
+
+The generator story's read-side half (`crates/aeolus-data/benches/lookup.rs`):
+the generated phf probe the `lookup`/`lookup_detailed` hot paths walk,
+against the pre-index linear scan kept verbatim as the documented
+`lookup_linear` oracle. The index answers WHICH root a body addresses —
+the longest dash-aligned prefix that is a root — and the shape filter is
+unchanged, so the delta below is the scan the index retired. One seed
+(0) placed all 154 distinct roots with a maximum displacement of 3 (the
+emitted probe bound is 4) over 512 slots.
+
+| benchmark | median | note |
+|---|---|---|
+| `lookup_hit` (indexed) | **44.9 ns** | `p-4` — one hash, one slot probe, the winning root's row shape-filtered |
+| `lookup_linear_hit` (oracle) | 541.8 ns | the same body through the pre-index scan (all 178 rows read) |
+| `lookup_multi_dash_hit` (indexed) | **54.3 ns** | `rounded-tl-lg` — three prefix probes longest-first |
+| `lookup_linear_multi_dash_hit` (oracle) | 798.8 ns | the same body through the scan |
+| `lookup_detailed_hit` | 70.9 ns | the typed seam over the index: identical rows + the Result shell |
+| `lookup_detailed_unknown_root` | 31.9 ns | the index rejects before any row is read |
+| `lookup_detailed_shape_rejected` | 79.3 ns | the tried-labels allocation on the indexed path |
+| `lookup_linear_shape_rejected` (oracle) | 654.3 ns | the same miss through the scan |
+
+Verdict: the index buys ~12× on the cache-shaped hit and ~14.7× on the
+multi-dash disambiguation — the scan's dominant cost (reading every row)
+is gone, and the typed miss paths ride the same win. The registry
+lookup sits inside every compile call, so the win lands on the whole
+pipeline's read stage; the differential battery (roots, composites,
+adversarial misses, a deterministic 4000-body fuzz) pins the semantics
+unchanged.
+
+## Interp probe-seam run (2026-11-11, 2-core sandbox, release profile, divan 0.1.21)
+
+The attribute-probe surface's runtime half
+(`crates/aeolus-compile/benches/interp.rs`): the plan §3.5 state bits
+riding the interpreter walk. The seam adds one trait-object call per
+attribute layer (a miss is one answered probe and a quiet skip; the
+sourceless note path is the before number).
+
+| benchmark | median | note |
+|---|---|---|
+| `interp_theme_probes_button_busy` | **1.19 µs** | the 33-class shadcn Button, runtime tier, busy env, probe source riding (`aria-invalid` layers fire) |
+| `interp_runtime_button_busy` (baseline) | 952 ns | the same walk without the probe seam |
+| `interp_probes_mixed` | **104 ns** | a token-free program: one probe hit, one answered miss, one `has-` note |
+| `interp_sourceless_mixed` (baseline) | 83.4 ns | the same program through the sourceless walk (all attribute layers reported) |
+| `interp_baked_button_busy` | 910 ns | the baked-tier Button floor for reference |
+
+Verdict: the probe consult costs ~21 ns over the note path on the
+token-free program (~26 ns per attribute layer probed) and ~27% on the
+themed Button walk — the delta is the two firing `aria-invalid` layers
+actually resolving their declarations plus the answered miss, i.e. the
+walk now does MORE work because more layers fire, not because the seam
+is expensive. The layer decision itself stays a branch; the host's
+probe table is a small linear scan.
