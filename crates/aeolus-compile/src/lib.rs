@@ -150,7 +150,10 @@ pub use custom::{ClassifyVariant, CustomForm, CustomUtility, CustomValue, Custom
 pub use dyn_cache::{
     CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity, DynStore, TwoGenStore,
 };
-pub use interp::{Env, InterpError, InterpNote, Interped, TokenSource, interp, interp_theme};
+pub use interp::{
+    AttrBit, AttrKind, AttrProbe, AttrState, Env, InterpError, InterpNote, Interped, TokenSource,
+    interp, interp_probes, interp_theme, interp_theme_probes,
+};
 pub use rust::{
     RustFragment, RustSheet, emit_rust, emit_rust_theme, emit_rust_theme_with, emit_rust_with,
 };
@@ -277,6 +280,41 @@ impl Compiled {
         env: &Env,
     ) -> Result<Interped, InterpError> {
         interp_theme(&self.program, tokens, env)
+    }
+
+    /// Resolve this compile's program to its effective declarations
+    /// under one probe situation and one [`AttrProbe`] — the
+    /// attribute-probe half ([`interp_probes`] on
+    /// [`Compiled::program`]): the element-own `data-*`/`aria-*`
+    /// layers ask the source (the built-in [`AttrState`] carries the
+    /// element's typed attribute bits, plan §3.5); a source-answered
+    /// miss is CSS-quiet, and the descendant probes stay the reported
+    /// diagnosed boundary.
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes(&self.program, env, probes)
+    }
+
+    /// The themed form of [`Compiled::interp_probes`]: one
+    /// [`TokenSource`] for the theme forms, one [`AttrProbe`] for the
+    /// attribute probes — both seams ride one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes`]).
+    pub fn interp_theme_probes(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes(&self.program, tokens, env, probes)
     }
 
     /// Emit this compile's program as the IR's static form — the
