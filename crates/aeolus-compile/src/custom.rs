@@ -39,7 +39,10 @@
 //!   Both walks fold and render it identically (the differential pins
 //!   diagnostics EQUAL with customs in play); spellings that need a
 //!   selector the IR has no slot for stay the typed
-//!   unsupported-variant boundary, exactly like the has-/aria- family.
+//!   unsupported-variant boundary (the arbitrary-variant form, the
+//!   parent×attribute compositions) — the attribute-probe families
+//!   themselves fold as built-ins since the 2026-11 slice, and an
+//!   alias may target their conds.
 //! * **Registration interns into the leak pool.** The root names and
 //!   target lists leak at registration — the same documented storage
 //!   the IR's dynamic form uses ("one interned `Box<[Decl]>` shared by
