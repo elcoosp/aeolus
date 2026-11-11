@@ -438,6 +438,77 @@ pub(crate) fn fan(targets: &'static [Prop], val: Val) -> Vec<Decl> {
 }
 
 // ---------------------------------------------------------------------------
+// The keyword annotations (the rust-tokens emit arm's read side —
+// plan §3.1 emit (a))
+// ---------------------------------------------------------------------------
+
+/// The keyword-slot annotations for one candidate's row: `(Prop, text)`
+/// pairs for every declaration the row fans, when the lowering rides the
+/// row's OWN keyword/bare/composite tables — the texts the [`Val::Kw`]
+/// slot indexes but a bare `Program` cannot recover (the slot is
+/// row-relative; the codegen crate owns the names, plan §3.3). The
+/// rust-tokens emit arm renders them as trailing comments; the
+/// program-only emitters (the static-data arm, the interpreter) carry
+/// the slot alone, honestly.
+///
+/// The arm selection mirrors [`row_to_decls`]'s (the same suffix rule,
+/// the same AnyOf flattening and acceptance order) but only READS the
+/// row tables — no lowering, no refusals: a row that would reject
+/// yields no annotations, and the caller renders the fragment only from
+/// rows that already lowered. Arbitrary candidates never consult this
+/// (the arbitrary arm lowers concrete values, never row-table slots).
+pub(crate) fn kw_annotations(row: UtilityRow, body: &str) -> Vec<(Prop, &'static str)> {
+    let Ok(suffix) = suffix_of(body, row.root) else {
+        return Vec::new();
+    };
+    let mut arms = Vec::new();
+    flatten(row.kind, &mut arms);
+    for arm in arms {
+        match arm {
+            // The whole utility IS the value (`hidden` → `none`): one
+            // text fans over every target, slot 0.
+            ValueKind::Bare(css) if suffix.is_none() => {
+                return row.targets.iter().map(|&prop| (prop, css)).collect();
+            }
+            // The closed keyword table: the suffix's own text fans over
+            // every target (the per-target variety is the composite's).
+            ValueKind::Keywords(table) => {
+                let s = suffix.unwrap_or_default();
+                if u8::try_from(table.len()).is_ok()
+                    && let Some(text) = table
+                        .iter()
+                        .find(|&&(name, _)| name == s)
+                        .map(|&(_, text)| text)
+                {
+                    return row.targets.iter().map(|&prop| (prop, text)).collect();
+                }
+            }
+            // The composite pair (`text-sm` → font-size + line-height):
+            // targets[0] takes the primary text, targets[1] the
+            // secondary — the same per-target split the CSS renderer
+            // uses (the IR carries one shared slot; the texts are the
+            // annotation).
+            ValueKind::Composite(table) => {
+                let s = suffix.unwrap_or_default();
+                if u8::try_from(table.len()).is_ok()
+                    && let Some(idx) = table.iter().position(|&(name, _, _)| name == s)
+                {
+                    let (_, primary, secondary) = table[idx];
+                    return row
+                        .targets
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &prop)| (prop, if i == 0 { primary } else { secondary }))
+                        .collect();
+                }
+            }
+            _ => {}
+        }
+    }
+    Vec::new()
+}
+
+// ---------------------------------------------------------------------------
 // The CSS form (the Target::Css arm — plan §3.1's emit stage, option (d))
 // ---------------------------------------------------------------------------
 
