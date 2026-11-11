@@ -2,6 +2,27 @@
 
 ### 🚀 Features
 
+- *(compile)* The plan-lowering emit arm (`Target::Plan`, architecture plan §7's migration seam): `emit_plan`/`emit_plan_theme`/`emit_plan_with`/`emit_plan_theme_with` lower the V1 pipeline's artifact into the v0.x `StylePlan` the five backend crates already consume — the registry's Prop surface written slot-for-slot (the per-edge `EdgeSet` masks, the per-corner `CornerSet`, the composite `text-sm` px pair, the runtime tokens through the theme pass's table), the fold's conditions routed into the v0.x buckets (the seven classic states into `layers`, `dark:` into `dark`, `sm:`/`min-*:` into `responsive`, `group-*:`/`peer-*:` into the label vecs, the attribute probes and `max-*:`/container/`has-*` forms into `rules` over the v0.x `Atom` conjunction), and every longhand without a v0.x slot (the gradient and shadow preset rows, the slot-less families, the unmappable `has-*` fragments) reported as a typed `PlanNote` with a stable code and help text
+- *(compile)* `lower::suffix_of` joins the `pub(crate)` surface beside `kw_annotations` (the plan arm's per-prop spellings read the accepted suffix)
+
+### 🧪 Testing
+
+- *(compile)* Pin the plan bridge end to end (`tests/plan_bridge.rs`): the DIFFERENTIAL oracle — every battery class's plan must agree slot-for-slot with the v0.x `Resolver` fed the same theme CSS (the P1 exit criterion's plan-level form), over the v4-default theme battery (spacing/margins/sizing/radii/colours/borders/typography/layout/position/ring/outline/transforms/grid-numeric) and the shadcn token battery, the multi-class cascade strings, the bucket-routing table, the same-condition layer merge, the typed notes, the theme-less diagnostics parity with `compile`, the customs pass-through and the determinism contract
+- *(bench)* Measure the plan arm (`benches/plan_bridge.rs`: the themed shadcn Button core walk, the theme-less boundary path, the single-utility floor)
+
+### 📚 Documentation
+
+- *(readme)* Align the badge and status to v0.18.0 (the drift the 0.18.0 release left) and file the plan bridge
+- *(architecture)* Mark the five-arm `Target` surface in the workspace manifest comment and the CI member count (the xtask join the 14-member line predated)
+
+### 💼 Other
+
+- *(core)* Give the five bare `unreachable!()` panics in the resolver their guard reasons (the repo's own convention — every other site carries one)
+
+## [0.18.0] - 2026-11-11
+
+### 🚀 Features
+
 - *(data)* The `codegen::GeneratedArtifact` seam — the generator story's one trait every committed derived artifact implements, with `RootsIndex` (the seeded-FNV perfect-hash over the rows' distinct roots) and `RegistryDocs` (the markdown audit page) as the landing artifacts
 - *(data)* The generated roots index wired into the registry read side (`lookup`/`lookup_detailed` walk the phf probe; the pre-index linear scan stays as the documented `lookup_linear` differential oracle)
 - *(xtask)* The generator driver (`cargo xtask gen-tables`/`verify-tables`/`list`, the `run(args, out, err) -> code` contract, `--root` for test-only temp roots) and the `cargo xtask` alias
