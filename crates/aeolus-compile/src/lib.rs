@@ -861,7 +861,7 @@ pub fn cn(inputs: &[&Compiled]) -> Result<Compiled, CompileError> {
 // The keyword annotations (the P3 codegen read side)
 // ---------------------------------------------------------------------------
 
-/// One lowered class plus the ROW texts its [`Val::Kw`] slots index —
+/// One lowered class plus the ROW texts its `Val::Kw` slots index —
 /// the annotation the bare [`Program`] cannot recover (the keyword slot
 /// is row-relative, so `hidden` and `block` are both `Display` slot 0).
 ///
@@ -884,7 +884,7 @@ pub struct ClassKeywords {
 }
 
 /// Collect the row-keyword annotations for a class string — the
-/// [`Target::Rust`](crate::Target::Rust) arm's read side exposed as a
+/// [`Target::Rust`] arm's read side exposed as a
 /// public seam for the P3 codegen crates.
 ///
 /// The walk mirrors [`compile`]'s stages (lex → fold → registry read →
@@ -943,6 +943,62 @@ pub fn keyword_texts(input: &str, config: &Config) -> Result<Vec<ClassKeywords>,
         });
     }
     Ok(out)
+}
+
+/// Align the per-class annotations with a compiled program — one ROW
+/// text per flattened declaration, in layer-major order, the exact
+/// shape the `::aeolus_rt::StaticProgram` keyword slice takes (the
+/// static form the macro freezes and the backends walk).
+///
+/// The seam is the SINGLE source of the alignment every consumer used
+/// to hand-roll: the `tw!` macro's freeze path, the codegen target's
+/// `lower_class` and the dynamic lane's runtime cell
+/// (`aeolus_rt::ClassCell`) all walk it. Duplicate `(cond, prop)` pairs
+/// consume in source order — the compile assembly's stable order — so
+/// `hidden flex block` keeps the three `Display` texts in class order,
+/// and an unfired layer's text can never shadow a winner's (the queue
+/// is per-condition, the same key the interp's winner attribution
+/// uses). A declaration with no matching annotation aligns to `""` (a
+/// value that carries its own text: numbers, colours, tokens).
+///
+/// The annotations are the themeless read side ([`keyword_texts`]) —
+/// the row tables' texts are theme facts, so the themed compiles align
+/// through the same call.
+///
+/// ```no_run
+/// use aeolus_compile::{Config, compile, keyword_alignment, keyword_texts};
+///
+/// let config = Config::default();
+/// let compiled = compile("hidden flex-col", &config)?;
+/// let annotations = keyword_texts("hidden flex-col", &config)?;
+/// let texts = keyword_alignment(&compiled, &annotations);
+/// assert_eq!(texts.len(), compiled.program.layers.iter().map(|l| l.decls.len()).sum::<usize>());
+/// # Ok::<(), aeolus_compile::CompileError>(())
+/// ```
+pub fn keyword_alignment(compiled: &Compiled, classes: &[ClassKeywords]) -> Vec<&'static str> {
+    let mut queues: std::collections::HashMap<
+        (Cond, Prop),
+        std::collections::VecDeque<&'static str>,
+    > = std::collections::HashMap::new();
+    for class in classes {
+        for &(prop, text) in &class.keywords {
+            queues
+                .entry((class.cond, prop))
+                .or_default()
+                .push_back(text);
+        }
+    }
+    let mut out = Vec::new();
+    for layer in compiled.program.layers {
+        for decl in layer.decls {
+            let text = queues
+                .get_mut(&(layer.cond, decl.prop))
+                .and_then(std::collections::VecDeque::pop_front)
+                .unwrap_or("");
+            out.push(text);
+        }
+    }
+    out
 }
 
 /// The whole pipeline, theme-less or themed. `tokens` selects whether
