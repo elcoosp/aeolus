@@ -1232,7 +1232,8 @@ const USAGE: &str = "\
 aeolus — Tailwind v4 class compiler, headless surface
 
 USAGE:
-  aeolus resolve [--theme <spec>] [--summary] <classes...>   plan snapshot JSON (the artifact)
+  aeolus resolve [--theme <spec>] [--summary] [--json] <classes...>
+                                                     plan snapshot JSON (the artifact)
   aeolus css     [--theme <spec>] <classes...>               verification CSS (v4 shapes)
   aeolus diff    [--theme <spec>] [--json] <A> <B>           base-layer diff with lanes
   aeolus cn      <classes...>                                cn() conflict merge
