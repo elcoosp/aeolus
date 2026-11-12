@@ -33,8 +33,7 @@ members = [
     # The theme pass (plan §3.2, phase P2 slice 2): CSS-first theme
     # sources resolved into tiered token tables (T0 literals, T1 const
     # pairs, T2 runtime `Tok`s) over the audited v0.x theme reader.
-    # Same git-only discipline; the xtask build-time bake stays with
-    # the remaining P2 slices.
+    # Same git-only discipline.
     "crates/aeolus-theme",
     # The P3 backend surface (plan §3.2/§3.3): the runtime seam the
     # static `tw!` output targets, the backend-neutral codegen trait and
@@ -144,6 +143,19 @@ too_many_arguments = "allow"
 # `as_chunks` stabilized after the core MSRV (1.88); the cache's FxHasher
 # keeps the `chunks_exact(8)` form for MSRV parity (documented in place).
 chunks_exact_to_as_chunks = "allow"
+# The proc-macro grammar (aeolus-macro) is a hand-written token walk (the
+# mission's syn-free constraint): its flat match/if shape trips six
+# pedantic lints that flag style, not correctness. The exceptions moved
+# here from the macro's source-level `#![allow(...)]` block (which
+# predated the workspace convention) — cargo forbids a local
+# `[lints.clippy]` beside `workspace = true`, so per-crate exceptions
+# live beside the workspace's own.
+collapsible_if = "allow"
+format_push_string = "allow"
+if_not_else = "allow"
+map_unwrap_or = "allow"
+needless_pass_by_value = "allow"
+type_complexity = "allow"
 
 [workspace.dependencies]
 # Intra-workspace version pins MUST stay in lockstep with
@@ -169,7 +181,7 @@ aeolus-theme = { version = "0.19.0", path = "crates/aeolus-theme" }
 # API-compatible stub (crates/muda-stub) covering the exact muda surface
 # floem uses. The stub is dev-only: it is NOT a workspace member, is never a
 # dependency of any publishable crate (aeolus-core / aeolus-macro do not
-# reference muda at all), and the five backend crates carry `publish = false`
+# reference muda at all), and the six backend crates carry `publish = false`
 # for exactly this reason. See reports/09-publishing/PUBLISHING.md.
 [patch.crates-io]
 muda = { path = "crates/muda-stub" }
