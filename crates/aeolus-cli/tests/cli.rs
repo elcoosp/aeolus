@@ -573,3 +573,125 @@ fn expand_needs_a_class_string() {
     assert_eq!(code, 2);
     assert!(err.contains("expand needs a class string"), "{err}");
 }
+
+// ---------------------------------------------------------------------------
+// The @source registration (plan §5.4's CSS-first compat line): a theme
+// CSS PATH can register scan content — inline literals join the
+// candidate set, path entries join the scan set (relative to the theme
+// CSS's directory), negated paths prune — and the directives are typed
+// end to end.
+// ---------------------------------------------------------------------------
+
+fn source_fixture_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("aeolus-cli-src-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn check_scans_source_inline_entries_from_the_theme_css() {
+    let dir = source_fixture_dir("inline");
+    let theme = dir.join("theme.css");
+    std::fs::write(
+        &theme,
+        "@theme {\n  --color-primary: #0ea5e9;\n}\n@source inline(\"p-4 bg-notacolor\");\n",
+    )
+    .unwrap();
+    let file = dir.join("widget.rs");
+    std::fs::write(&file, "let s = \"p-4\";").unwrap();
+    let theme_path = theme.to_string_lossy().to_string();
+    let file_path = file.to_string_lossy().to_string();
+    // The inline candidate is linted beside the passed files; the
+    // finding names the theme CSS as its origin.
+    let (code, out, _) = run_cmd(&["check", "--theme", &theme_path, &file_path]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("bg-notacolor"), "{out}");
+    assert!(out.contains(&theme_path), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn check_source_path_entries_join_the_scan_set() {
+    let dir = source_fixture_dir("path");
+    let theme = dir.join("theme.css");
+    std::fs::write(
+        &theme,
+        "@theme {\n  --color-primary: #0ea5e9;\n}\n@source \"widget.rs\";\n",
+    )
+    .unwrap();
+    let file = dir.join("widget.rs");
+    std::fs::write(&file, "let s = \"bg-typosaurus\";").unwrap();
+    let anchor = dir.join("anchor.rs");
+    std::fs::write(&anchor, "let s = \"p-4\";").unwrap();
+    let theme_path = theme.to_string_lossy().to_string();
+    let anchor_path = anchor.to_string_lossy().to_string();
+    // The registered file is scanned even though only the anchor was
+    // passed: the directive joins the scan set.
+    let (code, out, _) = run_cmd(&["check", "--theme", &theme_path, &anchor_path]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("bg-typosaurus"), "{out}");
+    assert!(out.contains("widget.rs"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn check_source_not_prunes_but_explicit_files_survive() {
+    let dir = source_fixture_dir("not");
+    let theme = dir.join("theme.css");
+    std::fs::write(
+        &theme,
+        "@theme {\n  --color-primary: #0ea5e9;\n}\n@source \"widget.rs\";\n@source not \"widget.rs\";\n",
+    )
+    .unwrap();
+    let file = dir.join("widget.rs");
+    std::fs::write(&file, "let s = \"bg-typosaurus\";").unwrap();
+    let anchor = dir.join("anchor.rs");
+    std::fs::write(&anchor, "let s = \"p-4\";").unwrap();
+    let theme_path = theme.to_string_lossy().to_string();
+    let anchor_path = anchor.to_string_lossy().to_string();
+    // The negation prunes the registration: no findings, exit 0.
+    let (code, out, _) = run_cmd(&["check", "--theme", &theme_path, &anchor_path]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("bg-typosaurus"), "{out}");
+    // An EXPLICIT command-line file survives the negation (the
+    // operator's list wins over the theme's prune).
+    let file_path = file.to_string_lossy().to_string();
+    let (code, out, _) = run_cmd(&["check", "--theme", &theme_path, &file_path]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("bg-typosaurus"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn check_reports_malformed_source_directives_as_usage_errors() {
+    let dir = source_fixture_dir("malformed");
+    let theme = dir.join("theme.css");
+    std::fs::write(
+        &theme,
+        "@theme {\n  --color-primary: #0ea5e9;\n}\n@source \"unterminated.rs;\n",
+    )
+    .unwrap();
+    let file = dir.join("widget.rs");
+    std::fs::write(&file, "let s = \"p-4\";").unwrap();
+    let theme_path = theme.to_string_lossy().to_string();
+    let file_path = file.to_string_lossy().to_string();
+    let (code, _, err) = run_cmd(&["check", "--theme", &theme_path, &file_path]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("unterminated"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn check_with_a_builtin_theme_never_scans_sources() {
+    // The built-in specs carry no CSS path to register from: the
+    // behavior is exactly the pre-@source surface.
+    let dir = source_fixture_dir("builtin");
+    let file = dir.join("widget.rs");
+    std::fs::write(&file, "let s = \"bg-typosaurus\";").unwrap();
+    let file_path = file.to_string_lossy().to_string();
+    let (code, out, _) = run_cmd(&["check", "--theme", "shadcn", &file_path]);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(out.matches("bg-typosaurus").count(), 1, "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
