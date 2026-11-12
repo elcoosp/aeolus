@@ -32,7 +32,9 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use aeolus_compile::cn as merge_cn;
-use aeolus_compile::{ClassKeywords, Compiled, Config, compile_theme, keyword_texts};
+use aeolus_compile::{
+    ClassKeywords, Compiled, Config, compile_theme, keyword_alignment, keyword_texts,
+};
 use aeolus_ir::Cond;
 use aeolus_theme::{ThemeSource, TokenTable};
 
@@ -47,7 +49,7 @@ pub fn tw(input: TokenStream) -> TokenStream {
         Ok(pair) => pair,
         Err(msg) => return compile_error(&input, &msg),
     };
-    let keywords = queue_keywords(&compiled, &classes);
+    let keywords = keyword_alignment(&compiled, &classes);
     aeolus_codegen_gpui::emit_static_program(&compiled.program, &keywords).into()
 }
 
@@ -132,33 +134,6 @@ fn compile_literal(literal: &str) -> Result<(Compiled, Vec<ClassKeywords>), Stri
     }
     let classes = keyword_texts(literal, &config).map_err(|err| format!("tw!: {err}"))?;
     Ok((compiled, classes))
-}
-
-/// Align the per-class annotations with the compiled program: one text
-/// per declaration, in layer-major order. Duplicate `(cond, prop)` pairs
-/// consume in source order, which is the compile assembly's stable order.
-fn queue_keywords(compiled: &Compiled, classes: &[ClassKeywords]) -> Vec<&'static str> {
-    let mut queues: HashMap<(Cond, aeolus_ir::Prop), std::collections::VecDeque<&'static str>> =
-        HashMap::new();
-    for class in classes {
-        for &(prop, text) in &class.keywords {
-            queues
-                .entry((class.cond, prop))
-                .or_default()
-                .push_back(text);
-        }
-    }
-    let mut out = Vec::new();
-    for layer in compiled.program.layers {
-        for decl in layer.decls {
-            let text = queues
-                .get_mut(&(layer.cond, decl.prop))
-                .and_then(std::collections::VecDeque::pop_front)
-                .unwrap_or("");
-            out.push(text);
-        }
-    }
-    out
 }
 
 /// The merged form: one text per merged declaration, keyed by the LAST
@@ -314,7 +289,7 @@ enum VariantClasses {
 /// ```
 ///
 /// Generates one enum per group, a `style(...)` function returning the
-/// merged [`aeolus_rt::StaticProgram`], and a `Default` enum variant
+/// merged `aeolus_rt::StaticProgram`, and a `Default` enum variant
 /// (the key named `default`, else the first key).
 #[proc_macro]
 pub fn variants(input: TokenStream) -> TokenStream {
@@ -539,7 +514,7 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
     let mut arms = String::new();
     if group_fields.is_empty() {
         let (program, _) = compile_literal(&base).map_err(|err| format!("variants!: {err}"))?;
-        let keywords = queue_keywords(&program, &[]);
+        let keywords = keyword_alignment(&program, &[]);
         let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
         output.push_str(&enum_defs);
         output.push_str(&format!(
@@ -572,7 +547,7 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
         }
         let (program, class_annotations) =
             compile_literal(&classes).map_err(|err| format!("variants!: {err}"))?;
-        let keywords = queue_keywords(&program, &class_annotations);
+        let keywords = keyword_alignment(&program, &class_annotations);
         let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
         arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
     }
