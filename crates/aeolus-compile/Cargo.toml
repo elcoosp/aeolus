@@ -118,3 +118,10 @@ harness = false
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
+
+# The class-sort seam's benchmarks (plan §5.5's tooling-parity slice):
+# the registry-order walk over the shadcn Button surface and the honest
+# tail, against the single-utility floor.
+[[bench]]
+name = "sort"
+harness = false
