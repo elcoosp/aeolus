@@ -23,16 +23,9 @@
 //! and its `DynCache` — the documented dynamic lane.
 
 //! The macro grammar is a hand-written token walk (the mission's syn-free
-//! constraint); the pedantic lints below flag its flat match/if shape, not
-//! a correctness or readability problem.
-#![allow(
-    clippy::collapsible_if,
-    clippy::format_push_string,
-    clippy::if_not_else,
-    clippy::map_unwrap_or,
-    clippy::needless_pass_by_value,
-    clippy::type_complexity
-)]
+//! constraint); the pedantic lints it trips are excepted in the crate
+//! manifest's `[lints.clippy]` table, with the rationale — the workspace
+//! convention (root `Cargo.toml`) keeps every allow beside its reason.
 
 use proc_macro::{Delimiter, TokenStream, TokenTree};
 use std::collections::HashMap;
