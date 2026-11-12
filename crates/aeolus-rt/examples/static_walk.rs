@@ -8,17 +8,15 @@
 //! ```
 //!
 //! The example mirrors the macro's own freeze: compile once, align the
-//! per-class keyword annotations with the compiled program (one text per
-//! declaration, layer-major order), hand the two slices to
-//! [`StaticProgram::new`] — then read it back the way a backend does
-//! (`keyword`/`keyword_for`), and resolve the themed interpreter half
-//! under one probe [`Env`].
+//! per-class keyword annotations with the compiled program through the
+//! [`aeolus_compile::keyword_alignment`] seam (the one alignment the
+//! macro freeze, the codegen target and the dynamic lane all walk),
+//! hand the two slices to [`StaticProgram::new`] — then read it back
+//! the way a backend does (`keyword`/`keyword_for`), and resolve the
+//! themed interpreter half under one probe [`Env`].
 
-use std::collections::HashMap;
-use std::collections::VecDeque;
-
-use aeolus_compile::{ClassKeywords, Config, compile_theme, keyword_texts};
-use aeolus_ir::{Cond, Prop, Val};
+use aeolus_compile::{ClassKeywords, Config, compile_theme, keyword_alignment, keyword_texts};
+use aeolus_ir::{Prop, Val};
 use aeolus_rt::{Env, StaticProgram};
 use aeolus_theme::{ThemeSource, TokenTable};
 
@@ -43,28 +41,10 @@ fn main() {
         keyword_texts(classes, &config).expect("non-empty input annotates");
 
     // The alignment: one text per declaration, in layer-major order —
-    // the same queue the macro freezes beside the layers (duplicate
-    // `(cond, prop)` pairs consume in source order, the assembly's
-    // stable order).
-    let mut queues: HashMap<(Cond, Prop), VecDeque<&'static str>> = HashMap::new();
-    for class in &annotations {
-        for &(prop, text) in &class.keywords {
-            queues
-                .entry((class.cond, prop))
-                .or_default()
-                .push_back(text);
-        }
-    }
-    let mut keywords: Vec<&'static str> = Vec::new();
-    for layer in compiled.program.layers {
-        for decl in layer.decls {
-            let text = queues
-                .get_mut(&(layer.cond, decl.prop))
-                .and_then(VecDeque::pop_front)
-                .unwrap_or("");
-            keywords.push(text);
-        }
-    }
+    // the seam the macro's freeze and the dynamic lane both walk
+    // (duplicate `(cond, prop)` pairs consume in source order, the
+    // assembly's stable order).
+    let keywords = keyword_alignment(&compiled, &annotations);
 
     // The freeze: layers + parallel row texts — the static form the
     // macro emits and the host consumes. Both slices are `&'static` (the
