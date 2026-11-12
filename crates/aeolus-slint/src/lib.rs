@@ -8,7 +8,7 @@
 //!
 //! 1. **Element properties** — a [`ResolvedStyle`] lowers into a
 //!    [`SlintStyle`] whose fields are Slint's own value types:
-//!    [`slint::Brush`] for `background`/`border-color` (solid fills AND
+//!    [`Brush`] for `background`/`border-color` (solid fills AND
 //!    native gradients — `@linear-gradient`/`@radial-gradient`/
 //!    `@conic-gradient` are real brush values), lengths for
 //!    `border-width`/per-corner radii/`drop-shadow-*`/`inner-shadow-*`,
@@ -230,7 +230,7 @@ pub fn gradient_to_brush(g: &Gradient) -> Option<Brush> {
 // Typography
 // ---------------------------------------------------------------------------
 
-/// One situation's lowered typography: the [`slint::Brush`] colors and the
+/// One situation's lowered typography: the [`Brush`] colors and the
 /// `Text`-item property values ([`SlintStyle::text`] carries it; emit the
 /// bindings on the `Text` element).
 ///
