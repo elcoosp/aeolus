@@ -54,6 +54,10 @@ use std::fmt;
 use aeolus_core::{Color, ParseError, TailwindTheme, shadcn_css};
 use aeolus_ir::Val;
 
+mod source;
+
+pub use source::{SourceDirective, source_directives};
+
 /// Which value form a [`TokenTable`] resolves tokens to (plan §3.4's
 /// "pay only for the dynamism you use").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,20 +82,29 @@ pub enum Tier {
 pub struct ThemeSource {
     light: TailwindTheme,
     dark: Option<TailwindTheme>,
+    /// The `@source` registrations the light CSS carried (plan §5.4's
+    /// scanner surface — the inline literals and the walked/pruned
+    /// paths a host's class scan consults).
+    sources: Vec<SourceDirective>,
 }
 
 impl ThemeSource {
     /// Parse the light CSS (the same `@theme`/`:root`/`.dark` surface a
     /// web Tailwind v4 project uses, unchanged — plan §3.4's headline)
     /// and, when given, the `.dark` overrides that form the dark
-    /// variant.
+    /// variant. The light CSS's `@source` directives ride the source
+    /// ([`ThemeSource::sources`]) — the scanner registration a host's
+    /// class scan walks.
     ///
     /// # Errors
     /// [`ThemeError::Parse`] when either CSS block does not parse (the
-    /// audited `ParseError`, carried verbatim).
+    /// audited `ParseError`, carried verbatim); [`ThemeError::Source`]
+    /// when an `@source` statement is malformed (the typed scan
+    /// contract — never a guessed registration).
     pub fn from_css(light_css: &str, dark_css: Option<&str>) -> Result<Self, ThemeError> {
         #[cfg(feature = "tracing")]
         tracing::debug!(light_len = light_css.len(), "theme source: parse light css");
+        let sources = source_directives(light_css)?;
         let light = TailwindTheme::from_theme_css(light_css)
             .map_err(|source| ThemeError::Parse { source })?;
         let dark = match dark_css {
@@ -106,7 +119,11 @@ impl ThemeSource {
                 )
             }
         };
-        Ok(Self { light, dark })
+        Ok(Self {
+            light,
+            dark,
+            sources,
+        })
     }
 
     /// The shadcn neutral LIGHT palette only (T0's shape: no dark
@@ -138,12 +155,21 @@ impl ThemeSource {
     pub fn dark(&self) -> Option<&TailwindTheme> {
         self.dark.as_ref()
     }
+
+    /// The `@source` registrations the light CSS carried, in source
+    /// order (plan §5.4's scanner surface): the inline literals, the
+    /// walked paths and the pruned (`not`) paths a host's class scan
+    /// consults. Empty for the built-in palettes.
+    pub fn sources(&self) -> &[SourceDirective] {
+        &self.sources
+    }
 }
 
 /// Why a theme source or a token table failed to build. An empty colour
 /// surface cannot occur (every theme is default-seeded with the full v4
 /// palette), so the failure modes are a parse failure (carried verbatim,
-/// never stringly re-wrapped) and the T1 budget boundary below.
+/// never stringly re-wrapped), the T1 budget boundary below and the
+/// typed `@source` scan contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ThemeError {
     /// The light CSS or the dark overrides did not parse (the audited
@@ -164,6 +190,14 @@ pub enum ThemeError {
         /// The pair count the source would bake.
         pairs: usize,
     },
+    /// An `@source` statement did not parse (the typed scan contract:
+    /// an unterminated string, an unrecognized payload, the bare form —
+    /// the no-silent-failures rule, never a guessed registration). The
+    /// message names the statement's failure mode.
+    Source {
+        /// The precise, non-empty reason.
+        message: String,
+    },
 }
 
 impl fmt::Display for ThemeError {
@@ -174,6 +208,7 @@ impl fmt::Display for ThemeError {
                 f,
                 "the dark pair surface ({pairs} pairs) exceeds the IR's u16 ModePair slot"
             ),
+            ThemeError::Source { message } => write!(f, "theme CSS @source: {message}"),
         }
     }
 }
@@ -185,6 +220,9 @@ impl std::error::Error for ThemeError {
             // A budget boundary has no underlying failure to delegate
             // to — the boundary IS the failure.
             ThemeError::PairOverflow { .. } => None,
+            // A scan-contract failure names its own mode; there is no
+            // underlying error beneath the message.
+            ThemeError::Source { .. } => None,
         }
     }
 }
@@ -195,6 +233,7 @@ impl miette::Diagnostic for ThemeError {
         Some(Box::new(match self {
             ThemeError::Parse { .. } => "aeolus::theme::parse",
             ThemeError::PairOverflow { .. } => "aeolus::theme::pair_overflow",
+            ThemeError::Source { .. } => "aeolus::theme::source_directive",
         }))
     }
 
@@ -209,6 +248,11 @@ impl miette::Diagnostic for ThemeError {
                 "the Runtime tier is the alternative: its Tok slots carry id + alpha and \
                  are not const-paired; or bake fewer paired tokens (the budget is the \
                  IR's u16 ModePair slot, the T1 tier's shape)"
+            }
+            ThemeError::Source { .. } => {
+                "the @source forms are @source \"path\"; / @source not \"path\"; / \
+                 @source inline(\"classes\"); — the statement ends at its ';' and \
+                 every payload is a quoted string"
             }
         }))
     }
