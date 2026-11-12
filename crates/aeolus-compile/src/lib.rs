@@ -131,6 +131,7 @@ mod interp;
 mod lower;
 mod plan;
 mod rust;
+mod sort;
 mod statics;
 mod variant;
 
@@ -162,6 +163,7 @@ pub use plan::{
 pub use rust::{
     RustFragment, RustSheet, emit_rust, emit_rust_theme, emit_rust_theme_with, emit_rust_with,
 };
+pub use sort::{SortKey, Sorted, SortedClass, sort, sort_with};
 pub use statics::emit_static;
 
 // The lowering audits the rows' meaning; a registry semantics bump must
