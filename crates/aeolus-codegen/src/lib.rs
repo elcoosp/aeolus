@@ -10,7 +10,7 @@
 //!
 //! The trait deliberately stays small: the IR is the contract, and a
 //! backend that needs row-keyword names reads them from
-//! [`aeolus_compile::keyword_texts`] (the annotation seam the P3
+//! `aeolus_compile::keyword_texts` (the annotation seam the P3
 //! surface keys on) rather than re-deriving the registry.
 
 use aeolus_ir::{Program, Prop};
