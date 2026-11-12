@@ -103,7 +103,21 @@ stacked variants to the dominant condition (the named group/peer
 label has no IR slot yet — the CSS emit arm renders it from the
 candidate's segments, which is why the emit lives in the pipeline),
 and the f32 grammar's non-finite spellings
-are typed refusals, never IR literals. The ARBITRARY-VALUE UNIT
+are typed refusals, never IR literals. The §5.5 TOOLING-PARITY LINE'S CLASS-SORTING HALF
+landed 2026-11: `aeolus_data::registry::sort_index` (the canonical order
+position — the FIRST matching row's index; the pre-index linear scan
+stays as the differential oracle) composes with the variant fold into
+`aeolus_compile::sort`/`sort_with` (registry order, the variant buckets
+by the cascade specificity the layers sort by, registered customs after
+every registry row in registration order) and the CLI's `sort` renders
+it headless — unsortable classes ride the source-order tail with the
+pipeline's own typed diagnostics. The CLI row's `expand` command landed
+beside it: the interp arm's human-readable form (the EFFECTIVE
+declarations under one probe `Env`, `--theme`/`--dark` flags, typed
+notes), riding a new interp surface — each winning declaration now
+carries its winner's condition (`Interped::conds`, parallel to `decls`)
+— the cascade's winner attribution the row-relative `Val::Kw` texts
+render from. The ARBITRARY-VALUE UNIT
 GRAMMAR landed 2026-11 (the value pass's last named P2 slice): the
 bracket/paren groups the registry rows always accepted now LOWER —
 px/rem/%/deg units into the IR's own slots (rem first-class, §3.3),
