@@ -19,8 +19,9 @@ pub enum Val {
     Rem(f32),
     /// A percentage (`w-1/2` → `50%`).
     Pct(f32),
-    /// A unitless number (`z-10` → `10`; `opacity-50` scales to `0.5` on
-    /// the data side).
+    /// A unitless number (`z-10` → `10`; `opacity-50` rides the utility's
+    /// own `50.0` scale — the BACKENDS fold it to the CSS `0.5` fraction,
+    /// the same /100 the v0.x resolver bakes).
     Num(f32),
     /// A baked RGBA colour (static theme, gamut-mapped once at build
     /// time — plan §3.4 / the oklch→sRGB note in §9).
