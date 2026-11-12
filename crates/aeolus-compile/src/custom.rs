@@ -31,7 +31,7 @@
 //!   numeric grammar and finite guards as the built-in value pass
 //!   (`nan`/`inf` spellings refuse, the px step is one absolute pixel,
 //!   the spacing scale honours the [`crate::Spacing`] config), and a
-//!   fixed [`Val::Kw`] is a typed refusal — the keyword slot indexes a
+//!   fixed `Val::Kw` is a typed refusal — the keyword slot indexes a
 //!   row's own table, and a custom utility carries no row table.
 //! * **The flat `Cond` model is the variant surface.** A registered
 //!   custom variant is an ALIAS: a project's own spelling for a typed
@@ -63,7 +63,7 @@ use aeolus_ir::{Cond, Prop, Val};
 use crate::Config;
 use crate::lower::{self, Reject};
 
-/// Why a fixed [`Val::Kw`] cannot lower: the keyword slot indexes the
+/// Why a fixed `Val::Kw` cannot lower: the keyword slot indexes the
 /// ROW'S OWN table (the codegen crate owns the names, plan §3.3) — a
 /// custom utility carries no row table, so keywords are the built-in
 /// registry's surface. The typed refusal renders through
@@ -138,7 +138,7 @@ pub enum CustomValue {
     /// `@utility brand-r { border-radius: 0.375rem; }` — the value is
     /// fixed; the class is the bare root (`brand-r`, no suffix). The
     /// negated `-brand-r` form refuses (a fixed value has no sign to
-    /// flip), and a [`Val::Kw`] fixed value refuses typed (the keyword
+    /// flip), and a `Val::Kw` fixed value refuses typed (the keyword
     /// slot is row-relative).
     Fixed(Val),
     /// `@utility brand-p-* { padding: --spacing(n); }` — the suffix
@@ -172,7 +172,7 @@ pub struct CustomUtility {
 impl CustomUtility {
     /// Register a fixed-value utility: the class is the bare root and
     /// the value bakes as given (guard-checked at lower time — a
-    /// non-finite numeric or a row-relative [`Val::Kw`] refuse typed).
+    /// non-finite numeric or a row-relative `Val::Kw` refuse typed).
     pub fn fixed(root: &str, val: Val, targets: &[Prop]) -> Self {
         Self {
             root: intern(root),
