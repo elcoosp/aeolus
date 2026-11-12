@@ -345,3 +345,72 @@ fn run_with_tracing_spans_keeps_the_contract() {
     assert_eq!(code, 2);
     assert!(err.contains("cannot read theme CSS"), "{err}");
 }
+
+// ---------------------------------------------------------------------------
+// `explain` — the §5.5 tooling-parity slice: class → the Rust tokens the
+// emit (a) arm renders, one fragment per lowered class, diagnostics for
+// every class that does not (the honest-failure contract, CLI-shaped).
+// TDD: written FIRST, the red is the initial "unknown command" run.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn explain_renders_one_fragment_per_lowered_class() {
+    let (code, out, err) = run_cmd(&["explain", "p-4", "flex-col"]);
+    assert_eq!(code, 0, "stderr: {err}");
+    // One header per lowered class, source order, with the embeddable
+    // Layer::new expression and its longhand names.
+    assert!(out.contains("p-4"), "{out}");
+    assert!(out.contains("flex-col"), "{out}");
+    assert!(out.contains("Layer::new"), "{out}");
+    assert!(out.contains("PaddingTop"), "{out}");
+    assert!(out.contains("FlexDirection"), "{out}");
+}
+
+#[test]
+fn explain_reports_misses_as_diagnostics_and_exits_1() {
+    let (code, out, err) = run_cmd(&["explain", "p-4", "definitely-not-a-class-xyz"]);
+    assert_eq!(code, 1, "stderr: {err}");
+    assert!(out.contains("p-4"), "{out}");
+    assert!(
+        !out.contains("definitely-not-a-class-xyz"),
+        "a miss is never a fragment: {out}"
+    );
+    assert!(err.contains("definitely-not-a-class-xyz"), "{err}");
+    assert!(
+        err.contains('['),
+        "the diagnostic carries its stable code: {err}"
+    );
+}
+
+#[test]
+fn explain_theme_flag_lowers_colour_tokens() {
+    let (code, out, err) = run_cmd(&["explain", "--theme", "shadcn", "bg-primary"]);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert!(out.contains("bg-primary"), "{out}");
+    assert!(out.contains("Background"), "{out}");
+}
+
+#[test]
+fn explain_without_theme_reports_the_token_boundary() {
+    // The themeless emit keeps colour tokens a typed boundary whose
+    // diagnostic names the lowering path — the CLI reports it as a
+    // finding, never a silent drop.
+    let (code, out, err) = run_cmd(&["explain", "bg-primary"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("bg-primary"), "{err}");
+    assert!(!out.contains("Background"), "{out}");
+}
+
+#[test]
+fn explain_rejects_unknown_flags() {
+    let (code, _, err) = run_cmd(&["explain", "--wat", "p-4"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("unknown flag"), "{err}");
+}
+
+#[test]
+fn explain_needs_a_class_string() {
+    let (code, _, err) = run_cmd(&["explain"]);
+    assert_eq!(code, 2);
+    assert!(!err.is_empty());
+}
