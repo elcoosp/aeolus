@@ -18,10 +18,15 @@
 //! 6. **Typed lookup seam** — `lookup_detailed` returns exactly what
 //!    `lookup` returns on a hit, and a typed `LookupError` (with the
 //!    tried value shapes) on a miss — the "did you mean" seed.
+//! 7. **Sort-order seam** — `sort_index` is the registry's canonical
+//!    order position (the FIRST matching row's index), differentially
+//!    pinned to the linear-scan oracle, with typed misses.
 
 use aeolus_core::conflict::collision_group;
 use aeolus_core::parser::parse_token;
 use aeolus_data::registry::{generate_docs, lookup, lookup_detailed, lookup_root, roots};
+use aeolus_data::registry::{row_count, sort_index};
+use aeolus_data::rows::ROWS;
 use aeolus_data::{ValueKind, registry::LookupError, tables};
 
 // ---------------------------------------------------------------------------
@@ -534,6 +539,169 @@ fn shape_rejection_is_typed_with_its_tried_kinds() {
     assert!(
         matches!(err, LookupError::ShapeRejected { root: "text", .. }),
         "text-banana must reject on the text root, got {err:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 7. The sort-order seam (plan §5.5's "class sorting (official order from
+//    the registry)"): `sort_index` is the FIRST matching row's index in
+//    `ROWS` — the row order IS the canonical utility progression the rows
+//    audit — and the pre-index linear scan is its differential oracle,
+//    the same discipline the lookup seam keeps.
+// ---------------------------------------------------------------------------
+
+/// The linear-scan oracle: the longest root that prefixes the body wins,
+/// the smallest matching row index under that root wins. Byte-shape the
+/// lookup seam's own rules (the test-local body/root match is the same
+/// grammar `registry.rs` applies).
+fn sort_index_oracle(body: &str) -> Option<usize> {
+    let matches_root = |root: &str| {
+        body == root || (body.starts_with(root) && body.as_bytes().get(root.len()) == Some(&b'-'))
+    };
+    let suffix_of = |root: &str| {
+        if body == root {
+            None
+        } else {
+            Some(&body[root.len() + 1..])
+        }
+    };
+    let best = ROWS
+        .iter()
+        .filter(|row| matches_root(row.root))
+        .map(|row| row.root.len())
+        .max()?;
+    ROWS.iter()
+        .enumerate()
+        .filter(|(_, row)| {
+            row.root.len() == best
+                && matches_root(row.root)
+                && row.kind.accepts(suffix_of(row.root))
+        })
+        .map(|(index, _)| index)
+        .min()
+}
+
+/// The indexed seam and the linear oracle answer identically over a
+/// battery built from the rows' own value shapes: every root bare, plus
+/// one legal suffix per shape the row carries.
+#[test]
+fn sort_index_matches_the_linear_oracle_over_the_registry() {
+    let mut owned: Vec<String> = Vec::new();
+    for row in ROWS {
+        owned.push(row.root.to_string());
+        let suffix = match row.kind {
+            ValueKind::Bare(_) => None,
+            ValueKind::Keywords(t) => t.first().map(|(s, _)| *s),
+            ValueKind::Composite(t) => t.first().map(|(s, _, _)| *s),
+            ValueKind::Spacing => Some("4"),
+            ValueKind::Fraction => Some("1/2"),
+            ValueKind::Number => Some("10"),
+            ValueKind::Percent => Some("20%"),
+            ValueKind::Arbitrary => Some("[13px]"),
+            ValueKind::AnyOf(inner) => match inner.first() {
+                Some(ValueKind::Keywords(t)) => t.first().map(|(s, _)| *s),
+                Some(ValueKind::Spacing) => Some("4"),
+                Some(ValueKind::Fraction) => Some("1/2"),
+                Some(ValueKind::Number) => Some("10"),
+                Some(ValueKind::Percent) => Some("20%"),
+                Some(ValueKind::Arbitrary) => Some("[13px]"),
+                _ => None,
+            },
+        };
+        if let Some(suffix) = suffix {
+            owned.push(format!("{}-{}", row.root, suffix));
+        }
+    }
+    for body in &owned {
+        let indexed = sort_index(body);
+        let oracle = sort_index_oracle(body);
+        assert_eq!(
+            indexed, oracle,
+            "sort_index diverged from the linear oracle for {body:?}"
+        );
+        // The lookup seam and the sort seam cannot disagree about WHAT
+        // matches: a body the lookup accepts must carry an index.
+        assert_eq!(
+            lookup(body).next().is_some(),
+            indexed.is_some(),
+            "lookup/sort_index acceptance disagrees for {body:?}"
+        );
+        if let Some(index) = indexed {
+            assert!(
+                index < row_count(),
+                "index {index} out of range for {body:?}"
+            );
+        }
+    }
+}
+
+/// The rows' order is the canonical utility progression: spacing before
+/// sizing, sizing before layout, layout before colour, colour before
+/// borders, typography before interaction — the chain a class sorter
+/// composes. (Pinned over the rows themselves; a row reordering that
+/// breaks the progression is a registry change, not a silent sort drift.
+/// Ties are legal only WITHIN one root family, so the chain asserts
+/// strictly ascending distinct-root keys.)
+#[test]
+fn sort_index_rides_the_rows_canonical_progression() {
+    let chain = [
+        "p-4",
+        "mx-2",
+        "inset-x-0",
+        "w-8",
+        "gap-2",
+        "flex-col",
+        "items-center",
+        "hidden",
+        "absolute",
+        "z-10",
+        "opacity-50",
+        "overflow-hidden",
+        "bg-red-500",
+        "border",
+        "rounded-md",
+        "outline",
+        "ring",
+        "shadow",
+        "text-center",
+        "font-bold",
+        "uppercase",
+        "cursor-pointer",
+        "select-none",
+    ];
+    let keys: Vec<usize> = chain
+        .iter()
+        .map(|&body| sort_index(body).unwrap_or_else(|| panic!("{body} must carry a sort index")))
+        .collect();
+    for window in keys.windows(2) {
+        assert!(
+            window[0] < window[1],
+            "registry progression broke: {:?}({}) !< {:?}({})",
+            chain[keys
+                .iter()
+                .position(|&k| k == window[0])
+                .expect("key in chain")],
+            window[0],
+            chain[keys
+                .iter()
+                .rposition(|&k| k == window[1])
+                .expect("key in chain")],
+            window[1],
+        );
+    }
+}
+
+/// The typed misses: no root, or a rejected suffix shape, means NO order
+/// position — the Option is the honest answer, never a guessed index.
+#[test]
+fn sort_index_types_its_misses() {
+    assert_eq!(sort_index("not-a-utility"), None, "unknown root");
+    assert_eq!(sort_index("p-red"), None, "root matches, shape rejected");
+    assert_eq!(sort_index(""), None, "empty body");
+    assert_eq!(
+        sort_index_oracle("p-red"),
+        None,
+        "oracle agrees on the shape miss"
     );
 }
 
