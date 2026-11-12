@@ -1,6 +1,9 @@
 //! The committed registry rows — the source of truth. The P2 xtask
-//! generates the phf/trie, the docs, the linter tables and the sort
-//! order FROM these; today `generate_docs()` proves the claim.
+//! generates the phf/trie, the docs and the linter tables FROM these;
+//! `generate_docs()` proves the claim, and the row order doubles as the
+//! canonical utility progression the class-sort seam reads
+//! (`registry::sort_index` — plan §5.5's "official order from the
+//! registry").
 //!
 //! Row order within a root is the disambiguation order. Group names are
 //! the `tw_merge` 0.1.22 table's own strings (the
