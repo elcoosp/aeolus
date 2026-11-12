@@ -436,7 +436,9 @@ impl Resolver<'_> {
                     Some(raw) if token.arbitrary.is_none() => raw.to_string(),
                     _ => match applied {
                         Applied::AspectRatio(r) => trim_f32(*r),
-                        _ => unreachable!(),
+                        _ => unreachable!(
+                            "the outer arm matched AspectRatio — no other Applied reaches this emitter"
+                        ),
                     },
                 };
                 vec![("aspect-ratio".into(), text)]
