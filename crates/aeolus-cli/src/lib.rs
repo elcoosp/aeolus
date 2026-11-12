@@ -26,16 +26,52 @@
 //!   the reason, and theme-spec failures are typed
 //!   ([`ThemeSpecError`]), never bare strings.
 
-use aeolus_compile::{Config, RustSheet, emit_rust, emit_rust_theme};
+use aeolus_compile::{
+    ClassKeywords, Config, Env, RustSheet, compile, compile_theme, emit_rust, emit_rust_theme,
+    interp_theme, keyword_texts, sort,
+};
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
 use aeolus_core::{Breakpoint, Resolver, StylePlan, TailwindTheme, Warning, cn};
+use aeolus_ir::{Cond, Decl, Prop, Val};
 use aeolus_theme::{ThemeSource, TokenTable};
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
 
 /// The CLI version, from the workspace manifest.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The structured classification of one [`Finding`] — the fail-on
+/// modes key on the KIND, never on the prose (`--fail-on unknown`
+/// matches the typed `Unknown` kind, not a `detail` substring). The
+/// Display/render contract is unchanged; the kind exists so programmatic
+/// consumers (wrappers, CI) can match without parsing messages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FindingKind {
+    /// No registered root under the spelling — the `--fail-on unknown`
+    /// mode.
+    Unknown,
+    /// A known root the theme or the grammar refuses (unsupported
+    /// utility, missing theme token, unparseable value) — the
+    /// `--fail-on unsupported` mode.
+    Unsupported,
+    /// `cn()` would drop the token (a later class won its conflict
+    /// group) — the `--fail-on conflict` mode.
+    Conflict,
+}
+
+impl FindingKind {
+    /// The stable machine name the `--json` output and the `--fail-on`
+    /// values share.
+    pub const fn name(self) -> &'static str {
+        match self {
+            FindingKind::Unknown => "unknown",
+            FindingKind::Unsupported => "unsupported",
+            FindingKind::Conflict => "conflict",
+        }
+    }
+}
 
 /// One lint finding of `aeolus check`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,6 +82,9 @@ pub struct Finding {
     pub from: String,
     /// The precise reason (never empty).
     pub detail: String,
+    /// The structured classification ([`FindingKind`]) — the fail-on
+    /// modes and the `--json` output key on this, never on the prose.
+    pub kind: FindingKind,
 }
 
 impl Finding {
@@ -294,6 +333,7 @@ pub fn check_string(classes: &str, theme: &TailwindTheme) -> Vec<Finding> {
                     token: classes.to_string(),
                     from: classes.to_string(),
                     detail: format!("color parse error: {e}"),
+                    kind: FindingKind::Unsupported,
                 });
             }
             return findings;
@@ -302,10 +342,17 @@ pub fn check_string(classes: &str, theme: &TailwindTheme) -> Vec<Finding> {
     for w in &res.warnings {
         let token = warning_class(w).to_string();
         let detail = warning_detail(w).clone();
+        let kind = match w {
+            Warning::Unknown { .. } => FindingKind::Unknown,
+            Warning::Unsupported { .. }
+            | Warning::MissingThemeToken { .. }
+            | Warning::Unparseable { .. } => FindingKind::Unsupported,
+        };
         findings.push(Finding {
             token,
             from: classes.to_string(),
             detail,
+            kind,
         });
     }
     // Conflict detection: cn() over the tokens; anything dropped is a
@@ -338,6 +385,7 @@ pub fn check_string(classes: &str, theme: &TailwindTheme) -> Vec<Finding> {
                         }
                         None => "cn() conflict: dropped by the merge".to_string(),
                     },
+                    kind: FindingKind::Conflict,
                 });
             }
         }
@@ -397,6 +445,8 @@ where
         "cn" => cmd_cn(rest, out, err),
         "check" => cmd_check(rest, out, err),
         "explain" => cmd_explain(rest, out, err),
+        "sort" => cmd_sort(rest, out, err),
+        "expand" => cmd_expand(rest, out, err),
         other => {
             let _ = writeln!(err, "unknown command {other:?}\n{USAGE}");
             2
@@ -412,6 +462,9 @@ struct Args {
     theme_given: bool,
     summary: bool,
     json: bool,
+    /// The `--dark` probe flag (`expand` only): lift the mode tier the
+    /// interp resolves under.
+    dark: bool,
     positional: Vec<String>,
 }
 
@@ -420,6 +473,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut theme_given = false;
     let mut summary = false;
     let mut json = false;
+    let mut dark = false;
     let mut positional = Vec::new();
     let mut i = 0usize;
     while i < rest.len() {
@@ -443,6 +497,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             }
             "--summary" if allow.contains(&"summary") => summary = true,
             "--json" if allow.contains(&"json") => json = true,
+            "--dark" if allow.contains(&"dark") => dark = true,
             other => {
                 if other.starts_with("--") && other != "--" {
                     let _ = writeln!(err, "unknown flag {other:?} for this command");
@@ -458,6 +513,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         theme_given,
         summary,
         json,
+        dark,
         positional,
     })
 }
@@ -581,6 +637,216 @@ fn write_sheet(sheet: &RustSheet, out: &mut dyn Write, err: &mut dyn Write) -> i
         let _ = writeln!(err, "error: {diagnostic} [{}]", diagnostic.kind.code());
     }
     1
+}
+
+/// `sort` (plan §5.5's tooling-parity line, "class sorting (official
+/// order from the registry)"): reorder a class string into the registry
+/// rows' canonical utility progression, the variant buckets riding
+/// after the base by the cascade specificity the IR itself sorts layers
+/// by. Classes the seam cannot order ride the tail in source order and
+/// report the SAME typed, coded diagnostics the pipeline reports (exit
+/// 1 findings, never a silent drop). `--json` renders the same report
+/// as one object: the sorted string plus the diagnostics array.
+fn cmd_sort(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    #[cfg(feature = "tracing")]
+    let _sort_span = tracing::debug_span!("aeolus_sort").entered();
+    let Some(args) = parse_flags(rest, err, &["json"]) else {
+        return 2;
+    };
+    if args.positional.is_empty() {
+        let _ = writeln!(err, "sort needs a class string\n{USAGE}");
+        return 2;
+    }
+    let classes = args.positional.join(" ");
+    match sort(&classes) {
+        Ok(sorted) => {
+            let text = sorted.to_class_string();
+            if args.json {
+                let items: Vec<String> = sorted
+                    .diagnostics
+                    .iter()
+                    .map(|diagnostic| {
+                        format!(
+                            "{{\"raw\":\"{}\",\"code\":\"{}\",\"message\":\"{}\"}}",
+                            json_escape(&diagnostic.raw),
+                            diagnostic.kind.code(),
+                            json_escape(&diagnostic.to_string())
+                        )
+                    })
+                    .collect();
+                let _ = writeln!(
+                    out,
+                    "{{\"sorted\":\"{}\",\"diagnostics\":[{}]}}",
+                    json_escape(&text),
+                    items.join(",")
+                );
+            } else {
+                let _ = writeln!(out, "{text}");
+                for diagnostic in &sorted.diagnostics {
+                    let _ = writeln!(err, "error: {diagnostic} [{}]", diagnostic.kind.code());
+                }
+            }
+            i32::from(!sorted.diagnostics.is_empty())
+        }
+        Err(e) => {
+            let _ = writeln!(err, "error: {e}");
+            2
+        }
+    }
+}
+
+/// The text form of one effective declaration's value (the `expand`
+/// render): the keyword slots resolved to their ROW text (the annotation
+/// the bare [`Val::Kw`] slot cannot recover — the winner's own class's
+/// row text, see [`effective_keyword_texts`]), colours as hex, lengths
+/// in their own units. The token forms never reach this render from the
+/// interp (the source resolves them); they stay the honest fallback
+/// text for the defensive paths.
+fn value_text(val: Val, kw: Option<&str>) -> String {
+    match val {
+        Val::Px(v) => format!("{v}px"),
+        Val::Rem(v) => format!("{v}rem"),
+        Val::Pct(v) => format!("{v}%"),
+        Val::Num(v) => format!("{v}"),
+        Val::Rgba([r, g, b, 255]) => format!("#{r:02x}{g:02x}{b:02x}"),
+        Val::Rgba([r, g, b, a]) => format!("#{r:02x}{g:02x}{b:02x}{a:02x}"),
+        Val::Kw(_) => {
+            _ = kw;
+            kw.map_or_else(
+                || "keyword slot (row text unavailable)".to_string(),
+                str::to_string,
+            )
+        }
+        Val::Tok { .. } | Val::ModePair(_) => {
+            "token slot (the theme pass resolves the id)".to_string()
+        }
+    }
+}
+
+/// The last keyword text per `(cond, prop)`, in source order — the
+/// annotation table the effective render reads. The interp attributes
+/// each winning declaration to its condition ([`Interped::conds`], the
+/// cascade's winner attribution); the winner's row text is this table's
+/// entry for that exact `(cond, prop)` pair — the winner's own class's
+/// row text, never a lucky sibling's (an unfired layer's text can no
+/// longer shadow the winner's).
+fn last_keyword_texts(annotations: &[ClassKeywords]) -> HashMap<(Cond, Prop), &'static str> {
+    let mut last: HashMap<(Cond, Prop), &'static str> = HashMap::new();
+    for class in annotations {
+        for &(prop, text) in &class.keywords {
+            if !text.is_empty() {
+                last.insert((class.cond, prop), text);
+            }
+        }
+    }
+    last
+}
+
+/// `expand` (§3.2's CLI row, "expand"; the interp arm's human-readable
+/// form): render a class string's EFFECTIVE declarations under one probe
+/// `Env` — the per-longhand cascade the specificity sort encodes, the
+/// keyword slots resolved to their row texts, the honest exclusions as
+/// typed notes. Without `--theme`, colour tokens and modifiers stay the
+/// typed boundaries whose diagnostics the compile walk reports (exit 1
+/// findings, the render still carries what lowered). `--dark` lifts the
+/// mode tier; the probe states rest. `--json` renders the same report
+/// as one object: the declarations array plus the notes.
+fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    #[cfg(feature = "tracing")]
+    let _expand_span = tracing::debug_span!("aeolus_expand").entered();
+    let Some(args) = parse_flags(rest, err, &["theme", "json", "dark"]) else {
+        return 2;
+    };
+    if args.positional.is_empty() {
+        let _ = writeln!(err, "expand needs a class string\n{USAGE}");
+        return 2;
+    }
+    let classes = args.positional.join(" ");
+    let config = Config::default();
+    // The table stays in scope: the themed walk resolves the token forms
+    // through it ([`interp_theme`]), the themeless walk refuses them (the
+    // typed boundary the exit-1 findings carry).
+    let (compiled, table) = if args.theme_given {
+        let Some(table) = token_table_or_report(&args.theme, err) else {
+            return 2;
+        };
+        (compile_theme(&classes, &table, &config), Some(table))
+    } else {
+        (compile(&classes, &config), None)
+    };
+    let compiled = match compiled {
+        Ok(compiled) => compiled,
+        Err(e) => {
+            let _ = writeln!(err, "error: {e}");
+            return 2;
+        }
+    };
+    let env = Env {
+        dark: args.dark,
+        ..Env::default()
+    };
+    let interped = match &table {
+        Some(table) => interp_theme(&compiled.program, table, &env),
+        None => compiled.interp(&env),
+    };
+    let interped = match interped {
+        Ok(interped) => interped,
+        Err(e) => {
+            let _ = writeln!(err, "error: {e}");
+            return 2;
+        }
+    };
+    // The annotations ride the same walk the compile ran (the contract:
+    // only the empty input errors it, and `compiled` proves non-empty).
+    let last =
+        last_keyword_texts(&keyword_texts(&classes, &config).expect("non-empty input annotates"));
+    let kw_text = |index: usize, decl: &Decl| -> Option<&'static str> {
+        let cond = *interped.conds.get(index)?;
+        last.get(&(cond, decl.prop)).copied()
+    };
+    if args.json {
+        let decls: Vec<String> = interped
+            .decls
+            .iter()
+            .enumerate()
+            .map(|(index, decl)| {
+                format!(
+                    "{{\"prop\":\"{}\",\"value\":\"{}\"}}",
+                    json_escape(decl.prop.name()),
+                    json_escape(&value_text(decl.val, kw_text(index, decl)))
+                )
+            })
+            .collect();
+        let notes: Vec<String> = interped
+            .notes
+            .iter()
+            .map(|note| format!("\"{}\"", json_escape(&note.to_string())))
+            .collect();
+        let _ = writeln!(
+            out,
+            "{{\"declarations\":[{}],\"notes\":[{}]}}",
+            decls.join(","),
+            notes.join(",")
+        );
+    } else {
+        for (index, decl) in interped.decls.iter().enumerate() {
+            let _ = writeln!(
+                out,
+                "{} = {}",
+                decl.prop.name(),
+                value_text(decl.val, kw_text(index, decl))
+            );
+        }
+        for note in &interped.notes {
+            let _ = writeln!(out, "note: {note}");
+        }
+    }
+    // The compile-level boundaries (themeless tokens, modifiers) are
+    // findings: the render still carries what lowered, exit 1 reports.
+    for diagnostic in &compiled.diagnostics {
+        let _ = writeln!(err, "error: {diagnostic} [{}]", diagnostic.kind.code());
+    }
+    i32::from(!compiled.diagnostics.is_empty())
 }
 
 fn cmd_resolve(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
@@ -850,9 +1116,10 @@ fn cmd_check(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             .iter()
             .map(|(file, f)| {
                 format!(
-                    "{{\"file\":\"{}\",\"token\":\"{}\",\"detail\":\"{}\"}}",
+                    "{{\"file\":\"{}\",\"token\":\"{}\",\"kind\":\"{}\",\"detail\":\"{}\"}}",
                     json_escape(file),
                     json_escape(&f.token),
+                    f.kind.name(),
                     json_escape(&f.detail)
                 )
             })
@@ -869,23 +1136,19 @@ fn cmd_check(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         "any" => findings.len(),
         "unknown" => findings
             .iter()
-            .filter(|(_, f)| is_unknown(&f.detail))
+            .filter(|(_, f)| f.kind == FindingKind::Unknown)
             .count(),
         "conflict" => findings
             .iter()
-            .filter(|(_, f)| f.detail.contains("conflict"))
+            .filter(|(_, f)| f.kind == FindingKind::Conflict)
             .count(),
         "unsupported" => findings
             .iter()
-            .filter(|(_, f)| !is_unknown(&f.detail) && !f.detail.contains("conflict"))
+            .filter(|(_, f)| f.kind == FindingKind::Unsupported)
             .count(),
         _ => 0,
     };
     i32::from(fails > 0)
-}
-
-fn is_unknown(detail: &str) -> bool {
-    detail.starts_with("unknown class") || detail.contains("did you mean")
 }
 
 fn json_escape(s: &str) -> String {
@@ -917,6 +1180,9 @@ USAGE:
   aeolus check   [--theme <spec>] [--fail-on <mode>] [--json] <files...>
                                                              lint class strings in sources
   aeolus explain [--theme <spec>] <classes...>               per-class Rust tokens (the emit (a) arm)
+  aeolus sort    [--json] <classes...>                       registry-order class sort (the §5.5 parity line)
+  aeolus expand  [--theme <spec>] [--dark] [--json] <classes...>
+                                                             effective declarations (the interp (c) arm)
 
 THEME: shadcn (default) | shadcn-dark | default | <path-to-css>
        (`explain` accepts shadcn | shadcn-dark | <path> — the V1 theme pass)
