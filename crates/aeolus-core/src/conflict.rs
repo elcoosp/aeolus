@@ -7,8 +7,11 @@
 //! earlier classes whose group was knocked out by a kept class's parent group.
 //!
 //! Runtime here operates on parsed tokens over `&'static str`-backed
-//! tables; the compile-time trie (`tw!` pre-interned IDs) is the planned
-//! optimization and produces identical results.
+//! tables; the compile-time half landed as the V1 pipeline instead of
+//! the once-planned pre-interned-ID trie — `tw!` compiles through
+//! `aeolus-compile` and emits the frozen static program, and the IR's
+//! `cn()` merge (`aeolus_compile::cn`) folds at the longhand level. The
+//! two produce identical results (the differential suites pin it).
 
 use crate::ast::ClassToken;
 use crate::parser::parse_class_string;
