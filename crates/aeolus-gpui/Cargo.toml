@@ -16,5 +16,14 @@ aeolus-compile = { path = "../aeolus-compile" }
 # The `tw!`/`cn!`/`theme!` macros the prelude re-exports.
 aeolus-macro = { workspace = true }
 
+[dev-dependencies]
+# The attribute-bits seam's microbenchmarks (divan, stable — the
+# workspace bench idiom).
+divan = "0.1"
+
+[[bench]]
+name = "attrs"
+harness = false
+
 [lints]
 workspace = true
