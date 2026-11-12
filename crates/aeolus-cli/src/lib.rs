@@ -8,11 +8,13 @@
 //! source files (unknown classes, unsupported utilities, conflicts).
 //!
 //! Design contract:
-//! - **Zero dependencies beyond `aeolus-core` in the DEFAULT build**
-//!   (hand-rolled arg parsing, std I/O only) — the same discipline as the
-//!   core. The `tracing` and `miette` cargo features are opt-in
+//! - **No external crates in any build** (hand-rolled arg parsing, std
+//!   I/O only) — the same discipline as the core; the workspace-internal
+//!   `aeolus-compile` join (the `explain` command, plan §5.5's
+//!   tooling-parity line) rides the pipeline's own dependency-light
+//!   graph. The `tracing` and `miette` cargo features are opt-in
 //!   instrumentation seams (off by default, so the default dependency
-//!   graph stays zero-dep): `tracing` adds spans around the command
+//!   graph stays lean): `tracing` adds spans around the command
 //!   dispatch and the per-file check loop; `miette` adds structured
 //!   `Diagnostic` impls (code + help text) to the typed errors.
 //! - **`run()` is the whole program**: arguments in, writers out, exit code
@@ -24,9 +26,11 @@
 //!   the reason, and theme-spec failures are typed
 //!   ([`ThemeSpecError`]), never bare strings.
 
+use aeolus_compile::{Config, RustSheet, emit_rust, emit_rust_theme};
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
 use aeolus_core::{Breakpoint, Resolver, StylePlan, TailwindTheme, Warning, cn};
+use aeolus_theme::{ThemeSource, TokenTable};
 use std::fmt::Write as _;
 use std::io::Write;
 
@@ -392,6 +396,7 @@ where
         "diff" => cmd_diff(rest, out, err),
         "cn" => cmd_cn(rest, out, err),
         "check" => cmd_check(rest, out, err),
+        "explain" => cmd_explain(rest, out, err),
         other => {
             let _ = writeln!(err, "unknown command {other:?}\n{USAGE}");
             2
@@ -402,6 +407,9 @@ where
 /// Parsed flag bag shared by the class-string commands.
 struct Args {
     theme: String,
+    /// Whether the caller actually passed `--theme` (the default spec is
+    /// NOT a passed theme — `explain`'s themeless emit rides on this).
+    theme_given: bool,
     summary: bool,
     json: bool,
     positional: Vec<String>,
@@ -409,6 +417,7 @@ struct Args {
 
 fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<Args> {
     let mut theme = "shadcn".to_string();
+    let mut theme_given = false;
     let mut summary = false;
     let mut json = false;
     let mut positional = Vec::new();
@@ -419,7 +428,10 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--theme" if allow.contains(&"theme") => {
                 i += 1;
                 match rest.get(i) {
-                    Some(v) => theme.clone_from(v),
+                    Some(v) => {
+                        theme.clone_from(v);
+                        theme_given = true;
+                    }
                     None => {
                         let _ = writeln!(
                             err,
@@ -443,6 +455,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     }
     Some(Args {
         theme,
+        theme_given,
         summary,
         json,
         positional,
@@ -465,6 +478,109 @@ fn report_warnings(warnings: &[Warning], err: &mut dyn Write) {
     for w in warnings {
         let _ = writeln!(err, "warning: {}: {}", warning_class(w), warning_detail(w));
     }
+}
+
+/// Load the V1 token table `explain` lowers colour tokens through
+/// (plan §3.4's CSS-first pass): the two built-ins the pipeline embeds
+/// plus a CSS file path — the same `--theme` spec grammar the v0.x
+/// commands take, minus `default` (no V1 source exists for it, reported
+/// as a usage error, never guessed). The source resolves into the
+/// runtime tier (the T2 table the plan's dynamic lane uses — the same
+/// construction the emit arms' own doctests build).
+fn token_table_or_report(spec: &str, err: &mut dyn Write) -> Option<TokenTable> {
+    let source = match spec {
+        "shadcn" => ThemeSource::shadcn().expect("the built-in shadcn source parses"),
+        "shadcn-dark" => {
+            ThemeSource::shadcn_dark().expect("the built-in shadcn-dark source parses")
+        }
+        "default" => {
+            let _ = writeln!(
+                err,
+                "error: explain's --theme accepts shadcn | shadcn-dark | <path> (default has no V1 source)"
+            );
+            return None;
+        }
+        path => match std::fs::read_to_string(path) {
+            Ok(css) => match ThemeSource::from_css(&css, None) {
+                Ok(source) => source,
+                Err(e) => {
+                    let _ = writeln!(err, "error: theme CSS: {e}");
+                    return None;
+                }
+            },
+            Err(e) => {
+                let _ = writeln!(err, "error: cannot read theme CSS {path}: {e}");
+                return None;
+            }
+        },
+    };
+    match TokenTable::runtime(&source) {
+        Ok(table) => Some(table),
+        Err(e) => {
+            let _ = writeln!(err, "error: token table: {e}");
+            None
+        }
+    }
+}
+
+/// `explain` (plan §5.5's tooling-parity line, "class → Rust it emits"):
+/// render the per-class Rust fragments the Target::Rust arm emits —
+/// one `Layer::new` expression per lowered class, keyword and token
+/// slots annotated with the names only the pipeline can see — and every
+/// class that does not lower as the SAME typed, coded diagnostics the
+/// pipeline reports (exit 1 findings, never a silent drop). Without
+/// `--theme` the emit stays themeless: colour tokens are the typed
+/// boundary whose diagnostic names [`emit_rust_theme`] as the lowering
+/// path — the honest default, not a gap.
+fn cmd_explain(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    #[cfg(feature = "tracing")]
+    let _explain_span = tracing::debug_span!("aeolus_explain").entered();
+    let Some(args) = parse_flags(rest, err, &["theme"]) else {
+        return 2;
+    };
+    if args.positional.is_empty() {
+        let _ = writeln!(err, "explain needs a class string\n{USAGE}");
+        return 2;
+    }
+    let classes = args.positional.join(" ");
+    let config = Config::default();
+    let sheet = if args.theme_given {
+        let Some(table) = token_table_or_report(&args.theme, err) else {
+            return 2;
+        };
+        emit_rust_theme(&classes, &table, &config)
+    } else {
+        emit_rust(&classes, &config)
+    };
+    match sheet {
+        Ok(sheet) => write_sheet(&sheet, out, err),
+        // The pipeline's only hard error: empty input (per-class misses
+        // ride the sheet as diagnostics, never this arm).
+        Err(e) => {
+            let _ = writeln!(err, "error: {e}");
+            2
+        }
+    }
+}
+
+/// The sheet's two honest channels: fragments to stdout (one header per
+/// lowered class, the embeddable expression indented beneath), the
+/// misses to stderr as coded diagnostics — findings, exit 1.
+fn write_sheet(sheet: &RustSheet, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    for fragment in &sheet.fragments {
+        let _ = writeln!(out, "{}", fragment.class);
+        for line in fragment.tokens.lines() {
+            let _ = writeln!(out, "  {line}");
+        }
+        let _ = writeln!(out);
+    }
+    if sheet.diagnostics.is_empty() {
+        return 0;
+    }
+    for diagnostic in &sheet.diagnostics {
+        let _ = writeln!(err, "error: {diagnostic} [{}]", diagnostic.kind.code());
+    }
+    1
 }
 
 fn cmd_resolve(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
@@ -800,8 +916,10 @@ USAGE:
   aeolus cn      <classes...>                                cn() conflict merge
   aeolus check   [--theme <spec>] [--fail-on <mode>] [--json] <files...>
                                                              lint class strings in sources
+  aeolus explain [--theme <spec>] <classes...>               per-class Rust tokens (the emit (a) arm)
 
 THEME: shadcn (default) | shadcn-dark | default | <path-to-css>
+       (`explain` accepts shadcn | shadcn-dark | <path> — the V1 theme pass)
 FAIL-ON: unknown (default) | unsupported | conflict | any | none
 EXIT: 0 success · 1 findings · 2 usage/theme/IO error
 ";
