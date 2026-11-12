@@ -196,6 +196,7 @@ dependencies = [
  "aeolus-compile",
  "aeolus-ir",
  "aeolus-theme",
+ "divan",
 ]
 
 [[package]]
