@@ -5,9 +5,11 @@
 //! masks-slices, the `tw_merge` conflict group and the tailwindcss v4
 //! source reference. The committed tables in [`rows`] ARE the source of
 //! truth this round; the P2 xtask grows the generator story (phf/trie,
-//! docs, linter tables, class-sort order) FROM them, and
-//! [`registry::generate_docs`] already proves the one-source-of-truth
-//! claim by rendering the docs page from the same rows.
+//! docs, linter tables) FROM them, [`registry::generate_docs`] proves
+//! the one-source-of-truth claim by rendering the docs page from the
+//! same rows, and the ROW ORDER is the canonical utility progression
+//! the class-sort seam reads ([`registry::sort_index`] — plan §5.5's
+//! "official order from the registry").
 //!
 //! The row model is deliberately `const`-constructible and
 //! dependency-light (only [`aeolus_ir`]): the P2 compile stage reads it
