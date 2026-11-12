@@ -31,11 +31,11 @@
 
 use std::cell::RefCell;
 
-use aeolus_compile::Env;
+use aeolus_compile::{CompileError, Config, Env};
 use aeolus_ir::{Cond, Prop, Val};
-use aeolus_rt::StaticProgram;
+use aeolus_rt::{ClassCell, StaticProgram, TokenTable};
 use gpui::{
-    AbsoluteLength, DefiniteLength, Div, FontWeight, Hsla, IntoElement, Length,
+    AbsoluteLength, DefiniteLength, FontWeight, Hsla, IntoElement, Length,
     StatefulInteractiveElement, Styled, TextAlign, px, relative, rems, rgba,
 };
 
@@ -54,7 +54,7 @@ pub mod prelude {
         variants,
     };
     pub use aeolus_compile::Env;
-    pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState, StaticProgram};
+    pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState, ClassCell, StaticProgram};
 }
 
 thread_local! {
@@ -82,7 +82,7 @@ pub fn with_env<R>(env: Env, f: impl FnOnce() -> R) -> R {
 /// Apply a static program's base + environment layers to any styled
 /// element.
 pub trait TwExt: Styled + Sized {
-    /// Apply the program under the current [`env`].
+    /// Apply the program under the current `env()`.
     fn tw(self, program: StaticProgram) -> Self {
         self.tw_env(program, env())
     }
@@ -92,7 +92,7 @@ pub trait TwExt: Styled + Sized {
         apply_matching(self, &program, &env, None)
     }
 
-    /// Apply the program under the current [`env`], with the element's
+    /// Apply the program under the current `env()`, with the element's
     /// attribute bits answering the `data-*:`/`aria-*:` layers — the
     /// GPUI half of the interp arm's `interp_probes` entry point (plan
     /// §3.5's "typed state bits passed WITH the element", one mask test
@@ -114,6 +114,51 @@ pub trait TwExt: Styled + Sized {
     /// `tw_env` pairing, with the attribute bits riding along.
     fn tw_env_probes(self, program: StaticProgram, env: Env, probes: &impl AttrProbe) -> Self {
         apply_matching(self, &program, &env, Some(probes as &dyn AttrProbe))
+    }
+
+    /// The dynamic lane's one-call entrance (plan §3.6's surface (3)):
+    /// compile `classes` through [`ClassCell`] — the full V1 pipeline,
+    /// the SAME compiler as [`tw!`] — and apply the result under the
+    /// current `env()`.
+    ///
+    /// The cell is the view-state slot: a content+identity match costs
+    /// a compare (the per-frame fast path), a change compiles once and
+    /// interns. A FAILED compile (only the empty input) keeps the LAST
+    /// GOOD program applied — never a panic in a render loop, never a
+    /// silent reset: the cell's diagnostics channel carries the reason
+    /// ([`ClassCell::diagnostics`]), per-class misses included.
+    ///
+    /// Colour tokens without a table stay the typed boundary: the
+    /// themeless compile lowers what it can and reports the token
+    /// miss — pair with [`TwExt::tw_dyn_theme`] for the themed lane.
+    fn tw_dyn(self, cell: &ClassCell, classes: &str) -> Self {
+        self.tw_dyn_env(cell, classes, env())
+    }
+
+    /// [`TwExt::tw_dyn`] under an explicit probe environment — the
+    /// `tw_env` pairing of the dynamic lane.
+    fn tw_dyn_env(self, cell: &ClassCell, classes: &str, env: Env) -> Self {
+        apply_dynamic(self, cell, classes, &env, None)
+    }
+
+    /// The dynamic lane's themed entrance: the runtime token table
+    /// lowers colour tokens and `/opacity` modifiers exactly as
+    /// [`tw!`]'s baked table does — the differential pin rides the
+    /// tests (`tests/dyn.rs`).
+    fn tw_dyn_theme(self, cell: &ClassCell, classes: &str, tokens: &TokenTable) -> Self {
+        self.tw_dyn_theme_env(cell, classes, tokens, env())
+    }
+
+    /// [`TwExt::tw_dyn_theme`] under an explicit probe environment —
+    /// the themed dynamic lane's full form.
+    fn tw_dyn_theme_env(
+        self,
+        cell: &ClassCell,
+        classes: &str,
+        tokens: &TokenTable,
+        env: Env,
+    ) -> Self {
+        apply_dynamic(self, cell, classes, &env, Some(tokens))
     }
 }
 
@@ -253,6 +298,27 @@ fn apply_matching<S: Styled>(
         }
     }
     style
+}
+
+/// The dynamic lane's apply: the compiled program (or, on a failed
+/// compile, the cell's LAST GOOD program — the honest per-frame
+/// degradation) through the same walk the static programs take.
+fn apply_dynamic<S: Styled>(
+    style: S,
+    cell: &ClassCell,
+    classes: &str,
+    env: &Env,
+    tokens: Option<&TokenTable>,
+) -> S {
+    let compiled: Result<StaticProgram, CompileError> = match tokens {
+        Some(tokens) => cell.get_theme(classes, tokens, &Config::default()),
+        None => cell.get(classes, &Config::default()),
+    };
+    let program = match compiled {
+        Ok(program) => program,
+        Err(_) => cell.program(),
+    };
+    apply_matching(style, &program, env, None)
 }
 
 fn apply_state<S: Styled>(style: S, program: &StaticProgram, pred: fn(Cond) -> bool) -> S {
@@ -585,9 +651,6 @@ pub fn text_align_value(keyword: &str) -> TextAlign {
         _ => TextAlign::Left,
     }
 }
-
-/// The `Div` alias hosts reach for when writing the README's example.
-pub type TwDiv = Div;
 
 // ---------------------------------------------------------------------------
 // The frame environment (P4)
