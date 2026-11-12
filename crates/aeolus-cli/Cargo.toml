@@ -9,12 +9,20 @@ rust-version = "1.88"
 publish = false
 
 [dependencies]
-# Zero dependencies beyond the core: the CLI shares the core's
-# no-external-crate discipline (hand-rolled arg parsing, std I/O only).
-# The two OPTIONAL features below are instrumentation seams (v0.9.1
-# consumer-handoff): they stay OFF by default so the default dependency
-# graph — and anything consuming the git crate — pulls nothing extra.
+# Hand-rolled arg parsing, std I/O only: no EXTERNAL crates in any
+# build (the CLI shares the core's no-external-crate discipline). The
+# two aeolus crates below are workspace members, each itself
+# dependency-light. The two OPTIONAL features further down are
+# instrumentation seams (v0.9.1 consumer-handoff): they stay OFF by
+# default so the default dependency graph pulls nothing extra.
 aeolus-core = { workspace = true }
+# The V1 pipeline join (plan §3.2's CLI row — "reuses aeolus-compile
+# as-is", plan §5.5's `explain` line): the per-class Rust fragments the
+# Target::Rust arm renders.
+aeolus-compile = { path = "../aeolus-compile" }
+# The CSS-first theme source `explain --theme` lowers colour tokens
+# through (the tiered tables the theme pass resolves).
+aeolus-theme = { workspace = true }
 # `tracing` feature: debug spans around command dispatch and the per-file
 # check loop (no subscriber installed by the CLI — the host app owns one).
 tracing = { version = "0.1", optional = true }
@@ -36,6 +44,12 @@ path = "src/main.rs"
 
 [[bench]]
 name = "pipeline"
+harness = false
+
+# The explain command's benchmarks (the §5.5 tooling-parity slice): the
+# themeless emit, the themed emit and the diagnostics path.
+[[bench]]
+name = "explain"
 harness = false
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
