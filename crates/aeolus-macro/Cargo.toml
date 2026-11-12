@@ -1,24 +1,31 @@
 [package]
 name = "aeolus-macro"
-description = "Compile-time Tailwind v4 class validation macros (tw!, tw_cn!) - syn-free"
+description = "Compile-time Tailwind v4 macros (tw!, cn!, theme!) - syn-free; expands the V1 pipeline's static Program, not the input string"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version = "1.88"
+# The V1 macros compile through the git-only pipeline (aeolus-compile /
+# aeolus-theme), so the crate follows the pipeline's publish discipline
+# until the P3 surface publishes as a set.
+publish = false
 
 [lib]
 proc-macro = true
 
 [dependencies]
+# The zero-dep core lexer is still what `extract_*` avoids copying, but
+# the compile walk itself is the V1 pipeline (`compile_theme` +
+# `keyword_texts`) — the macro is a thin shell over it (plan §3.2).
 aeolus-core = { workspace = true }
+aeolus-ir = { workspace = true }
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-theme = { workspace = true }
+aeolus-codegen-gpui = { path = "../aeolus-codegen-gpui" }
 
 [features]
 verbose-diagnostics = []
 
-# profile section must live at workspace root; kept opt-level note here:
-# proc-macro crates build fast with opt-level 1 (mission brief 3.3)
-
-# Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true

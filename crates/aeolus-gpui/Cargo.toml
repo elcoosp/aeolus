@@ -1,0 +1,20 @@
+[package]
+name = "aeolus-gpui"
+description = "GPUI runtime for the Aeolus V1 static program: TwExt/TwStateExt apply a tw!-compiled StaticProgram through gpui's Styled/InteractiveElement surface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.12" }
+aeolus-ir = { workspace = true }
+aeolus-rt = { path = "../aeolus-rt" }
+aeolus-compile = { path = "../aeolus-compile" }
+# The `tw!`/`cn!`/`theme!` macros the prelude re-exports.
+aeolus-macro = { workspace = true }
+
+[lints]
+workspace = true

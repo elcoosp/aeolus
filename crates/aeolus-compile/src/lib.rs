@@ -138,7 +138,7 @@ use std::fmt;
 
 use aeolus_data::LookupError;
 use aeolus_data::registry::lookup_detailed;
-use aeolus_ir::{Cond, Decl, Layer, Program};
+use aeolus_ir::{Cond, Decl, Layer, Program, Prop};
 use aeolus_syntax::Candidate;
 use aeolus_syntax::LexErrorKind;
 use aeolus_syntax::parse_class_string;
@@ -853,6 +853,94 @@ pub fn cn(inputs: &[&Compiled]) -> Result<Compiled, CompileError> {
         program: Program::new(layers),
         diagnostics,
     })
+}
+
+// ---------------------------------------------------------------------------
+// The keyword annotations (the P3 codegen read side)
+// ---------------------------------------------------------------------------
+
+/// One lowered class plus the ROW texts its [`Val::Kw`] slots index —
+/// the annotation the bare [`Program`] cannot recover (the keyword slot
+/// is row-relative, so `hidden` and `block` are both `Display` slot 0).
+///
+/// The P3 codegen crates consume this seam instead of re-deriving the
+/// registry walk: the entries are in the class's source order, `cond`
+/// is the same folded condition the program carries, and `keywords` is
+/// parallel to the declarations the class produced (empty for values
+/// that are not row-table keywords).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClassKeywords {
+    /// The class's byte range inside the input string.
+    pub span: (usize, usize),
+    /// The class text, verbatim.
+    pub raw: String,
+    /// The folded condition the class lowered under.
+    pub cond: Cond,
+    /// The row texts the class's keyword slots index, one entry per
+    /// longhand the row fans. Empty for numeric/colour/arbitrary values.
+    pub keywords: Vec<(Prop, &'static str)>,
+}
+
+/// Collect the row-keyword annotations for a class string — the
+/// [`Target::Rust`](crate::Target::Rust) arm's read side exposed as a
+/// public seam for the P3 codegen crates.
+///
+/// The walk mirrors [`compile`]'s stages (lex → fold → registry read →
+/// value pass) but only READS the row tables: a class that refuses is
+/// simply absent from the result (the compiled program's diagnostics
+/// already carry the reason). The returned entries are in source order.
+///
+/// ```no_run
+/// use aeolus_compile::{Config, keyword_texts};
+///
+/// let classes = keyword_texts("hidden flex-col underline", &Config::default())?;
+/// assert_eq!(classes.len(), 3);
+/// assert_eq!(classes[0].keywords[0].1, "none");
+/// # Ok::<(), aeolus_compile::CompileError>(())
+/// ```
+///
+/// # Errors
+/// [`CompileError::Empty`] for an empty class string (the same contract
+/// as [`compile`]).
+pub fn keyword_texts(input: &str, config: &Config) -> Result<Vec<ClassKeywords>, CompileError> {
+    if input.trim().is_empty() {
+        return Err(CompileError::Empty);
+    }
+    let (candidates, _degraded) = parse_class_string(input);
+    let mut out = Vec::new();
+    for candidate in &candidates {
+        if candidate.important {
+            continue;
+        }
+        let Ok(cond) = variant::fold(&candidate.variants, &Customs::new()) else {
+            continue;
+        };
+        let joined = candidate
+            .modifier
+            .map(|modifier| format!("{}/{}", candidate.body, modifier));
+        let (rows, effective_body) = match &joined {
+            Some(text) => match lookup_detailed(text) {
+                Ok(retried) => (Ok(retried), text.as_str()),
+                Err(_) => (lookup_detailed(candidate.body), candidate.body),
+            },
+            None => (lookup_detailed(candidate.body), candidate.body),
+        };
+        let Ok(rows) = rows else { continue };
+        let mut keywords = Vec::new();
+        for row in rows {
+            // Only READ the row tables: whether the value pass accepts
+            // the suffix is the compile walk's question, not this one.
+            keywords.extend(lower::kw_annotations(*row, effective_body));
+        }
+        let _ = config;
+        out.push(ClassKeywords {
+            span: candidate.span,
+            raw: candidate.raw.to_string(),
+            cond,
+            keywords,
+        });
+    }
+    Ok(out)
 }
 
 /// The whole pipeline, theme-less or themed. `tokens` selects whether

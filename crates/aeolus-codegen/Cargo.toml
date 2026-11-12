@@ -1,0 +1,17 @@
+[package]
+name = "aeolus-codegen"
+description = "Aeolus V1 backend-neutral codegen seam: the Emit trait, capability reports and the shared token helpers a target crate renders through (docs/AEOLUS_V1_ARCHITECTURE.md §3.2)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+aeolus-ir = { workspace = true }
+proc-macro2 = "1"
+quote = "1"
+
+[lints]
+workspace = true

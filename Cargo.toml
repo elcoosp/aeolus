@@ -36,6 +36,13 @@ members = [
     # Same git-only discipline; the xtask build-time bake stays with
     # the remaining P2 slices.
     "crates/aeolus-theme",
+    # The P3 backend surface (plan §3.2/§3.3): the runtime seam the
+    # static `tw!` output targets, the backend-neutral codegen trait and
+    # the GPUI target that renders the static-program expression.
+    "crates/aeolus-rt",
+    "crates/aeolus-codegen",
+    "crates/aeolus-codegen-gpui",
+    "crates/aeolus-gpui",
     # The generator story's driver (plan §3.2's row for aeolus-data,
     # the LAST named P2 slice, landed 2026-11): walks the crate's
     # `codegen::GeneratedArtifact` seam — `cargo xtask gen-tables`

@@ -1,0 +1,20 @@
+[package]
+name = "aeolus-rt"
+description = "Aeolus V1 runtime: the static Program form, the Env probe and the themed interpreter re-exports a host backend consumes (docs/AEOLUS_V1_ARCHITECTURE.md §3.2)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+# Git-only until the P3 backend surface settles (plan §3.2/§7).
+publish = false
+
+[dependencies]
+aeolus-ir = { workspace = true }
+# The interpreter, Env, TokenSource and DynCache re-exports: the runtime
+# crate is the HOST-facing seam over the pipeline, not a second compiler.
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-theme = { workspace = true }
+
+[lints]
+workspace = true
