@@ -5,6 +5,10 @@
 //! StaticProgram ─ the static form a `tw!`-style macro emits:
 //!                 the IR's own layers plus the ROW TEXTS its
 //!                 row-relative `Val::Kw` slots index
+//! ClassCell     ─ the dynamic-strings slow lane's view-state cell
+//!                 (plan §3.6's surface (3)): one slot keyed on the
+//!                 string's exact content and compile identity — the
+//!                 same compiler as `tw!`, runtime-driven
 //! Env           ─ the probe situation (re-exported from the interp arm)
 //! TokenTable    ─ the runtime theme tier (re-exported from the theme pass)
 //! DynCache      ─ the bounded dynamic-string cache (the interp/compile seam)
@@ -16,20 +20,28 @@
 //! recover the text the backend maps natively. The compile pipeline
 //! already reads those texts for the Rust-tokens emit arm
 //! ([`aeolus_compile::keyword_texts`]); the macro freezes them beside
-//! the layers and [`StaticProgram::keyword`] reads them back.
+//! the layers and [`StaticProgram::keyword`] reads them back — and the
+//! dynamic lane aligns them at runtime through
+//! [`aeolus_compile::keyword_alignment`].
 //!
-//! Nothing here parses classes or touches a lock: a static program is
-//! built once at macro expansion, and a dynamic string goes through
-//! [`aeolus_compile::DynCache`] (UI-thread owned by the host).
+//! A STATIC program is built once at macro expansion and never parses
+//! classes again. A DYNAMIC string goes through [`ClassCell`] (the
+//! per-view slow lane — the full V1 compile on a content change, a
+//! compare per frame otherwise) or the host-owned [`DynCache`]; both
+//! compile through the same pipeline the macro runs, no smaller
+//! matcher.
 
 use aeolus_ir::{Layer, Program, Prop};
 
+mod class_cell;
+
 pub use aeolus_compile::{
-    AttrBit, AttrKind, AttrProbe, AttrState, CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache,
-    DynStore, Env, InterpError, InterpNote, Interped, TokenSource, TwoGenStore, interp,
-    interp_probes, interp_theme, interp_theme_probes,
+    AttrBit, AttrKind, AttrProbe, AttrState, CachedCompiled, CompileError, Customs,
+    DEFAULT_DYN_CACHE_CAP, Diagnostic, DynCache, DynStore, Env, InterpError, InterpNote, Interped,
+    TokenSource, TwoGenStore, interp, interp_probes, interp_theme, interp_theme_probes,
 };
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
+pub use class_cell::ClassCell;
 
 /// The static form a `tw!`-style macro emits.
 ///
