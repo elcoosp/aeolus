@@ -34,7 +34,7 @@ use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
 use aeolus_core::{Breakpoint, Resolver, StylePlan, TailwindTheme, Warning, cn};
 use aeolus_ir::{Cond, Decl, Prop, Val};
-use aeolus_theme::{ThemeSource, TokenTable};
+use aeolus_theme::{SourceDirective, ThemeSource, TokenTable, source_directives};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
@@ -710,13 +710,10 @@ fn value_text(val: Val, kw: Option<&str>) -> String {
         Val::Num(v) => format!("{v}"),
         Val::Rgba([r, g, b, 255]) => format!("#{r:02x}{g:02x}{b:02x}"),
         Val::Rgba([r, g, b, a]) => format!("#{r:02x}{g:02x}{b:02x}{a:02x}"),
-        Val::Kw(_) => {
-            _ = kw;
-            kw.map_or_else(
-                || "keyword slot (row text unavailable)".to_string(),
-                str::to_string,
-            )
-        }
+        Val::Kw(_) => kw.map_or_else(
+            || "keyword slot (row text unavailable)".to_string(),
+            str::to_string,
+        ),
         Val::Tok { .. } | Val::ModePair(_) => {
             "token slot (the theme pass resolves the id)".to_string()
         }
@@ -1089,9 +1086,64 @@ fn cmd_check(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     else {
         return 2;
     };
+    // The @source registration (plan §5.4's CSS-first compat line): a
+    // theme CSS PATH can register scan content — `inline("…")` literals
+    // join the candidate set (attributed to the theme CSS), path
+    // entries join the scan set relative to the theme CSS's OWN
+    // directory, and a `not` path prunes the REGISTRATIONS (a file the
+    // operator passed explicitly survives the prune — the operator's
+    // list wins). The built-in specs carry no CSS file: their surface
+    // is exactly the pre-@source one.
+    let mut scan_files: Vec<String> = files.clone();
+    let mut inline_candidates: Vec<String> = Vec::new();
+    let theme_is_path = theme_spec.contains('/')
+        || theme_spec.contains('\\')
+        || std::path::Path::new(&theme_spec)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("css"));
+    if theme_is_path {
+        let Ok(theme_text) = std::fs::read_to_string(&theme_spec) else {
+            // load_theme just read this file; a re-read failure is an
+            // OS-level race, reported as the same typed channel.
+            let _ = writeln!(err, "error: cannot read theme CSS {theme_spec:?}");
+            return 2;
+        };
+        let directives = match source_directives(&theme_text) {
+            Ok(directives) => directives,
+            Err(e) => {
+                let _ = writeln!(err, "error: theme CSS: {e}");
+                return 2;
+            }
+        };
+        let base = std::path::Path::new(&theme_spec).parent().map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        );
+        for directive in directives {
+            match directive {
+                SourceDirective::Inline(classes) => inline_candidates.push(classes),
+                SourceDirective::Path {
+                    path,
+                    negated: false,
+                } => {
+                    let joined = base.join(&path).to_string_lossy().to_string();
+                    if !files.contains(&joined) && !scan_files.contains(&joined) {
+                        scan_files.push(joined);
+                    }
+                }
+                SourceDirective::Path {
+                    path,
+                    negated: true,
+                } => {
+                    let joined = base.join(&path).to_string_lossy().to_string();
+                    scan_files.retain(|f| f != &joined || files.contains(f));
+                }
+            }
+        }
+    }
     let mut findings: Vec<(String, Finding)> = Vec::new();
     let mut io_errors = 0usize;
-    for file in &files {
+    for file in &scan_files {
         #[cfg(feature = "tracing")]
         let _file_span = tracing::debug_span!("aeolus_check_file", file = file.as_str()).entered();
         let source = match std::fs::read_to_string(file) {
@@ -1106,6 +1158,13 @@ fn cmd_check(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             for f in check_string(&candidate, &theme) {
                 findings.push((file.clone(), f));
             }
+        }
+    }
+    // The inline registrations ride the same linter, attributed to the
+    // theme CSS that registered them.
+    for candidate in &inline_candidates {
+        for f in check_string(candidate, &theme) {
+            findings.push((theme_spec.clone(), f));
         }
     }
     if io_errors > 0 {
@@ -1186,6 +1245,10 @@ USAGE:
 
 THEME: shadcn (default) | shadcn-dark | default | <path-to-css>
        (`explain` accepts shadcn | shadcn-dark | <path> — the V1 theme pass)
+       (`check` reads a --theme CSS path's @source registrations (§5.4): inline
+       candidates join the lint, walked paths join the scan set relative to the
+       theme CSS's directory, `not` paths prune the registrations — a file the
+       operator passed explicitly survives the prune)
 FAIL-ON: unknown (default) | unsupported | conflict | any | none
 EXIT: 0 success · 1 findings · 2 usage/theme/IO error
 ";
