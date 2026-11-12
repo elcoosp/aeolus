@@ -16,5 +16,14 @@ aeolus-ir = { workspace = true }
 aeolus-compile = { path = "../aeolus-compile" }
 aeolus-theme = { workspace = true }
 
+[dev-dependencies]
+# The dynamic lane's microbenchmarks (divan, stable — the workspace
+# bench idiom).
+divan = "0.1"
+
+[[bench]]
+name = "class_cell"
+harness = false
+
 [lints]
 workspace = true
