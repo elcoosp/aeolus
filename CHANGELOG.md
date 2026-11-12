@@ -2,6 +2,32 @@
 
 ### 🚀 Features
 
+- *(gpui)* The attribute-bits host state seam (P4's last named piece, plan §3.5's "typed state bits passed WITH the element"): `TwExt::tw_probes`/`tw_env_probes` walk the base + environment layers with the element's attribute bits in hand — the GPUI half of the interp arm's `interp_probes` entry point. `data-*:`/`aria-*:` layers answer per CSS selector semantics (a presence spelling fires on any value, a value spelling on equality, a miss stays CSS-quiet); the sourceless walk keeps them quiet exactly as before (the interp's `AttributeUnqueried` note has no GPUI channel), and the `has-*` descendant shapes stay the plan's diagnosed boundary with or without bits. The seam is the trait: the built-in `AttrState` bit table joins the prelude beside `AttrBit`/`AttrKind`/`AttrProbe`, and a host `AttrProbe` impl answers the same walk
+- *(cli)* The `explain` command (plan §5.5's tooling-parity line, "class → Rust it emits"): per-class Rust fragments the Target::Rust arm renders (one embeddable `Layer::new` expression per lowered class, keyword/token slots annotated), every miss as the SAME typed, coded diagnostics the pipeline reports (exit 1 findings), `--theme shadcn|shadcn-dark|<path>` lowering colour tokens through the V1 token table (the themeless emit keeps the token boundary honest — the diagnostic names the lowering path). The CLI joins `aeolus-compile` (workspace-internal; the no-external-crate discipline holds)
+
+### 🧪 Testing
+
+- *(gpui)* Pin the host state seam end to end (`tests/attrs.rs`: the value/presence spellings, the verbatim aria bracket form, the sourceless quiet, the has- boundary, the dark+attrs composition, the custom-probe impl)
+- *(gpui)* Measure the seam (`benches/attrs.rs`: the sourceless walk, the bit-miss walk, the bit-hit walk over the shadcn Button string's own `aria-invalid` layers)
+- *(cli)* Pin `explain` (`tests/cli.rs`: one fragment per lowered class, misses as exit-1 diagnostics, the `--theme` path, the themeless token boundary, unknown flags, the missing-string usage error)
+- *(cli)* Measure `explain` (`benches/explain.rs`: the themeless emit, the themed emit, the diagnostics path)
+
+### 📚 Documentation
+
+- *(readme)* Align badge/status to v0.19.0, the six-backend crate table (xtask joins), the GPUI tagline, the `explain` command and the new examples
+- *(architecture)* Mark the attribute-bits host state seam landed (the P4 row and the remaining-boundaries line)
+- *(ci)* Correct the workflow header's member count (19 members, six backend crates)
+- *(changelog)* Give the shipped 0.19.0 its release header (the items sat in Unreleased since the tag) and remove the stale 0.15-era `Unreleased` block
+
+### 💼 Other
+
+- *(codegen)* Remove the dead `supports` stub (the capability tables live on the target crates — `aeolus-codegen-gpui`'s own table — the crate-level default had no consumer)
+- *(core)* File the conflict.rs compile-time story under its landed form (the V1 pipeline, not the once-planned pre-interned-ID trie)
+
+## [0.19.0] - 2026-11-11
+
+### 🚀 Features
+
 - *(compile)* The plan-lowering emit arm (`Target::Plan`, architecture plan §7's migration seam): `emit_plan`/`emit_plan_theme`/`emit_plan_with`/`emit_plan_theme_with` lower the V1 pipeline's artifact into the v0.x `StylePlan` the five backend crates already consume — the registry's Prop surface written slot-for-slot (the per-edge `EdgeSet` masks, the per-corner `CornerSet`, the composite `text-sm` px pair, the runtime tokens through the theme pass's table), the fold's conditions routed into the v0.x buckets (the seven classic states into `layers`, `dark:` into `dark`, `sm:`/`min-*:` into `responsive`, `group-*:`/`peer-*:` into the label vecs, the attribute probes and `max-*:`/container/`has-*` forms into `rules` over the v0.x `Atom` conjunction), and every longhand without a v0.x slot (the gradient and shadow preset rows, the slot-less families, the unmappable `has-*` fragments) reported as a typed `PlanNote` with a stable code and help text
 - *(compile)* `lower::suffix_of` joins the `pub(crate)` surface beside `kw_annotations` (the plan arm's per-prop spellings read the accepted suffix)
 
@@ -142,28 +168,6 @@
 All notable changes to Aeolus are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### 🚀 Features
-
-- *(compile)* The arbitrary-value unit grammar (the value pass's last named P2 slice): the bracket/paren groups the registry rows always accepted now LOWER — px/rem/%/deg units into the IR's own slots, colours through the audited `aeolus_core::Color` parser, `/opacity` through the audited premultiplied bake, `var()`/`(--var)` references through the theme pass's token path, and the `length:`/`percentage:`/`number:`/`color:` hints constraining the parse; every value the IR cannot carry (multi-token composites, the arbitrary-property form, keyword values on the row-relative `Val::Kw` slots) refuses typed, and the sibling-row class gate keeps the diagnostics quiet where another row of the root takes the class
-- *(syntax)* Export the lexer's v4 type-hint table (`HINTS`) — one source of truth for the lexer's hint classification and the value pass's hinted grammar
-- *(bench)* Measure the arbitrary-value grammar against the spacing-scale floor, the shadcn Button string and the DynCache hit path
-- *(compile)* Demonstrate the arbitrary-value grammar end to end (`examples/arbitrary_values.rs`)
-
-### 📚 Documentation
-
-- *(readme)* Align the badge, the status version and the crate table to 0.14.0 (the emit-arms release they predate); the status carries the grammar
-- *(architecture)* Mark the arbitrary-value unit grammar landed
-- *(workspace)* Consolidate the release-tooling drift: the git-cliff blocks sat above the file title and two `[Unreleased]` sections described the already-released 0.13.0/0.14.0 slices — refiled under the title, the stale blocks removed
-- *(benchmarks)* File the arbitrary-grammar run numbers
-- *(evidence)* File the arbitrary-values red-to-green record
-
-### 🧪 Testing
-
-- *(compile)* Pin the arbitrary-value contracts end to end (`tests/arbitrary.rs`: units, hints, colours, the audited bake, var references, the sibling-row gate, the two walks' diagnostics equality, cn/interp/statics composition)
-- *(compile)* Flip the `w-[32px]` boundary pin to the lowering contract (the grammar landed)
 
 ## [0.14.0] - 2026-11-10
 
