@@ -20,6 +20,9 @@ aeolus-core = { workspace = true }
 # as-is", plan §5.5's `explain` line): the per-class Rust fragments the
 # Target::Rust arm renders.
 aeolus-compile = { path = "../aeolus-compile" }
+# The IR types the `expand` render names (`Val`/`Prop`/`Cond`/`Program`):
+# the interp arm's effective-declaration form the command renders.
+aeolus-ir = { workspace = true }
 # The CSS-first theme source `explain --theme` lowers colour tokens
 # through (the tiered tables the theme pass resolves).
 aeolus-theme = { workspace = true }
@@ -55,3 +58,9 @@ harness = false
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
+
+# The expand command's benchmarks (the interp arm's CLI form): the
+# themeless effective walk, the themed walk, the keyword-heavy render.
+[[bench]]
+name = "expand"
+harness = false
