@@ -491,6 +491,13 @@ pub struct Interped {
     /// source); [`Val::Kw`] rides through (the codegen crate owns the
     /// keyword names, plan §3.3).
     pub decls: Vec<Decl>,
+    /// The winning declaration's condition, PARALLEL to [`Interped::decls`]
+    /// (same length, same order): the layer the cascade's winner came
+    /// from — the row-relative [`Val::Kw`] annotation's key, since the
+    /// keyword texts ride the `(cond, prop)` annotation stream. A host
+    /// reading `decls[i]` alongside `conds[i]` knows WHICH condition
+    /// won the longhand without re-walking the layers.
+    pub conds: Vec<Cond>,
     /// The excluded layers, in program order (see [`InterpNote`]).
     pub notes: Vec<InterpNote>,
 }
@@ -602,6 +609,7 @@ fn walk(
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp", layers = program.layers.len()).entered();
     let mut decls: Vec<Decl> = Vec::new();
+    let mut conds: Vec<Cond> = Vec::new();
     let mut notes = Vec::new();
     for layer in program.layers {
         match decide(layer.cond, env, probes, layer.mask) {
@@ -611,15 +619,24 @@ fn walk(
                     // Keep the winners Prop-sorted: a fired layer's
                     // declaration overwrites the longhand's earlier
                     // value in place, or inserts at the sorted slot.
+                    // The winner's condition rides the parallel conds
+                    // (the winner attribution the keyword annotations
+                    // key on).
                     match decls.binary_search_by_key(&decl.prop, |d| d.prop) {
-                        Ok(index) => decls[index].val = val,
-                        Err(index) => decls.insert(
-                            index,
-                            Decl {
-                                prop: decl.prop,
-                                val,
-                            },
-                        ),
+                        Ok(index) => {
+                            decls[index].val = val;
+                            conds[index] = layer.cond;
+                        }
+                        Err(index) => {
+                            decls.insert(
+                                index,
+                                Decl {
+                                    prop: decl.prop,
+                                    val,
+                                },
+                            );
+                            conds.insert(index, layer.cond);
+                        }
                     }
                 }
                 #[cfg(feature = "tracing")]
@@ -633,7 +650,11 @@ fn walk(
             }
         }
     }
-    Ok(Interped { decls, notes })
+    Ok(Interped {
+        decls,
+        conds,
+        notes,
+    })
 }
 
 /// Resolve a compiled [`Program`] to its effective declarations under
