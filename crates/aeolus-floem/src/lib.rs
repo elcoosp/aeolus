@@ -1,4 +1,4 @@
-//! # Aeolus Floem backend — `StylePlan` → Floem programmatic styles
+//! # Aeolus Floem backend — `StylePlan`/`StaticProgram` → Floem programmatic styles
 //!
 //! Floem has a fully programmatic rule API (no CSS text parsing anywhere):
 //! [`floem::style::Style`] nested selector builders — `.hover(...)`,
@@ -8,6 +8,16 @@
 //! single `Style` value **with zero view-side code**, and hover/active flips
 //! restyle+repaint one element without rebuilding widgets (floem's style
 //! cache + merge-id diffing).
+//!
+//! The V1 lane (architecture plan §7's re-target — Floem is the second
+//! backend after GPUI): a `tw!`-compiled
+//! [`StaticProgram`] WALKS into a `Style` under
+//! the interp's [`Env`] probe semantics —
+//! [`lower_program`] is the pure core, [`FloemTwExt::tw_program`] the
+//! wire-up. Two program forms, one compiler, one cascade: the plan path
+//! (this crate's v0.x surface, selector maps) and the program lane agree
+//! differentially (`tests/static_program.rs` pins the shared corpus on
+//! both).
 //!
 //! v0.2 (plan §4.2) closes the v0.1 lowering gaps — every one of these is
 //! native in Floem at the pinned rev and now mapped: `align_items`,
@@ -19,6 +29,8 @@
 //! The parity path (compound variants, group/peer, data/aria, `@container`)
 //! is emulated by evaluating `plan.resolve_rules_only(&probe)` — see
 //! [`FloemProbe`] and [`FloemTwExt::tw_plan`].
+
+mod program;
 
 use floem::animate::Bezier;
 use floem::peniko::{Brush, Color as PenikoColor};
@@ -40,6 +52,9 @@ use aeolus_core::plan::{
     FlexDirection, JustifyContent, OverflowKind, ResolvedStyle, SizedValue, Slot, StylePlan,
     TextProperty, TextValue, TransitionSet, VariantCondition,
 };
+use aeolus_rt::{Env, StaticProgram};
+
+pub use program::{REM_PX, lower_program, lower_program_with};
 
 /// Everything the lowering could not express in Floem.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1205,6 +1220,48 @@ pub trait FloemTwExt: Decorators {
                 tracing::warn!("aeolus-floem: rules overlay dropped {:?}", rep.dropped);
             }
             merged
+        })
+    }
+
+    /// Style this view from the V1 static program (the §7 re-target's
+    /// lane): the `tw!`-frozen [`StaticProgram`] walks under the default
+    /// probe [`Env`] — the zero-argument form, the program-lane twin of
+    /// the plan-path [`FloemTwExt::tw`]. Layers that never fire under
+    /// the default env stay CSS-quiet; exclusions and unmapped longhands
+    /// ride the report channel (`tracing::warn`, the plan path's own
+    /// observability convention).
+    fn tw_program(self, program: StaticProgram) -> Self::Intermediate {
+        let (style, report) = lower_program(&program, &Env::default());
+        if !report.is_empty() {
+            tracing::warn!("aeolus-floem: program walk dropped {:?}", report.dropped);
+        }
+        self.style(move |s| s.apply(style.clone()))
+    }
+
+    /// The reactive program lane: the walk re-runs under the FRESH
+    /// [`Env`] the `snapshot` closure returns, every time the style
+    /// closure re-runs — the program-lane twin of the plan-path
+    /// [`FloemTwExt::tw_plan`], and the frame-Env story (plan §3.5's
+    /// `begin_frame` per render, here per style pass) in floem's
+    /// reactive form: `dark:hover:`-style layer folding restyles the
+    /// element when the probe changes, no view rebuild, no locks.
+    ///
+    /// ```ignore
+    /// // the app drives the env from its own signals
+    /// cx.tw_program_env(program, move || Env { dark: dark_signal.get(), ..Env::default() })
+    /// ```
+    fn tw_program_env(
+        self,
+        program: StaticProgram,
+        snapshot: impl Fn() -> Env + 'static,
+    ) -> Self::Intermediate {
+        self.style(move |s| {
+            let env = snapshot();
+            let (style, report) = lower_program(&program, &env);
+            if !report.is_empty() {
+                tracing::warn!("aeolus-floem: program walk dropped {:?}", report.dropped);
+            }
+            s.apply(style)
         })
     }
 }
