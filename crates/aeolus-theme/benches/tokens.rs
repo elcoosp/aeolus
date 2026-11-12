@@ -62,3 +62,31 @@ fn resolve_token_baked_pair_hot(bencher: Bencher) {
     let id = table.id("primary").expect("primary is a shadcn token");
     bencher.bench(|| table.resolve(id, None).expect("resolves"));
 }
+
+/// The `@source` scan (the §5.4 registration seam): the statement walk
+/// over a theme CSS — comment strip, the three forms, source order.
+/// The shadcn source (no directives) is the clean-file floor.
+#[divan::bench]
+fn source_directives_scan(bencher: Bencher) {
+    let css = "@theme {\n  --color-primary: #0ea5e9;\n}\n\
+               /* registration */\n\
+               @source inline(\"p-4 bg-primary hover:bg-primary/90\");\n\
+               @source \"src/views.rs\";\n\
+               @source not \"src/generated.rs\";\n";
+    bencher.bench(|| aeolus_theme::source_directives(css).expect("well-formed directives parse"));
+}
+
+/// The scan's clean floor: the built-in palette carries no directives —
+/// the walk is one comment strip + one failed `find`.
+#[divan::bench]
+fn source_directives_clean_floor(bencher: Bencher) {
+    let css = shadcn_css_light();
+    bencher.bench(|| aeolus_theme::source_directives(css).expect("no directives"));
+}
+
+fn shadcn_css_light() -> &'static str {
+    // The embedded palette's own light CSS is crate-private; the bench
+    // rides the public parse over an equivalent-size file instead.
+    const LIGHT: &str = include_str!("../../aeolus-core/data/shadcn-light.css");
+    LIGHT
+}
