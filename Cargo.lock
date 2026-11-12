@@ -68,6 +68,7 @@ version = "0.19.0"
 dependencies = [
  "aeolus-compile",
  "aeolus-core",
+ "aeolus-ir",
  "aeolus-theme",
  "divan",
  "miette",
