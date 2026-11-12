@@ -16,6 +16,15 @@
 //! [`TwExt::tw`] applies the base + environment-matched layers (dark,
 //! breakpoints) for any `Styled` element.
 //!
+//! Attribute layers (`data-*:`/`aria-*:`) answer through the host state
+//! seam (plan §3.5's "typed state bits passed WITH the element", P4's
+//! last named piece): [`TwExt::tw_probes`] walks the base + environment
+//! layers with the element's attribute bits in hand — the GPUI half of
+//! the interp arm's `interp_probes` entry point. The plain [`TwExt::tw`]
+//! keeps those layers quiet (the sourceless skip the interp reports as
+//! `AttributeUnqueried` notes), and the descendant `has-*` shapes stay
+//! the diagnosed boundary with or without bits.
+//!
 //! The keyword texts are why the program is sufficient: `hidden` and
 //! `block` are both `Prop::Display` + `Val::Kw(0)` in the bare IR, so
 //! the runtime reads the row text frozen beside the layer.
@@ -32,6 +41,10 @@ use gpui::{
 
 pub use aeolus_macro::{cn, theme, tw, tw_cn, variants};
 pub use aeolus_rt::{Env as Environment, StaticProgram as Program, theme_from_css};
+// The attribute-bits seam (plan §3.5): the element's own `data-`/`aria-`
+// bits ride the host state surface, so the prelude carries the probe
+// trait, the built-in bit table and the bit/kind constructors.
+pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState};
 
 /// The V1 consumption surface: macros, the program type and the two
 /// extension traits.
@@ -41,7 +54,7 @@ pub mod prelude {
         variants,
     };
     pub use aeolus_compile::Env;
-    pub use aeolus_rt::StaticProgram;
+    pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState, StaticProgram};
 }
 
 thread_local! {
@@ -76,7 +89,31 @@ pub trait TwExt: Styled + Sized {
 
     /// Apply the program under an explicit probe environment.
     fn tw_env(self, program: StaticProgram, env: Env) -> Self {
-        apply_matching(self, &program, &env)
+        apply_matching(self, &program, &env, None)
+    }
+
+    /// Apply the program under the current [`env`], with the element's
+    /// attribute bits answering the `data-*:`/`aria-*:` layers — the
+    /// GPUI half of the interp arm's `interp_probes` entry point (plan
+    /// §3.5's "typed state bits passed WITH the element", one mask test
+    /// per probe).
+    ///
+    /// `probes` is the [`AttrProbe`] seam, the same shape as the token
+    /// seam: the built-in [`AttrState`] is a static bit table, and a
+    /// host implements the one question itself (a component-state map,
+    /// a bridge over the window's real attribute surface, a test
+    /// double). A presence spelling (`data-open:`) fires on any value,
+    /// a value spelling (`data-[state=open]:`) on equality, and a miss
+    /// is CSS-quiet; the descendant `has-*` shapes stay the diagnosed
+    /// boundary (they are not element-own bits) with or without bits.
+    fn tw_probes(self, program: StaticProgram, probes: &impl AttrProbe) -> Self {
+        self.tw_env_probes(program, env(), probes)
+    }
+
+    /// [`TwExt::tw_probes`] under an explicit probe environment — the
+    /// `tw_env` pairing, with the attribute bits riding along.
+    fn tw_env_probes(self, program: StaticProgram, env: Env, probes: &impl AttrProbe) -> Self {
+        apply_matching(self, &program, &env, Some(probes as &dyn AttrProbe))
     }
 }
 
@@ -92,7 +129,10 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
     /// Wire every state layer in `program` to its GPUI interaction slot.
     fn tw_state(self, program: StaticProgram) -> Self {
         let env = env();
-        let mut this = apply_matching(self, &program, &env);
+        // The base+env walk stays sourceless: the interaction closures
+        // are GPUI's own state, the element-own attribute bits ride the
+        // `tw_probes` walk instead.
+        let mut this = apply_matching(self, &program, &env, None);
         this = this.hover(|style| apply_state(style, &program, is_hover));
         this = this.focus(|style| apply_state(style, &program, is_focus));
         this = this.focus_visible(|style| apply_state(style, &program, is_focus_visible));
@@ -141,10 +181,16 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         Cond::GroupFocus => env.group_focus,
         Cond::PeerHover => env.peer_hover,
         Cond::PeerFocus => env.peer_focus,
-        // Attribute probes are element state the host owns; the env has
-        // no answer, so they stay quiet (CSS selector-miss semantics).
-        Cond::Data { .. } | Cond::Aria { .. } | Cond::Has(_) => false,
-        Cond::GroupHas(_) | Cond::PeerHas(_) => false,
+        // The attribute shapes route through `cond_matches`'s probe
+        // arms (the env alone has no answer for them); the guard keeps
+        // the match total so a new `Cond` variant fails to compile here
+        // instead of silently skipping.
+        Cond::Data { .. } | Cond::Aria { .. } | Cond::Has(_) => {
+            unreachable!("cond_matches routes the attribute shapes to the probe arms")
+        }
+        Cond::GroupHas(_) | Cond::PeerHas(_) => {
+            unreachable!("cond_matches routes the attribute shapes to the probe arms")
+        }
         Cond::Bp(bp) | Cond::Min(bp) => env.viewport_rem >= bp.rem(),
         Cond::Max(bp) => env.viewport_rem < bp.rem(),
         Cond::Container(bp) => env.container_rem.is_some_and(|rem| rem >= bp.rem()),
@@ -156,9 +202,49 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
 // The walk
 // ---------------------------------------------------------------------------
 
-fn apply_matching<S: Styled>(mut style: S, program: &StaticProgram, env: &Env) -> S {
+/// The one condition test the walk applies: the element-own attribute
+/// probes answer through the host's probe source (plan §3.5's "typed
+/// state bits passed WITH the element"), everything else through the
+/// env.
+fn cond_matches(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> bool {
+    match cond {
+        // The element-own probes answer through the seam — the interp's
+        // `decide` semantics applied at the host: a presence spelling
+        // fires on any value, a value spelling on equality, a miss is
+        // CSS-quiet. With no source the layers stay quiet (the interp
+        // reports `AttributeUnqueried` notes; this walk has no note
+        // channel, so the selector-miss skip stands).
+        Cond::Data { name, value } => match probes {
+            Some(source) => match source.probe(AttrKind::Data, name) {
+                Some(answer) => value.is_none_or(|folded| answer == folded),
+                None => false,
+            },
+            None => false,
+        },
+        Cond::Aria { name, value } => match probes {
+            Some(source) => match source.probe(AttrKind::Aria, name) {
+                Some(answer) => value.is_none_or(|folded| answer == folded),
+                None => false,
+            },
+            None => false,
+        },
+        // The descendant shapes (`has-`/`group-has-`/`peer-has-`) are
+        // NOT element-own attribute bits — the plan §3.5 row keeps them
+        // the diagnosed boundary (the interp reports them as notes), so
+        // the walk skips them with or without a source.
+        Cond::Has(_) | Cond::GroupHas(_) | Cond::PeerHas(_) => false,
+        other => env_matches(other, env),
+    }
+}
+
+fn apply_matching<S: Styled>(
+    mut style: S,
+    program: &StaticProgram,
+    env: &Env,
+    probes: Option<&dyn AttrProbe>,
+) -> S {
     for (layer_index, layer) in program.layers.iter().enumerate() {
-        if !env_matches(layer.cond, env) {
+        if !cond_matches(layer.cond, env, probes) {
             continue;
         }
         for (decl_index, decl) in layer.decls.iter().enumerate() {
