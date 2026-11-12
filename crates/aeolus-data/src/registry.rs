@@ -9,7 +9,10 @@
 //! pre-index linear scan is kept VERBATIM below as
 //! [`lookup_linear`] — the documented differential oracle the tests
 //! and the lookup bench battery the indexed path against; the two
-//! cannot drift apart silently.
+//! cannot drift apart silently. The same discipline carries the
+//! SORT-ORDER seam: [`sort_index`] is the registry's canonical order
+//! position for a body (the FIRST matching row's index — plan §5.5's
+//! class-sorting source), with the linear scan as its oracle too.
 
 use crate::UtilityRow;
 use crate::rows::ROWS;
@@ -263,10 +266,51 @@ fn kind_accepts(kind: crate::ValueKind, body: &str, root: &str) -> bool {
     kind.accepts(suffix_of(body, root))
 }
 
+/// The registry's canonical order position for a utility BODY — the
+/// FIRST matching row's index in [`crate::rows::ROWS`] (plan §5.5's
+/// "class sorting (official order from the registry)"; the crate and
+/// rows docs name the read side). The rows are committed in the audited
+/// tailwindcss v4 utilities progression (spacing → sizing → layout →
+/// colour → borders → typography → interaction), so a sort keyed on
+/// these indices reorders a class string the way the pipeline's own CSS
+/// emit arm renders rules.
+///
+/// The match rules are [`lookup`]'s, byte for byte: the generated roots
+/// index answers WHICH root (the longest-prefix probe), the shape
+/// contract filters its rows, and the smallest index among the accepted
+/// rows wins. A miss is `None` — no root, or a rejected suffix shape,
+/// means NO order position, never a guessed one (the caller reports the
+/// typed miss; the compile stage's sort seam does).
+///
+/// The differential oracle is the test battery's linear scan
+/// (`tests/registry.rs`) — the same discipline [`lookup_linear`] keeps
+/// for the lookup seam.
+pub fn sort_index(body: &str) -> Option<usize> {
+    let entry = crate::roots_index::longest_prefix(body)?;
+    entry
+        .rows
+        .iter()
+        .filter(|&&index| {
+            let row = &ROWS[index as usize];
+            kind_accepts(row.kind, body, row.root)
+        })
+        .map(|&index| index as usize)
+        .min()
+}
+
+/// The total committed row count — the boundary the compile stage's
+/// sort seam keys registered custom utilities AFTER (registration
+/// order starts at this index; the registry always wins a name
+/// collision by construction).
+pub fn row_count() -> usize {
+    ROWS.len()
+}
+
 /// Render the registry as the markdown audit page — the proof that the
 /// committed rows are the single source the generated docs flow from.
-/// The P2 xtask grows this into the full docs/linter/sort-order
-/// generator story (crate docs).
+/// The P2 xtask grows this into the full docs/linter generator story
+/// (crate docs); the sort-order half landed as the [`sort_index`] read
+/// side.
 pub fn generate_docs() -> String {
     let mut out = String::with_capacity(ROWS.len() * 96);
     out.push_str("# Aeolus V1 utility registry\n\n");
