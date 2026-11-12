@@ -414,3 +414,162 @@ fn explain_needs_a_class_string() {
     assert_eq!(code, 2);
     assert!(!err.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// `sort` — the §5.5 tooling-parity slice: the registry's official order.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sort_orders_by_the_registry() {
+    let (code, out, err) = run_cmd(&["sort", "block", "p-4", "mx-2"]);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert_eq!(
+        out.trim(),
+        "p-4 mx-2 block",
+        "the rows' progression decides"
+    );
+}
+
+#[test]
+fn sort_variants_after_the_base() {
+    let (code, out, err) = run_cmd(&["sort", "hover:block", "block"]);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert_eq!(out.trim(), "block hover:block");
+    // The cascade rank orders the buckets: dark < hover < breakpoint.
+    let (code, out, _) = run_cmd(&["sort", "md:p-4", "hover:p-3", "dark:p-2", "p-1"]);
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "p-1 dark:p-2 hover:p-3 md:p-4");
+}
+
+#[test]
+fn sort_reports_unsortable_classes_and_exits_1() {
+    let (code, out, err) = run_cmd(&["sort", "p-4", "not-a-class-xyz"]);
+    assert_eq!(code, 1, "a typed miss is a finding, never a silent drop");
+    // The sorted string still renders — the unknown rides the tail.
+    assert_eq!(out.trim(), "p-4 not-a-class-xyz");
+    assert!(err.contains("not-a-class-xyz"), "{err}");
+    assert!(err.contains("aeolus::compile::unknown_root"), "{err}");
+}
+
+#[test]
+fn sort_json_carries_the_sorted_string_and_diagnostics() {
+    let (code, out, _) = run_cmd(&["sort", "--json", "p-4", "block"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("\"sorted\":\"p-4 block\""), "{out}");
+    assert!(out.contains("\"diagnostics\":[]"), "{out}");
+    let (code, out, _) = run_cmd(&["sort", "--json", "p-4", "not-a-class-xyz"]);
+    assert_eq!(code, 1);
+    assert!(out.contains("\"sorted\":\"p-4 not-a-class-xyz\""), "{out}");
+    assert!(out.contains("unknown_root"), "{out}");
+}
+
+#[test]
+fn sort_rejects_unknown_flags() {
+    let (code, _, err) = run_cmd(&["sort", "--wat", "p-4"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("unknown flag"), "{err}");
+}
+
+#[test]
+fn sort_needs_a_class_string() {
+    let (code, _, err) = run_cmd(&["sort"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("sort needs a class string"), "{err}");
+}
+
+#[test]
+fn sort_empty_input_is_a_usage_error() {
+    let (code, _, err) = run_cmd(&["sort", "   "]);
+    assert_eq!(code, 2, "the compile seam's typed Empty error");
+    assert!(err.contains("empty class string"), "{err}");
+}
+
+// ---------------------------------------------------------------------------
+// `expand` — the interp arm's human-readable form (§3.2's CLI row): the
+// EFFECTIVE declarations under one probe Env, keyword slots resolved to
+// their row texts, the honest exclusions as notes.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_renders_effective_declarations() {
+    let (code, out, err) = run_cmd(&["expand", "hidden p-4"]);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert!(out.contains("display = none"), "{out}");
+    assert!(out.contains("padding-top = 1rem"), "{out}");
+}
+
+#[test]
+fn expand_resolves_keyword_slots_to_row_texts() {
+    let (code, out, _) = run_cmd(&["expand", "flex-col"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("flex-direction = column"), "{out}");
+}
+
+#[test]
+fn expand_state_layers_do_not_fire_under_the_resting_env() {
+    // hover is a probe the resting Env answers false — the layer does
+    // not fire (the interp's documented semantics, not a drop).
+    let (code, out, _) = run_cmd(&["expand", "hidden hover:block"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("display = none"), "{out}");
+    assert!(
+        !out.contains("= block"),
+        "the hover layer never fired: {out}"
+    );
+}
+
+#[test]
+fn expand_dark_flag_lifts_the_mode_tier() {
+    let (code, out, _) = run_cmd(&["expand", "--dark", "hidden dark:block"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("display = block"), "{out}");
+}
+
+#[test]
+fn expand_theme_flag_lowers_colour_tokens() {
+    let (code, out, _) = run_cmd(&["expand", "--theme", "shadcn", "bg-primary"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("background-color = #"), "{out}");
+}
+
+#[test]
+fn expand_reports_the_themeless_token_boundary() {
+    let (code, _out, err) = run_cmd(&["expand", "bg-primary"]);
+    assert_eq!(
+        code, 1,
+        "a typed boundary is a finding, never a silent drop"
+    );
+    assert!(err.contains("aeolus::compile::"), "{err}");
+}
+
+#[test]
+fn expand_json_carries_declarations_and_notes() {
+    let (code, out, _) = run_cmd(&["expand", "--json", "hidden"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("\"declarations\""), "{out}");
+    assert!(out.contains("\"display\""), "{out}");
+    assert!(out.contains("\"notes\":[]"), "{out}");
+}
+
+#[test]
+fn expand_reports_the_pseudo_element_note() {
+    // `selection:` styles a different render target — excluded AND
+    // noted (the interp's typed note, the no-silent-exclusion rule).
+    let (code, out, err) = run_cmd(&["expand", "selection:hidden"]);
+    assert_eq!(code, 0, "the note is a report, not a failure: {err}");
+    assert!(out.contains("note:"), "{out}");
+}
+
+#[test]
+fn expand_rejects_unknown_flags() {
+    let (code, _, err) = run_cmd(&["expand", "--wat", "hidden"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("unknown flag"), "{err}");
+}
+
+#[test]
+fn expand_needs_a_class_string() {
+    let (code, _, err) = run_cmd(&["expand"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("expand needs a class string"), "{err}");
+}
