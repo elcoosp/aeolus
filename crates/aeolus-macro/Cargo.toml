@@ -27,5 +27,9 @@ aeolus-codegen-gpui = { path = "../aeolus-codegen-gpui" }
 [features]
 verbose-diagnostics = []
 
+# The macro grammar's pedantic exceptions ride the WORKSPACE table
+# (cargo forbids a local `[lints.clippy]` beside `workspace = true`,
+# and the source-level allow-attribute block it used to carry predates
+# the workspace convention) — see the root manifest's `[lints.clippy]`.
 [lints]
 workspace = true
