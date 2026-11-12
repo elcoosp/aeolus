@@ -19,7 +19,6 @@ aeolus-core = { path = "../aeolus-core" }
 # type-level lowering and compiles headless. Apps depend on `slint`
 # themselves with whichever backend/renderer they use; the value types are
 # the very same `i-slint-core` types, so the lowered values transfer.
-slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2"] }
 # Same version lockstep as `slint` (the facade re-exports these types).
 # Carries what the facade does not re-export: the gradient brush
 # constructors (`LinearGradientBrush::new`, `RadialGradientBrush::new_circle`,
