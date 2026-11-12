@@ -1,7 +1,7 @@
 //! The GPUI codegen target (architecture plan §3.2's
 //! `aeolus-codegen-gpui`).
 //!
-//! The arm emits the [`aeolus_rt::StaticProgram`] expression a `tw!`
+//! The arm emits the `aeolus_rt::StaticProgram` expression a `tw!`
 //! expansion embeds: the IR's static layers plus the ROW TEXTS the
 //! row-relative keyword slots index ([`aeolus_compile::keyword_texts`]).
 //! The runtime half (`aeolus-gpui`) maps that form to GPUI's builder
@@ -121,7 +121,7 @@ pub fn lower_class(literal: &str, config: &Config) -> Result<TokenStream, Diagno
         messages: vec![err.to_string()],
         unsupported: Vec::new(),
     })?;
-    let keywords = crate::keywords_flat(&compiled, &annotations);
+    let keywords = aeolus_compile::keyword_alignment(&compiled, &annotations);
     Ok(emit_static_program(&compiled.program, &keywords))
 }
 
@@ -167,34 +167,6 @@ pub fn emit_static_program(program: &Program, keywords: &[&str]) -> TokenStream 
 /// Flatten per-class annotations into the declaration-parallel slice the
 /// static program stores. Duplicate `(cond, prop)` pairs consume in
 /// source order (the compile assembly's stable order).
-pub(crate) fn keywords_flat<'a>(
-    compiled: &aeolus_compile::Compiled,
-    classes: &'a [aeolus_compile::ClassKeywords],
-) -> Vec<&'a str> {
-    use std::collections::{HashMap, VecDeque};
-    let mut queues: HashMap<(Cond, Prop), VecDeque<&'a str>> = HashMap::new();
-    for class in classes {
-        for &(prop, text) in &class.keywords {
-            queues
-                .entry((class.cond, prop))
-                .or_default()
-                .push_back(text);
-        }
-    }
-    let mut out = Vec::new();
-    for layer in compiled.program.layers {
-        for decl in layer.decls {
-            out.push(
-                queues
-                    .get_mut(&(layer.cond, decl.prop))
-                    .and_then(VecDeque::pop_front)
-                    .unwrap_or(""),
-            );
-        }
-    }
-    out
-}
-
 fn bp_tokens(bp: Bp, ir: &TokenStream) -> TokenStream {
     let name: TokenStream = format!("{bp:?}").parse().expect("breakpoint name");
     quote! { #ir::Bp::#name }
