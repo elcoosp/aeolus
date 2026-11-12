@@ -46,13 +46,6 @@ pub trait Emit {
     fn emit(&self, program: &Program) -> Result<Self::Output, Vec<Unsupported>>;
 }
 
-/// True when this crate's token helpers can render the longhand at all.
-/// Targets override this with their own capability table; the default
-/// is deliberately conservative (nothing).
-pub fn supports(_prop: Prop) -> bool {
-    false
-}
-
 /// The fully-qualified IR path a generated fragment uses, so an emitted
 /// token stream compiles wherever `aeolus-ir` is a dependency without
 /// touching the host's imports.
