@@ -173,6 +173,7 @@ mod rust;
 mod scan;
 mod sort;
 mod statics;
+mod style_walk;
 mod variant;
 
 use std::fmt;
@@ -209,6 +210,7 @@ pub use scan::{
 };
 pub use sort::{SortKey, Sorted, SortedClass, sort, sort_with};
 pub use statics::emit_static;
+pub use style_walk::{StyleWalk, program_style, program_style_with};
 
 // The lowering audits the rows' meaning; a registry semantics bump must
 // re-audit it. Byte-wise const compare — `&str` equality is not a const
