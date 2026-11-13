@@ -272,9 +272,53 @@ struct VariantField {
     classes: VariantClasses,
 }
 
+/// The classes one group value (or one compound entry's `class`) hands
+/// out. The STRING form applies to the whole component; the brace form
+/// (`{ root: "…", title: "…" }`) is the per-slot map — only legal in a
+/// table that declares `slots:` (validated after the parse, since the
+/// `slots:` field may arrive after the groups that use it).
+#[derive(Clone)]
+enum ClassSource {
+    All(String),
+    PerSlot(Vec<(String, String)>),
+}
+
+impl ClassSource {
+    /// The classes this source hands to `slot` — the string form's text
+    /// for every slot, the brace form's own text for the slots it names
+    /// (an unnamed slot takes nothing).
+    fn for_slot<'a>(&'a self, slot: &str) -> &'a str {
+        match self {
+            ClassSource::All(text) => text,
+            ClassSource::PerSlot(pairs) => pairs
+                .iter()
+                .find(|(name, _)| name == slot)
+                .map_or("", |(_, text)| text),
+        }
+    }
+
+    /// True when the source names a slot the table does not declare.
+    fn has_unknown_slot(&self, slots: &[(String, String)]) -> Option<String> {
+        if let ClassSource::PerSlot(pairs) = self {
+            for (name, _) in pairs {
+                if !slots.iter().any(|(slot, _)| slot == name) {
+                    return Some(name.clone());
+                }
+            }
+        }
+        None
+    }
+}
+
 enum VariantClasses {
     Base(String),
-    Groups(Vec<(String, String)>),
+    Groups(Vec<(String, ClassSource)>),
+    /// `slots: { ... }` — the multi-part form (the §9 open question's
+    /// "slots" word, the tailwind-variants shape): one base per part,
+    /// a `{Name}Slot` enum and a `style_slot(slot, …)` dispatch
+    /// generated for the table. A `base:` beside `slots:` applies to
+    /// every slot (prepended).
+    Slots(Vec<(String, String)>),
     /// `compound: [ ... ]` — the cva compound-variant entries (plan §9's
     /// open question, decided): extra classes applied to every combo
     /// that matches ALL of an entry's constraints, resolved at EXPANSION
@@ -284,26 +328,60 @@ enum VariantClasses {
 }
 
 /// One `compound:` entry: the group-key constraints (ALL must match the
-/// selection) and the class list they ride.
+/// selection) and the class list they ride (string = every slot, brace
+/// = the slots it names).
 struct CompoundEntry {
     constraints: Vec<(String, String)>,
-    classes: String,
+    classes: ClassSource,
 }
 
 /// Compile a closed-world variant table (the shadcn/cva surface):
 ///
 /// ```ignore
 /// variants! { pub Button {
-///     base: "inline-flex items-center gap-2 rounded-md font-medium",
+///     base: "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium …",
 ///     variant: { default: "bg-primary text-primary-foreground",
-///                destructive: "bg-destructive text-white" },
-///     size: { default: "h-9 px-4 py-2", sm: "h-8 px-3" },
+///                destructive: "bg-destructive text-white hover:bg-destructive/90" },
+///     size:    { default: "h-9 px-4 py-2", sm: "h-8 px-3" },
 /// } }
 /// ```
 ///
 /// Generates one enum per group, a `style(...)` function returning the
 /// merged `aeolus_rt::StaticProgram`, and a `Default` enum variant
 /// (the key named `default`, else the first key).
+///
+/// # The slot form (multi-part components)
+///
+/// A `slots:` map declares one base per PART of a component (a card's
+/// root/header/title, the tailwind-variants shape) and generates a
+/// `{Name}Slot` enum (default: the first declared slot) plus a
+/// `style_slot(slot, …)` dispatch — each part is its OWN program:
+///
+/// ```ignore
+/// variants! { pub Card {
+///     base: "text-card-foreground",              // applies to every slot
+///     slots: {
+///         root: "flex flex-col gap-6 rounded-xl border py-6",
+///         header: "flex flex-col gap-1.5 px-6",
+///         title: "font-semibold leading-none",
+///     },
+///     variant: {
+///         default: "text-sm",                    // a string applies to EVERY slot
+///         outline: { root: "border-gray-200",    // a brace applies to the slots it names
+///                    title: "text-muted-foreground" },
+///     },
+///     compound: [ { variant: outline, class: { root: "shadow-none" } } ],
+/// } }
+///
+/// Card::style_slot(CardSlot::Title, CardVariant::Outline)
+/// ```
+///
+/// A group value or a compound `class:` may be a string (every slot)
+/// or a brace naming slots; per-slot braces in a table without
+/// `slots:`, an unknown slot name, a duplicate slot, an empty `slots:`
+/// map and a compound on a group-less table are typed grammar errors.
+/// The arms compile per (slot, combo) at expansion time, so the
+/// runtime cost stays the match dispatch the table always had.
 #[proc_macro]
 pub fn variants(input: TokenStream) -> TokenStream {
     let table = match parse_variants(input.clone()) {
@@ -391,6 +469,18 @@ fn parse_variant_classes(rest: TokenStream, field: &str) -> Result<VariantClasse
             "variants!: `{field}` expects a `[ {{ ... }} ]` list of entries"
         ));
     }
+    // The slot MAP: a brace group of `name: "classes"` pairs, one base
+    // per part of the component (the multi-part form).
+    if field == "slots" {
+        if let Some(TokenTree::Group(group)) = tokens.first() {
+            if group.delimiter() == Delimiter::Brace {
+                return parse_slot_map(group.stream(), field).map(VariantClasses::Slots);
+            }
+        }
+        return Err(format!(
+            "variants!: `{field}` expects a `{{ ... }}` map of slot bases"
+        ));
+    }
     if let Some(TokenTree::Group(group)) = tokens.first() {
         if group.delimiter() == Delimiter::Brace {
             let mut groups = Vec::new();
@@ -409,8 +499,21 @@ fn parse_variant_classes(rest: TokenStream, field: &str) -> Result<VariantClasse
                 let stream: TokenStream = value
                     .parse()
                     .map_err(|_| format!("variants!: `{field}.{key}` is not a string"))?;
-                let text = extract_single_string(&stream)?;
-                groups.push((key, text));
+                // A string value applies to every slot; a brace value
+                // is the per-slot map (only legal in a table that
+                // declares `slots:` — validated in the render, since
+                // the `slots:` field may arrive after this group).
+                let source =
+                    if let Some(TokenTree::Group(inner)) = stream.clone().into_iter().next() {
+                        if inner.delimiter() == Delimiter::Brace {
+                            ClassSource::PerSlot(parse_slot_map(inner.stream(), field)?)
+                        } else {
+                            ClassSource::All(extract_single_string(&stream)?)
+                        }
+                    } else {
+                        ClassSource::All(extract_single_string(&stream)?)
+                    };
+                groups.push((key, source));
                 pending = None;
             }
             if let Some(key) = pending {
@@ -430,8 +533,47 @@ fn parse_variant_classes(rest: TokenStream, field: &str) -> Result<VariantClasse
     ))
 }
 
+/// Parse a `slots: { ... }` map (or a per-slot brace value): each
+/// `name: "classes"` pair is one slot's base. Order is declaration
+/// order (the first slot is the slot enum's default); duplicate names
+/// and an empty map are grammar errors.
+fn parse_slot_map(stream: TokenStream, field: &str) -> Result<Vec<(String, String)>, String> {
+    let mut slots = Vec::new();
+    let mut pending: Option<String> = None;
+    for entry in split_top_level(stream, ',') {
+        let parts = split_first_colon(entry);
+        let Some((name, value)) = parts else {
+            continue;
+        };
+        let name = name.trim().to_string();
+        let value = value.trim();
+        if value.is_empty() {
+            pending = Some(name);
+            continue;
+        }
+        if slots.iter().any(|(slot, _)| slot == &name) {
+            return Err(format!("variants!: `{field}` declares `{name}` twice"));
+        }
+        let text = extract_single_string(
+            &value
+                .parse::<TokenStream>()
+                .map_err(|_| format!("variants!: `{field}.{name}` is not a string"))?,
+        )?;
+        slots.push((name, text));
+        pending = None;
+    }
+    if let Some(name) = pending {
+        return Err(format!("variants!: `{field}.{name}` has no class list"));
+    }
+    if slots.is_empty() {
+        return Err(format!("variants!: `{field}` map is empty"));
+    }
+    Ok(slots)
+}
+
 /// Parse a `compound: [ ... ]` list: each brace entry carries
-/// `group: key` constraint pairs plus the `class` list they apply to.
+/// `group: key` constraint pairs plus the `class` list they apply to
+/// (a string = every slot, a brace = the slots it names).
 fn parse_compound_entries(stream: TokenStream, field: &str) -> Result<VariantClasses, String> {
     let mut entries = Vec::new();
     for entry in split_top_level(stream, ',') {
@@ -445,7 +587,7 @@ fn parse_compound_entries(stream: TokenStream, field: &str) -> Result<VariantCla
             ));
         }
         let mut constraints = Vec::new();
-        let mut classes: Option<String> = None;
+        let mut classes: Option<ClassSource> = None;
         for pair in split_top_level(group.stream(), ',') {
             let Some((key, value)) = split_first_colon(pair) else {
                 continue;
@@ -453,12 +595,23 @@ fn parse_compound_entries(stream: TokenStream, field: &str) -> Result<VariantCla
             let key = key.trim().to_string();
             let value = value.trim().to_string();
             if key == "class" {
-                let text = extract_single_string(
-                    &value
-                        .parse::<TokenStream>()
-                        .map_err(|_| format!("variants!: `{field}.class` is not a string"))?,
-                )?;
-                classes = Some(text);
+                let parsed = value
+                    .parse::<TokenStream>()
+                    .map_err(|_| format!("variants!: `{field}.class` is not a string"))?;
+                // The two forms: a string rides every slot, a brace
+                // names the slots it rides (validated against the
+                // declared slots in the render).
+                let source =
+                    if let Some(TokenTree::Group(inner)) = parsed.clone().into_iter().next() {
+                        if inner.delimiter() == Delimiter::Brace {
+                            ClassSource::PerSlot(parse_slot_map(inner.stream(), field)?)
+                        } else {
+                            ClassSource::All(extract_single_string(&parsed)?)
+                        }
+                    } else {
+                        ClassSource::All(extract_single_string(&parsed)?)
+                    };
+                classes = Some(source);
             } else {
                 constraints.push((key, value));
             }
@@ -548,6 +701,26 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
     let mut output = String::new();
     let visibility = &table.visibility;
     let name = &table.name;
+
+    // The declared slots, if the table carries the multi-part form.
+    let slots: Option<&[(String, String)]> =
+        table.fields.iter().find_map(|field| match &field.classes {
+            VariantClasses::Slots(slots) => Some(slots.as_slice()),
+            _ => None,
+        });
+
+    let base: String = table
+        .fields
+        .iter()
+        .filter_map(|field| match &field.classes {
+            VariantClasses::Base(classes) => Some(classes.as_str()),
+            VariantClasses::Groups(_) | VariantClasses::Slots(_) | VariantClasses::Compound(_) => {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
     let mut enum_defs = String::new();
     let mut signature = Vec::new();
     let mut group_fields = Vec::new();
@@ -577,46 +750,20 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
         }
     }
 
-    let base: String = table
-        .fields
-        .iter()
-        .filter_map(|field| match &field.classes {
-            VariantClasses::Base(classes) => Some(classes.as_str()),
-            VariantClasses::Groups(_) | VariantClasses::Compound(_) => None,
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let params = signature.join(", ");
-    let mut arms = String::new();
-    if group_fields.is_empty() {
-        // A compound entry constrains GROUPS; a table without groups has
-        // nothing to constrain (the honest grammar error).
-        let compounds: Vec<&CompoundEntry> = table
-            .fields
-            .iter()
-            .filter_map(|field| match &field.classes {
-                VariantClasses::Compound(entries) => Some(entries.iter().collect::<Vec<_>>()),
-                _ => None,
-            })
-            .flatten()
-            .collect();
-        if let Some(entry) = compounds.first() {
-            let _ = entry;
-            return Err(
-                "variants!: `compound` constrains a group the table does not declare".into(),
-            );
-        }
-        let (program, _) = compile_literal(&base).map_err(|err| format!("variants!: {err}"))?;
-        let keywords = keyword_alignment(&program, &[]);
-        let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
-        output.push_str(&enum_defs);
-        output.push_str(&format!(
-            "{visibility}struct {name};\nimpl {name} {{\n    {visibility}fn style() -> ::aeolus_rt::StaticProgram {{\n        {tokens}\n    }}\n}}\n"
+    // The slot enum rides the group enums (default: the FIRST declared
+    // slot, the declaration order the map keeps).
+    let slot_enum = format!("{name}Slot");
+    if let Some(slots) = slots {
+        enum_defs.push_str(&format!(
+            "#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]\n{visibility}enum {slot_enum} {{\n"
         ));
-        return output
-            .parse()
-            .map_err(|_| "variants!: generated code did not parse".into());
+        for (index, (slot, _)) in slots.iter().enumerate() {
+            if index == 0 {
+                enum_defs.push_str("    #[default]\n");
+            }
+            enum_defs.push_str(&format!("    {},\n", pascal_case(slot)));
+        }
+        enum_defs.push_str("}\n");
     }
 
     // The compound entries, with every constraint validated against the
@@ -631,81 +778,228 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
         })
         .flatten()
         .collect();
-    for entry in &compounds {
-        for (group, key) in &entry.constraints {
-            let declared = group_fields.iter().any(|(field, _, groups)| {
-                field == group && groups.iter().any(|(group_key, _)| group_key == key)
-            });
-            if !declared {
+
+    // Per-slot braces name SLOTS: an unknown slot (or a brace in a
+    // table without `slots:`) is a grammar error, not a silent
+    // never-riding class list.
+    let no_slots: Vec<(String, String)> = Vec::new();
+    let declared_slots = slots.unwrap_or(&no_slots);
+    for (field, _, groups) in &group_fields {
+        for (key, source) in groups {
+            if let Some(unknown) = source.has_unknown_slot(declared_slots) {
                 return Err(format!(
-                    "variants!: `compound` constrains `{group}: {key}` — no such group key"
+                    "variants!: `{field}.{key}` names `{unknown}` — no such slot (per-slot \
+                     braces need a `slots:` table)"
                 ));
             }
         }
     }
-
-    let combos = cartesian(&group_fields);
-    for combo in combos {
-        let mut pattern = Vec::new();
-        let mut classes = base.clone();
-        for (field, enum_name, groups) in &group_fields {
-            let key = combo
-                .iter()
-                .find(|(field_name, _)| field_name == field)
-                .map(|(_, key)| key.as_str())
-                .unwrap_or_else(|| groups[0].0.as_str());
-            let class = groups
-                .iter()
-                .find(|(group_key, _)| group_key == key)
-                .map_or("", |(_, classes)| classes.as_str());
-            if !classes.is_empty() {
-                classes.push(' ');
-            }
-            classes.push_str(class);
-            pattern.push(format!("{enum_name}::{}", pascal_case(key)));
+    for entry in &compounds {
+        if let Some(unknown) = entry.classes.has_unknown_slot(declared_slots) {
+            return Err(format!(
+                "variants!: `compound` class names `{unknown}` — no such slot (per-slot braces \
+                 need a `slots:` table)"
+            ));
         }
-        // The compound entries whose constraints ALL match this combo
-        // fold their class list in — cva's semantics, resolved at
-        // expansion time (the arm already carries the whole class
-        // string).
-        for entry in &compounds {
-            if entry
-                .constraints
-                .iter()
-                .all(|(group, key)| combo.iter().any(|(f, k)| f == group && k == key))
-            {
-                if !classes.is_empty() {
-                    classes.push(' ');
-                }
-                classes.push_str(&entry.classes);
-            }
-        }
-        let (program, class_annotations) =
-            compile_literal(&classes).map_err(|err| format!("variants!: {err}"))?;
-        let keywords = keyword_alignment(&program, &class_annotations);
-        let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
-        arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
     }
 
-    output.push_str(&enum_defs);
-    output.push_str(&format!("{visibility}struct {name};\n"));
-    output.push_str(&format!(
-        "impl {name} {{\n    {visibility}fn style({params}) -> ::aeolus_rt::StaticProgram {{\n        match ("
-    ));
-    let names: Vec<&str> = group_fields
-        .iter()
-        .map(|(field, _, _)| field.as_str())
-        .collect();
-    output.push_str(&names.join(", "));
-    output.push_str(") {\n");
-    output.push_str(&arms);
-    output.push_str("        }\n    }\n}\n");
+    if group_fields.is_empty() {
+        // A compound entry constrains GROUPS; a table without groups has
+        // nothing to constrain (the honest grammar error).
+        if let Some(entry) = compounds.first() {
+            let _ = entry;
+            return Err(
+                "variants!: `compound` constrains a group the table does not declare".into(),
+            );
+        }
+        match slots {
+            Some(slots) => {
+                // The group-less slotted table: the dispatch is the
+                // slot alone, one frozen program per declared part.
+                let mut arms = String::new();
+                for (slot, classes) in slots {
+                    let full = join_classes(&base, classes);
+                    let (program, class_annotations) =
+                        compile_literal(&full).map_err(|err| format!("variants!: {err}"))?;
+                    let keywords = keyword_alignment(&program, &class_annotations);
+                    let tokens =
+                        aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
+                    arms.push_str(&format!(
+                        "        {slot_enum}::{} => {tokens},\n",
+                        pascal_case(slot)
+                    ));
+                }
+                output.push_str(&enum_defs);
+                output.push_str(&format!("{visibility}struct {name};\n"));
+                output.push_str(&format!(
+                    "impl {name} {{\n    {visibility}fn style_slot(slot: {slot_enum}) -> ::aeolus_rt::StaticProgram {{\n        match slot {{\n{arms}        }}\n    }}\n}}\n"
+                ));
+            }
+            None => {
+                let (program, _) =
+                    compile_literal(&base).map_err(|err| format!("variants!: {err}"))?;
+                let keywords = keyword_alignment(&program, &[]);
+                let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
+                output.push_str(&enum_defs);
+                output.push_str(&format!(
+                    "{visibility}struct {name};\nimpl {name} {{\n    {visibility}fn style() -> ::aeolus_rt::StaticProgram {{\n        {tokens}\n    }}\n}}\n"
+                ));
+            }
+        }
+        return output
+            .parse()
+            .map_err(|_| "variants!: generated code did not parse".into());
+    }
+
+    let combos = cartesian(&group_fields);
+    let mut arms = String::new();
+    match slots {
+        None => {
+            // The plain table: one arm per combo, the group sources'
+            // texts joined in declaration order (a per-slot brace was
+            // already refused above — no `slots:` to name).
+            for combo in combos {
+                let mut pattern = Vec::new();
+                let mut classes = base.clone();
+                for (field, enum_name, groups) in &group_fields {
+                    let key = combo
+                        .iter()
+                        .find(|(field_name, _)| field_name == field)
+                        .map(|(_, key)| key.as_str())
+                        .unwrap_or_else(|| groups[0].0.as_str());
+                    let class = groups
+                        .iter()
+                        .find(|(group_key, _)| group_key == key)
+                        .map_or("", |(_, source)| source.for_slot(""));
+                    if !classes.is_empty() {
+                        classes.push(' ');
+                    }
+                    classes.push_str(class);
+                    pattern.push(format!("{enum_name}::{}", pascal_case(key)));
+                }
+                // The compound entries whose constraints ALL match this combo
+                // fold their class list in — cva's semantics, resolved at
+                // expansion time (the arm already carries the whole class
+                // string).
+                for entry in &compounds {
+                    if entry
+                        .constraints
+                        .iter()
+                        .all(|(group, key)| combo.iter().any(|(f, k)| f == group && k == key))
+                    {
+                        let class = entry.classes.for_slot("");
+                        if !classes.is_empty() {
+                            classes.push(' ');
+                        }
+                        classes.push_str(class);
+                    }
+                }
+                let (program, class_annotations) =
+                    compile_literal(&classes).map_err(|err| format!("variants!: {err}"))?;
+                let keywords = keyword_alignment(&program, &class_annotations);
+                let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
+                arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
+            }
+
+            output.push_str(&enum_defs);
+            output.push_str(&format!("{visibility}struct {name};\n"));
+            let params = signature.join(", ");
+            output.push_str(&format!(
+                "impl {name} {{\n    {visibility}fn style({params}) -> ::aeolus_rt::StaticProgram {{\n        match ("
+            ));
+            let names: Vec<&str> = group_fields
+                .iter()
+                .map(|(field, _, _)| field.as_str())
+                .collect();
+            output.push_str(&names.join(", "));
+            output.push_str(") {\n");
+            output.push_str(&arms);
+            output.push_str("        }\n    }\n}\n");
+        }
+        Some(slots) => {
+            // The slotted table: the cartesian grows the SLOT
+            // dimension — one arm per (slot, combo), the classes that
+            // arm's slot sees (the shared base, the slot's own base,
+            // the group sources' texts FOR the slot, the compound
+            // entries' classes FOR the slot). The runtime cost stays
+            // the match dispatch the plain table always had.
+            for (slot, slot_base) in slots {
+                for combo in &combos {
+                    let mut pattern = vec![format!("{slot_enum}::{}", pascal_case(slot))];
+                    let mut classes = join_classes(&base, slot_base);
+                    for (field, enum_name, groups) in &group_fields {
+                        let key = combo
+                            .iter()
+                            .find(|(field_name, _)| field_name == field)
+                            .map(|(_, key)| key.as_str())
+                            .unwrap_or_else(|| groups[0].0.as_str());
+                        let class = groups
+                            .iter()
+                            .find(|(group_key, _)| group_key == key)
+                            .map_or("", |(_, source)| source.for_slot(slot));
+                        if !classes.is_empty() {
+                            classes.push(' ');
+                        }
+                        classes.push_str(class);
+                        pattern.push(format!("{enum_name}::{}", pascal_case(key)));
+                    }
+                    for entry in &compounds {
+                        if entry
+                            .constraints
+                            .iter()
+                            .all(|(group, key)| combo.iter().any(|(f, k)| f == group && k == key))
+                        {
+                            let class = entry.classes.for_slot(slot);
+                            if !classes.is_empty() {
+                                classes.push(' ');
+                            }
+                            classes.push_str(class);
+                        }
+                    }
+                    let (program, class_annotations) =
+                        compile_literal(&classes).map_err(|err| format!("variants!: {err}"))?;
+                    let keywords = keyword_alignment(&program, &class_annotations);
+                    let tokens =
+                        aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
+                    arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
+                }
+            }
+
+            let mut signature = signature;
+            signature.insert(0, format!("slot: {slot_enum}"));
+            let params = signature.join(", ");
+            output.push_str(&enum_defs);
+            output.push_str(&format!("{visibility}struct {name};\n"));
+            output.push_str(&format!(
+                "impl {name} {{\n    {visibility}fn style_slot({params}) -> ::aeolus_rt::StaticProgram {{\n        match ("
+            ));
+            let mut names = vec!["slot"];
+            names.extend(group_fields.iter().map(|(field, _, _)| field.as_str()));
+            output.push_str(&names.join(", "));
+            output.push_str(") {\n");
+            output.push_str(&arms);
+            output.push_str("        }\n    }\n}\n");
+        }
+    }
     output
         .parse()
         .map_err(|_| "variants!: generated code did not parse".into())
 }
 
-fn cartesian(fields: &[(String, String, Vec<(String, String)>)]) -> Vec<Vec<(String, String)>> {
+/// Join two class lists with one space, skipping empty sides (the arm
+/// assembly's whitespace discipline).
+fn join_classes(left: &str, right: &str) -> String {
+    match (left.is_empty(), right.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => right.to_string(),
+        (false, true) => left.to_string(),
+        (false, false) => format!("{left} {right}"),
+    }
+}
+
+fn cartesian(
+    fields: &[(String, String, Vec<(String, ClassSource)>)],
+) -> Vec<Vec<(String, String)>> {
     let mut rows = vec![Vec::new()];
     for (field, _, groups) in fields {
         let mut next = Vec::new();
