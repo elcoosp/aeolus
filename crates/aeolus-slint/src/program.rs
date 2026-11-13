@@ -1,10 +1,10 @@
 //! The V1 static-program lane (architecture plan §7's slint re-target —
 //! the sixth backend after GPUI, Floem, Xilem, Iced and egui): a
-//! `tw!`-compiled [`StaticProgram`](aeolus_rt::StaticProgram) resolves
-//! into the crate's own [`SlintStyle`](crate::SlintStyle) under the
+//! `tw!`-compiled [`StaticProgram`] resolves
+//! into the crate's own [`SlintStyle`] under the
 //! interp's [`Env`] probe semantics, so a frozen program feeds the SAME
-//! [`lower_resolved`](crate::lower_resolved) mapping the plan path's
-//! [`StyleBook`](crate::StyleBook) has driven since v0.1.
+//! [`lower_resolved`] mapping the plan path's
+//! `StyleBook` has driven since v0.1.
 //!
 //! The WALK itself lives IN the pipeline
 //! ([`aeolus_rt::program_style`], the compile crate's `style_walk`
@@ -12,18 +12,18 @@
 //! slot writer, so the string-side plan and the program-side style
 //! cannot drift apart. THIS module is the backend's honest surface:
 //!
-//! * the [`SlintProbe`](crate::SlintProbe)-to-[`Env`] conversion the
+//! * the [`SlintProbe`]-to-[`Env`] conversion the
 //!   element-state flags need ([`env_for_probe`], the lane's new seam —
 //!   the probe the parity path already keeps answers the walk's two rem
 //!   slots and the state flags),
 //! * the rem bake through [`REM_PX`] (§9's per-backend `rem_px`
 //!   constant, default 16),
-//! * the composition with [`lower_resolved`](crate::lower_resolved) —
-//!   the walk returns the v0.x [`ResolvedStyle`], the crate's own
+//! * the composition with [`lower_resolved`] —
+//!   the walk returns the v0.x `ResolvedStyle`, the crate's own
 //!   mapping folds it into the brush/property payload, so a capability
 //!   bump re-audits ONE backend mapping, and
 //! * the translation of the walk's typed [`StyleWalk`] report into the
-//!   crate's [`LoweringReport`](crate::LoweringReport) — every excluded
+//!   crate's [`LoweringReport`] — every excluded
 //!   layer, unmapped longhand and theme refusal lands there beside the
 //!   lowering's own drops, never a silent drop.
 
@@ -43,7 +43,7 @@ use crate::{LoweringReport, SlintProbe, SlintStyle, lower_resolved};
 pub const REM_PX: f32 = 16.0;
 
 /// Resolve one compiled static program into a
-/// [`SlintStyle`](crate::SlintStyle) under the element's probe [`Env`] —
+/// [`SlintStyle`] under the element's probe [`Env`] —
 /// the §7 re-target's lane, the program form the `tw!` macro freezes
 /// and [`ClassCell`](aeolus_rt::ClassCell) pools.
 ///
@@ -74,17 +74,17 @@ pub fn lower_program_with(
 }
 
 /// The element-state probe conversion: the
-/// [`SlintProbe`](crate::SlintProbe) the app keeps for the parity path —
+/// [`SlintProbe`] the app keeps for the parity path —
 /// the same struct the `TouchArea`/`FocusScope` flags feed
 /// (`has-hover`, `pressed`, `enabled`, `has-focus`) — into the walk's
 /// probe [`Env`]. Widths bake through [`REM_PX`]
 /// (`width`/`container_width` are px), the focus flag feeds BOTH
 /// `focus` and `focus_visible` (the plan path's documented
 /// normalization: Slint's `has-focus` carries no focus-visible
-/// distinction and [`SlintProbe`](crate::SlintProbe) maps `State::Focus`
+/// distinction and [`SlintProbe`] maps `State::Focus`
 /// and `State::FocusVisible` onto the same bool), the checked flag
 /// rides (the view state `SlintProbe` already answers), and the
-/// conditions [`SlintProbe`](crate::SlintProbe) cannot answer
+/// conditions [`SlintProbe`] cannot answer
 /// (focus-within, visited, placeholder, group/peer) honestly stay off —
 /// the probe's own `related` answers "no", the same semantics CSS has
 /// when a selector does not match.
