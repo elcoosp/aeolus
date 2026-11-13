@@ -304,6 +304,15 @@ pub fn parse_named_variant(name: &str) -> NamedVariant<'_> {
                 }
                 let bare = rest.split('/').next().unwrap_or(rest);
                 if let Some(bp) = Breakpoint::from_name(bare) {
+                    // `@md/name`: the label NAMES the container — it
+                    // rides the atom's own `name` field through the
+                    // custom path's split, the same route the
+                    // unknown-size spellings (`@4xl/name`) already take.
+                    // Dropping it here merged two different containers
+                    // into one condition.
+                    if rest.contains('/') {
+                        return NamedVariant::Custom(other);
+                    }
                     return NamedVariant::Container(bp);
                 }
                 // @min-[400px], @4xl, named containers — Custom, resolved by
