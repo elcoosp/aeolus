@@ -46,3 +46,15 @@ fn compile_probe_fold(bencher: Bencher) {
     let config = Config::default();
     bencher.bench(|| aeolus_compile::compile(PROBES, &config).expect("compiles"));
 }
+
+/// The container fold, named and unnamed (the `@md/name` spellings the
+/// variant fold routes onto the typed `Cond` surface): the name interns
+/// into the leak pool per folded segment, the same cost the probe
+/// payloads pay — the interesting number is again the COLD fold.
+const CONTAINERS: &str = "@md:flex @md/card:w-64 @max-lg/sidebar:hidden";
+
+#[divan::bench]
+fn compile_container_fold(bencher: Bencher) {
+    let config = Config::default();
+    bencher.bench(|| aeolus_compile::compile(CONTAINERS, &config).expect("compiles"));
+}
