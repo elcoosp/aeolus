@@ -595,18 +595,22 @@ fn run_plan(
 /// the row table's keyword text resolving the `Val::Kw` slots the bare
 /// IR cannot. Boundary notes accumulate un-stamped — the walk stamps
 /// the candidate's span and class text on them.
-struct PlanWriter {
-    config: Config,
-    notes: Vec<PlanNoteKind>,
+///
+/// Crate-visible: the program lane's style fold (`style_walk`) writes
+/// its fired layers through this SAME writer, so the string-side plan
+/// and the program-side style cannot drift apart on slot semantics.
+pub(crate) struct PlanWriter {
+    pub(crate) config: Config,
+    pub(crate) notes: Vec<PlanNoteKind>,
     /// The candidate's font size in px, when the composite's first
     /// target lowered (`text-sm`'s 14px) — the line-height ratio's
     /// multiplier (the v0.x `text-sm` → 20px semantics).
-    font_size_px: Option<f32>,
+    pub(crate) font_size_px: Option<f32>,
     /// The candidate's gap pair (the v0.x oracle's split — both axes
     /// equal → the `Gap` slot, a single axis → `GapAxes` — needs the
     /// pair, so the gap writes defer to `finish`).
-    gap_row: Option<f32>,
-    gap_col: Option<f32>,
+    pub(crate) gap_row: Option<f32>,
+    pub(crate) gap_col: Option<f32>,
 }
 
 impl PlanWriter {
@@ -614,8 +618,8 @@ impl PlanWriter {
     /// keyword text for `Val::Kw` slots (the annotation pass),
     /// `none_spelling` the accepted-suffix flag for the per-prop forms
     /// the row text cannot distinguish (`outline-none` rides the width
-    /// row's `0px`).
-    fn write(
+    /// row's `0px`). Crate-visible: shared with the style fold.
+    pub(crate) fn write(
         &mut self,
         style: &mut ResolvedStyle,
         prop: Prop,
@@ -1353,8 +1357,10 @@ impl PlanWriter {
 
     /// The candidate-finish pass: the gap pair's slot split (the v0.x
     /// oracle's own shape — `gap-2` fills the `Gap` slot, `gap-x-4` the
-    /// axes slot, and the two COEXIST in one plan).
-    fn finish(&mut self, style: &mut ResolvedStyle) {
+    /// axes slot, and the two COEXIST in one plan). Crate-visible:
+    /// shared with the style fold (per fired layer, the bridge's
+    /// per-candidate semantics).
+    pub(crate) fn finish(&mut self, style: &mut ResolvedStyle) {
         match (self.gap_row, self.gap_col) {
             (Some(row), Some(col)) if row == col => style.gap = Some(aeolus_core::Gap(row)),
             (row, col) => {
