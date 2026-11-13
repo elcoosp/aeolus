@@ -256,8 +256,17 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         }
         Cond::Bp(bp) | Cond::Min(bp) => env.viewport_rem >= bp.rem(),
         Cond::Max(bp) => env.viewport_rem < bp.rem(),
-        Cond::Container(bp) => env.container_rem.is_some_and(|rem| rem >= bp.rem()),
-        Cond::MaxContainer(bp) => env.container_rem.is_some_and(|rem| rem < bp.rem()),
+        // The container queries: the unnamed form answers from the
+        // nearest eligible container the Env carries; a NAMED container
+        // (`@md/card:`) needs THAT container's width — the frame Env
+        // answers the nearest-container question only, so the named
+        // layer stays quiet here (the interp reports it as
+        // `ContainerUnqueried`; the walk has no note channel).
+        Cond::Container { bp, name: None } => env.container_rem.is_some_and(|rem| rem >= bp.rem()),
+        Cond::MaxContainer { bp, name: None } => {
+            env.container_rem.is_some_and(|rem| rem < bp.rem())
+        }
+        Cond::Container { name: Some(_), .. } | Cond::MaxContainer { name: Some(_), .. } => false,
     }
 }
 
