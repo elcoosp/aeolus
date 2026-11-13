@@ -227,12 +227,66 @@ pub const OUTLINE_NONE_ROW: UtilityRow = row(
     "utilities.ts outline (none arm)",
 );
 
+// -- The motion family's shared texts (the plan P6 row) ---------------------
+//
+// The keyword texts are the v4 default theme's own values — the same
+// strings the v0.x oracle renders (`transition_property_list`'s property
+// lists, the `--ease-*`/`--animate-*` tokens) — one source of truth the
+// CSS arm renders verbatim and the plan bridge maps back onto the v0.x
+// `Transition`/`Animation` extras. `pub`: the compile seam's plan bridge
+// matches the texts (the gradient direction's `linear_gradient_angle`
+// precedent — one source, several readers).
+
+/// `transition` (bare) — the v4 default set's property list, the exact
+/// string the v0.x oracle renders for `TransitionSet::Default`.
+pub const TRANSITION_DEFAULT_SET: &str = "color, background-color, border-color, outline-color, \
+     text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, \
+     --tw-gradient-to, opacity, box-shadow, transform, translate, scale, rotate, filter, \
+     -webkit-backdrop-filter, backdrop-filter, display, content-visibility, overlay, \
+     pointer-events";
+
+/// The `transition-{suffix}` property lists — the v4 set families in
+/// keyword-slot order (`transition-colors` → slot 1), the exact strings
+/// the v0.x oracle renders per `TransitionSet`.
+pub const TRANSITION_SETS: &[(&str, &str)] = &[
+    ("all", "all"),
+    (
+        "colors",
+        "color, background-color, border-color, outline-color, text-decoration-color, fill, \
+         stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
+    ),
+    ("opacity", "opacity"),
+    ("shadow", "box-shadow"),
+    ("transform", "transform, translate, scale, rotate"),
+    ("none", "none"),
+];
+
+/// The `ease-{suffix}` timing curves — the v4 default theme's `--ease-*`
+/// values in keyword-slot order (`ease-in` → slot 1).
+pub const EASE_CURVES: &[(&str, &str)] = &[
+    ("linear", "linear"),
+    ("in", "cubic-bezier(0.4, 0, 1, 1)"),
+    ("out", "cubic-bezier(0, 0, 0.2, 1)"),
+    ("in-out", "cubic-bezier(0.4, 0, 0.2, 1)"),
+];
+
+/// The `animate-{suffix}` presets — the v4 default theme's `--animate-*`
+/// shorthands in keyword-slot order (`animate-spin` → slot 0), the text
+/// the plan bridge parses into the v0.x `Animation` extras and the CSS
+/// arm renders verbatim.
+pub const ANIMATE_PRESETS: &[(&str, &str)] = &[
+    ("spin", "spin 1s linear infinite"),
+    ("ping", "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite"),
+    ("pulse", "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite"),
+    ("bounce", "bounce 1s infinite"),
+    ("none", "none"),
+];
+
 // -- The registry ---------------------------------------------------------
 
 /// Every registry row, in root order. The P1 port grew to **184 rows**
-/// in-tree: 178 literal `row(...)` entries plus 6 shared row consts
-/// (`GROW_BARE_ROW`, `SHRINK_BARE_ROW`, `OUTLINE_NONE_ROW` and the
-/// three-part `truncate` composite) — the audit count
+/// in-tree (189 since the P6 motion layer: the transition quartet and
+/// the animation root appended at the cascade tail) — the audit count
 /// `registry::generate_docs` renders from these rows. The plan's "top
 /// ~150" was the floor, not the ceiling.
 pub static ROWS: &[UtilityRow] = &[
@@ -1727,5 +1781,58 @@ pub static ROWS: &[UtilityRow] = &[
         "stroke",
         false,
         "utilities.ts stroke (registry-local group; oracle None)",
+    ),
+    // ---- motion (the plan P6 row; the interaction cascade tail) ------------
+    //
+    // The `transition-*`/`duration-*`/`ease-*`/`delay-*`/`animate-*`
+    // families. The tw_merge oracle leaves ALL five roots ungrouped
+    // (`collision_group` returns `None`), so each carries a
+    // registry-local group name, marked in its v4 reference — the
+    // transforms/truncate/fill/stroke precedent. The keyword texts are
+    // the v4 default theme's own values (the same strings the v0.x
+    // oracle renders: `transition_property_list`'s property lists, the
+    // `--ease-*`/`--animate-*` tokens) — one source of truth the CSS
+    // arm renders and the plan bridge maps back onto the v0.x
+    // `Transition`/`Animation` extras. The texts live in the pub consts
+    // above [`ROWS`].
+    row(
+        "transition",
+        any(&[bare(TRANSITION_DEFAULT_SET), kw(TRANSITION_SETS)]),
+        &[Prop::TransitionProperty],
+        "transition",
+        false,
+        "utilities.ts transition (registry-local group; oracle None)",
+    ),
+    row(
+        "duration",
+        num(),
+        &[Prop::TransitionDuration],
+        "duration",
+        false,
+        "utilities.ts transition-duration (registry-local group; oracle None)",
+    ),
+    row(
+        "delay",
+        num(),
+        &[Prop::TransitionDelay],
+        "delay",
+        false,
+        "utilities.ts transition-delay (registry-local group; oracle None)",
+    ),
+    row(
+        "ease",
+        kw(EASE_CURVES),
+        &[Prop::TransitionTimingFunction],
+        "ease",
+        false,
+        "utilities.ts transition-timing-function (registry-local group; oracle None)",
+    ),
+    row(
+        "animate",
+        kw(ANIMATE_PRESETS),
+        &[Prop::Animation],
+        "animate",
+        false,
+        "utilities.ts animation (registry-local group; oracle None)",
     ),
 ];
