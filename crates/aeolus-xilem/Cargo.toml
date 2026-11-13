@@ -25,6 +25,13 @@ aeolus-compile = { path = "../aeolus-compile" }
 aeolus-theme = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 masonry_testing = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
+# The program lane's microbenchmark (divan, stable — the workspace bench
+# idiom), joining the Floem/Iced/egui lanes' own.
+divan = "0.1"
+
+[[bench]]
+name = "program"
+harness = false
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
