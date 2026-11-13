@@ -85,9 +85,10 @@ use aeolus_core::ast::{PseudoElement, State};
 use aeolus_core::cond::{Atom, Cond as V0Cond, Rule, Test};
 use aeolus_core::plan::{
     AlignItems, AutoEdges, BorderStyle as V0BorderStyle, BorderWidth, ContentAlign,
-    Cursor as V0Cursor, Display as V0Display, FlexDirection as V0FlexDirection,
-    JustifyContent as V0JustifyContent, Overflow, OverflowKind, Padding, Position as V0Position,
-    ResolvedStyle, SizedValue, StylePlan, VariantCondition, Visibility as V0Visibility,
+    Cursor as V0Cursor, Display as V0Display, FlexDirection as V0FlexDirection, Gradient,
+    GradientStop, GradientStops, JustifyContent as V0JustifyContent, Overflow, OverflowKind,
+    Padding, Position as V0Position, ResolvedStyle, SizedValue, StylePlan, VariantCondition,
+    Visibility as V0Visibility,
 };
 use aeolus_core::{Breakpoint, Color, PointerEvents, TextProperty, TextValue};
 use aeolus_data::registry::lookup_detailed;
@@ -371,6 +372,18 @@ fn run_plan(
         notes: Vec::new(),
     };
 
+    // The gradient parts one BUCKET accumulates across candidates (the
+    // v0.x oracle's own model: within one bucket the LAST shape wins,
+    // the LAST stop colour per edge wins, position patches apply to
+    // the edge they name, and stops without a shape compose nothing).
+    // The string path writes class-by-class through per-candidate
+    // writers, so each writer ADOPTS the running parts and the
+    // accumulator takes them back — a `from-*` before or after its
+    // `bg-linear-to-*` composes the same gradient. A bucket change
+    // (base → hover) resets it, the per-bucket semantics.
+    let mut gradient = GradParts::default();
+    let mut gradient_bucket: Option<Cond> = None;
+
     for candidate in &candidates {
         if candidate.important {
             sheet.diagnostics.push(Diagnostic::new(
@@ -552,13 +565,25 @@ fn run_plan(
         // ring-red-500` is ONE ring carrying both), so the bridge
         // writes into the same bucket the fold names. Unmappable
         // `has-*` fragments land in the notes.
+        if gradient_bucket != Some(cond) {
+            gradient = GradParts::default();
+            gradient_bucket = Some(cond);
+        }
         let mut writer = PlanWriter {
             config,
             notes: Vec::new(),
             font_size_px: None,
             gap_row: None,
             gap_col: None,
+            gradient_shape: None,
+            gradient_from: None,
+            gradient_via: None,
+            gradient_to: None,
+            gradient_from_pos: None,
+            gradient_via_pos: None,
+            gradient_to_pos: None,
         };
+        writer.adopt_gradient(gradient);
         {
             let notes = &mut sheet.notes;
             bucket(
@@ -575,6 +600,11 @@ fn run_plan(
                 },
             );
         }
+        // The parts ride on: the next candidate in this bucket adopts
+        // them (the direction class composes the stops another class
+        // wrote, wherever the source order put it). Taken before the
+        // notes flush (the notes move out of the writer).
+        gradient = writer.take_gradient();
         for kind in writer.notes {
             sheet.notes.push(PlanNote {
                 span: candidate.span,
@@ -611,6 +641,71 @@ pub(crate) struct PlanWriter {
     /// pair, so the gap writes defer to `finish`).
     pub(crate) gap_row: Option<f32>,
     pub(crate) gap_col: Option<f32>,
+    /// The gradient machinery one candidate accumulates: the direction
+    /// row's shape (`bg-linear-to-r`'s composed text, the `bg-none`
+    /// clear, the radial/conic texts) and the three stop slots with
+    /// their position patches. The stop classes and the direction class
+    /// are SEPARATE candidates, so the v0.x slot's composed form
+    /// assembles at `finish` (the same defer the gap pair takes).
+    pub(crate) gradient_shape: Option<GradShape>,
+    pub(crate) gradient_from: Option<Color>,
+    pub(crate) gradient_via: Option<Color>,
+    pub(crate) gradient_to: Option<Color>,
+    pub(crate) gradient_from_pos: Option<f32>,
+    pub(crate) gradient_via_pos: Option<f32>,
+    pub(crate) gradient_to_pos: Option<f32>,
+}
+
+/// The gradient row's shape, parsed from the composed row text (the
+/// annotation the bare `Val::Kw` slot cannot recover — the same read
+/// the interp and the emit arms run).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum GradShape {
+    /// `bg-linear-to-*` — the CSS angle (0° = to top, clockwise).
+    Linear { angle_deg: f32 },
+    /// `bg-radial`.
+    Radial,
+    /// `bg-conic*` (the v4 `from` angle is 0 in the row's composed text).
+    Conic,
+    /// `bg-none` — the explicit clear.
+    None,
+}
+
+/// The gradient parts one bucket accumulates (the v0.x oracle's
+/// per-bucket, last-wins model — see `run_plan`'s accumulator).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct GradParts {
+    pub(crate) shape: Option<GradShape>,
+    pub(crate) from: Option<Color>,
+    pub(crate) via: Option<Color>,
+    pub(crate) to: Option<Color>,
+    pub(crate) from_pos: Option<f32>,
+    pub(crate) via_pos: Option<f32>,
+    pub(crate) to_pos: Option<f32>,
+}
+
+/// The CSS angle of a `linear-gradient(to <edge>, …)` row text (0° = to
+/// top, clockwise — the v0.x `Gradient::Linear` convention and GPUI's
+/// own). `None` when the text is not a composed direction (the
+/// placeholder/conic/radial texts and unknown forms). Public: the ONE
+/// read of the direction row's composed text — the plan bridge, the
+/// codegen targets' capability gates and the runtime walks all parse
+/// the same annotation, so the convention has one source of truth.
+pub fn linear_gradient_angle(text: &str) -> Option<f32> {
+    let inner = text.strip_prefix("linear-gradient(")?;
+    let direction = inner.split(',').next()?.trim();
+    let edge = direction.strip_prefix("to ")?;
+    Some(match edge {
+        "top" => 0.0,
+        "top right" => 45.0,
+        "right" => 90.0,
+        "bottom right" => 135.0,
+        "bottom" => 180.0,
+        "bottom left" => 225.0,
+        "left" => 270.0,
+        "top left" => 315.0,
+        _ => return None,
+    })
 }
 
 impl PlanWriter {
@@ -1217,7 +1312,49 @@ impl PlanWriter {
                 self.notes.push(PlanNoteKind::ShadowPreset);
             }
             Prop::BackgroundImage => {
-                self.notes.push(PlanNoteKind::GradientRow);
+                // The direction row's composed text parses into the
+                // shape the v0.x slot composes; the placeholder and
+                // unknown texts keep the typed note (the honest
+                // boundary the note has always named). The arbitrary
+                // forms (a non-Kw value on the row) ride the note too —
+                // the row's own `arb()` arm lowers them, the v0.x text
+                // slot cannot carry one.
+                if let Some(text) = kw {
+                    if text == "none" {
+                        self.gradient_shape = Some(GradShape::None);
+                    } else if let Some(angle_deg) = linear_gradient_angle(text) {
+                        self.gradient_shape = Some(GradShape::Linear { angle_deg });
+                    } else if text == "var(--tw-gradient-radial)" {
+                        self.gradient_shape = Some(GradShape::Radial);
+                    } else if text == "var(--tw-gradient-conic)" {
+                        self.gradient_shape = Some(GradShape::Conic);
+                    } else {
+                        self.notes.push(PlanNoteKind::GradientRow);
+                    }
+                } else {
+                    self.notes.push(PlanNoteKind::GradientRow);
+                }
+            }
+            Prop::GradientFrom | Prop::GradientVia | Prop::GradientTo => {
+                if let Val::Rgba(rgba) = val {
+                    let color = oklab(rgba);
+                    match prop {
+                        Prop::GradientFrom => self.gradient_from = Some(color),
+                        Prop::GradientVia => self.gradient_via = Some(color),
+                        _ => self.gradient_to = Some(color),
+                    }
+                } else {
+                    self.notes.push(PlanNoteKind::SlotUnsupported { prop });
+                }
+            }
+            Prop::GradientFromPosition | Prop::GradientViaPosition | Prop::GradientToPosition => {
+                if let Val::Pct(pct) = val {
+                    match prop {
+                        Prop::GradientFromPosition => self.gradient_from_pos = Some(pct),
+                        Prop::GradientViaPosition => self.gradient_via_pos = Some(pct),
+                        _ => self.gradient_to_pos = Some(pct),
+                    }
+                }
             }
             // ---- typography (the text property vec) -------------------
             Prop::FontSize => {
@@ -1357,9 +1494,11 @@ impl PlanWriter {
 
     /// The candidate-finish pass: the gap pair's slot split (the v0.x
     /// oracle's own shape — `gap-2` fills the `Gap` slot, `gap-x-4` the
-    /// axes slot, and the two COEXIST in one plan). Crate-visible:
-    /// shared with the style fold (per fired layer, the bridge's
-    /// per-candidate semantics).
+    /// axes slot, and the two COEXIST in one plan) and the gradient's
+    /// composed form (the direction row's shape over the stop slots,
+    /// v4's `@property` transparent initial for a missing edge colour).
+    /// Crate-visible: shared with the style fold (per fired layer, the
+    /// bridge's per-candidate semantics).
     pub(crate) fn finish(&mut self, style: &mut ResolvedStyle) {
         match (self.gap_row, self.gap_col) {
             (Some(row), Some(col)) if row == col => style.gap = Some(aeolus_core::Gap(row)),
@@ -1368,6 +1507,59 @@ impl PlanWriter {
                     style.extras.gap_axes = Some(aeolus_core::GapAxes { row, col });
                 }
             }
+        }
+        if let Some(shape) = self.gradient_shape {
+            let stops = GradientStops {
+                from: GradientStop {
+                    color: self.gradient_from.unwrap_or(Color::TRANSPARENT),
+                    pos_pct: self.gradient_from_pos,
+                },
+                via: self.gradient_via.map(|color| GradientStop {
+                    color,
+                    pos_pct: self.gradient_via_pos,
+                }),
+                to: GradientStop {
+                    color: self.gradient_to.unwrap_or(Color::TRANSPARENT),
+                    pos_pct: self.gradient_to_pos,
+                },
+            };
+            style.background_gradient = Some(match shape {
+                GradShape::Linear { angle_deg } => Gradient::Linear { angle_deg, stops },
+                GradShape::Radial => Gradient::Radial { stops },
+                GradShape::Conic => Gradient::Conic {
+                    from_angle_deg: 0.0,
+                    stops,
+                },
+                GradShape::None => Gradient::None,
+            });
+        }
+    }
+
+    // ---- the gradient parts (the per-bucket accumulator) ----------------
+
+    /// Adopt the bucket's running parts (the previous candidates' shape
+    /// and stops) into this candidate's writer.
+    pub(crate) fn adopt_gradient(&mut self, parts: GradParts) {
+        self.gradient_shape = parts.shape;
+        self.gradient_from = parts.from;
+        self.gradient_via = parts.via;
+        self.gradient_to = parts.to;
+        self.gradient_from_pos = parts.from_pos;
+        self.gradient_via_pos = parts.via_pos;
+        self.gradient_to_pos = parts.to_pos;
+    }
+
+    /// Take the accumulated parts back out (the writer's own parts this
+    /// candidate added, over the adopted ones — last write wins).
+    pub(crate) fn take_gradient(&self) -> GradParts {
+        GradParts {
+            shape: self.gradient_shape,
+            from: self.gradient_from,
+            via: self.gradient_via,
+            to: self.gradient_to,
+            from_pos: self.gradient_from_pos,
+            via_pos: self.gradient_via_pos,
+            to_pos: self.gradient_to_pos,
         }
     }
 
