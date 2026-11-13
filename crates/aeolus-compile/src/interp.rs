@@ -119,9 +119,13 @@ pub struct Env {
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
-    /// The nearest eligible container's width in rem
-    /// ([`Cond::Container`]/[`Cond::MaxContainer`]). `None` — no
+    /// The nearest eligible container's width in rem (the UNNAMED
+    /// [`Cond::Container`]/[`Cond::MaxContainer`] forms). `None` — no
     /// container context — means those layers never match, reported.
+    /// A NAMED container query (`@md/card:`) needs THAT container's
+    /// width, which one nearest-container slot cannot answer — those
+    /// layers report [`InterpNote::ContainerUnqueried`] (the named
+    /// payload in the note) whatever this field carries.
     pub container_rem: Option<f32>,
 }
 
@@ -563,13 +567,19 @@ pub(crate) fn decide(
         Cond::PeerFocus => fires(env.peer_focus),
         Cond::Bp(bp) | Cond::Min(bp) => fires(env.viewport_rem >= bp.rem()),
         Cond::Max(bp) => fires(env.viewport_rem < bp.rem()),
-        Cond::Container(bp) => match env.container_rem {
-            Some(width) => fires(width >= bp.rem()),
-            None => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
+        Cond::Container { bp, name } => match (name, env.container_rem) {
+            // The unnamed question answers from the nearest eligible
+            // container the Env carries. A NAMED container query needs
+            // THAT container's width — the Env answers the
+            // nearest-container question only, so the named layer
+            // reports (the honest boundary; the note says which
+            // container went unqueried).
+            (None, Some(width)) => fires(width >= bp.rem()),
+            _ => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
         },
-        Cond::MaxContainer(bp) => match env.container_rem {
-            Some(width) => fires(width < bp.rem()),
-            None => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
+        Cond::MaxContainer { bp, name } => match (name, env.container_rem) {
+            (None, Some(width)) => fires(width < bp.rem()),
+            _ => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
         },
         // The element-own attribute probes answer through the seam
         // (plan §3.5's typed state bits): presence fires on any value,
