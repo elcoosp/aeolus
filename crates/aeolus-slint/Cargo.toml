@@ -14,6 +14,9 @@ publish = false
 
 [dependencies]
 aeolus-core = { path = "../aeolus-core" }
+# The V1 runtime seam: the `StaticProgram`/`Env`/`AttrProbe`/`TokenSource`
+# types the program lane walks.
+aeolus-rt = { path = "../aeolus-rt" }
 # The framework's stable facade (`Brush`/`Color` at the crate root), with
 # every windowing backend and renderer feature off: this backend is pure
 # type-level lowering and compiles headless. Apps depend on `slint`
@@ -38,6 +41,21 @@ slint-interpreter = { version = "1.18", default-features = false, features = [
 ] }
 # `Compiler::build_from_source` is async; the tests block on it.
 futures = "0.3"
+# The V1 compile seam builds the static programs the program lane walks,
+# and the plan bridge feeds the differential pins.
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-theme = { workspace = true }
+# The program lane's microbenchmark (divan, stable — the workspace bench
+# idiom).
+divan = "0.1"
+
+# The V1 static-program lane's microbenchmark: the per-frame cost of
+# walking a `tw!`-compiled `StaticProgram` into a `SlintStyle` under one
+# probe `Env`, with the plan path's own resolution as the differential
+# baseline. Headless like the crate itself.
+[[bench]]
+name = "program"
+harness = false
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
