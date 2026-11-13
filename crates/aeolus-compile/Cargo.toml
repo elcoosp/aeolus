@@ -125,3 +125,18 @@ workspace = true
 [[bench]]
 name = "sort"
 harness = false
+
+# The project-build seam's benchmarks (§2's approach C / the P6 row's
+# `cargo aeolus build`): the extraction walk, the themed global
+# artifact over the synthetic multi-file project, the themeless floor.
+[[bench]]
+name = "build"
+harness = false
+
+# The IR-level overlay seam's benchmarks (§3.6's surface (2)
+# non-compile-time path): the base ⊕ override composition over the
+# shadcn Button surface, the frozen⊕runtime shape, and the `cn` fold
+# that delegate-walks the same seam.
+[[bench]]
+name = "overlay"
+harness = false
