@@ -275,6 +275,19 @@ struct VariantField {
 enum VariantClasses {
     Base(String),
     Groups(Vec<(String, String)>),
+    /// `compound: [ ... ]` — the cva compound-variant entries (plan §9's
+    /// open question, decided): extra classes applied to every combo
+    /// that matches ALL of an entry's constraints, resolved at EXPANSION
+    /// time (the entries fold into the cartesian match arms the render
+    /// already emits — zero runtime cost beyond the dispatch).
+    Compound(Vec<CompoundEntry>),
+}
+
+/// One `compound:` entry: the group-key constraints (ALL must match the
+/// selection) and the class list they ride.
+struct CompoundEntry {
+    constraints: Vec<(String, String)>,
+    classes: String,
 }
 
 /// Compile a closed-world variant table (the shadcn/cva surface):
@@ -366,6 +379,18 @@ fn parse_variants(input: TokenStream) -> Result<VariantTable, String> {
 
 fn parse_variant_classes(rest: TokenStream, field: &str) -> Result<VariantClasses, String> {
     let tokens: Vec<TokenTree> = rest.clone().into_iter().collect();
+    // The compound LIST: a bracket group of brace entries, each naming
+    // group-key constraints plus the `class` list they ride.
+    if field == "compound" {
+        if let Some(TokenTree::Group(group)) = tokens.first() {
+            if group.delimiter() == Delimiter::Bracket {
+                return parse_compound_entries(group.stream(), field);
+            }
+        }
+        return Err(format!(
+            "variants!: `{field}` expects a `[ {{ ... }} ]` list of entries"
+        ));
+    }
     if let Some(TokenTree::Group(group)) = tokens.first() {
         if group.delimiter() == Delimiter::Brace {
             let mut groups = Vec::new();
@@ -403,6 +428,58 @@ fn parse_variant_classes(rest: TokenStream, field: &str) -> Result<VariantClasse
     Err(format!(
         "variants!: `{field}` expects a string or `{{ ... }}`"
     ))
+}
+
+/// Parse a `compound: [ ... ]` list: each brace entry carries
+/// `group: key` constraint pairs plus the `class` list they apply to.
+fn parse_compound_entries(stream: TokenStream, field: &str) -> Result<VariantClasses, String> {
+    let mut entries = Vec::new();
+    for entry in split_top_level(stream, ',') {
+        let tokens: Vec<TokenTree> = entry.into_iter().collect();
+        let Some(TokenTree::Group(group)) = tokens.first() else {
+            continue;
+        };
+        if group.delimiter() != Delimiter::Brace {
+            return Err(format!(
+                "variants!: `{field}` entries are brace groups (`{{ variant: key, class: \"…\" }}`)"
+            ));
+        }
+        let mut constraints = Vec::new();
+        let mut classes: Option<String> = None;
+        for pair in split_top_level(group.stream(), ',') {
+            let Some((key, value)) = split_first_colon(pair) else {
+                continue;
+            };
+            let key = key.trim().to_string();
+            let value = value.trim().to_string();
+            if key == "class" {
+                let text = extract_single_string(
+                    &value
+                        .parse::<TokenStream>()
+                        .map_err(|_| format!("variants!: `{field}.class` is not a string"))?,
+                )?;
+                classes = Some(text);
+            } else {
+                constraints.push((key, value));
+            }
+        }
+        if constraints.is_empty() {
+            return Err(format!(
+                "variants!: `{field}` entry constrains nothing (name at least one group key)"
+            ));
+        }
+        let Some(classes) = classes else {
+            return Err(format!("variants!: `{field}` entry has no class list"));
+        };
+        entries.push(CompoundEntry {
+            constraints,
+            classes,
+        });
+    }
+    if entries.is_empty() {
+        return Err(format!("variants!: `{field}` list is empty"));
+    }
+    Ok(VariantClasses::Compound(entries))
 }
 
 fn split_top_level(stream: TokenStream, separator: char) -> Vec<TokenStream> {
@@ -505,7 +582,7 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
         .iter()
         .filter_map(|field| match &field.classes {
             VariantClasses::Base(classes) => Some(classes.as_str()),
-            VariantClasses::Groups(_) => None,
+            VariantClasses::Groups(_) | VariantClasses::Compound(_) => None,
         })
         .collect::<Vec<_>>()
         .join(" ");
@@ -513,6 +590,23 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
     let params = signature.join(", ");
     let mut arms = String::new();
     if group_fields.is_empty() {
+        // A compound entry constrains GROUPS; a table without groups has
+        // nothing to constrain (the honest grammar error).
+        let compounds: Vec<&CompoundEntry> = table
+            .fields
+            .iter()
+            .filter_map(|field| match &field.classes {
+                VariantClasses::Compound(entries) => Some(entries.iter().collect::<Vec<_>>()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        if let Some(entry) = compounds.first() {
+            let _ = entry;
+            return Err(
+                "variants!: `compound` constrains a group the table does not declare".into(),
+            );
+        }
         let (program, _) = compile_literal(&base).map_err(|err| format!("variants!: {err}"))?;
         let keywords = keyword_alignment(&program, &[]);
         let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
@@ -523,6 +617,31 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
         return output
             .parse()
             .map_err(|_| "variants!: generated code did not parse".into());
+    }
+
+    // The compound entries, with every constraint validated against the
+    // declared groups (an unknown group or key is a grammar error, not
+    // a silent never-matching arm).
+    let compounds: Vec<&CompoundEntry> = table
+        .fields
+        .iter()
+        .filter_map(|field| match &field.classes {
+            VariantClasses::Compound(entries) => Some(entries.iter().collect::<Vec<_>>()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    for entry in &compounds {
+        for (group, key) in &entry.constraints {
+            let declared = group_fields.iter().any(|(field, _, groups)| {
+                field == group && groups.iter().any(|(group_key, _)| group_key == key)
+            });
+            if !declared {
+                return Err(format!(
+                    "variants!: `compound` constrains `{group}: {key}` — no such group key"
+                ));
+            }
+        }
     }
 
     let combos = cartesian(&group_fields);
@@ -544,6 +663,22 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
             }
             classes.push_str(class);
             pattern.push(format!("{enum_name}::{}", pascal_case(key)));
+        }
+        // The compound entries whose constraints ALL match this combo
+        // fold their class list in — cva's semantics, resolved at
+        // expansion time (the arm already carries the whole class
+        // string).
+        for entry in &compounds {
+            if entry
+                .constraints
+                .iter()
+                .all(|(group, key)| combo.iter().any(|(f, k)| f == group && k == key))
+            {
+                if !classes.is_empty() {
+                    classes.push(' ');
+                }
+                classes.push_str(&entry.classes);
+            }
         }
         let (program, class_annotations) =
             compile_literal(&classes).map_err(|err| format!("variants!: {err}"))?;
