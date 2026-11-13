@@ -282,6 +282,21 @@ pub enum Prop {
     SkewX,
     /// `--tw-skew-y`.
     SkewY,
+    // ---- motion (cascade tail; the plan P6 row) --------------------------
+    /// `transition-property` (the `transition-*` set families; the
+    /// keyword text is the property list the row's table carries).
+    TransitionProperty,
+    /// `transition-duration` (`duration-*`), `Val::Num` milliseconds.
+    TransitionDuration,
+    /// `transition-timing-function` (`ease-*`; the keyword text is the
+    /// curve the row's table carries).
+    TransitionTimingFunction,
+    /// `transition-delay` (`delay-*`), `Val::Num` milliseconds.
+    TransitionDelay,
+    /// `animation` (`animate-*`; the keyword text is the animation
+    /// shorthand the row's table carries — the v4 default theme's
+    /// `--animate-*` values).
+    Animation,
 }
 
 impl Prop {
@@ -404,6 +419,11 @@ impl Prop {
         Self::ScaleY,
         Self::SkewX,
         Self::SkewY,
+        Self::TransitionProperty,
+        Self::TransitionDuration,
+        Self::TransitionTimingFunction,
+        Self::TransitionDelay,
+        Self::Animation,
     ];
 
     /// The CSS longhand name (`padding-top`, `grid-template-columns`, ...).
@@ -527,6 +547,11 @@ impl Prop {
             Prop::ScaleY => "--tw-scale-y",
             Prop::SkewX => "--tw-skew-x",
             Prop::SkewY => "--tw-skew-y",
+            Prop::TransitionProperty => "transition-property",
+            Prop::TransitionDuration => "transition-duration",
+            Prop::TransitionTimingFunction => "transition-timing-function",
+            Prop::TransitionDelay => "transition-delay",
+            Prop::Animation => "animation",
         }
     }
 }
