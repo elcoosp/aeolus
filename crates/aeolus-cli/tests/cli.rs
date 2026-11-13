@@ -695,3 +695,149 @@ fn check_with_a_builtin_theme_never_scans_sources() {
     assert_eq!(out.matches("bg-typosaurus").count(), 1, "{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------------
+// build (§2 approach C / the P6 row): the whole-project artifact
+// ---------------------------------------------------------------------------
+
+/// A fixture project for the build tests: one view file, one HTML
+/// template, one ignored directory (target/), under one temp root.
+fn build_fixture_dir(tag: &str) -> std::path::PathBuf {
+    let dir = source_fixture_dir(tag);
+    let src = dir.join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("view.rs"),
+        "let a = tw!(\"flex flex-col gap-2 rounded-md bg-primary text-primary-foreground\");\nlet b = tw!(\"px-8\");\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("page.html"),
+        "<button class=\"rounded-md px-8\">Save</button>\n",
+    )
+    .unwrap();
+    // The walk never enters target/ — a vendored copy of the same
+    // class strings that must not reach the artifact.
+    std::fs::create_dir_all(dir.join("target")).unwrap();
+    std::fs::write(
+        dir.join("target").join("view.rs"),
+        "let a = tw!(\"bg-not-a-token-ever\");\n",
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn build_renders_one_deduped_artifact_to_stdout() {
+    let dir = build_fixture_dir("stdout");
+    let root = dir.to_string_lossy().to_string();
+    let (code, out, err) = run_cmd(&["build", &root]);
+    assert_eq!(code, 0, "findings are non-fatal: {err}");
+    // The global dedupe: px-8 appears in BOTH files, one rule.
+    assert_eq!(out.matches(".px-8 {").count(), 1, "{out}");
+    assert_eq!(out.matches(".rounded-md {").count(), 1, "{out}");
+    // The themeless default: the colour token stays the typed boundary.
+    assert!(err.contains("bg-primary"), "{err}");
+    assert!(err.contains("src/view.rs"), "{err}");
+    assert!(
+        !out.contains(":root"),
+        "no vars block without a table: {out}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn build_theme_renders_the_vars_block_and_lowers_tokens() {
+    let dir = build_fixture_dir("theme");
+    let root = dir.to_string_lossy().to_string();
+    let (code, out, err) = run_cmd(&["build", "--theme", "shadcn-dark", &root]);
+    assert_eq!(code, 0, "the tokens lowered: {err}");
+    assert!(out.contains(":root {"), "{out}");
+    assert!(out.contains("--color-primary:"), "{out}");
+    assert!(out.contains(".dark {"), "{out}");
+    assert!(out.contains("var(--color-primary)"), "{out}");
+    assert_eq!(err, "", "no findings when the theme lowers everything");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn build_out_writes_the_artifact_and_reports_the_summary() {
+    let dir = build_fixture_dir("out");
+    let root = dir.to_string_lossy().to_string();
+    let artifact = dir.join("out.css");
+    let artifact_path = artifact.to_string_lossy().to_string();
+    let (code, out, err) = run_cmd(&["build", "--out", &artifact_path, &root]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("rule(s)"), "{out}");
+    let written = std::fs::read_to_string(&artifact).unwrap();
+    assert!(written.contains(".px-8 {"), "{written}");
+    assert!(written.contains(".flex {"), "{written}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn build_json_carries_the_summary_and_the_diagnostics() {
+    let dir = build_fixture_dir("json");
+    let root = dir.to_string_lossy().to_string();
+    let artifact = dir.join("out.css");
+    let artifact_path = artifact.to_string_lossy().to_string();
+    let (code, out, err) = run_cmd(&["build", "--json", "--out", &artifact_path, &root]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(err, "", "under --json the findings ride the object");
+    assert!(out.contains("\"files\":2"), "{out}");
+    assert!(out.contains("\"rules\":"), "{out}");
+    // The themeless boundary on the fixture's colour tokens rides the
+    // object with its typed code (the keyword-table boundary the
+    // themeless walk reports, per location).
+    assert!(
+        out.contains("\"code\":\"aeolus::compile::unsupported_value\""),
+        "{out}"
+    );
+    // The artifact still rode --out beside the summary.
+    let written = std::fs::read_to_string(&artifact).unwrap();
+    assert!(written.contains(".px-8 {"), "{written}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn build_fail_on_maps_the_typed_codes() {
+    let dir = build_fixture_dir("failon");
+    let root = dir.to_string_lossy().to_string();
+    // The themeless build's ONLY finding is the token boundary — an
+    // UNSUPPORTED code, so `--fail-on unknown` passes (exit 0) while
+    // `--fail-on unsupported` fails (exit 1) and `any` too.
+    let (code, _, _) = run_cmd(&["build", "--fail-on", "unknown", &root]);
+    assert_eq!(code, 0);
+    let (code, _, _) = run_cmd(&["build", "--fail-on", "unsupported", &root]);
+    assert_eq!(code, 1);
+    let (code, _, _) = run_cmd(&["build", "--fail-on", "any", &root]);
+    assert_eq!(code, 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn build_unknown_flag_and_missing_paths_are_usage_errors() {
+    let (code, _, err) = run_cmd(&["build", "--nope", "x.rs"]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("--nope"), "{err}");
+    let (code, _, err) = run_cmd(&["build"]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("at least one file"), "{err}");
+    let (code, _, err) = run_cmd(&["build", "/nonexistent-path-aeolus"]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("cannot read"), "{err}");
+}
+
+#[test]
+fn build_explicit_files_ignore_the_extension_filter() {
+    // The filter applies to the DIRECTORY walk only: a file the
+    // operator named rides verbatim (the check contract).
+    let dir = build_fixture_dir("explicit");
+    let other = dir.join("classes.txt");
+    std::fs::write(&other, "let a = tw!(\"font-bold\");\n").unwrap();
+    let other_path = other.to_string_lossy().to_string();
+    let (code, out, _) = run_cmd(&["build", &other_path]);
+    assert_eq!(code, 0);
+    assert!(out.contains(".font-bold {"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
