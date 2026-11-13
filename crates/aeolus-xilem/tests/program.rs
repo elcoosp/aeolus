@@ -225,8 +225,10 @@ fn the_lane_agrees_with_the_plan_path_under_dark_and_wide() {
 
     // Wide viewport: the responsive bucket's padding — the walk under
     // the env's rem, the plan path through TwEnv's width probe.
-    let mut wide_env = TwEnv::default();
-    wide_env.viewport_width = Some(800.0);
+    let wide_env = TwEnv {
+        viewport_width: Some(800.0),
+        ..TwEnv::default()
+    };
     let (walked, _) = lower_program(
         &program,
         &env_for_state(&wide_env, false, false, false, false),
@@ -234,8 +236,10 @@ fn the_lane_agrees_with_the_plan_path_under_dark_and_wide() {
     assert_eq!(walked.padding.expect("p-6").left, 24.0, "md:p-6 at 50rem");
 
     // Dark mode: the dark slot's background.
-    let mut dark_env = TwEnv::default();
-    dark_env.dark = true;
+    let dark_env = TwEnv {
+        dark: true,
+        ..TwEnv::default()
+    };
     let (walked, _) = lower_program(
         &program,
         &env_for_state(&dark_env, false, false, false, false),
