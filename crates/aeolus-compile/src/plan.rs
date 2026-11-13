@@ -84,11 +84,12 @@ use std::fmt;
 use aeolus_core::ast::{PseudoElement, State};
 use aeolus_core::cond::{Atom, Cond as V0Cond, Rule, Test};
 use aeolus_core::plan::{
-    AlignItems, AutoEdges, BorderStyle as V0BorderStyle, BorderWidth, ContentAlign,
-    Cursor as V0Cursor, Display as V0Display, FlexDirection as V0FlexDirection, Gradient,
-    GradientStop, GradientStops, JustifyContent as V0JustifyContent, Overflow, OverflowKind,
-    Padding, Position as V0Position, ResolvedStyle, SizedValue, StylePlan, VariantCondition,
-    Visibility as V0Visibility,
+    AlignItems, Animation as V0Animation, AutoEdges, BorderStyle as V0BorderStyle, BorderWidth,
+    ContentAlign, Cursor as V0Cursor, Display as V0Display, Ease as V0Ease,
+    FlexDirection as V0FlexDirection, Gradient, GradientStop, GradientStops,
+    JustifyContent as V0JustifyContent, Overflow, OverflowKind, Padding, Position as V0Position,
+    ResolvedStyle, SizedValue, StylePlan, Transition as V0Transition, TransitionSet as V0Set,
+    VariantCondition, Visibility as V0Visibility,
 };
 use aeolus_core::{Breakpoint, Color, PointerEvents, TextProperty, TextValue};
 use aeolus_data::registry::lookup_detailed;
@@ -706,6 +707,167 @@ pub fn linear_gradient_angle(text: &str) -> Option<f32> {
         "top left" => 315.0,
         _ => return None,
     })
+}
+
+/// The v4 default transition duration in milliseconds — the value the
+/// resolver reads from the theme's `--default-transition-duration` token
+/// (`150ms` on every theme the differential battery feeds; the token's
+/// override is the theme pass's own boundary, the V1 token table being
+/// colour-scoped). The bridge seeds the `Transition` extras slot with it
+/// so the slot's shape matches the oracle's defaults.
+pub(crate) const DEFAULT_TRANSITION_MS: f32 = 150.0;
+
+/// The v0.x `Transition` extras slot, seeded with the resolver's own
+/// defaults the first motion longhand of the candidate arrives to —
+/// set [`V0Set::Default`], the theme's default duration (the v4
+/// `--default-transition-duration` value; the differential battery's
+/// themes all carry 150ms), no ease and no delay — so the slot's shape
+/// matches the oracle's whichever longhand lands first.
+fn transition_slot(style: &mut ResolvedStyle) -> &mut V0Transition {
+    style.extras.transition.get_or_insert(V0Transition {
+        set: V0Set::Default,
+        duration_ms: DEFAULT_TRANSITION_MS,
+        ease: None,
+        delay_ms: 0.0,
+    })
+}
+
+/// The v0.x `TransitionSet` of one `transition-*` row text — the exact
+/// property-list strings the registry's [`TRANSITION_SETS`]/[`TRANSITION_DEFAULT_SET`]
+/// tables carry (the same strings the v0.x oracle renders per set), so
+/// the match is the round trip of the row table, not a re-spelling.
+pub(crate) fn transition_set_of(text: &str) -> Option<V0Set> {
+    if text == aeolus_data::rows::TRANSITION_DEFAULT_SET {
+        return Some(V0Set::Default);
+    }
+    for &(suffix, list) in aeolus_data::rows::TRANSITION_SETS {
+        if text == list {
+            return Some(match suffix {
+                "all" => V0Set::All,
+                "colors" => V0Set::Colors,
+                "opacity" => V0Set::Opacity,
+                "shadow" => V0Set::Shadow,
+                "transform" => V0Set::Transform,
+                _ => V0Set::None,
+            });
+        }
+    }
+    None
+}
+
+/// The v0.x [`V0Ease`] of one `ease-*` row text — the registry's
+/// [`EASE_CURVES`] texts are the v4 default theme's `--ease-*` values,
+/// the same curves the resolver's `ease_from_value` maps (the exact
+/// cubic-bezier spellings, not a numeric re-parse).
+pub(crate) fn ease_of_curve(text: &str) -> Option<V0Ease> {
+    for &(suffix, curve) in aeolus_data::rows::EASE_CURVES {
+        if text == curve {
+            return Some(match suffix {
+                "linear" => V0Ease::Linear,
+                "in" => V0Ease::In,
+                "out" => V0Ease::Out,
+                _ => V0Ease::InOut,
+            });
+        }
+    }
+    None
+}
+
+/// The v0.x `Animation` extras of one `animate-*` row text — the
+/// registry's [`ANIMATE_PRESETS`] texts are the v4 default theme's
+/// `--animate-*` shorthands, parsed with the resolver's own
+/// `parse_animation` semantics, QUIRK-FAITHFUL: the whitespace split
+/// cuts a `cubic-bezier(…)` value with spaces into fragments, and the
+/// resolver's ease reader answers its `InOut` fallback to the first
+/// fragment — so `animate-ping`'s plan slot carries `Ease::InOut`, the
+/// same reading both sides of the differential take. The `none` preset
+/// is the clear: name `none`, no duration, never infinite.
+pub(crate) fn animation_of(text: &str) -> Option<V0Animation> {
+    if text == "none" {
+        return Some(V0Animation {
+            name: "none".into(),
+            duration_ms: None,
+            ease: None,
+            infinite: false,
+        });
+    }
+    let mut parts = text.split_ascii_whitespace();
+    let name = parts.next()?.to_string();
+    let mut animation = V0Animation {
+        name: name.into_boxed_str(),
+        duration_ms: Some(1000.0),
+        ease: None,
+        infinite: true,
+    };
+    for part in parts {
+        if let Some(ms) = duration_ms_of(part) {
+            animation.duration_ms = Some(ms);
+        } else if part == "infinite" {
+            animation.infinite = true;
+        } else if part == "linear" {
+            animation.ease = Some(V0Ease::Linear);
+        } else if part.starts_with("cubic-bezier(") {
+            animation.ease = Some(ease_from_value(part));
+        }
+    }
+    Some(animation)
+}
+
+/// The resolver's own ease reader, quirk for quirk: a `linear` spelling
+/// maps directly, a COMPLETE `cubic-bezier(…)` value matches the v4
+/// default curves, and everything else — including the whitespace-cut
+/// fragments the animation shorthand parse feeds it — takes the
+/// function's `InOut` fallback.
+fn ease_from_value(v: &str) -> V0Ease {
+    let v = v.trim();
+    if v == "linear" {
+        return V0Ease::Linear;
+    }
+    if let Some(inner) = v
+        .strip_prefix("cubic-bezier(")
+        .and_then(|r| r.strip_suffix(')'))
+    {
+        let nums: Vec<f32> = inner
+            .split(',')
+            .filter_map(|n| n.trim().parse().ok())
+            .collect();
+        if nums.len() == 4 {
+            let close = |a: f32, b: f32| (a - b).abs() < 1e-4;
+            if close(nums[0], 0.4)
+                && close(nums[1], 0.0)
+                && close(nums[2], 1.0)
+                && close(nums[3], 1.0)
+            {
+                return V0Ease::In;
+            }
+            if close(nums[0], 0.0)
+                && close(nums[1], 0.0)
+                && close(nums[2], 0.2)
+                && close(nums[3], 1.0)
+            {
+                return V0Ease::Out;
+            }
+            if close(nums[0], 0.4)
+                && close(nums[1], 0.0)
+                && close(nums[2], 0.2)
+                && close(nums[3], 1.0)
+            {
+                return V0Ease::InOut;
+            }
+        }
+    }
+    V0Ease::InOut
+}
+
+/// `150ms` → 150, `1s` → 1000 — the resolver's own duration spellings.
+fn duration_ms_of(part: &str) -> Option<f32> {
+    if let Some(ms) = part.strip_suffix("ms") {
+        return ms.trim().parse().ok();
+    }
+    if let Some(sec) = part.strip_suffix('s') {
+        return sec.trim().parse::<f32>().ok().map(|v| v * 1000.0);
+    }
+    None
 }
 
 impl PlanWriter {
@@ -1353,6 +1515,63 @@ impl PlanWriter {
                         Prop::GradientFromPosition => self.gradient_from_pos = Some(pct),
                         Prop::GradientViaPosition => self.gradient_via_pos = Some(pct),
                         _ => self.gradient_to_pos = Some(pct),
+                    }
+                }
+            }
+            // ---- motion (the plan P6 row) ------------------------------
+            //
+            // The v0.x extras carry ONE `Transition` slot the quartet
+            // accumulates into (the resolver's own model: set, duration,
+            // ease and delay land field-wise, the absent fields taking
+            // the resolver's defaults — `TransitionSet::Default`, the
+            // theme's `--default-transition-duration` (150ms on every
+            // theme the differential battery feeds), 0ms delay). The
+            // get_or_insert seeds exactly those defaults, so the slot's
+            // shape matches the oracle's whichever longhand arrived
+            // first — and the ANIMATION shorthand parses the row text
+            // the resolver parses its `--animate-*` token with.
+            Prop::TransitionProperty => {
+                if let Some(text) = kw {
+                    match transition_set_of(text) {
+                        Some(set) => {
+                            let slot = transition_slot(style);
+                            slot.set = set;
+                        }
+                        None => self
+                            .notes
+                            .push(PlanNoteKind::RowTextUnmappable { prop, text }),
+                    }
+                }
+            }
+            Prop::TransitionDuration => {
+                if let Some(ms) = self.number(val) {
+                    transition_slot(style).duration_ms = ms;
+                }
+            }
+            Prop::TransitionTimingFunction => {
+                if let Some(text) = kw {
+                    match ease_of_curve(text) {
+                        Some(ease) => {
+                            transition_slot(style).ease = Some(ease);
+                        }
+                        None => self
+                            .notes
+                            .push(PlanNoteKind::RowTextUnmappable { prop, text }),
+                    }
+                }
+            }
+            Prop::TransitionDelay => {
+                if let Some(ms) = self.number(val) {
+                    transition_slot(style).delay_ms = ms;
+                }
+            }
+            Prop::Animation => {
+                if let Some(text) = kw {
+                    match animation_of(text) {
+                        Some(animation) => style.extras.animation = Some(animation),
+                        None => self
+                            .notes
+                            .push(PlanNoteKind::RowTextUnmappable { prop, text }),
                     }
                 }
             }
