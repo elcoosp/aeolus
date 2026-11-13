@@ -2001,19 +2001,22 @@ fn bucket(
             }]);
             bucket_rule(plan, when, write);
         }
-        Cond::Container(bp) => {
+        Cond::Container { bp, name } => {
             let when = V0Cond(vec![Atom::Container {
                 min: Some(bp.rem() * 16.0),
                 max: None,
-                name: None,
+                // The name rides the bridge the way the fold carried it
+                // — the v0.9 oracle's own `Atom::Container.name` field,
+                // so the plan path renders the same named query.
+                name: name.map(Into::into),
             }]);
             bucket_rule(plan, when, write);
         }
-        Cond::MaxContainer(bp) => {
+        Cond::MaxContainer { bp, name } => {
             let when = V0Cond(vec![Atom::Container {
                 min: None,
                 max: Some(bp.rem() * 16.0),
-                name: None,
+                name: name.map(Into::into),
             }]);
             bucket_rule(plan, when, write);
         }
