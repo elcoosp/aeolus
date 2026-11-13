@@ -16,6 +16,8 @@
 use aeolus_ir::{Program, Prop};
 use proc_macro2::TokenStream;
 
+pub mod conformance;
+
 /// One longhand a target cannot express — the capability report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Unsupported {
