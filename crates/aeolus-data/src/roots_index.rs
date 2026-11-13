@@ -213,7 +213,7 @@ pub static ROOT_SLOTS: [u16; SLOTS] = [
     u16::MAX,
     u16::MAX,
     u16::MAX,
-    u16::MAX,
+    158,
     u16::MAX,
     u16::MAX,
     u16::MAX,
@@ -230,7 +230,7 @@ pub static ROOT_SLOTS: [u16; SLOTS] = [
     37,
     u16::MAX,
     u16::MAX,
-    u16::MAX,
+    159,
     131,
     u16::MAX,
     u16::MAX,
@@ -281,7 +281,7 @@ pub static ROOT_SLOTS: [u16; SLOTS] = [
     u16::MAX,
     u16::MAX,
     55,
-    u16::MAX,
+    155,
     u16::MAX,
     u16::MAX,
     u16::MAX,
@@ -324,7 +324,7 @@ pub static ROOT_SLOTS: [u16; SLOTS] = [
     u16::MAX,
     u16::MAX,
     60,
-    u16::MAX,
+    156,
     54,
     u16::MAX,
     84,
@@ -526,7 +526,7 @@ pub static ROOT_SLOTS: [u16; SLOTS] = [
     u16::MAX,
     u16::MAX,
     u16::MAX,
-    u16::MAX,
+    157,
     u16::MAX,
     39,
     u16::MAX,
@@ -571,7 +571,7 @@ pub static ROOT_SLOTS: [u16; SLOTS] = [
 /// The index entries, in registry first-occurrence order (the
 /// rows' own order — the read side's answer order does not move).
 #[rustfmt::skip]
-pub static ROOT_ENTRIES: [IndexEntry; 155] = [
+pub static ROOT_ENTRIES: [IndexEntry; 160] = [
     IndexEntry { root: "p", rows: &[0] },
     IndexEntry { root: "px", rows: &[1] },
     IndexEntry { root: "py", rows: &[2] },
@@ -727,6 +727,11 @@ pub static ROOT_ENTRIES: [IndexEntry; 155] = [
     IndexEntry { root: "@container", rows: &[181] },
     IndexEntry { root: "fill", rows: &[182] },
     IndexEntry { root: "stroke", rows: &[183] },
+    IndexEntry { root: "transition", rows: &[184] },
+    IndexEntry { root: "duration", rows: &[185] },
+    IndexEntry { root: "delay", rows: &[186] },
+    IndexEntry { root: "ease", rows: &[187] },
+    IndexEntry { root: "animate", rows: &[188] },
 ];
 
 /// Seeded FNV-1a (32-bit) — the SAME function the generator's seed
