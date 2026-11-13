@@ -189,6 +189,21 @@ fn assert_plans_agree(v1: &StylePlan, v0: &StylePlan) {
     assert_eq!(ea.flex_basis, eb.flex_basis, "flex basis disagrees");
     assert_eq!(ea.transform, eb.transform, "transform disagrees");
     assert_eq!(ea.grid, eb.grid, "grid disagrees");
+    // The motion layer's plan slots (the P6 row): the transition quartet
+    // folds into the oracle's `Transition` extras (the same defaults the
+    // resolver applies — a bare set rides `TransitionSet::Default`, the
+    // duration defaults to 150ms, the delay to 0), the animation
+    // shorthand into the oracle's `Animation`.
+    assert_eq!(
+        ea.transition, eb.transition,
+        "transition disagrees (V1 {:?} vs V0 {:?})",
+        ea.transition, eb.transition
+    );
+    assert_eq!(
+        ea.animation, eb.animation,
+        "animation disagrees (V1 {:?} vs V0 {:?})",
+        ea.animation, eb.animation
+    );
 
     // The buckets: same routing, same layer conditions, same dark/responsive
     // presence. Rule conditions compare through their Debug shape (the
@@ -360,6 +375,28 @@ const BATTERY: &[&str] = &[
     "skew-x-3",
     // grid (the numeric forms)
     "grid-cols-3",
+    // the motion layer (the P6 row): the transition quartet, the
+    // animation presets — every entry oracle-clean under the default
+    // theme (the --animate-* and --ease-* tokens the default theme
+    // carries).
+    "transition",
+    "transition-all",
+    "transition-colors",
+    "transition-opacity",
+    "transition-shadow",
+    "transition-transform",
+    "transition-none",
+    "duration-300",
+    "ease-linear",
+    "ease-in",
+    "ease-out",
+    "ease-in-out",
+    "delay-150",
+    "animate-spin",
+    "animate-ping",
+    "animate-pulse",
+    "animate-bounce",
+    "animate-none",
 ];
 
 #[test]
@@ -412,6 +449,11 @@ fn differential_strings_agree_with_the_v0_resolver() {
         "p-4 bg-red-500 text-sm rounded-md hover:bg-red-500/90",
         "hover:bg-red-500 focus-visible:ring-2",
         "w-10 h-6 rounded-md bg-red-500 text-center",
+        // The motion layer's cascade: the quartet composes into the
+        // oracle's one `Transition` extras slot, the preset into its
+        // `Animation` — the same slot-for-slot shape on both sides.
+        "transition-colors duration-300 ease-in-out delay-150 animate-pulse",
+        "transition-none duration-0 delay-0",
     ];
     for input in strings {
         let sheet = emit_plan_theme(input, &tokens, &Config::default()).expect("the emit refused");
@@ -473,9 +515,11 @@ fn differential_shadcn_tokens_agree() {
 
 /// The consumer story end to end: the shadcn Button's classes through
 /// the V1 pipeline into the plan shape the backends already consume —
-/// with the two classes the registry does not carry yet
-/// (`transition-colors`, the bare `border` default) reported as the
-/// typed diagnostics they are, never dropped silently.
+/// with the motion class the registry carries since the P6 motion
+/// layer (`transition-colors`) folding into the oracle's `Transition`
+/// extras, and the one class the registry still does not carry (the
+/// bare `border` default-width arm) reported as the typed diagnostic
+/// it is, never dropped silently.
 #[test]
 fn shadcn_button_lowers_into_a_backend_ready_plan() {
     let source = ThemeSource::shadcn().unwrap();
@@ -505,14 +549,21 @@ fn shadcn_button_lowers_into_a_backend_ready_plan() {
     );
     assert!(plan.dark.is_none());
 
-    // The two registry gaps surface as diagnostics, with spans:
-    // `transition-colors` (no transition prop in the V1 registry yet)
-    // and the bare `border` (no default-width arm yet).
+    // The one registry gap surfaces as a diagnostic, with a span: the
+    // bare `border` (no default-width arm yet). `transition-colors`
+    // lowers since the P6 motion layer and folds into the oracle's
+    // `Transition` extras — the differential pin below.
     assert_eq!(
         sheet.diagnostics.len(),
-        2,
-        "the two registry gaps are the only reports: {:?}",
+        1,
+        "the one registry gap is the only report: {:?}",
         sheet.diagnostics
+    );
+    assert!(sheet.notes.is_empty(), "{:?}", sheet.notes);
+    assert_eq!(
+        sheet.plan.base.extras.transition.unwrap().set,
+        aeolus_core::TransitionSet::Colors,
+        "the motion class folded into the oracle's extras"
     );
 }
 
