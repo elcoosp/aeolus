@@ -341,8 +341,14 @@ fn every_cond_form_has_an_emission_arm() {
         Cond::Bp(aeolus_ir::Bp::Sm),
         Cond::Min(aeolus_ir::Bp::Md),
         Cond::Max(aeolus_ir::Bp::Lg),
-        Cond::Container(aeolus_ir::Bp::Xl),
-        Cond::MaxContainer(aeolus_ir::Bp::Xl2),
+        Cond::Container {
+            bp: aeolus_ir::Bp::Xl,
+            name: None,
+        },
+        Cond::MaxContainer {
+            bp: aeolus_ir::Bp::Xl2,
+            name: None,
+        },
     ] {
         assert!(
             conds.contains(&cond),
