@@ -27,8 +27,8 @@
 //!   ([`ThemeSpecError`]), never bare strings.
 
 use aeolus_compile::{
-    ClassKeywords, Config, Env, RustSheet, compile, compile_theme, emit_rust, emit_rust_theme,
-    interp_theme, keyword_texts, sort,
+    ClassKeywords, Config, Env, RustSheet, RustStrings, SourceFile, build as build_artifact,
+    compile, compile_theme, emit_rust, emit_rust_theme, interp_theme, keyword_texts, scan, sort,
 };
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
@@ -246,77 +246,19 @@ pub fn load_theme(spec: &str) -> Result<TailwindTheme, ThemeSpecError> {
 
 /// Heuristic class-string extractor (`aeolus check`).
 ///
-/// Scans quoted strings (single, double, and Rust raw `r#"…"#`) and keeps a
-/// string as a candidate class string when at least half of its
-/// whitespace-separated tokens resolve with ZERO warnings and at least one
-/// token resolves — the same "looks like Tailwind" shape the official
-/// extractor uses. Prose, identifiers and non-class literals never reach
-/// the linter; a candidate's remaining warnings ARE the findings.
+/// The build seam's own walk ([`aeolus_compile::scan_rust_strings`]),
+/// delegated: the byte walk over the quoted strings (single, double, and
+/// Rust raw `r#"…"#`) and the documented "looks like Tailwind" pre-filter
+/// (at least one token carrying a `-` or `:`) — ONE implementation now
+/// answers both consumers (the `check` linter and the `build` artifact),
+/// the keyword-alignment precedent. The pre-filter is deliberately
+/// loose: prose that sneaks through returns as honest typed findings
+/// from the linter, never as a wrong rule.
 pub fn extract_candidate_strings(source: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let bytes = source.as_bytes();
-    let mut i = 0usize;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'"' | b'\'' => {
-                let quote = bytes[i];
-                let start = i + 1;
-                let mut j = start;
-                while j < bytes.len() && bytes[j] != quote && bytes[j] != b'\n' {
-                    j += 1;
-                }
-                if j < bytes.len() && bytes[j] == quote {
-                    push_candidate(&mut out, &source[start..j]);
-                    i = j + 1;
-                    continue;
-                }
-                i = start.max(j);
-            }
-            b'r' if i + 1 < bytes.len() && bytes[i + 1] == b'"' => {
-                // Rust raw string: r"…" or r#"…"#.
-                let mut hashes = 0usize;
-                let mut k = i + 1;
-                while k < bytes.len() && bytes[k] == b'#' {
-                    hashes += 1;
-                    k += 1;
-                }
-                if k >= bytes.len() || bytes[k] != b'"' {
-                    i += 1;
-                    continue;
-                }
-                let body_start = k + 1;
-                let mut needle = String::from("\"");
-                for _ in 0..hashes {
-                    needle.push('#');
-                }
-                if let Some(end) = source[body_start..].find(&needle) {
-                    push_candidate(&mut out, &source[body_start..body_start + end]);
-                    i = body_start + end + needle.len();
-                    continue;
-                }
-                i = body_start;
-            }
-            _ => i += 1,
-        }
-    }
-    out
-}
-
-fn push_candidate(out: &mut Vec<String>, s: &str) {
-    let s = s.trim();
-    if s.is_empty() {
-        return;
-    }
-    // Cheap pre-filter: a class string essentially always carries at least
-    // one token with a `-` (utility-value) or `:` (variant). Prose rarely
-    // passes; the resolver filter below does the precise work.
-    if !s
-        .split_ascii_whitespace()
-        .any(|t| t.contains('-') || t.contains(':'))
-    {
-        return;
-    }
-    out.push(s.to_string());
+    aeolus_compile::scan_rust_strings(source)
+        .into_iter()
+        .map(|hit| hit.text)
+        .collect()
 }
 
 /// Lint ONE candidate string: resolve it and turn every warning into a
@@ -447,6 +389,7 @@ where
         "explain" => cmd_explain(rest, out, err),
         "sort" => cmd_sort(rest, out, err),
         "expand" => cmd_expand(rest, out, err),
+        "build" => cmd_build(rest, out, err),
         other => {
             let _ = writeln!(err, "unknown command {other:?}\n{USAGE}");
             2
@@ -846,6 +789,290 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
     i32::from(!compiled.diagnostics.is_empty())
 }
 
+/// The build walk's source-file set: the extensions a class string
+/// plausibly names a class in (the documented filter — explicit files
+/// ride verbatim, the filter applies to the DIRECTORY walk only), and
+/// the directories the walk never enters (build output, dependency
+/// trees, hidden entries — plus symlinks, so no cycles and no vendored
+/// copies).
+const SCAN_EXTENSIONS: [&str; 9] = ["rs", "html", "htm", "md", "slint", "js", "ts", "jsx", "tsx"];
+const SKIP_DIR_NAMES: [&str; 5] = ["target", "node_modules", ".git", "dist", ".venv"];
+
+/// Collect the source files the `build` walk reads: explicit files ride
+/// verbatim (the operator's list wins — the `check` contract), the
+/// directories walk recursively under the documented filter. Unreadable
+/// entries report per path and count; the list sorts (a deterministic
+/// scan order across the filesystem's own dir order).
+fn collect_source_files(paths: &[String], err: &mut dyn Write) -> (Vec<String>, usize) {
+    let mut files = Vec::new();
+    let mut io_errors = 0usize;
+    for path in paths {
+        match std::fs::metadata(path) {
+            Ok(meta) if meta.is_file() => files.push(path.clone()),
+            Ok(meta) if meta.is_dir() => {
+                walk_dir(std::path::Path::new(path), &mut files, err, &mut io_errors);
+            }
+            Ok(_) => {
+                let _ = writeln!(err, "error: {path:?} is neither a file nor a directory");
+                io_errors += 1;
+            }
+            Err(e) => {
+                let _ = writeln!(err, "error: cannot read {path:?}: {e}");
+                io_errors += 1;
+            }
+        }
+    }
+    files.sort();
+    files.dedup();
+    (files, io_errors)
+}
+
+/// The directory half of [`collect_source_files`]: one level's entries,
+/// recursing into the non-skipped subdirectories.
+fn walk_dir(
+    dir: &std::path::Path,
+    files: &mut Vec<String>,
+    err: &mut dyn Write,
+    io_errors: &mut usize,
+) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            let _ = writeln!(err, "error: cannot list {}: {e}", dir.display());
+            *io_errors += 1;
+            return;
+        }
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with('.') || SKIP_DIR_NAMES.contains(&name.as_ref()) {
+                continue;
+            }
+            walk_dir(&path, files, err, io_errors);
+        } else if file_type.is_file()
+            && path.extension().is_some_and(|ext| {
+                let ext = ext.to_string_lossy().to_lowercase();
+                SCAN_EXTENSIONS.contains(&ext.as_str())
+            })
+        {
+            files.push(path.to_string_lossy().to_string());
+        }
+    }
+}
+
+/// The typed diagnostic code → the `--fail-on` kind: the registry read
+/// side's misses (unknown root, lex failure, rejected shape) are
+/// UNKNOWN; everything else (value boundaries, variants, modifiers) is
+/// UNSUPPORTED. No CONFLICT lane rides a build (no merge runs — the
+/// artifact renders one rule per class, the cascade reads rule order).
+fn finding_kind_of_code(code: &str) -> FindingKind {
+    match code {
+        "aeolus::compile::unknown_root"
+        | "aeolus::compile::lex"
+        | "aeolus::compile::shape_rejected" => FindingKind::Unknown,
+        _ => FindingKind::Unsupported,
+    }
+}
+
+/// `build` (architecture plan §2's approach C and the P6 row — "whole-
+/// project scan + one generated artifact, dedupe globally"): the
+/// operator's files and directories in, ONE stylesheet out. Every
+/// candidate class string compiles ONCE through the CSS arm (the
+/// global dedupe — one rule per lowered class, however many sites say
+/// it), the rules render in the registry's canonical order (the sort
+/// seam's own progression), and a `--theme` table renders the
+/// self-contained `:root`/`.dark` vars block the rules'
+/// `var(--color-…)` references resolve against.
+///
+/// The honest channels mirror `check`: findings (every diagnostic at
+/// its file:line:col) ride stderr — warnings are non-fatal — and the
+/// artifact rides stdout or `--out`; `--fail-on` maps the typed codes
+/// onto the check-style exit codes, `--json` carries the summary (the
+/// artifact then rides `--out` only). Without a `--theme` the colour
+/// tokens stay typed boundaries per location.
+fn cmd_build(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    #[cfg(feature = "tracing")]
+    let _build_span = tracing::debug_span!("aeolus_build").entered();
+
+    let mut theme_spec: Option<String> = None;
+    let mut artifact_path: Option<String> = None;
+    let mut fail_on = "none".to_string();
+    let mut json = false;
+    let mut paths: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--theme" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => theme_spec = Some(v.clone()),
+                    None => {
+                        let _ = writeln!(err, "--theme needs a value");
+                        return 2;
+                    }
+                }
+            }
+            "--out" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => artifact_path = Some(v.clone()),
+                    None => {
+                        let _ = writeln!(err, "--out needs a value");
+                        return 2;
+                    }
+                }
+            }
+            "--fail-on" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) if matches!(v.as_str(), "unknown" | "unsupported" | "any" | "none") => {
+                        fail_on.clone_from(v);
+                    }
+                    _ => {
+                        let _ = writeln!(err, "--fail-on takes unknown|unsupported|any|none");
+                        return 2;
+                    }
+                }
+            }
+            "--json" => json = true,
+            other if other.starts_with("--") => {
+                let _ = writeln!(err, "unknown flag {other:?}");
+                return 2;
+            }
+            other => paths.push(other.to_string()),
+        }
+        i += 1;
+    }
+    if paths.is_empty() {
+        let _ = writeln!(err, "build takes at least one file or directory");
+        return 2;
+    }
+
+    let (files, io_errors) = collect_source_files(&paths, err);
+    if io_errors > 0 {
+        return 2;
+    }
+    let tokens = match &theme_spec {
+        Some(spec) => match token_table_or_report(spec, err) {
+            Some(table) => Some(table),
+            None => return 2,
+        },
+        None => None,
+    };
+
+    let mut sources: Vec<(String, String)> = Vec::with_capacity(files.len());
+    for file in &files {
+        #[cfg(feature = "tracing")]
+        let _span = tracing::debug_span!("aeolus_build_file", file = file.as_str()).entered();
+        match std::fs::read_to_string(file) {
+            Ok(text) => sources.push((file.clone(), text)),
+            Err(e) => {
+                let _ = writeln!(err, "error: cannot read {file:?}: {e}");
+                return 2;
+            }
+        }
+    }
+    let source_files: Vec<SourceFile<'_>> = sources
+        .iter()
+        .map(|(name, text)| SourceFile::new(name, text.as_str()))
+        .collect();
+    let scanned = scan(&source_files, &RustStrings);
+    let artifact = build_artifact(&scanned, tokens.as_ref(), &Config::default());
+
+    // The findings: every diagnostic at its location (the dedupe must
+    // not hide where a miss lives). Non-fatal warnings ride stderr —
+    // the run() contract — except under --json, where the summary
+    // object carries them all.
+    if !json {
+        for report in &artifact.diagnostics {
+            let _ = writeln!(err, "{report}");
+        }
+    }
+    let fails = match fail_on.as_str() {
+        "none" => 0,
+        "any" => artifact.diagnostics.len(),
+        "unknown" => artifact
+            .diagnostics
+            .iter()
+            .filter(|report| {
+                finding_kind_of_code(report.diagnostic.kind.code()) == FindingKind::Unknown
+            })
+            .count(),
+        "unsupported" => artifact
+            .diagnostics
+            .iter()
+            .filter(|report| {
+                finding_kind_of_code(report.diagnostic.kind.code()) == FindingKind::Unsupported
+            })
+            .count(),
+        _ => 0,
+    };
+
+    if let Some(path) = &artifact_path {
+        if let Err(e) = std::fs::write(path, artifact.to_string()) {
+            let _ = writeln!(err, "error: cannot write {path:?}: {e}");
+            return 2;
+        }
+    }
+    if json {
+        let items: Vec<String> = artifact
+            .diagnostics
+            .iter()
+            .map(|report| {
+                format!(
+                    "{{\"file\":\"{}\",\"line\":{},\"col\":{},\"code\":\"{}\",\"token\":\"{}\",\"detail\":\"{}\"}}",
+                    json_escape(&report.location.file),
+                    report.location.line,
+                    report.location.col,
+                    json_escape(report.diagnostic.kind.code()),
+                    json_escape(&report.diagnostic.raw),
+                    json_escape(&report.diagnostic.to_string()),
+                )
+            })
+            .collect();
+        let _ = write!(
+            out,
+            "{{\"files\":{},\"candidates\":{},\"rules\":{},\"diagnostics\":[{}]",
+            sources.len(),
+            scanned.len(),
+            artifact.rules.len(),
+            items.join(",")
+        );
+        if artifact_path.is_some() {
+            let _ = write!(
+                out,
+                ",\"out\":\"{}\"",
+                json_escape(artifact_path.as_deref().unwrap_or_default())
+            );
+        }
+        let _ = writeln!(out, "}}");
+    } else if artifact_path.is_none() {
+        // The artifact itself on stdout — the `css` command's shape.
+        let _ = write!(out, "{artifact}");
+    } else {
+        let _ = writeln!(
+            out,
+            "{} rule(s), {} finding(s) — artifact written to {}",
+            artifact.rules.len(),
+            artifact.diagnostics.len(),
+            artifact_path.as_deref().unwrap_or_default()
+        );
+    }
+    i32::from(fails > 0)
+}
+
 fn cmd_resolve(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     let Some(args) = parse_flags(rest, err, &["theme", "summary", "json"]) else {
         return 2;
@@ -1243,9 +1470,14 @@ USAGE:
   aeolus sort    [--json] <classes...>                       registry-order class sort (the §5.5 parity line)
   aeolus expand  [--theme <spec>] [--dark] [--json] <classes...>
                                                              effective declarations (the interp (c) arm)
+  aeolus build   [--theme <spec>] [--out <path>] [--fail-on <mode>] [--json] <files/dirs...>
+                                                             one stylesheet for the whole project
+                                                             (scan → dedupe → registry-ordered rules
+                                                             + the :root/.dark vars block)
 
 THEME: shadcn (default) | shadcn-dark | default | <path-to-css>
-       (`explain` accepts shadcn | shadcn-dark | <path> — the V1 theme pass)
+       (`explain`/`build` accept shadcn | shadcn-dark | <path> — the V1 theme pass;
+       without --theme, build keeps the colour tokens as typed boundaries)
        (`check` reads a --theme CSS path's @source registrations (§5.4): inline
        candidates join the lint, walked paths join the scan set relative to the
        theme CSS's directory, `not` paths prune the registrations — a file the
