@@ -258,7 +258,10 @@ dependencies = [
 name = "aeolus-xilem"
 version = "0.19.0"
 dependencies = [
+ "aeolus-compile",
  "aeolus-core",
+ "aeolus-rt",
+ "aeolus-theme",
  "masonry",
  "masonry_testing",
  "tokio",
