@@ -300,8 +300,14 @@ fn condition_specificity_matches_the_v4_cascade_ranks() {
         Cond::PeerFocus,
         Cond::Bp(Bp::Md),
         Cond::Max(Bp::Sm),
-        Cond::Container(Bp::Md),
-        Cond::MaxContainer(Bp::Sm),
+        Cond::Container {
+            bp: Bp::Md,
+            name: None,
+        },
+        Cond::MaxContainer {
+            bp: Bp::Sm,
+            name: None,
+        },
     ];
     for w in order.windows(2) {
         assert!(
@@ -319,7 +325,14 @@ fn condition_specificity_matches_the_v4_cascade_ranks() {
     );
     // The canonical names round-trip for the diagnostics surface.
     assert_eq!(Cond::Bp(Bp::Md).source_text(), Some("md"));
-    assert_eq!(Cond::MaxContainer(Bp::Sm).source_text(), Some("@max-sm"));
+    assert_eq!(
+        Cond::MaxContainer {
+            bp: Bp::Sm,
+            name: None
+        }
+        .source_text(),
+        Some("@max-sm")
+    );
     assert_eq!(Cond::Hover.source_text(), Some("hover"));
     assert_eq!(Cond::Base.source_text(), None);
 }
