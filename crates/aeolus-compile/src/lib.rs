@@ -1117,6 +1117,9 @@ pub struct ClassKeywords {
 /// value pass) but only READS the row tables: a class that refuses is
 /// simply absent from the result (the compiled program's diagnostics
 /// already carry the reason). The returned entries are in source order.
+/// The `config` rides for signature parity with the compile surface —
+/// the row texts are config-independent today (the spacing knob changes
+/// values, never a keyword table's text).
 ///
 /// ```no_run
 /// use aeolus_compile::{Config, keyword_texts};
@@ -1160,6 +1163,11 @@ pub fn keyword_texts(input: &str, config: &Config) -> Result<Vec<ClassKeywords>,
             // the suffix is the compile walk's question, not this one.
             keywords.extend(lower::kw_annotations(*row, effective_body));
         }
+        // `config` rides for signature parity with the compile surface;
+        // the row tables' texts are config-independent today (the
+        // spacing knob changes VALUES, never a keyword table's text) —
+        // documented at the seam so the silent ignore is a contract,
+        // not an oversight.
         let _ = config;
         out.push(ClassKeywords {
             span: candidate.span,
