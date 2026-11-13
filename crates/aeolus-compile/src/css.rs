@@ -67,20 +67,47 @@ pub enum CssAt {
     MediaMin(Bp),
     /// `@media (width < Nrem)` — the `max-md:` form (v4's range syntax).
     MediaMax(Bp),
-    /// `@container (min-width: Nrem)` — `@md:`.
-    ContainerMin(Bp),
-    /// `@container (width < Nrem)` — `@max-md:`.
-    ContainerMax(Bp),
+    /// `@container (min-width: Nrem)` — the bare `@md:` form. The NAMED
+    /// form (`@md/card:`) carries the container's name and renders the
+    /// v4 shape `@container card (min-width: …)`.
+    ContainerMin {
+        /// The container-query breakpoint.
+        bp: Bp,
+        /// The named container; `None` — the nearest eligible container.
+        name: Option<&'static str>,
+    },
+    /// `@container (width < Nrem)` — the `@max-md:` form. Same payload
+    /// contract as [`CssAt::ContainerMin`].
+    ContainerMax {
+        /// The container-query breakpoint.
+        bp: Bp,
+        /// The named container (`@max-lg/sidebar:`).
+        name: Option<&'static str>,
+    },
 }
 
 impl CssAt {
-    /// The at-rule prelude text (`@media (min-width: 48rem)`).
+    /// The at-rule prelude text (`@media (min-width: 48rem)`); a NAMED
+    /// container renders the v4 form `@container card (min-width: …)` —
+    /// the name selects which container the query tests.
     pub fn text(self) -> String {
         match self {
             CssAt::MediaMin(bp) => format!("@media (min-width: {}rem)", bp.rem()),
             CssAt::MediaMax(bp) => format!("@media (width < {}rem)", bp.rem()),
-            CssAt::ContainerMin(bp) => format!("@container (min-width: {}rem)", bp.rem()),
-            CssAt::ContainerMax(bp) => format!("@container (width < {}rem)", bp.rem()),
+            CssAt::ContainerMin { bp, name: None } => {
+                format!("@container (min-width: {}rem)", bp.rem())
+            }
+            CssAt::ContainerMax { bp, name: None } => {
+                format!("@container (width < {}rem)", bp.rem())
+            }
+            CssAt::ContainerMin {
+                bp,
+                name: Some(name),
+            } => format!("@container {name} (min-width: {}rem)", bp.rem()),
+            CssAt::ContainerMax {
+                bp,
+                name: Some(name),
+            } => format!("@container {name} (width < {}rem)", bp.rem()),
         }
     }
 }
@@ -703,19 +730,23 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         }
         Cond::Bp(bp) | Cond::Min(bp) => set.at = Some(CssAt::MediaMin(bp)),
         Cond::Max(bp) => set.at = Some(CssAt::MediaMax(bp)),
-        Cond::Container(bp) => set.at = Some(CssAt::ContainerMin(bp)),
-        Cond::MaxContainer(bp) => set.at = Some(CssAt::ContainerMax(bp)),
+        Cond::Container { bp, name } => set.at = Some(CssAt::ContainerMin { bp, name }),
+        Cond::MaxContainer { bp, name } => set.at = Some(CssAt::ContainerMax { bp, name }),
     }
 }
 
 /// The responsive/container spellings → the @-rule form (the IR's
-/// `Cond::{Bp,Min,Max,Container,MaxContainer}` set, rendered).
+/// `Cond::{Bp,Min,Max,Container,MaxContainer}` set, rendered). The
+/// named container spellings (`@md/card`) split the label off and carry
+/// it — the head renders the v4 named form.
 fn at_of(seg: &str) -> Option<CssAt> {
     if let Some(rest) = seg.strip_prefix("@max-") {
-        return variant::breakpoint(rest).map(CssAt::ContainerMax);
+        let (bp, name) = container_at(rest)?;
+        return Some(CssAt::ContainerMax { bp, name });
     }
     if let Some(rest) = seg.strip_prefix('@') {
-        return variant::breakpoint(rest).map(CssAt::ContainerMin);
+        let (bp, name) = container_at(rest)?;
+        return Some(CssAt::ContainerMin { bp, name });
     }
     if let Some(rest) = seg.strip_prefix("max-") {
         return variant::breakpoint(rest).map(CssAt::MediaMax);
@@ -724,6 +755,28 @@ fn at_of(seg: &str) -> Option<CssAt> {
         return variant::breakpoint(rest).map(CssAt::MediaMin);
     }
     variant::breakpoint(seg).map(CssAt::MediaMin)
+}
+
+/// The container-query spelling → `(breakpoint, name)`: the label split
+/// (`@md/card`) rides the head the way the fold does — an empty name
+/// refuses, an unknown breakpoint refuses.
+fn container_at(seg: &str) -> Option<(Bp, Option<&'static str>)> {
+    let (size, name) = match seg.split_once('/') {
+        // An empty name is the fold's refusal (`@md/:` is a typo), not
+        // a silent unnamed form.
+        Some((_, "")) => return None,
+        Some((size, name)) => (size, Some(intern_name(name))),
+        None => (seg, None),
+    };
+    let bp = variant::breakpoint(size)?;
+    Some((bp, name))
+}
+
+/// The head's own leak pool for the named-container spellings (the
+/// fold's `intern`, the emit side's copy — the emitted text is
+/// compile-time material).
+fn intern_name(text: &str) -> &'static str {
+    Box::leak(text.to_string().into_boxed_str())
 }
 
 /// The CSS identifier escape: everything outside `a-z A-Z 0-9 _ -` gets
