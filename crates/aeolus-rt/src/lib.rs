@@ -40,7 +40,8 @@ mod class_cell;
 pub use aeolus_compile::{
     AttrBit, AttrKind, AttrProbe, AttrState, CachedCompiled, CompileError, Customs,
     DEFAULT_DYN_CACHE_CAP, Diagnostic, DynCache, DynStore, Env, InterpError, InterpNote, Interped,
-    TokenSource, TwoGenStore, interp, interp_probes, interp_theme, interp_theme_probes, overlay,
+    PlanNoteKind, StyleWalk, TokenSource, TwoGenStore, interp, interp_probes, interp_theme,
+    interp_theme_probes, overlay, program_style, program_style_with,
 };
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
