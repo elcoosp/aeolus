@@ -44,7 +44,9 @@ use gpui::{
     StatefulInteractiveElement, Styled, TextAlign, px, relative, rems, rgba,
 };
 
+mod grad;
 mod ring;
+pub use grad::GradState;
 pub use ring::RingState;
 
 pub use aeolus_macro::{cn, theme, tw, tw_cn, variants};
@@ -58,8 +60,8 @@ pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState};
 /// extension traits.
 pub mod prelude {
     pub use crate::{
-        AeolusRoot, TwExt, TwStateExt, begin_frame, cn, set_env, theme, theme_from_css, tw, tw_cn,
-        variants,
+        AeolusRoot, GradState, TwExt, TwStateExt, begin_frame, cn, set_env, theme, theme_from_css,
+        tw, tw_cn, variants,
     };
     pub use aeolus_compile::Env;
     pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState, ClassCell, StaticProgram};
@@ -184,17 +186,20 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
         let env = env();
         // The base+env walk stays sourceless: the interaction closures
         // are GPUI's own state, the element-own attribute bits ride the
-        // `tw_probes` walk instead. The base walk's ring state seeds
-        // every closure — `hover:ring-4` composes with the base's
-        // `ring-red-500` colour the way CSS's vars persist across
-        // state layers.
+        // `tw_probes` walk instead. The base walk's ring and gradient
+        // states seed every closure — `hover:ring-4` composes with the
+        // base's `ring-red-500` colour and `hover:from-blue-500` with
+        // the base's `from-red-500` stop the way CSS's vars persist
+        // across state layers.
         let mut ring = RingState::default();
-        let mut this = apply_matching_ring(self, &program, &env, None, &mut ring);
-        this = this.hover(|style| apply_state_ring(style, &program, is_hover, ring));
-        this = this.focus(|style| apply_state_ring(style, &program, is_focus, ring));
-        this =
-            this.focus_visible(|style| apply_state_ring(style, &program, is_focus_visible, ring));
-        this = this.active(|style| apply_state_ring(style, &program, is_active, ring));
+        let mut grad = GradState::default();
+        let mut this = apply_matching_polyfills(self, &program, &env, None, &mut ring, &mut grad);
+        this = this.hover(|style| apply_state_polyfills(style, &program, is_hover, ring, grad));
+        this = this.focus(|style| apply_state_polyfills(style, &program, is_focus, ring, grad));
+        this = this.focus_visible(|style| {
+            apply_state_polyfills(style, &program, is_focus_visible, ring, grad)
+        });
+        this = this.active(|style| apply_state_polyfills(style, &program, is_active, ring, grad));
         this
     }
 }
@@ -301,20 +306,28 @@ fn apply_matching<S: Styled>(
     env: &Env,
     probes: Option<&dyn AttrProbe>,
 ) -> S {
-    apply_matching_ring(style, program, env, probes, &mut RingState::default())
+    apply_matching_polyfills(
+        style,
+        program,
+        env,
+        probes,
+        &mut RingState::default(),
+        &mut GradState::default(),
+    )
 }
 
-/// [`apply_matching`] with the ring machinery's accumulator threaded
-/// through — the shared walk body, so the base walk
-/// ([`TwExt::tw`]) and the [`TwStateExt`] closures compose the SAME
-/// `--tw-ring-*` state and the interaction closures inherit the base's
-/// ring bands instead of resetting them.
-fn apply_matching_ring<S: Styled>(
+/// [`apply_matching`] with BOTH polyfill accumulators threaded through
+/// — the shared walk body, so the base walk ([`TwExt::tw`]) and the
+/// [`TwStateExt`] closures compose the SAME `--tw-ring-*` and
+/// `--tw-gradient-*` state and the interaction closures inherit the
+/// base's bands and stops instead of resetting them.
+fn apply_matching_polyfills<S: Styled>(
     mut style: S,
     program: &StaticProgram,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
     ring: &mut RingState,
+    grad: &mut GradState,
 ) -> S {
     for (layer_index, layer) in program.layers.iter().enumerate() {
         if !cond_matches(layer.cond, env, probes) {
@@ -322,13 +335,18 @@ fn apply_matching_ring<S: Styled>(
         }
         for (decl_index, decl) in layer.decls.iter().enumerate() {
             let keyword = program.keyword(layer_index, decl_index).unwrap_or("");
-            // The ring family rides the §3.7 polyfill's accumulator:
-            // the four `--tw-ring-*` longhands compose into ONE
-            // box-shadow list applied after the walk (the composed
-            // surface a `shadow()` call replaces wholesale), and the
-            // text colour feeds the `currentColor` default.
+            // The polyfill families ride their accumulators: the four
+            // `--tw-ring-*` longhands compose into ONE box-shadow list
+            // and the gradient longhands into ONE linear gradient,
+            // each applied after the walk (the composed surfaces a
+            // `shadow()`/`bg()` call replaces wholesale), and the text
+            // colour feeds the ring's `currentColor` default.
             if is_ring_prop(decl.prop) {
                 ring.apply(decl.prop, decl.val, keyword);
+                continue;
+            }
+            if is_grad_prop(decl.prop) {
+                grad.apply(decl.prop, decl.val, keyword);
                 continue;
             }
             if decl.prop == Prop::Color {
@@ -337,7 +355,7 @@ fn apply_matching_ring<S: Styled>(
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    apply_ring(style, ring)
+    apply_polyfills(style, ring, grad)
 }
 
 /// The four `--tw-ring-*` longhands the polyfill owns (the registry's
@@ -350,8 +368,36 @@ fn is_ring_prop(prop: Prop) -> bool {
     )
 }
 
-/// The polyfill's single application point: the composed v4 list set in
-/// one `shadow()` call, or nothing (an empty state never touches the
+/// The gradient family the §3.7 lane owns: the direction row's
+/// `BackgroundImage` text plus the `--tw-gradient-*` stop and position
+/// longhands (`GradientVia` rides too — the accumulator records it and
+/// composes NOTHING, never a flattened three-stop misreading).
+fn is_grad_prop(prop: Prop) -> bool {
+    matches!(
+        prop,
+        Prop::BackgroundImage
+            | Prop::GradientFrom
+            | Prop::GradientVia
+            | Prop::GradientTo
+            | Prop::GradientFromPosition
+            | Prop::GradientViaPosition
+            | Prop::GradientToPosition
+    )
+}
+
+/// The polyfills' single application point: the composed v4 shadow list
+/// set in one `shadow()` call, the composed gradient in one `bg()` call
+/// — or nothing (an empty state never touches the refinement).
+fn apply_polyfills<S: Styled>(style: S, ring: &RingState, grad: &GradState) -> S {
+    let mut style = apply_ring(style, ring);
+    if let Some(background) = grad.background() {
+        style = style.bg(background);
+    }
+    style
+}
+
+/// The ring polyfill's application point: the composed v4 list in one
+/// `shadow()` call, or nothing (an empty state never touches the
 /// refinement — `ring-0` leaves no shadow layers behind).
 fn apply_ring<S: Styled>(style: S, ring: &RingState) -> S {
     let shadows = ring.shadows();
@@ -384,12 +430,13 @@ fn apply_dynamic<S: Styled>(
 
 /// The interaction-closure half of the walk: the layers the predicate
 /// selects (the closure's own state), composed over the base walk's
-/// ring state.
-fn apply_state_ring<S: Styled>(
+/// ring and gradient states.
+fn apply_state_polyfills<S: Styled>(
     style: S,
     program: &StaticProgram,
     pred: fn(Cond) -> bool,
     mut ring: RingState,
+    mut grad: GradState,
 ) -> S {
     let mut style = style;
     for (layer_index, layer) in program.layers.iter().enumerate() {
@@ -402,13 +449,17 @@ fn apply_state_ring<S: Styled>(
                 ring.apply(decl.prop, decl.val, keyword);
                 continue;
             }
+            if is_grad_prop(decl.prop) {
+                grad.apply(decl.prop, decl.val, keyword);
+                continue;
+            }
             if decl.prop == Prop::Color {
                 ring.apply(decl.prop, decl.val, keyword);
             }
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    apply_ring(style, &ring)
+    apply_polyfills(style, &ring, &grad)
 }
 
 // ---------------------------------------------------------------------------
