@@ -162,6 +162,13 @@ fn run(
         font_size_px: None,
         gap_row: None,
         gap_col: None,
+        gradient_shape: None,
+        gradient_from: None,
+        gradient_via: None,
+        gradient_to: None,
+        gradient_from_pos: None,
+        gradient_via_pos: None,
+        gradient_to_pos: None,
     };
     let mut notes: Vec<InterpNote> = Vec::new();
     let mut refusals: Vec<(Prop, String)> = Vec::new();
