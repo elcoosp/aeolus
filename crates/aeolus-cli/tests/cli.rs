@@ -526,6 +526,45 @@ fn expand_dark_flag_lifts_the_mode_tier() {
 }
 
 #[test]
+fn expand_reports_named_containers_without_bounds() {
+    // The sourceless shape: the named layer reports (the honest
+    // boundary the fold's own pins carry), nothing fires.
+    let (code, out, _) = run_cmd(&["expand", "@md/card:w-64"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("never matched"), "{out}");
+    assert!(!out.contains("width = 16rem"), "{out}");
+}
+
+#[test]
+fn expand_container_bounds_answer_the_named_layers() {
+    // The seam wired through the CLI: `card` at exactly md's 48rem —
+    // the min form fires AT the boundary (the pinned CSS semantics).
+    let (code, out, _) = run_cmd(&["expand", "--container", "card=48", "@md/card:w-64"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("width = 16rem"), "{out}");
+}
+
+#[test]
+fn expand_container_bounds_miss_quietly_below_the_boundary() {
+    // Below the named container's width the layer does not fire — and
+    // a source-ANSWERED miss is CSS-quiet, not an exclusion note.
+    let (code, out, _) = run_cmd(&["expand", "--container", "card=40", "@md/card:w-64"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("width = 16rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "the answered miss is a quiet skip: {out}"
+    );
+}
+
+#[test]
+fn expand_rejects_malformed_container_bounds() {
+    let (code, _out, err) = run_cmd(&["expand", "--container", "card", "w-64"]);
+    assert_eq!(code, 2, "a malformed bound is a CLI input error");
+    assert!(err.contains("name=rem"), "{err}");
+}
+
+#[test]
 fn expand_theme_flag_lowers_colour_tokens() {
     let (code, out, _) = run_cmd(&["expand", "--theme", "shadcn", "bg-primary"]);
     assert_eq!(code, 0);
