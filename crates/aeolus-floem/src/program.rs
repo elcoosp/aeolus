@@ -441,6 +441,20 @@ fn apply_decl(
             );
             style
         }
+        Prop::GradientFrom
+        | Prop::GradientVia
+        | Prop::GradientTo
+        | Prop::GradientFromPosition
+        | Prop::GradientViaPosition
+        | Prop::GradientToPosition => {
+            report.drop(
+                format!("{prop:?}"),
+                "the gradient stops compose with the direction row; floem's Brush::Gradient \
+                 needs concrete geometry — the plan path's Gradient slot and the CSS emit arm \
+                 carry them",
+            );
+            style
+        }
         Prop::ObjectFit | Prop::ObjectPosition => {
             report.drop(
                 format!("{prop:?}"),
