@@ -537,6 +537,9 @@ pub(crate) enum NumForm {
     Px,
     /// `{n}deg` — rotate/skew.
     Deg,
+    /// `{n}ms` — the motion layer's time scales (`duration-*`,
+    /// `delay-*`; the v4 default theme spells them in milliseconds).
+    Ms,
     /// `{n}%` — opacity and the scale family (v4 renders `opacity: 50%`).
     Pct,
     /// `{n}` — the unitless scales (flex-grow, order, z-index, columns).
@@ -582,6 +585,10 @@ pub(crate) const NUMBER_FORMS: &[(&str, NumForm, Option<&str>)] = &[
     ("scale-y", NumForm::Pct, None),
     ("skew-x", NumForm::Deg, None),
     ("skew-y", NumForm::Deg, None),
+    // The motion layer's time scales (the plan P6 row): the registry
+    // numbers the duration/delay roots in milliseconds.
+    ("duration", NumForm::Ms, None),
+    ("delay", NumForm::Ms, None),
     ("stroke", NumForm::Px, Some("stroke-width")),
     ("grid-cols", NumForm::Repeat, None),
     ("grid-rows", NumForm::Repeat, None),
@@ -934,6 +941,7 @@ fn number_css(
     let text = match form {
         NumForm::Px => format!("{n}px"),
         NumForm::Deg => format!("{n}deg"),
+        NumForm::Ms => format!("{n}ms"),
         NumForm::Pct => format!("{n}%"),
         NumForm::Unit | NumForm::Line => format!("{n}"),
         NumForm::Repeat => format!("repeat({n}, minmax(0, 1fr))"),
