@@ -188,6 +188,15 @@ fn bp_tokens(bp: Bp, ir: &TokenStream) -> TokenStream {
     quote! { #ir::Bp::#name }
 }
 
+/// The named-container payload's tokens (`@md/card:`'s `card` — the
+/// `&'static str` the fold interned) — `None` for the bare forms.
+fn name_tokens(name: Option<&str>) -> TokenStream {
+    match name {
+        Some(name) => quote! { ::core::option::Option::Some(#name) },
+        None => quote! { ::core::option::Option::None },
+    }
+}
+
 fn cond_tokens(cond: Cond, ir: &TokenStream) -> TokenStream {
     match cond {
         Cond::Data { name, value } => {
@@ -219,13 +228,15 @@ fn cond_tokens(cond: Cond, ir: &TokenStream) -> TokenStream {
             let bp = bp_tokens(bp, ir);
             quote! { #ir::Cond::Max(#bp) }
         }
-        Cond::Container(bp) => {
+        Cond::Container { bp, name } => {
             let bp = bp_tokens(bp, ir);
-            quote! { #ir::Cond::Container(#bp) }
+            let name = name_tokens(name);
+            quote! { #ir::Cond::Container { bp: #bp, name: #name } }
         }
-        Cond::MaxContainer(bp) => {
+        Cond::MaxContainer { bp, name } => {
             let bp = bp_tokens(bp, ir);
-            quote! { #ir::Cond::MaxContainer(#bp) }
+            let name = name_tokens(name);
+            quote! { #ir::Cond::MaxContainer { bp: #bp, name: #name } }
         }
         other => {
             let name: TokenStream = format!("{other:?}").parse().expect("condition name");
