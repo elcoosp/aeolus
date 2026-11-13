@@ -148,16 +148,29 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
         Cond::PeerFocus => fires(env.peer_focus),
         Cond::Bp(bp) | Cond::Min(bp) => fires(env.viewport_rem >= bp.rem()),
         Cond::Max(bp) => fires(env.viewport_rem < bp.rem()),
-        Cond::Container(bp) => match env.container_rem {
-            Some(width) => fires(width >= bp.rem()),
-            None => Fire::Excluded(
+        Cond::Container { bp, name } => match (name, env.container_rem) {
+            // The unnamed question answers from the nearest eligible
+            // container; a NAMED container needs THAT container's width
+            // — the Env answers the nearest-container question only, so
+            // the named layer is excluded with its name in the reason
+            // (the interp's ContainerUnqueried boundary).
+            (None, Some(width)) => fires(width >= bp.rem()),
+            (Some(_), _) => Fire::Excluded(
+                "the named container query needs the container's own width — the Env answers \
+                 the nearest-container question only (the interp reports ContainerUnqueried)",
+            ),
+            (None, None) => Fire::Excluded(
                 "no container context in the Env — the @container layer never fires (the \
                  interp reports ContainerUnqueried)",
             ),
         },
-        Cond::MaxContainer(bp) => match env.container_rem {
-            Some(width) => fires(width < bp.rem()),
-            None => Fire::Excluded(
+        Cond::MaxContainer { bp, name } => match (name, env.container_rem) {
+            (None, Some(width)) => fires(width < bp.rem()),
+            (Some(_), _) => Fire::Excluded(
+                "the named container query needs the container's own width — the Env answers \
+                 the nearest-container question only (the interp reports ContainerUnqueried)",
+            ),
+            (None, None) => Fire::Excluded(
                 "no container context in the Env — the @max-* layer never fires (the interp \
                  reports ContainerUnqueried)",
             ),
