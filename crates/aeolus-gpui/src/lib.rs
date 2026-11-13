@@ -28,6 +28,11 @@
 //! The keyword texts are why the program is sufficient: `hidden` and
 //! `block` are both `Prop::Display` + `Val::Kw(0)` in the bare IR, so
 //! the runtime reads the row text frozen beside the layer.
+//!
+//! The ring family rides the §3.7 polyfill: GPUI has no ring primitive,
+//! so the four `--tw-ring-*` longhands the walk sees compose into the
+//! v4 box-shadow list ([`RingState`], the spread-only `BoxShadow`
+//! bands) instead of the silent no-op the un-mapped arm used to be.
 
 use std::cell::RefCell;
 
@@ -38,6 +43,9 @@ use gpui::{
     AbsoluteLength, DefiniteLength, FontWeight, Hsla, IntoElement, Length,
     StatefulInteractiveElement, Styled, TextAlign, px, relative, rems, rgba,
 };
+
+mod ring;
+pub use ring::RingState;
 
 pub use aeolus_macro::{cn, theme, tw, tw_cn, variants};
 pub use aeolus_rt::{Env as Environment, StaticProgram as Program, theme_from_css};
@@ -176,12 +184,17 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
         let env = env();
         // The base+env walk stays sourceless: the interaction closures
         // are GPUI's own state, the element-own attribute bits ride the
-        // `tw_probes` walk instead.
-        let mut this = apply_matching(self, &program, &env, None);
-        this = this.hover(|style| apply_state(style, &program, is_hover));
-        this = this.focus(|style| apply_state(style, &program, is_focus));
-        this = this.focus_visible(|style| apply_state(style, &program, is_focus_visible));
-        this = this.active(|style| apply_state(style, &program, is_active));
+        // `tw_probes` walk instead. The base walk's ring state seeds
+        // every closure — `hover:ring-4` composes with the base's
+        // `ring-red-500` colour the way CSS's vars persist across
+        // state layers.
+        let mut ring = RingState::default();
+        let mut this = apply_matching_ring(self, &program, &env, None, &mut ring);
+        this = this.hover(|style| apply_state_ring(style, &program, is_hover, ring));
+        this = this.focus(|style| apply_state_ring(style, &program, is_focus, ring));
+        this =
+            this.focus_visible(|style| apply_state_ring(style, &program, is_focus_visible, ring));
+        this = this.active(|style| apply_state_ring(style, &program, is_active, ring));
         this
     }
 }
@@ -283,10 +296,25 @@ fn cond_matches(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> bool {
 }
 
 fn apply_matching<S: Styled>(
+    style: S,
+    program: &StaticProgram,
+    env: &Env,
+    probes: Option<&dyn AttrProbe>,
+) -> S {
+    apply_matching_ring(style, program, env, probes, &mut RingState::default())
+}
+
+/// [`apply_matching`] with the ring machinery's accumulator threaded
+/// through — the shared walk body, so the base walk
+/// ([`TwExt::tw`]) and the [`TwStateExt`] closures compose the SAME
+/// `--tw-ring-*` state and the interaction closures inherit the base's
+/// ring bands instead of resetting them.
+fn apply_matching_ring<S: Styled>(
     mut style: S,
     program: &StaticProgram,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    ring: &mut RingState,
 ) -> S {
     for (layer_index, layer) in program.layers.iter().enumerate() {
         if !cond_matches(layer.cond, env, probes) {
@@ -294,10 +322,43 @@ fn apply_matching<S: Styled>(
         }
         for (decl_index, decl) in layer.decls.iter().enumerate() {
             let keyword = program.keyword(layer_index, decl_index).unwrap_or("");
+            // The ring family rides the §3.7 polyfill's accumulator:
+            // the four `--tw-ring-*` longhands compose into ONE
+            // box-shadow list applied after the walk (the composed
+            // surface a `shadow()` call replaces wholesale), and the
+            // text colour feeds the `currentColor` default.
+            if is_ring_prop(decl.prop) {
+                ring.apply(decl.prop, decl.val, keyword);
+                continue;
+            }
+            if decl.prop == Prop::Color {
+                ring.apply(decl.prop, decl.val, keyword);
+            }
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    style
+    apply_ring(style, ring)
+}
+
+/// The four `--tw-ring-*` longhands the polyfill owns (the registry's
+/// ring rows lower into exactly these; `ring-inset` lowers into
+/// `Prop::BoxShadow` and stays the reported boundary).
+fn is_ring_prop(prop: Prop) -> bool {
+    matches!(
+        prop,
+        Prop::RingWidth | Prop::RingColor | Prop::RingOffsetWidth | Prop::RingOffsetColor
+    )
+}
+
+/// The polyfill's single application point: the composed v4 list set in
+/// one `shadow()` call, or nothing (an empty state never touches the
+/// refinement — `ring-0` leaves no shadow layers behind).
+fn apply_ring<S: Styled>(style: S, ring: &RingState) -> S {
+    let shadows = ring.shadows();
+    if shadows.is_empty() {
+        return style;
+    }
+    style.shadow(shadows)
 }
 
 /// The dynamic lane's apply: the compiled program (or, on a failed
@@ -321,7 +382,15 @@ fn apply_dynamic<S: Styled>(
     apply_matching(style, &program, env, None)
 }
 
-fn apply_state<S: Styled>(style: S, program: &StaticProgram, pred: fn(Cond) -> bool) -> S {
+/// The interaction-closure half of the walk: the layers the predicate
+/// selects (the closure's own state), composed over the base walk's
+/// ring state.
+fn apply_state_ring<S: Styled>(
+    style: S,
+    program: &StaticProgram,
+    pred: fn(Cond) -> bool,
+    mut ring: RingState,
+) -> S {
     let mut style = style;
     for (layer_index, layer) in program.layers.iter().enumerate() {
         if !pred(layer.cond) {
@@ -329,10 +398,17 @@ fn apply_state<S: Styled>(style: S, program: &StaticProgram, pred: fn(Cond) -> b
         }
         for (decl_index, decl) in layer.decls.iter().enumerate() {
             let keyword = program.keyword(layer_index, decl_index).unwrap_or("");
+            if is_ring_prop(decl.prop) {
+                ring.apply(decl.prop, decl.val, keyword);
+                continue;
+            }
+            if decl.prop == Prop::Color {
+                ring.apply(decl.prop, decl.val, keyword);
+            }
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    style
+    apply_ring(style, &ring)
 }
 
 // ---------------------------------------------------------------------------
