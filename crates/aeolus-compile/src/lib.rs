@@ -107,6 +107,27 @@
 //! module's docs carry the design; `tests/rust_tokens.rs` pins the
 //! contracts.
 //!
+//! The PROJECT-BUILD seam (plan §2's approach C — "whole-project scan +
+//! one generated artifact, dedupe globally" — and the P6 row's `cargo
+//! aeolus build`) landed 2026-11: the `scan` module walks source files
+//! (the [`ClassSource`] extraction seam, the built-in
+//! [`RustStrings`] quoted-literal walk — ONE
+//! implementation now shared with the CLI's `check` linter, the
+//! keyword-alignment precedent) and [`build`]/[`build_with`] assemble
+//! the whole-project artifact: every candidate compiles ONCE (the
+//! global dedupe), the rules render in the registry's canonical
+//! progression (the sort seam's own keys decide the order — the
+//! cascade reads rule order), a supplied `TokenTable` renders the
+//! self-contained `:root`/`.dark` vars block the rules'
+//! `var(--color-…)` references resolve against, and every diagnostic
+//! reports at EVERY location that names the offending string (the
+//! dedupe must not hide where a miss lives). The artifact is
+//! differential with the per-string CSS sheets — byte-equal rules,
+//! only the global walk added. The CLI's `aeolus build` command is
+//! the disk-walking form (the recursive walk, the `--theme`/`--out`/
+//! `--fail-on`/`--json` flags); `examples/project_build.rs` walks the
+//! seam in memory.
+//!
 //! Storage note: [`Program`] holds `&'static` slices, so each compile
 //! call interns its program into the leak pool the IR documents as the
 //! dynamic form's storage ("one interned `Box<[Decl]>` shared by
@@ -122,6 +143,24 @@
 //! The registry semantics are pinned at compile time: the crate refuses
 //! to build against a `REGISTRY_VERSION` other than the one its
 //! lowering was audited against.
+//!
+//! The IR-LEVEL OVERLAY seam (plan §3.6's surface (2) note — "User
+//! overrides go through `cn!` which resolves at compile time when
+//! static, or by `Program::overlay` (mask + copy) when not" — the
+//! non-compile-time composition path) landed 2026-11:
+//! [`overlay`] composes two programs rightmost-wins per longhand
+//! (same-condition layers fold by `Cond` equality, the result
+//! conflict-free and specificity-sorted), the ONE implementation
+//! [`cn`] delegate-folds through (the keyword-alignment precedent:
+//! the merge keeps its diagnostic channel and its N-ary fold, the
+//! algebra is the seam's own), and [`Compiled::overlay`] is the
+//! ergonomic half. The sketch's "mask + copy" landed as the
+//! Prop-discriminant sort + last-wins (the discriminant IS the
+//! cascade order); the masks still answer the conflict-freedom
+//! contract (`base_conflicts()` empty, test-pinned). The dynamic
+//! use case the seam exists for — a `tw!`-frozen static program under
+//! a runtime-compiled override — is the `program_overlay` example's
+//! story.
 
 mod arbitrary;
 mod css;
@@ -131,6 +170,7 @@ mod interp;
 mod lower;
 mod plan;
 mod rust;
+mod scan;
 mod sort;
 mod statics;
 mod variant;
@@ -162,6 +202,10 @@ pub use plan::{
 };
 pub use rust::{
     RustFragment, RustSheet, emit_rust, emit_rust_theme, emit_rust_theme_with, emit_rust_with,
+};
+pub use scan::{
+    BuildArtifact, BuildDiagnostic, ClassSource, Located, RustStrings, ScanHit, Scanned,
+    SourceFile, ThemeVar, build, build_with, scan, scan_rust_strings,
 };
 pub use sort::{SortKey, Sorted, SortedClass, sort, sort_with};
 pub use statics::emit_static;
@@ -338,6 +382,19 @@ impl Compiled {
     /// item.
     pub fn emit_static(&self) -> String {
         emit_static(&self.program)
+    }
+
+    /// Compose a bare program OVER this compile's program, rightmost
+    /// wins per longhand — the §3.6 surface (2) note's ergonomic half
+    /// ([`overlay`] on [`Compiled::program`]): the override a host
+    /// compiled (or froze) at another time rides the same composition
+    /// [`cn`] folds through. This compile's own reports ride the
+    /// result (a bare `Program` carries no reports of its own).
+    pub fn overlay(&self, over: &Program) -> Compiled {
+        Compiled {
+            program: overlay(&self.program, over),
+            diagnostics: self.diagnostics.clone(),
+        }
     }
 }
 
@@ -799,15 +856,91 @@ pub fn cn(inputs: &[&Compiled]) -> Result<Compiled, CompileError> {
         return Err(CompileError::NoInputs);
     }
 
-    // Conditions group first-seen (left then right); declarations
+    // The composition is the overlay seam's own walk (one
+    // implementation, the keyword-alignment precedent); this wrapper
+    // carries the diagnostic channel and the N-ary fold (the algebra
+    // is associative, so the pairwise fold IS the merge — the
+    // differential pins hold it). The fold starts from the EMPTY
+    // program so a single overlapping input still normalizes (the
+    // same-condition assembly runs for every input, not only between
+    // two).
+    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    for input in inputs {
+        diagnostics.extend(input.diagnostics.iter().cloned());
+    }
+    let mut program = Program::new(&[]);
+    for input in inputs {
+        program = overlay(&program, &input.program);
+    }
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        layers = program.layers.len(),
+        diagnostics = diagnostics.len(),
+        "cn: merged"
+    );
+    Ok(Compiled {
+        program,
+        diagnostics,
+    })
+}
+
+/// Compose two programs, RIGHTMOST WINS per longhand — the §3.6
+/// surface (2) note's `Program::overlay` (plan §3.3's "Overlay/`cn()`
+/// at IR level = mask algebra + copy"): the composition a host rides
+/// when the pieces did not come out of one compile call — a `tw!`-
+/// frozen static program under a runtime-compiled user override, two
+/// compiled artifacts from different sessions, the dynamic lane's
+/// program under the static base.
+///
+/// The mechanics are the longhand IR's own algebra, the SAME walk
+/// [`cn`] delegate-folds through (one implementation; the sketch's
+/// "mask + copy" landed as the Prop-discriminant sort + last-wins —
+/// the discriminant IS the cascade order, so "sort declarations" is
+/// an integer compare, and the masks still answer the contract:
+/// `base_conflicts()` on the result comes out empty, test-pinned):
+///
+/// * same-condition layers fold by `Cond` equality; disjoint
+///   conditions stay separate layers, re-sorted by specificity
+///   (stable, the base's first-seen order breaking ties);
+/// * within a layer the declarations concatenate base-then-over and
+///   the LAST occurrence per longhand wins — the overlap the
+///   composition removes is exactly
+///   [`aeolus_ir::Program::base_conflicts`]'s bits on the raw
+///   concatenation;
+/// * the result is conflict-free, specificity-sorted, and interned as
+///   the IR's documented dynamic form — one composition per distinct
+///   pair is the intended call pattern (the SAME story `cn`
+///   documents; the [`DynCache`] is the bounded dedupe over the
+///   COMPILE surface, not the composition one).
+///
+/// The function is TOTAL: an empty side contributes nothing, two
+/// empty sides compose to the empty program.
+///
+/// ```no_run
+/// use aeolus_compile::{compile, overlay, Config};
+///
+/// let base = compile("p-4 rounded-md", &Config::default())?;
+/// let over = compile("px-8", &Config::default())?;
+/// // The runtime-composed form of the same cascade `cn` folds:
+/// let merged = overlay(&base.program, &over.program);
+/// assert!(merged.base_conflicts().is_empty());
+/// # Ok::<(), aeolus_compile::CompileError>(())
+/// ```
+pub fn overlay(base: &Program, over: &Program) -> Program {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        base_layers = base.layers.len(),
+        over_layers = over.layers.len(),
+        "overlay: the ir-level composition"
+    );
+
+    // Conditions group first-seen (base then over); declarations
     // concatenate in the same order. The specificity sort + the
     // per-longhand last-wins dedupe in the assembly step do the rest.
     let mut conds: Vec<Cond> = Vec::new();
     let mut groups: Vec<Vec<Decl>> = Vec::new();
-    let mut diagnostics: Vec<Diagnostic> = Vec::new();
-    for input in inputs {
-        diagnostics.extend(input.diagnostics.iter().cloned());
-        for layer in input.program.layers {
+    for program in [base, over] {
+        for layer in program.layers {
             let idx = match conds.iter().position(|&c| c == layer.cond) {
                 Some(idx) => idx,
                 None => {
@@ -823,9 +956,10 @@ pub fn cn(inputs: &[&Compiled]) -> Result<Compiled, CompileError> {
     // The assembly: stable specificity sort (first-seen order breaks
     // ties), per-group cascade order (Prop's discriminant IS the sort
     // order; the stable sort keeps source order within one longhand),
-    // then the merge's own contract — the LAST declaration per longhand
-    // wins, so the dedupe drops exactly the shadowed earlier decls (the
-    // overlap `base_conflicts()` names on the raw concatenation).
+    // then the composition's own contract — the LAST declaration per
+    // longhand wins, so the dedupe drops exactly the shadowed earlier
+    // decls (the overlap `base_conflicts()` names on the raw
+    // concatenation).
     let mut order: Vec<(Cond, Vec<Decl>)> = conds.into_iter().zip(groups).collect();
     order.sort_by_key(|(cond, _)| cond.specificity());
     let mut layers: Vec<Layer> = Vec::with_capacity(order.len());
@@ -845,16 +979,7 @@ pub fn cn(inputs: &[&Compiled]) -> Result<Compiled, CompileError> {
         layers.push(Layer::new(cond, merged));
     }
     let layers: &'static [Layer] = Box::leak(layers.into_boxed_slice());
-    #[cfg(feature = "tracing")]
-    tracing::debug!(
-        layers = layers.len(),
-        diagnostics = diagnostics.len(),
-        "cn: merged"
-    );
-    Ok(Compiled {
-        program: Program::new(layers),
-        diagnostics,
-    })
+    Program::new(layers)
 }
 
 // ---------------------------------------------------------------------------
