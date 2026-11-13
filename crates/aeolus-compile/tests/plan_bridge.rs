@@ -646,12 +646,20 @@ fn unmappable_families_report_typed_notes() {
     assert!(!note.kind.code().is_empty());
     assert!(!note.kind.help().is_empty());
 
-    // `bg-linear-to-r` lowers into the IR (BackgroundImage); the v0.x
-    // Gradient slot wants composed stops — the note names it.
+    // `bg-linear-to-r` lowers into the IR (BackgroundImage); the stop
+    // longhands and the direction row's composed text COMPOSE into the
+    // v0.x Gradient slot — the plan carries the real gradient, no note
+    // (the milestone's own change: the slot-for-note trade the stop
+    // longhands bought). The un-composable placeholder texts keep the
+    // note — the gradient.rs suite pins that half.
     let sheet = emit_plan_theme("bg-linear-to-r", &tokens, &Config::default()).unwrap();
     assert!(sheet.diagnostics.is_empty());
-    assert_eq!(sheet.notes.len(), 1);
-    assert!(matches!(sheet.notes[0].kind, PlanNoteKind::GradientRow));
+    assert!(
+        sheet.notes.is_empty(),
+        "the direction row composes now: {:?}",
+        sheet.notes
+    );
+    assert!(sheet.plan.base.background_gradient.is_some());
 
     // `outline-dashed` lowers (OutlineStyle); the v0.x Outline slot has
     // no style field — the slot note.
