@@ -1,6 +1,6 @@
 //! The V1 static-program lane (architecture plan §7's Xilem re-target —
 //! the third backend after GPUI and Floem): a `tw!`-compiled
-//! [`StaticProgram`](aeolus_rt::StaticProgram) resolves into the plan
+//! [`StaticProgram`] resolves into the plan
 //! path's own [`ResolvedStyle`] under the interp's [`Env`] probe
 //! semantics, so a frozen program feeds the SAME
 //! [`StyledWidget`](crate::widget::StyledWidget) resolution the plan
@@ -15,7 +15,7 @@
 //! per-state resolution needs, the rem bake through [`REM_PX`] (§9's
 //! per-backend `rem_px` constant, default 16), and the translation of
 //! the walk's typed report into the crate's
-//! [`LoweringReport`](crate::LoweringReport) — every excluded layer,
+//! [`LoweringReport`] — every excluded layer,
 //! unmapped longhand and theme refusal lands there, never a silent
 //! drop.
 
@@ -41,8 +41,8 @@ pub const REM_PX: f32 = 16.0;
 /// form the `tw!` macro freezes and
 /// [`ClassCell`](aeolus_rt::ClassCell) pools.
 ///
-/// Theme-token longhands ([`Val::Tok`](aeolus_ir::Val::Tok)/
-/// [`Val::ModePair`](aeolus_ir::Val::ModePair)) refuse into the report
+/// Theme-token longhands (`Val::Tok`/
+/// `Val::ModePair`) refuse into the report
 /// here: pass a source through [`lower_program_with`] when the program
 /// carries them (the runtime tier's explicit slow lane).
 /// Attribute-probe layers stay unqueried and reported for the same
