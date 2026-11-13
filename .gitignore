@@ -4,3 +4,8 @@ commit.sh
 ship.toml
 ship.toml
 .github/pr-body.md
+
+# The handoff ceremony files (the PR description and the per-file
+# commit plan the shipping tooling consumes — tree state, not source).
+ship.toml
+.github/pr-body.md
