@@ -174,6 +174,26 @@ pub enum Prop {
     Background,
     /// `background-image` (`bg-linear-*` / `bg-radial` / `bg-conic` / `bg-none`).
     BackgroundImage,
+    /// `--tw-gradient-from` — the gradient's from-stop colour
+    /// (`from-{color}`), v4's own custom-property longhand set: the
+    /// stops are SEPARATE declarations that compose with the
+    /// `background-image` direction, the same longhand split the
+    /// per-edge families took (the shorthand-shaped fold let the last
+    /// stop replace the direction in the cascade).
+    GradientFrom,
+    /// `--tw-gradient-via` — the via-stop colour (`via-{color}`).
+    GradientVia,
+    /// `--tw-gradient-to` — the to-stop colour (`to-{color}`).
+    GradientTo,
+    /// `--tw-gradient-from-position` — the from stop's percentage
+    /// (`from-{p}%`), `Val::Pct`; absent = the v4 `@property` 0% default.
+    GradientFromPosition,
+    /// `--tw-gradient-via-position` — the via stop's percentage
+    /// (`via-{p}%`), the 50% default.
+    GradientViaPosition,
+    /// `--tw-gradient-to-position` — the to stop's percentage
+    /// (`to-{p}%`), the 100% default.
+    GradientToPosition,
     /// `object-fit`.
     ObjectFit,
     /// `object-position`.
@@ -338,6 +358,12 @@ impl Prop {
         Self::RingWidth,
         Self::Background,
         Self::BackgroundImage,
+        Self::GradientFrom,
+        Self::GradientVia,
+        Self::GradientTo,
+        Self::GradientFromPosition,
+        Self::GradientViaPosition,
+        Self::GradientToPosition,
         Self::ObjectFit,
         Self::ObjectPosition,
         Self::Color,
@@ -455,6 +481,12 @@ impl Prop {
             Prop::RingWidth => "--tw-ring-width",
             Prop::Background => "background-color",
             Prop::BackgroundImage => "background-image",
+            Prop::GradientFrom => "--tw-gradient-from",
+            Prop::GradientVia => "--tw-gradient-via",
+            Prop::GradientTo => "--tw-gradient-to",
+            Prop::GradientFromPosition => "--tw-gradient-from-position",
+            Prop::GradientViaPosition => "--tw-gradient-via-position",
+            Prop::GradientToPosition => "--tw-gradient-to-position",
             Prop::ObjectFit => "object-fit",
             Prop::ObjectPosition => "object-position",
             Prop::Color => "color",
