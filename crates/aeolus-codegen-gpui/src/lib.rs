@@ -11,9 +11,13 @@
 //!
 //! The capability table ([`supports`]) is the §3.7 matrix in code:
 //! every longhand GPUI's `StyleRefinement` expresses natively. The
-//! reported longhands are the documented boundaries (outline, ring,
+//! reported longhands are the documented boundaries (outline,
 //! transforms, filters), not silent drops — a host renders the returns
-//! of [`Emit::emit`] as diagnostics.
+//! of [`Emit::emit`] as diagnostics. The ring family rides the §3.7
+//! POLYFILL tier ([`polyfilled`]): no native slot, but the runtime
+//! composes the v4 box-shadow list from GPUI's own `Vec<BoxShadow>`
+//! (`aeolus_gpui::RingState`), so a program whose only refusals are
+//! ring longhands emits.
 
 use aeolus_codegen::{Emit, Unsupported, ir_path};
 use aeolus_compile::{Config, keyword_texts};
@@ -46,7 +50,7 @@ impl Emit for GpuiEmit<'_> {
             .iter()
             .flat_map(|layer| layer.decls.iter())
             .filter_map(|decl| {
-                (!supports(decl.prop))
+                (!expressible(decl.prop))
                     .then_some(Unsupported::new(decl.prop, "GPUI has no native slot"))
             })
             .collect();
@@ -107,7 +111,7 @@ pub fn lower_class(literal: &str, config: &Config) -> Result<TokenStream, Diagno
             .iter()
             .flat_map(|layer| layer.decls.iter())
             .filter_map(|decl| {
-                (!supports(decl.prop))
+                (!expressible(decl.prop))
                     .then_some(Unsupported::new(decl.prop, "GPUI has no native slot"))
             })
             .collect(),
@@ -250,7 +254,9 @@ fn val_tokens(val: Val, ir: &TokenStream) -> TokenStream {
 }
 
 /// The §3.7 capability table: the longhands GPUI's style API expresses
-/// natively. Everything else is the honest, reported boundary.
+/// natively. Everything else is the honest, reported boundary — except
+/// the [`polyfilled`] tier, which the runtime composes from native
+/// surfaces (the emit gates accept both; see [`expressible`]).
 pub const fn supports(prop: Prop) -> bool {
     matches!(
         prop,
@@ -314,4 +320,27 @@ pub const fn supports(prop: Prop) -> bool {
             | Prop::Cursor
             | Prop::TextOverflow
     )
+}
+
+/// The §3.7 POLYFILL tier: the longhands GPUI has no native slot for
+/// but the runtime composes from native surfaces. Today that is the
+/// ring family — no ring primitive, but the v4 ring machinery IS a
+/// box-shadow list, and GPUI's `Vec<BoxShadow>` carries it
+/// (`aeolus_gpui::RingState`, the spread-only bands). The emit gates
+/// accept a program whose only non-native longhands are these: the
+/// frozen program carries the same `Val`s the runtime's walk
+/// polyfills, so nothing is lost in the static form.
+pub const fn polyfilled(prop: Prop) -> bool {
+    matches!(
+        prop,
+        Prop::RingWidth | Prop::RingColor | Prop::RingOffsetWidth | Prop::RingOffsetColor
+    )
+}
+
+/// The emit gates' verdict: a longhand the target takes — native
+/// ([`supports`]) or polyfilled ([`polyfilled`]). Everything else
+/// refuses into the `Unsupported` diagnostics, the documented
+/// boundary.
+pub const fn expressible(prop: Prop) -> bool {
+    supports(prop) || polyfilled(prop)
 }
