@@ -52,11 +52,13 @@
 //! width-0 outline it visually is, the same reading the GPUI/Floem
 //! walks take.
 
+use std::fmt;
+
 use aeolus_core::plan::ResolvedStyle;
 use aeolus_ir::{Layer, Prop, Val};
 
 use crate::Config;
-use crate::interp::{AttrProbe, Env, Fire, InterpNote, TokenSource, decide};
+use crate::interp::{AttrProbe, Env, Fire, InterpError, InterpNote, TokenSource, decide};
 use crate::plan::{PlanNoteKind, PlanWriter};
 
 // ---------------------------------------------------------------------------
@@ -181,8 +183,11 @@ fn run(
         // The verdicts are the INTERP's own `decide` — one
         // implementation, two walks (the effective-declaration arm and
         // this style fold), so the two cannot disagree on when a layer
-        // fires.
-        match decide(layer.cond, env, probes, layer.mask) {
+        // fires. The container-bounds seam rides the interp arm's
+        // `*_containers` forms; this fold keeps the sourceless shape
+        // (the style lane's named-container layers report, exactly as
+        // they did before the seam landed).
+        match decide(layer.cond, env, probes, None, layer.mask) {
             Fire::Yes => {
                 for (di, decl) in layer.decls.iter().enumerate() {
                     let text = keywords
@@ -194,7 +199,7 @@ fn run(
                         Err(reason) => {
                             #[cfg(feature = "tracing")]
                             tracing::debug!(prop = ?decl.prop, %reason, "theme form refused");
-                            refusals.push((decl.prop, reason));
+                            refusals.push((decl.prop, reason.to_string()));
                             continue;
                         }
                     };
@@ -233,26 +238,60 @@ fn run(
 /// ([`Val::Tok`]/[`Val::ModePair`]) resolve through the
 /// [`TokenSource`] seam (the interp's own two questions, the mode
 /// riding every ask); everything else rides verbatim. A refusal — no
-/// source wired, an unknown slot — carries the source's own typed
-/// failure text.
-fn concrete(val: Val, env: &Env, tokens: Option<&dyn TokenSource>) -> Result<Val, String> {
+/// source wired, an unknown slot — carries the typed
+/// [`ConcreteRefusal`], the machine-checkable form of the text the
+/// walk's report renders.
+fn concrete(val: Val, env: &Env, tokens: Option<&dyn TokenSource>) -> Result<Val, ConcreteRefusal> {
     match val {
         Val::Tok { id, alpha } => match tokens {
             Some(source) => source
                 .resolve(id, alpha, env.dark)
-                .map_err(|err| err.to_string()),
-            None => Err("no TokenSource — the runtime tier's explicit slow lane \
-                 (pass one via program_style_with)"
-                .to_string()),
+                .map_err(ConcreteRefusal::Source),
+            None => Err(ConcreteRefusal::NoTokenSource),
         },
         Val::ModePair(slot) => match tokens {
             Some(source) => source
                 .resolve_pair(slot, env.dark)
-                .map_err(|err| err.to_string()),
-            None => Err("no TokenSource — the static dark pair rides the baked \
-                 table (pass one via program_style_with)"
-                .to_string()),
+                .map_err(ConcreteRefusal::Source),
+            None => Err(ConcreteRefusal::NoTokenSourcePair),
         },
         concrete => Ok(concrete),
+    }
+}
+
+/// The theme-form refusal the style fold reports per longhand — the
+/// TYPED form of the refusal text [`StyleWalk::refusals`] renders. The
+/// helper's two hand-written prose arms become machine-checkable
+/// variants (a report can distinguish "no source wired" from "the
+/// source refused" without string matching), while the public report
+/// keeps its `(prop, reason)` text shape (the crates' report
+/// convention).
+#[derive(Clone, Debug, PartialEq)]
+enum ConcreteRefusal {
+    /// No [`TokenSource`] rides and the value is a runtime token slot
+    /// ([`Val::Tok`]): the runtime tier's explicit slow lane.
+    NoTokenSource,
+    /// No [`TokenSource`] rides and the value is a T1 pair slot
+    /// ([`Val::ModePair`]): the static dark pair rides the baked table.
+    NoTokenSourcePair,
+    /// The source's own typed failure (see [`InterpError`]).
+    Source(InterpError),
+}
+
+impl fmt::Display for ConcreteRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoTokenSource => write!(
+                f,
+                "no TokenSource — the runtime tier's explicit slow lane \
+                 (pass one via program_style_with)"
+            ),
+            Self::NoTokenSourcePair => write!(
+                f,
+                "no TokenSource — the static dark pair rides the baked \
+                 table (pass one via program_style_with)"
+            ),
+            Self::Source(err) => err.fmt(f),
+        }
     }
 }
