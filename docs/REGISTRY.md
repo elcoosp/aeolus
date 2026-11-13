@@ -188,3 +188,8 @@ Generated from `aeolus-data`'s committed rows — do not edit.
 | `@container` | any-of | container-type | `container-type` | no | utilities.ts container-type |
 | `fill` | any-of | fill | `fill` | no | utilities.ts fill (registry-local group; oracle None) |
 | `stroke` | any-of | stroke | `stroke` | no | utilities.ts stroke (registry-local group; oracle None) |
+| `transition` | any-of | transition-property | `transition` | no | utilities.ts transition (registry-local group; oracle None) |
+| `duration` | number | transition-duration | `duration` | no | utilities.ts transition-duration (registry-local group; oracle None) |
+| `delay` | number | transition-delay | `delay` | no | utilities.ts transition-delay (registry-local group; oracle None) |
+| `ease` | keywords | transition-timing-function | `ease` | no | utilities.ts transition-timing-function (registry-local group; oracle None) |
+| `animate` | keywords | animation | `animate` | no | utilities.ts animation (registry-local group; oracle None) |
