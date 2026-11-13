@@ -1045,13 +1045,16 @@ pub static ROWS: &[UtilityRow] = &[
         false,
         "utilities.ts background-image",
     ),
-    // The gradient stop edges: colour and position are separate custom
-    // properties that COMPOSE — hence the separate rows/kinds. The stop
-    // POSITION shape is the bare percentage (`from-20%`).
+    // The gradient stop edges: colour and position are SEPARATE
+    // longhands that COMPOSE with the direction row (v4's own
+    // `--tw-gradient-*` custom-property set — the shorthand-shaped
+    // BackgroundImage fold let the last stop replace the direction in
+    // the per-longhand cascade). The stop POSITION shape is the bare
+    // percentage (`from-20%`).
     row(
         "from",
         any(&[color(), arb()]),
-        &[Prop::BackgroundImage],
+        &[Prop::GradientFrom],
         "from-color",
         false,
         "utilities.ts gradient-color-stops",
@@ -1059,7 +1062,7 @@ pub static ROWS: &[UtilityRow] = &[
     row(
         "from",
         ValueKind::Percent,
-        &[Prop::BackgroundImage],
+        &[Prop::GradientFromPosition],
         "from-pos",
         false,
         "utilities.ts gradient-color-stops",
@@ -1067,7 +1070,7 @@ pub static ROWS: &[UtilityRow] = &[
     row(
         "via",
         any(&[color(), arb()]),
-        &[Prop::BackgroundImage],
+        &[Prop::GradientVia],
         "via-color",
         false,
         "utilities.ts gradient-color-stops",
@@ -1075,7 +1078,7 @@ pub static ROWS: &[UtilityRow] = &[
     row(
         "via",
         ValueKind::Percent,
-        &[Prop::BackgroundImage],
+        &[Prop::GradientViaPosition],
         "via-pos",
         false,
         "utilities.ts gradient-color-stops",
@@ -1083,7 +1086,7 @@ pub static ROWS: &[UtilityRow] = &[
     row(
         "to",
         any(&[color(), arb()]),
-        &[Prop::BackgroundImage],
+        &[Prop::GradientTo],
         "to-color",
         false,
         "utilities.ts gradient-color-stops",
@@ -1091,7 +1094,7 @@ pub static ROWS: &[UtilityRow] = &[
     row(
         "to",
         ValueKind::Percent,
-        &[Prop::BackgroundImage],
+        &[Prop::GradientToPosition],
         "to-pos",
         false,
         "utilities.ts gradient-color-stops",
