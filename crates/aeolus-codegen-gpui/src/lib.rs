@@ -19,6 +19,7 @@
 //! (`aeolus_gpui::RingState`), so a program whose only refusals are
 //! ring longhands emits.
 
+use aeolus_codegen::conformance::{Capability, Tier};
 use aeolus_codegen::{Emit, Unsupported, ir_path};
 use aeolus_compile::{Config, keyword_texts};
 use aeolus_ir::{Bp, Cond, Program, Prop, Val};
@@ -378,6 +379,30 @@ pub const fn expressible(prop: Prop) -> bool {
     supports(prop) || polyfilled(prop)
 }
 
+/// The §5.1 conformance seam's GPUI half: the capability impl reading
+/// the SAME `supports`/`polyfilled` tables the emit gates run — the
+/// published score is the emitter's own verdicts, never a parallel
+/// claim. The per-declaration refinements (the text-dependent verdicts
+/// `unsupported_reason` runs) stay at the gates; this is the
+/// per-longhand ceiling the docs page renders.
+pub struct Caps;
+
+impl Capability for Caps {
+    fn name(&self) -> &'static str {
+        "gpui"
+    }
+
+    fn tier(&self, prop: Prop) -> Tier {
+        if supports(prop) {
+            Tier::Native
+        } else if polyfilled(prop) {
+            Tier::Polyfill
+        } else {
+            Tier::Refused
+        }
+    }
+}
+
 /// The per-DECLARATION verdict: the per-prop tiers ([`expressible`])
 /// refined where the prop's answer is the ROW TEXT's. The direction
 /// longhand ([`Prop::BackgroundImage`]) expresses exactly when its
@@ -393,6 +418,25 @@ pub const fn expressible(prop: Prop) -> bool {
 /// cannot be gate-checked and refuses rather than guessing.
 pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
     match prop {
+        // ---- the motion layer (the plan §3.7 transition/animate row) ---
+        //
+        // GPUI's style surface carries no transition slot, and its
+        // animation story (`with_animation`) needs an element id + state
+        // the frozen static program does not name — the plan's own
+        // "Phase 6 motion layer" boundary, reported per longhand, the
+        // CSS/interp/plan arms rendering the real output.
+        Prop::TransitionProperty | Prop::TransitionTimingFunction => Some(
+            "GPUI's style surface carries no transition slot — the motion \
+             families stay the CSS/interp/plan arms' output (plan §3.7)",
+        ),
+        Prop::TransitionDuration | Prop::TransitionDelay => Some(
+            "GPUI has no transition duration/delay slot — the motion \
+             families stay the CSS/interp/plan arms' output (plan §3.7)",
+        ),
+        Prop::Animation => Some(
+            "GPUI's with_animation needs an element id + state the frozen \
+             static program does not name (plan §3.7's motion row)",
+        ),
         Prop::BackgroundImage => {
             if keyword.is_empty() {
                 Some(
