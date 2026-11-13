@@ -80,6 +80,20 @@ harness = false
 name = "interp"
 harness = false
 
+# The named-container seam's benchmarks (plan §3.5's container row, the
+# resolution half): the per-frame walk over a container-mixed program
+# with the bounds table hit and quietly missed, themeless and themed.
+[[bench]]
+name = "container_bounds"
+harness = false
+
+# The pseudo-element render-target benchmarks (plan §3.5's variant-costs
+# row, the resolution half): the scoped walk over a pseudo-mixed program,
+# both targets and the themed form.
+[[bench]]
+name = "pseudo_targets"
+harness = false
+
 # The static-data emit arm's benchmarks (plan §3.1 emit (b)): freezing
 # the compiled program into the byte-stable static item, against the
 # compile floor.
