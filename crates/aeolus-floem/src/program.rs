@@ -669,6 +669,23 @@ fn apply_decl(
             );
             style
         }
+        // ---- motion (the plan P6 row) ----------------------------------
+        //
+        // Floem's pinned-rev Style carries no transition or animation
+        // surface — the motion longhands ride the CSS emit arm (the
+        // plan path reports the same boundary; the plan bridge folds
+        // them into the oracle's Transition/Animation extras).
+        Prop::TransitionProperty
+        | Prop::TransitionDuration
+        | Prop::TransitionTimingFunction
+        | Prop::TransitionDelay
+        | Prop::Animation => {
+            report.drop(
+                format!("{prop:?}"),
+                "no transition/animation surface at the pinned rev — the motion families ride                  the CSS emit arm",
+            );
+            style
+        }
     }
 }
 
