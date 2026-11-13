@@ -13,6 +13,9 @@ publish = false
 
 [dependencies]
 aeolus-core = { path = "../aeolus-core" }
+# The V1 runtime seam: the `StaticProgram`/`Env`/`AttrProbe`/`TokenSource`
+# types the program lane walks.
+aeolus-rt = { path = "../aeolus-rt" }
 iced_core = "0.14"
 # Widget style types (container::Style / button::{Style, Status} / Catalog)
 # live in iced_widget; every renderer feature (wgpu, tiny-skia, image, ...)
@@ -21,6 +24,28 @@ iced_core = "0.14"
 # IS `iced_widget::container::Style`.
 iced_widget = { version = "0.14", default-features = false }
 tracing = "0.1"
+
+[dev-dependencies]
+# The V1 compile seam builds the static programs the program lane walks,
+# and the plan bridge feeds the differential pins.
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-theme = { workspace = true }
+# The program lane's microbenchmark (divan, stable — the workspace bench
+# idiom).
+divan = "0.1"
+
+[[bench]]
+name = "program"
+harness = false
+# The lane's microbenchmark runs headless like the crate itself: iced
+# 0.14's `iced_renderer` compile_errors in RELEASE mode without a
+# renderer feature (its own `#[cfg(not(debug_assertions))]` gate), so
+# `cargo bench` (release profile) cannot build this target. Run it the
+# workspace's own way — `cargo test -p aeolus-iced --benches` (the dev
+# profile the `Renderer = ()` fallback compiles under) or
+# `cargo bench --profile dev -p aeolus-iced --bench program`. Enabling
+# `tiny-skia` on iced_widget would lift the gate but contradicts the
+# no-renderer discipline documented above.
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
