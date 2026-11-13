@@ -194,8 +194,10 @@ pub use dyn_cache::{
     CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity, DynStore, TwoGenStore,
 };
 pub use interp::{
-    AttrBit, AttrKind, AttrProbe, AttrState, Env, InterpError, InterpNote, Interped, TokenSource,
-    interp, interp_probes, interp_theme, interp_theme_probes,
+    AttrBit, AttrKind, AttrProbe, AttrState, ContainerBound, ContainerProbe, ContainerState, Env,
+    InterpError, InterpNote, Interped, PseudoTarget, TokenSource, interp, interp_containers,
+    interp_probes, interp_probes_containers, interp_pseudo, interp_pseudo_theme, interp_theme,
+    interp_theme_containers, interp_theme_probes, interp_theme_probes_containers,
 };
 pub use plan::{
     PlanNote, PlanNoteKind, PlanSheet, emit_plan, emit_plan_theme, emit_plan_theme_with,
@@ -376,6 +378,103 @@ impl Compiled {
         probes: &impl AttrProbe,
     ) -> Result<Interped, InterpError> {
         interp_theme_probes(&self.program, tokens, env, probes)
+    }
+
+    /// Resolve this compile's program to its effective declarations
+    /// under one probe situation and one [`ContainerProbe`] — the
+    /// named-container half ([`interp_containers`] on
+    /// [`Compiled::program`]): the NAMED container queries ask the
+    /// source (the built-in [`ContainerState`] carries the named
+    /// containers' widths; a host wires its own). A source-answered
+    /// miss is CSS-quiet; the unnamed forms keep answering from
+    /// [`Env::container_rem`].
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_containers(
+        &self,
+        env: &Env,
+        containers: &impl ContainerProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_containers(&self.program, env, containers)
+    }
+
+    /// The themed form of [`Compiled::interp_containers`]: one
+    /// [`TokenSource`] for the theme forms, one [`ContainerProbe`] for
+    /// the named container queries — both seams ride one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_containers`]).
+    pub fn interp_theme_containers(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        containers: &impl ContainerProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_containers(&self.program, tokens, env, containers)
+    }
+
+    /// The probe-composed form: one [`AttrProbe`] for the attribute
+    /// probes, one [`ContainerProbe`] for the named container queries —
+    /// the full themeless walk ([`interp_probes_containers`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_containers(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_containers(&self.program, env, probes, containers)
+    }
+
+    /// The FULL form: one [`TokenSource`], one [`AttrProbe`], one
+    /// [`ContainerProbe`] — every seam the walk consults rides one call
+    /// ([`interp_theme_probes_containers`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_probes_containers`]).
+    pub fn interp_theme_probes_containers(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_containers(&self.program, tokens, env, probes, containers)
+    }
+
+    /// Resolve this compile's program's PSEUDO-ELEMENT cascade for one
+    /// [`PseudoTarget`] — the render-target arm ([`interp_pseudo`] on
+    /// [`Compiled::program`]): only the layers carrying the target's
+    /// condition participate; the element's own layers are a different
+    /// target (the element walk's [`InterpNote::PseudoElement`] note
+    /// reports them on ITS side).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_pseudo(&self, target: PseudoTarget) -> Result<Interped, InterpError> {
+        interp_pseudo(&self.program, target)
+    }
+
+    /// The themed form of [`Compiled::interp_pseudo`]: one
+    /// [`TokenSource`] resolves the theme forms in the pseudo cascade.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_pseudo_theme`]).
+    pub fn interp_pseudo_theme(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        target: PseudoTarget,
+    ) -> Result<Interped, InterpError> {
+        interp_pseudo_theme(&self.program, tokens, env, target)
     }
 
     /// Emit this compile's program as the IR's static form — the
