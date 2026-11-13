@@ -115,7 +115,7 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         let fragment = has_inner_fragment(rest)?;
         return Some(Cond::Has(fragment));
     }
-    let (name, _label) = match variant.split_once('/') {
+    let (name, label) = match variant.split_once('/') {
         Some((name, label)) => (name, Some(label)),
         None => (variant, None),
     };
@@ -139,11 +139,28 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
     if let Some(rest) = name.strip_prefix("max-") {
         return breakpoint(rest).map(Cond::Max);
     }
+    // The container forms are the ONE family whose label is SEMANTIC:
+    // the name names which container the query tests (the v0.9
+    // oracle's `@md/name` fold), so it rides the condition instead of
+    // staying a CSS-head decoration. An empty name (`@md/:`) is the
+    // unknown-variant refusal, never a silent unnamed fold.
     if let Some(rest) = name.strip_prefix("@max-") {
-        return breakpoint(rest).map(Cond::MaxContainer);
+        let bp = breakpoint(rest)?;
+        let named = match label {
+            Some("") => return None,
+            Some(label) => Some(intern(label)),
+            None => None,
+        };
+        return Some(Cond::MaxContainer { bp, name: named });
     }
     if let Some(rest) = name.strip_prefix('@') {
-        return breakpoint(rest).map(Cond::Container);
+        let bp = breakpoint(rest)?;
+        let named = match label {
+            Some("") => return None,
+            Some(label) => Some(intern(label)),
+            None => None,
+        };
+        return Some(Cond::Container { bp, name: named });
     }
     match name {
         "dark" => Some(Cond::Dark),
