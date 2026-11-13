@@ -13,11 +13,16 @@ publish = false
 
 [dependencies]
 aeolus-core = { path = "../aeolus-core" }
+aeolus-rt = { path = "../aeolus-rt" }
 masonry = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
 xilem_masonry = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
 tracing = "0.1"
 
 [dev-dependencies]
+# The V1 compile seam builds the static programs the program lane walks,
+# and the plan bridge feeds the differential pins.
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-theme = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 masonry_testing = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
 
