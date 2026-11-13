@@ -1,9 +1,9 @@
 //! The V1 static-program lane (architecture plan §7's egui re-target —
 //! the fifth backend after GPUI, Floem, Xilem and Iced): a
-//! `tw!`-compiled [`StaticProgram`](aeolus_rt::StaticProgram) resolves
-//! into the crate's own [`EguiStyle`](crate::EguiStyle) under the
+//! `tw!`-compiled [`StaticProgram`] resolves
+//! into the crate's own [`EguiStyle`] under the
 //! interp's [`Env`] probe semantics, so a frozen program feeds the SAME
-//! [`lower_resolved`](crate::lower_resolved) mapping the plan path's
+//! [`lower_resolved`] mapping the plan path's
 //! [`StyleBook`](crate::StyleBook) has driven since v0.1.
 //!
 //! The WALK itself lives IN the pipeline
@@ -12,18 +12,18 @@
 //! slot writer, so the string-side plan and the program-side style
 //! cannot drift apart. THIS module is the backend's honest surface:
 //!
-//! * the [`EguiProbe`](crate::EguiProbe)-to-[`Env`] conversion the
+//! * the [`EguiProbe`]-to-[`Env`] conversion the
 //!   immediate-mode frame needs ([`env_for_probe`], the lane's new
 //!   seam — the probe the parity path already keeps answers the walk's
 //!   two rem slots and the state flags),
 //! * the rem bake through [`REM_PX`] (§9's per-backend `rem_px`
 //!   constant, default 16),
-//! * the composition with [`lower_resolved`](crate::lower_resolved) —
-//!   the walk returns the v0.x [`ResolvedStyle`], the crate's own
+//! * the composition with [`lower_resolved`] —
+//!   the walk returns the v0.x `ResolvedStyle`, the crate's own
 //!   mapping folds it into the `Frame`/hint payload, so a capability
 //!   bump re-audits ONE backend mapping, and
 //! * the translation of the walk's typed [`StyleWalk`] report into the
-//!   crate's [`LoweringReport`](crate::LoweringReport) — every excluded
+//!   crate's [`LoweringReport`] — every excluded
 //!   layer, unmapped longhand and theme refusal lands there beside the
 //!   lowering's own drops, never a silent drop.
 
@@ -43,7 +43,7 @@ use crate::{EguiProbe, EguiStyle, LoweringReport, lower_resolved};
 pub const REM_PX: f32 = 16.0;
 
 /// Resolve one compiled static program into an
-/// [`EguiStyle`](crate::EguiStyle) under the frame's probe [`Env`] —
+/// [`EguiStyle`] under the frame's probe [`Env`] —
 /// the §7 re-target's lane, the program form the `tw!` macro freezes
 /// and [`ClassCell`](aeolus_rt::ClassCell) pools.
 ///
@@ -74,14 +74,14 @@ pub fn lower_program_with(
 }
 
 /// The immediate-mode probe conversion: the
-/// [`EguiProbe`](crate::EguiProbe) the app keeps for the parity path —
+/// [`EguiProbe`] the app keeps for the parity path —
 /// the same struct [`StyleBook::resolve_at`](crate::StyleBook::resolve_at)
 /// consumes, built per frame from the `Response` or the context — into
 /// the walk's probe [`Env`]. Widths bake through [`REM_PX`]
 /// (`width`/`container_width` are px), the focus flag feeds BOTH
 /// `focus` and `focus_visible` (the plan path's documented
 /// normalization: egui's `Response::has_focus` carries no
-/// focus-visible distinction and [`EguiProbe::test`](crate::EguiProbe)
+/// focus-visible distinction and `EguiProbe::test`
 /// maps `State::Focus` and `State::FocusVisible` onto the same bool),
 /// and the conditions [`EguiProbe`] cannot answer (focus-within,
 /// visited, checked, placeholder, group/peer) honestly stay off — the
