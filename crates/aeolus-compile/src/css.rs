@@ -363,7 +363,7 @@ pub(crate) fn run_css(
         let set = match classify_segments(&candidate.variants, customs) {
             Ok(set) => set,
             Err(missed) => {
-                diagnostics.push(variant_diagnostic(candidate, &VariantMiss::new(&missed)));
+                diagnostics.push(variant_diagnostic(candidate, &missed));
                 continue;
             }
         };
@@ -560,10 +560,11 @@ struct CondSet {
 
 /// Classify the variant segments into the selector shape. The FIRST
 /// segment outside the typed surface (built-in table AND registered
-/// aliases) refuses — the same typed miss the IR fold reports, with
-/// the segment text for the spanned diagnostic. A registered alias
+/// aliases) refuses — the same typed miss the IR fold reports
+/// ([`VariantMiss`], the segment text riding its own payload), with the
+/// caller rendering the spanned diagnostic from it. A registered alias
 /// renders its condition's own selector shape (`apply_cond_shape`).
-fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, String> {
+fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, VariantMiss> {
     let mut set = CondSet::default();
     for &seg in variants {
         // The refusal agreement: the IR fold's typed surface decides
@@ -575,7 +576,7 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, St
                     apply_cond_shape(&mut set, cond);
                     continue;
                 }
-                None => return Err(seg.to_string()),
+                None => return Err(VariantMiss::new(seg)),
             }
         }
         // The attribute probes render their selector fragments straight
@@ -602,7 +603,7 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, St
         // reads through the SAME grammar the fold used — the refusal
         // sets cannot drift.
         if let Some(rest) = name.strip_prefix("group-has-") {
-            let frag = variant::has_inner_fragment(rest).ok_or_else(|| seg.to_string())?;
+            let frag = variant::has_inner_fragment(rest).ok_or_else(|| VariantMiss::new(seg))?;
             set.parent = Some(match label {
                 "" => ".group".to_string(),
                 l => format!(".{}", escape_class(&format!("group/{l}"))),
@@ -615,7 +616,7 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, St
             continue;
         }
         if let Some(rest) = name.strip_prefix("peer-has-") {
-            let frag = variant::has_inner_fragment(rest).ok_or_else(|| seg.to_string())?;
+            let frag = variant::has_inner_fragment(rest).ok_or_else(|| VariantMiss::new(seg))?;
             set.parent = Some(match label {
                 "" => ".peer".to_string(),
                 l => format!(".{}", escape_class(&format!("peer/{l}"))),
@@ -659,7 +660,7 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, St
             _ => {
                 // `variant::classify` typed it; the @-rule shape derives
                 // from the same spelling the fold consumed.
-                set.at = Some(at_of(seg).ok_or_else(|| seg.to_string())?);
+                set.at = Some(at_of(seg).ok_or_else(|| VariantMiss::new(seg))?);
             }
         }
     }
