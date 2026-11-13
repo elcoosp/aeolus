@@ -154,3 +154,10 @@ harness = false
 [[bench]]
 name = "overlay"
 harness = false
+
+# The motion layer's benchmarks (the plan P6 row): the compile of the
+# motion families against the Button floor, and the interp of the
+# motion-mixed program, themeless and themed.
+[[bench]]
+name = "motion"
+harness = false
