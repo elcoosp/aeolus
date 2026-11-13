@@ -2,3 +2,5 @@ target
 commit.sh
 .github/pr-body.md
 ship.toml
+ship.toml
+.github/pr-body.md
