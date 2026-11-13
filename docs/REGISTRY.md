@@ -103,12 +103,12 @@ Generated from `aeolus-data`'s committed rows — do not edit.
 | `columns` | any-of | columns | `columns` | no | utilities.ts columns |
 | `bg` | any-of | background-color | `bg-color` | no | utilities.ts background-color |
 | `bg` | any-of | background-image | `bg-image` | no | utilities.ts background-image |
-| `from` | any-of | background-image | `from-color` | no | utilities.ts gradient-color-stops |
-| `from` | percent | background-image | `from-pos` | no | utilities.ts gradient-color-stops |
-| `via` | any-of | background-image | `via-color` | no | utilities.ts gradient-color-stops |
-| `via` | percent | background-image | `via-pos` | no | utilities.ts gradient-color-stops |
-| `to` | any-of | background-image | `to-color` | no | utilities.ts gradient-color-stops |
-| `to` | percent | background-image | `to-pos` | no | utilities.ts gradient-color-stops |
+| `from` | any-of | --tw-gradient-from | `from-color` | no | utilities.ts gradient-color-stops |
+| `from` | percent | --tw-gradient-from-position | `from-pos` | no | utilities.ts gradient-color-stops |
+| `via` | any-of | --tw-gradient-via | `via-color` | no | utilities.ts gradient-color-stops |
+| `via` | percent | --tw-gradient-via-position | `via-pos` | no | utilities.ts gradient-color-stops |
+| `to` | any-of | --tw-gradient-to | `to-color` | no | utilities.ts gradient-color-stops |
+| `to` | percent | --tw-gradient-to-position | `to-pos` | no | utilities.ts gradient-color-stops |
 | `border` | any-of | border-top-width, border-right-width, border-bottom-width, border-left-width | `border-w` | no | utilities.ts border-width |
 | `border-t` | any-of | border-top-width | `border-w-t` | no | utilities.ts border-width |
 | `border-r` | any-of | border-right-width | `border-w-r` | no | utilities.ts border-width |
