@@ -3,7 +3,7 @@
 //! Slint has no cascade and no CSS parser: elements carry typed properties
 //! set by bindings, state restyling is authored with `states [ name when
 //! condition : { … } ]` blocks, and the whole look is a compile-time widget
-//! style. Three native surfaces exist, and this backend lowers into all of
+//! style. Four native surfaces exist, and this backend lowers into all of
 //! them:
 //!
 //! 1. **Element properties** — a [`ResolvedStyle`] lowers into a
@@ -25,6 +25,12 @@
 //!    [`SlintProbe`] flag struct answer `group-hover:`, `dark:`, responsive
 //!    and compound conditions through the backend-agnostic evaluator; the
 //!    app pushes the resolved values into properties (or globals) itself.
+//! 4. **The V1 static-program lane** (architecture plan §7's slint
+//!    re-target) — a `tw!`-frozen [`StaticProgram`](aeolus_rt::StaticProgram)
+//!    walks under one probe [`Env`](aeolus_rt::Env) through the pipeline's
+//!    shared seam into the SAME [`SlintStyle`], via [`lower_program`]/
+//!    [`lower_program_with`] and the [`env_for_probe`] conversion — two
+//!    lanes, one compiler, one cascade.
 //!
 //! Slint 1.18's `Rectangle` is the strongest paint surface of the four
 //! backends: per-corner radii (`border-top-left-radius`…), drop shadows
@@ -55,6 +61,9 @@ use i_slint_core::graphics::{
     Brush, Color, ConicGradientBrush, GradientStop, LinearGradientBrush, RadialGradientBrush,
 };
 use i_slint_core::items::{BuiltInMouseCursor, TextHorizontalAlignment, TextOverflow, TextWrap};
+
+pub mod program;
+pub use program::{REM_PX, env_for_probe, lower_program, lower_program_with};
 
 use aeolus_core::color::Color as TwColor;
 use aeolus_core::eval::{Probe, Rel};
@@ -783,6 +792,16 @@ pub fn lower_resolved(style: &ResolvedStyle, report: &mut LoweringReport) -> Sli
                 }
             }
         }
+    }
+
+    // The content colour (Prop::Color — where every `text-{color}`
+    // class lands on the V1 plan bridge and the program lane, the slot
+    // the egui/iced/floem/xilem lowerings already read) feeds the Text
+    // item's `color` property; the typography surface's own colour
+    // entry (the v0.x resolver's slot for the same classes) wins when
+    // both carry one — the later write in CSS source order.
+    if let Some(cc) = &style.content_color {
+        out.text.color = Some(Brush::SolidColor(to_slint_color(cc.0)));
     }
 
     // Text/icon color + the typography surface.
