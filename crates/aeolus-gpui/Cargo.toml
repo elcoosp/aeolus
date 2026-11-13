@@ -31,5 +31,18 @@ harness = false
 name = "ring"
 harness = false
 
+# The gradient lane's microbenchmark (the §3.7 native tier): the walk
+# applying a `tw!`-compiled two-stop linear program, and the
+# accumulator's own composition.
+[[bench]]
+name = "grad"
+harness = false
+
+# The `variants!` compound-variant dispatch's microbenchmark: the
+# generated `style()` match over the cartesian combos.
+[[bench]]
+name = "variants"
+harness = false
+
 [lints]
 workspace = true
