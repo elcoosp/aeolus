@@ -520,8 +520,10 @@ impl Interped {
 // ---------------------------------------------------------------------------
 
 /// Whether a layer fires under the env, stays quiet, or is excluded
-/// with a note.
-enum Fire {
+/// with a note. Crate-visible so the program lane's style fold
+/// (`style_walk`) shares the VERDICTS — one `decide`, two walks, so
+/// the two cannot disagree on when a layer fires.
+pub(crate) enum Fire {
     Yes,
     No,
     Note(InterpNote),
@@ -535,7 +537,13 @@ enum Fire {
 /// [`interp_theme_probes`]) — a hit FIRES, a miss is a quiet skip (a
 /// CSS selector that does not match); with no source the layer is
 /// excluded and REPORTED (the note the follow-up surface was named by).
-fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>, props: PropMask) -> Fire {
+/// Crate-visible: the program lane's style fold shares the verdicts.
+pub(crate) fn decide(
+    cond: Cond,
+    env: &Env,
+    probes: Option<&dyn AttrProbe>,
+    props: PropMask,
+) -> Fire {
     let fires = |yes: bool| if yes { Fire::Yes } else { Fire::No };
     match cond {
         Cond::Base => Fire::Yes,
