@@ -15,6 +15,13 @@ publish = false
 # library (the driver is a thin, test-pinned CLI over them, the
 # aeolus-cli precedent: the whole program is `run(args, out, err)`).
 aeolus-data = { path = "../aeolus-data" }
+# The §5.1 conformance score's seam and its GPUI impl (the
+# `conformance-docs` artifact's render inputs): the trait + report live
+# in aeolus-codegen, the capability impl rides the codegen-gpui crate's
+# own supports/polyfilled tables, so the committed page is the
+# emitter's verdicts, never a parallel claim.
+aeolus-codegen = { path = "../aeolus-codegen" }
+aeolus-codegen-gpui = { path = "../aeolus-codegen-gpui" }
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
