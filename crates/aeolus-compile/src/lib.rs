@@ -1290,6 +1290,28 @@ fn run(
                                 }
                                 continue;
                             }
+                            // The sibling-row gate's non-arbitrary
+                            // half: a shape miss on a row whose ROOT
+                            // another row already took stays quiet —
+                            // the bare `ring`/`border`/`outline` roots
+                            // carry a colour-sibling row whose
+                            // arbitrary arm accepts the bare root but
+                            // has no group to lower, and that refusal
+                            // must not shadow the class the width row
+                            // lowered. Value rejects with any OTHER
+                            // reason (token overflow, non-finite)
+                            // still report: they name a real boundary,
+                            // not a shape miss.
+                            if produced > 0
+                                && matches!(
+                                    reject,
+                                    lower::Reject::Value {
+                                        reason: lower::REASON_SHAPE_MISMATCH
+                                    }
+                                )
+                            {
+                                continue;
+                            }
                             diagnostics.push(reject_diagnostic(
                                 candidate,
                                 effective_body,
