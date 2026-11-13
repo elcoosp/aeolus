@@ -199,7 +199,7 @@ pub use interp::{
 };
 pub use plan::{
     PlanNote, PlanNoteKind, PlanSheet, emit_plan, emit_plan_theme, emit_plan_theme_with,
-    emit_plan_with,
+    emit_plan_with, linear_gradient_angle,
 };
 pub use rust::{
     RustFragment, RustSheet, emit_rust, emit_rust_theme, emit_rust_theme_with, emit_rust_with,
