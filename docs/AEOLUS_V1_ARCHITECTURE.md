@@ -504,6 +504,19 @@ Do **not** block on these: the design works today and simply gets cheaper if the
    keep compiling while the new IR matures — **no big-bang**.
 2. Re-target backends in this order (value × feasibility): **GPUI (new)** → Floem (builder-style, codegen-friendly) →
    Xilem/Masonry (property stacks) → Iced (style fns; codegen into `const` `StyleBook`s) → egui → Slint (already codegen-ish: emits `.slint`).
+   The Floem, Xilem, Iced and egui lanes LANDED 2026-11: each backend's
+   `lower_program`/`lower_program_with` walks the frozen `StaticProgram` under
+   one probe `Env` into its native payload — Floem through its OWN walk (every
+   `Prop` mapped or reported onto the pinned-rev `Style`), Xilem through the
+   pipeline's shared `program_style` seam into the per-state `ResolvedStyle`
+   the widget already resolves, Iced and egui through the same seam composed
+   with the crate's own mapping (`IcedStyle`/`EguiStyle`) — each carrying its
+   `REM_PX` bake, its probe-to-`Env` conversion (`env_for_state`/
+   `env_for_probe`), the `AttrProbe`/`TokenSource` seams on the `*_with`
+   entry points, the walk's typed report translated onto the crate's
+   `LoweringReport`, differential pins against the plan path
+   (`tests/program.rs` per backend), a divan bench and a headless `examples/`
+   demo. Slint remains.
 3. Delete when superseded: `resolve.rs` match walls, `StylePlan`'s `Vec/BTreeMap` shape, `PlanCache` (replaced by `DynCache`),
    per-backend `lower()` duplication (shared via `aeolus-codegen::Emit`).
 4. Keep: `Warning`/`LoweringReport` → becomes `Diagnostics` with spans + reason codes; snapshot JSON becomes a _debug_ serialisation of `Program`.
@@ -520,7 +533,7 @@ Do **not** block on these: the design works today and simply gets cheaper if the
 | **P3 – GPUI static**      | `aeolus-codegen-gpui`, `aeolus-macros` (`tw!`, `cn!`, `variants!`, `theme!`), `aeolus-gpui` (`TwExt`) — **landed 2026-11**; the §3.6 surface (3)'s dynamic lane (`aeolus_rt::ClassCell`, `TwExt::tw_dyn`, the `keyword_alignment` seam) landed 2026-11                                                                         | `iai` parity with hand-written; 0-alloc/0-lock contract tests; demo app         | 3       |
 | **P4 – Env variants**     | `AeolusRoot`/`Env`, `dark:`, breakpoints, group/state bits, aria/data — **frame Env + state layers landed 2026-11; the attribute-bits host state seam (`tw_probes`, the `AttrProbe` trait) landed 2026-11**                                         | Conformance score published for GPUI; diagnostics for unsupported variants      | 2       |
 | **P5 – Ecosystem**        | gpui-rsx integration PR, LSP/CLI, gpui-component bridge, docs book, public benchmarks, `1.0-rc`                                                                                                    | Third-party app migrated; migration guide; CI perf gates                        | 2–3     |
-| **P6 – Breadth**          | Other backends on `Program`, ring/gradient polyfills, container queries, motion layer, optional `cargo aeolus build` (global dedupe + CSS — **the build half landed 2026-11**: `aeolus_compile::scan`/`build`, the CLI `build` command, the approach C row)                                                         | Per-feature                                                                     | ongoing |
+| **P6 – Breadth**          | Other backends on `Program`, ring/gradient polyfills, container queries, motion layer, optional `cargo aeolus build` (global dedupe + CSS — **the build half landed 2026-11**: `aeolus_compile::scan`/`build`, the CLI `build` command, the approach C row); the backend re-target half is underway — **the Floem/Xilem/Iced/egui static-program lanes landed 2026-11** (see §7's landed note), Slint remains                                                         | Per-feature                                                                     | ongoing |
 
 Critical path to _"replace gpui-rsx's Tailwind half"_: **P0 → P1 → P2 → P3 → P5** (≈12–14 weeks solo-ish; P4 can overlap P3 late).
 
