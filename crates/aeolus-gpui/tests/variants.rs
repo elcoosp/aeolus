@@ -10,8 +10,14 @@
 //! it does not, a one-group constraint applies across the other groups,
 //! multiple entries compose in order, and the plain table is unchanged.
 //!
-//! Written FIRST (the RED spec): the suite fails while `compound:` is
-//! no part of the macro grammar.
+//! The SLOTS half pins the multi-part form (the same §9 row's "slots"
+//! word, the tailwind-variants shape): a `slots:` map declares one base
+//! per part and generates a `Slot` enum plus a `style_slot(slot, …)`
+//! dispatch — a group value that is a STRING applies to every slot, a
+//! brace `{ slot: "classes" }` applies to the slots it names, and the
+//! compound `class:` takes both forms the same way. Written FIRST (the
+//! RED spec): the suite fails while `slots:` is no part of the macro
+//! grammar.
 
 use aeolus_gpui::prelude::*;
 
@@ -151,4 +157,179 @@ fn the_base_only_table_still_compiles() {
     // beside the new field).
     let program = Plain::style();
     assert!(!program.layers.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// The slots half: the multi-part form (the same §9 row's "slots" word)
+// ---------------------------------------------------------------------------
+
+variants! { pub Card {
+    slots: {
+        root: "flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
+        header: "flex flex-col gap-1.5 px-6",
+        title: "font-semibold leading-none",
+    },
+    variant: {
+        default: "text-card-foreground",
+        outline: { root: "border-gray-200", title: "text-muted-foreground" },
+    },
+    size: { default: "text-sm", lg: "text-lg" },
+} }
+
+#[test]
+fn a_slotted_table_dispatches_per_slot() {
+    use aeolus_ir::Prop;
+
+    let has_prop = |program: StaticProgram, prop: Prop| {
+        program
+            .layers
+            .iter()
+            .flat_map(|layer| layer.decls.iter())
+            .any(|decl| decl.prop == prop)
+    };
+
+    // The title slot carries ITS base's typography and none of the
+    // root slot's layout (each slot is its own program — the multi-part
+    // point of the form).
+    let title = Card::style_slot(CardSlot::Title, CardVariant::Default, CardSize::Default);
+    assert!(
+        has_prop(title, Prop::FontWeight),
+        "the title slot carries its own base's font weight"
+    );
+    assert!(
+        !has_prop(title, Prop::PaddingTop),
+        "the title slot carries none of the root slot's padding"
+    );
+
+    let root = Card::style_slot(CardSlot::Root, CardVariant::Default, CardSize::Default);
+    assert!(
+        has_prop(root, Prop::PaddingTop),
+        "the root slot carries its own base's padding"
+    );
+    assert!(
+        !has_prop(root, Prop::FontWeight),
+        "the root slot carries none of the title slot's font weight"
+    );
+}
+
+#[test]
+fn a_group_string_applies_to_every_slot_and_a_brace_to_the_slots_it_names() {
+    use aeolus_ir::Prop;
+
+    let has_prop = |program: StaticProgram, prop: Prop| {
+        program
+            .layers
+            .iter()
+            .flat_map(|layer| layer.decls.iter())
+            .any(|decl| decl.prop == prop)
+    };
+
+    // The `default` variant's value is a STRING: the colour rides every
+    // slot, including the header slot whose own base carries no colour.
+    let header = Card::style_slot(CardSlot::Header, CardVariant::Default, CardSize::Default);
+    assert!(
+        has_prop(header, Prop::Color),
+        "the string form applies to every slot (header carries the colour)"
+    );
+
+    // The `outline` variant's value is a BRACE: only the named slots
+    // take their classes (the header is unnamed — it stays as-is).
+    let root_outline = Card::style_slot(CardSlot::Root, CardVariant::Outline, CardSize::Default);
+    assert!(
+        has_prop(root_outline, Prop::BorderColor),
+        "the brace form applies to the slot it names (root's border colour)"
+    );
+    let header_outline =
+        Card::style_slot(CardSlot::Header, CardVariant::Outline, CardSize::Default);
+    assert!(
+        !has_prop(header_outline, Prop::BorderColor),
+        "the brace form skips the slots it does not name"
+    );
+    let title_outline = Card::style_slot(CardSlot::Title, CardVariant::Outline, CardSize::Default);
+    assert!(
+        has_prop(title_outline, Prop::Color),
+        "the title slot's own brace colour rides with the string's"
+    );
+}
+
+variants! { pub Notice {
+    slots: { body: "rounded-md px-4 py-3 text-sm", icon: "shrink-0" },
+    tone: {
+        info: "bg-blue-500",
+        warn: { body: "bg-amber-500", icon: "text-amber-500" },
+    },
+    compound: [
+        { tone: info, class: { body: "ring-2 ring-blue-500" } },
+        { tone: warn, class: "shadow-md" },
+    ],
+} }
+
+#[test]
+fn a_compound_class_takes_both_forms_per_slot() {
+    use aeolus_ir::Prop;
+
+    let has_prop = |program: StaticProgram, prop: Prop| {
+        program
+            .layers
+            .iter()
+            .flat_map(|layer| layer.decls.iter())
+            .any(|decl| decl.prop == prop)
+    };
+
+    // The brace compound class rides ONLY the slot it names: the body
+    // takes the ring, the icon does not.
+    let body_info = Notice::style_slot(NoticeSlot::Body, NoticeTone::Info);
+    let icon_info = Notice::style_slot(NoticeSlot::Icon, NoticeTone::Info);
+    assert!(
+        has_prop(body_info, Prop::RingWidth),
+        "the brace compound class rides the slot it names (body)"
+    );
+    assert!(
+        !has_prop(icon_info, Prop::RingWidth),
+        "the brace compound class skips the slots it does not name (icon)"
+    );
+
+    // The string compound class rides EVERY slot: both parts take the
+    // shadow.
+    let body_warn = Notice::style_slot(NoticeSlot::Body, NoticeTone::Warn);
+    let icon_warn = Notice::style_slot(NoticeSlot::Icon, NoticeTone::Warn);
+    assert!(
+        has_prop(body_warn, Prop::BoxShadow) && has_prop(icon_warn, Prop::BoxShadow),
+        "the string compound class applies to every slot"
+    );
+}
+
+variants! { pub Panel {
+    slots: { shell: "rounded-lg border bg-card", inner: "p-4" },
+} }
+
+#[test]
+fn the_groupless_slotted_table_and_the_first_slot_default() {
+    use aeolus_ir::Prop;
+
+    let has_prop = |program: StaticProgram, prop: Prop| {
+        program
+            .layers
+            .iter()
+            .flat_map(|layer| layer.decls.iter())
+            .any(|decl| decl.prop == prop)
+    };
+
+    // A slotted table with no groups dispatches on the slot alone, and
+    // the slot enum's default is the FIRST declared slot (the shell).
+    assert_eq!(
+        PanelSlot::default(),
+        PanelSlot::Shell,
+        "first slot defaults"
+    );
+    let shell = Panel::style_slot(PanelSlot::Shell);
+    let inner = Panel::style_slot(PanelSlot::Inner);
+    assert!(
+        has_prop(shell, Prop::Background) && !has_prop(shell, Prop::PaddingTop),
+        "the shell slot carries its own base only"
+    );
+    assert!(
+        has_prop(inner, Prop::PaddingTop) && !has_prop(inner, Prop::Background),
+        "the inner slot carries its own base only"
+    );
 }
