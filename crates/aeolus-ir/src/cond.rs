@@ -166,10 +166,28 @@ pub enum Cond {
     Min(Bp),
     /// `max-md:` — max-width media query.
     Max(Bp),
-    /// `@md:` — container query (min-width on the named container).
-    Container(Bp),
-    /// `@max-md:` — upper-bounded container query.
-    MaxContainer(Bp),
+    /// `@md:` — container query (min-width on the nearest eligible
+    /// container). The named form `@md/card:` carries the container's
+    /// NAME — the payload that keeps two different containers two
+    /// different conditions (the v0.9 oracle's `@md/name` fold; a bare
+    /// `@md:` folds with `name: None`). The payload interns into the
+    /// same leak pool the attribute probes use, so the static form
+    /// stays a `static` item end to end.
+    Container {
+        /// The container-query breakpoint (`@md:` → [`Bp::Md`]).
+        bp: Bp,
+        /// The named container (`@md/card:` → `Some("card")`); `None`
+        /// for the bare `@md:` form (the nearest eligible container).
+        name: Option<&'static str>,
+    },
+    /// `@max-md:` — upper-bounded container query. Same payload
+    /// contract as [`Cond::Container`].
+    MaxContainer {
+        /// The container-query breakpoint (`@max-md:` → [`Bp::Md`]).
+        bp: Bp,
+        /// The named container (`@max-lg/sidebar:` → `Some("sidebar")`).
+        name: Option<&'static str>,
+    },
 }
 
 impl Cond {
@@ -202,7 +220,7 @@ impl Cond {
             Cond::GroupHas(_) | Cond::PeerHas(_) => 3,
             Cond::GroupHover | Cond::GroupFocus | Cond::PeerHover | Cond::PeerFocus => 3,
             Cond::Bp(_) | Cond::Min(_) | Cond::Max(_) => 4,
-            Cond::Container(_) | Cond::MaxContainer(_) => 5,
+            Cond::Container { .. } | Cond::MaxContainer { .. } => 5,
         }
     }
 
@@ -238,12 +256,14 @@ impl Cond {
             | Cond::GroupHas(_)
             | Cond::PeerHas(_) => None,
             // Breakpoint names need the u8 formatting — not const. The
-            // non-const wrapper covers them (see `source_text`).
+            // non-const wrapper covers them (see `source_text`), and a
+            // NAMED container form has no static text either way (the
+            // name is the payload, the attribute-probe precedent).
             Cond::Bp(_)
             | Cond::Min(_)
             | Cond::Max(_)
-            | Cond::Container(_)
-            | Cond::MaxContainer(_) => None,
+            | Cond::Container { .. }
+            | Cond::MaxContainer { .. } => None,
         }
     }
 
@@ -261,8 +281,14 @@ impl Cond {
             Cond::Bp(b) => (&BARE, b as usize),
             Cond::Min(b) => (&MIN, b as usize),
             Cond::Max(b) => (&MAX, b as usize),
-            Cond::Container(b) => (&CONTAINER, b as usize),
-            Cond::MaxContainer(b) => (&MAX_CONTAINER, b as usize),
+            // The unnamed forms keep the table spellings; a NAMED form
+            // has no static text (the name is the payload, the
+            // attribute-probe precedent) — `None`.
+            Cond::Container { name: None, bp } => (&CONTAINER, bp as usize),
+            Cond::MaxContainer { name: None, bp } => (&MAX_CONTAINER, bp as usize),
+            Cond::Container { name: Some(_), .. } | Cond::MaxContainer { name: Some(_), .. } => {
+                return None;
+            }
             other => return other.source(),
         };
         Some(table[i])
