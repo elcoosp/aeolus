@@ -12,6 +12,8 @@
 //! Env           ─ the probe situation (re-exported from the interp arm)
 //! TokenTable    ─ the runtime theme tier (re-exported from the theme pass)
 //! DynCache      ─ the bounded dynamic-string cache (the interp/compile seam)
+//! overlay       ─ the IR-level composition seam (plan §3.6's surface (2):
+//!                 the frozen base under the runtime override, rightmost wins)
 //! ```
 //!
 //! The keyword annotations are what makes a `static` program sufficient
@@ -38,7 +40,7 @@ mod class_cell;
 pub use aeolus_compile::{
     AttrBit, AttrKind, AttrProbe, AttrState, CachedCompiled, CompileError, Customs,
     DEFAULT_DYN_CACHE_CAP, Diagnostic, DynCache, DynStore, Env, InterpError, InterpNote, Interped,
-    TokenSource, TwoGenStore, interp, interp_probes, interp_theme, interp_theme_probes,
+    TokenSource, TwoGenStore, interp, interp_probes, interp_theme, interp_theme_probes, overlay,
 };
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
