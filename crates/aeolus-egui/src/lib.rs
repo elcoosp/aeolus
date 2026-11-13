@@ -47,6 +47,10 @@
 //! # }
 //! ```
 
+pub mod program;
+
+pub use program::{REM_PX, env_for_probe, lower_program, lower_program_with};
+
 use egui::style::WidgetVisuals;
 use egui::{Color32, CornerRadius, CursorIcon, FontFamily, FontId, Frame, Margin, Stroke, Vec2};
 
