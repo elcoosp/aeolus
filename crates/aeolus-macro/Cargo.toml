@@ -15,10 +15,9 @@ publish = false
 proc-macro = true
 
 [dependencies]
-# The zero-dep core lexer is still what `extract_*` avoids copying, but
-# the compile walk itself is the V1 pipeline (`compile_theme` +
-# `keyword_texts`) — the macro is a thin shell over it (plan §3.2).
-aeolus-core = { workspace = true }
+# The compile walk is the V1 pipeline (`compile_theme` + `keyword_texts`)
+# — the macro is a thin shell over it (plan §3.2); the IR rides for the
+# `Cond`/`Prop` keys of the annotation fold.
 aeolus-ir = { workspace = true }
 aeolus-compile = { path = "../aeolus-compile" }
 aeolus-theme = { workspace = true }
