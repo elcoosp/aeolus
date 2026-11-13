@@ -128,7 +128,9 @@ fn write_mode_populates_a_temp_root_and_verify_stays_clean() {
         0
     );
     let text = String::from_utf8(out).expect("utf8");
-    assert_eq!(text.matches("clean").count(), 2, "{text}");
+    // Three artifacts: the data crate's two registry-derived pages plus
+    // the conformance score the driver renders from the codegen crates.
+    assert_eq!(text.matches("clean").count(), 3, "{text}");
 }
 
 #[test]
@@ -180,7 +182,9 @@ fn verify_reports_missing_files_as_drift() {
         1
     );
     let text = String::from_utf8(out).expect("utf8");
-    assert_eq!(text.matches("MISSING").count(), 2, "{text}");
+    // Three artifacts, all missing in the empty root (see the clean
+    // count's note).
+    assert_eq!(text.matches("MISSING").count(), 3, "{text}");
 }
 
 #[test]
@@ -196,5 +200,51 @@ fn the_committed_workspace_verifies_clean() {
         output.status.success(),
         "the committed artifacts drifted — run `cargo xtask gen-tables` (stdout: {})",
         String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn the_conformance_page_joins_the_artifact_list() {
+    // The §5.1 conformance score's publishing surface: the generated
+    // `docs/CONFORMANCE.md` page rides the same GeneratedArtifact seam
+    // the other committed pages take — listed, written by gen-tables,
+    // drift-verified like the rest.
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(run(argv(&["list"]), &mut out, &mut err), 0);
+    let listed = String::from_utf8(out).expect("utf8");
+    assert!(
+        listed.contains("conformance-docs  docs/CONFORMANCE.md"),
+        "the conformance page is not listed: {listed}"
+    );
+
+    // The page renders the per-backend score (the gpui impl rides the
+    // codegen crates' capability tables) and survives a verify cycle:
+    let root = TempRoot::new("conformance-page");
+    let root_str = root.0.to_string_lossy().into_owned();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        run(
+            argv(&["gen-tables", "--root", &root_str]),
+            &mut out,
+            &mut err
+        ),
+        0
+    );
+    let page =
+        std::fs::read_to_string(root.0.join("docs/CONFORMANCE.md")).expect("the page writes");
+    assert!(page.contains("gpui"), "{page}");
+    assert!(page.contains("conformance"), "{page}");
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        run(
+            argv(&["verify-tables", "--root", &root_str]),
+            &mut out,
+            &mut err
+        ),
+        0,
+        "the fresh page verifies clean"
     );
 }
