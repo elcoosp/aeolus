@@ -47,6 +47,30 @@
 //! diagnosed boundary — reported, honest failure kept — because the
 //! descendant shape is not an attribute bit.
 //!
+//! The NAMED-CONTAINER layers (the `@md/card:` spellings the fold lands
+//! on [`Cond::Container`]/[`Cond::MaxContainer`] with a name) resolve
+//! through the plan §3.5 answer the same note named: the container's
+//! OWN width — the [`ContainerProbe`] seam (one question: what width
+//! does this container name carry?), the built-in [`ContainerState`]
+//! static table, and the `*_containers` entry points the `*_probes`
+//! convention carries. A named layer asks the seam for ITS container:
+//! a hit fires by the same AT/strictly-below boundary semantics the
+//! viewport breakpoints obey, a container the source does not know is
+//! a QUIET miss (a CSS selector that does not match), and the
+//! sourceless forms keep the reported exclusion. The UNNAMED forms
+//! keep answering from [`Env::container_rem`] — the seam takes over
+//! the per-name question only.
+//!
+//! The PSEUDO-ELEMENT layers (`selection:`/`placeholder:`, the plan
+//! §3.5 render-target row) resolve through the [`PseudoTarget`]
+//! selector and the [`interp_pseudo`]/[`interp_pseudo_theme`] entry
+//! points: a pseudo-element styles a DIFFERENT render target, so its
+//! cascade resolves in its OWN walk — only the rules targeting THAT
+//! pseudo-element participate (the element's own layers never do), the
+//! answer is scoped and silent about the rest, and the element walk's
+//! [`InterpNote::PseudoElement`] note stays the element-side half of
+//! the same contract.
+//!
 //! Observability follows the crate's opt-in instrumentation seam: the
 //! `tracing` feature spans the walk and logs every fired layer and
 //! reported note (no subscriber is installed here — the host app owns
@@ -59,12 +83,10 @@
 //! belongs): the keyword names ([`Val::Kw`] is row-relative by design —
 //! the codegen crate owns the names, so the interp resolves THEME
 //! dynamism and passes keywords through; the rust-tokens arm renders
-//! them where the rows still talk), the named group/peer label
-//! (no IR slot yet — the Env answers the probe, not the label) and the
-//! per-pseudo-element render targets (the notes report them; resolving
-//! `::selection`'s own cascade is its own slice). The static-data and
-//! rust-tokens emit arms are the pipeline's other program forms
-//! (`emit_static`, `emit_rust`).
+//! them where the rows still talk) and the named group/peer label
+//! (no IR slot yet — the Env answers the probe, not the label). The
+//! static-data and rust-tokens emit arms are the pipeline's other
+//! program forms (`emit_static`, `emit_rust`).
 
 use std::fmt;
 
@@ -81,10 +103,11 @@ use aeolus_theme::{ResolveError, TokenTable};
 ///
 /// Every field defaults to the CSS "does not match" answer: states off,
 /// the viewport at zero rem (no breakpoint matches), no container
-/// context (container layers never match, and are REPORTED — see
-/// [`InterpNote::ContainerUnqueried`]). A backend implements only what
-/// it knows; an unanswered condition simply does not fire, the same
-/// semantics CSS has when a selector does not match.
+/// context (container layers never match — reported under the
+/// sourceless forms, answered per name through the
+/// [`ContainerProbe`] seam under the `*_containers` forms). A backend
+/// implements only what it knows; an unanswered condition simply does
+/// not fire, the same semantics CSS has when a selector does not match.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Env {
     /// The mode tier: `.dark` active? ([`Cond::Dark`]; also the half
@@ -124,8 +147,10 @@ pub struct Env {
     /// container context — means those layers never match, reported.
     /// A NAMED container query (`@md/card:`) needs THAT container's
     /// width, which one nearest-container slot cannot answer — those
-    /// layers report [`InterpNote::ContainerUnqueried`] (the named
-    /// payload in the note) whatever this field carries.
+    /// layers ask the [`ContainerProbe`] seam through the
+    /// `*_containers` entry points (a source-answered miss is CSS
+    /// -quiet), and the sourceless forms report
+    /// [`InterpNote::ContainerUnqueried`] whatever this field carries.
     pub container_rem: Option<f32>,
 }
 
@@ -204,6 +229,82 @@ impl AttrProbe for AttrState<'_> {
             .iter()
             .find(|bit| bit.kind == kind && bit.name == name)
             .map(|bit| bit.value)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The container-bounds seam: ContainerProbe
+// ---------------------------------------------------------------------------
+
+/// One named container's inner width in rem — one row of the built-in
+/// [`ContainerState`] table. The NAME is the `@md/card:` spelling's
+/// `card` (the container context a component declares in the host's
+/// layout); the WIDTH answers in the same unit the unnamed
+/// [`Env::container_rem`] slot answers in (CSS `cqw`'s basis, one rem
+/// per 100 — the walk compares against the breakpoints' rem values
+/// directly).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ContainerBound<'t> {
+    /// The container's name, verbatim (`"card"` for `@md/card:`).
+    pub name: &'t str,
+    /// The container's inner width in rem.
+    pub rem: f32,
+}
+
+/// The container-bounds SEAM the interpreter walks through for the
+/// NAMED container queries ([`Cond::Container`]/[`Cond::MaxContainer`]
+/// with a name): where a named container's width comes from. The same
+/// shape as the token seam's [`TokenSource`], the attribute seam's
+/// [`AttrProbe`] and the cache's [`DynStore`](crate::DynStore): the
+/// walk is generic over the source, [`ContainerState`] is the built-in
+/// (a borrowed static table), and a host implements the ONE question
+/// itself (a layout-phase bridge measuring its `@container` elements,
+/// a component-tree walk, a test double recording what it was asked).
+///
+/// The seam's answer IS the CSS semantics: `Some(width)` compares
+/// against the layer's breakpoint by the min/max boundary rules (AT and
+/// above for the min forms, strictly below for the max forms — the
+/// viewport breakpoints' own pinned semantics); `None` — the host knows
+/// no such container — is a QUIET miss (a CSS selector that does not
+/// match), never an exclusion note. The SOURCELESS forms (no
+/// `*_containers` entry point) keep the honest exclusion instead: a
+/// named layer they cannot answer reports
+/// [`InterpNote::ContainerUnqueried`].
+pub trait ContainerProbe {
+    /// The inner width in rem of the nearest container with this NAME,
+    /// or `None` when the host knows no such container ancestor. The
+    /// name is the folded [`Cond`]'s own payload (the `@md/card:`
+    /// spelling's `card`), verbatim.
+    fn container(&self, name: &str) -> Option<f32>;
+}
+
+/// The built-in [`ContainerProbe`]: the named containers' widths as a
+/// borrowed, static table — the zero-allocation form of the seam (the
+/// [`AttrState`] precedent). A host borrows its container rows into one
+/// table (the same borrow shape the `Env`'s own fields take); an empty
+/// table answers `None` for every name — every named layer a QUIET
+/// miss, every unnamed layer still the [`Env`]'s own question.
+#[derive(Clone, Copy, Debug)]
+pub struct ContainerState<'t> {
+    bounds: &'t [ContainerBound<'t>],
+}
+
+impl<'t> ContainerState<'t> {
+    /// The named containers' widths, in table order (the first
+    /// matching name answers; a host that never repeats a name needs
+    /// no order — and the table is small by construction, one row per
+    /// container the layout declares).
+    pub const fn new(bounds: &'t [ContainerBound<'t>]) -> Self {
+        Self { bounds }
+    }
+}
+
+impl ContainerProbe for ContainerState<'_> {
+    fn container(&self, name: &str) -> Option<f32> {
+        self.bounds
+            .iter()
+            .find(|bound| bound.name == name)
+            .map(|bound| bound.rem)
     }
 }
 
@@ -395,6 +496,41 @@ impl miette::Diagnostic for InterpError {
 }
 
 // ---------------------------------------------------------------------------
+// The pseudo-element render targets: PseudoTarget
+// ---------------------------------------------------------------------------
+
+/// The pseudo-element RENDER TARGET a [`Program`]'s pseudo layers
+/// resolve to — the `selection:`/`placeholder:` spellings the fold
+/// lands on [`Cond::Selection`]/[`Cond::Placeholder`]. A pseudo-element
+/// styles a DIFFERENT render target than the element's own cascade (the
+/// CSS arm renders it as a `::selection`/`::placeholder` rule), so its
+/// effective declarations resolve in their OWN walk:
+/// [`interp_pseudo`]/[`interp_pseudo_theme`] fire ONLY the layers
+/// carrying the target's condition — the element's own layers (base,
+/// states, breakpoints, the sibling pseudo) never participate, and the
+/// answer is silent about them rather than noting them. The element
+/// walk's [`InterpNote::PseudoElement`] note is the other half of the
+/// same contract: the element cascade excludes the pseudo layers and
+/// reports them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PseudoTarget {
+    /// The `::selection` render target (the `selection:` variant).
+    Selection,
+    /// The `::placeholder` render target (the `placeholder:` variant).
+    Placeholder,
+}
+
+impl PseudoTarget {
+    /// The [`Cond`] the target's layers carry.
+    const fn cond(self) -> Cond {
+        match self {
+            PseudoTarget::Selection => Cond::Selection,
+            PseudoTarget::Placeholder => Cond::Placeholder,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The honest exclusions: InterpNote
 // ---------------------------------------------------------------------------
 
@@ -406,17 +542,24 @@ impl miette::Diagnostic for InterpError {
 pub enum InterpNote {
     /// A `::selection`/`::placeholder` layer: pseudo-elements style a
     /// DIFFERENT render target, never the element's own cascade (the
-    /// CSS arm renders them as `::selection`/`::placeholder` rules).
+    /// CSS arm renders them as `::selection`/`::placeholder` rules; the
+    /// pseudo cascades themselves resolve through
+    /// [`interp_pseudo`]/[`interp_pseudo_theme`], the [`PseudoTarget`]
+    /// arm).
     PseudoElement {
         /// The excluded layer's condition.
         cond: Cond,
         /// The longhands the excluded layer sets.
         props: PropMask,
     },
-    /// A container-conditioned layer evaluated with no container
-    /// context in the [`Env`]: CSS semantics — no eligible container
-    /// never matches — so the layer did not fire, reported so the
-    /// exclusion is never silent.
+    /// A container-conditioned layer the walk could not answer: either
+    /// the UNNAMED form with no container context in the [`Env`], or a
+    /// NAMED form under a sourceless entry point (the plain
+    /// [`interp`]/[`interp_theme`]/`*_probes` forms — the
+    /// `*_containers` forms carry the [`ContainerProbe`] seam, and a
+    /// source-answered miss is a CSS-quiet skip instead). CSS
+    /// semantics — no eligible container never matches — so the layer
+    /// did not fire, reported so the exclusion is never silent.
     ContainerUnqueried {
         /// The unqueried layer's condition.
         cond: Cond,
@@ -541,11 +684,18 @@ pub(crate) enum Fire {
 /// [`interp_theme_probes`]) — a hit FIRES, a miss is a quiet skip (a
 /// CSS selector that does not match); with no source the layer is
 /// excluded and REPORTED (the note the follow-up surface was named by).
+/// The NAMED container queries ask the [`ContainerProbe`] seam the same
+/// way ([`interp_containers`] and friends): a hit fires by the same
+/// boundary rules against THAT container's width, a container the
+/// source does not know is a quiet skip, and with no source the layer
+/// is excluded and reported. The UNNAMED container forms keep asking
+/// the [`Env::container_rem`] slot whatever the seam carries.
 /// Crate-visible: the program lane's style fold shares the verdicts.
 pub(crate) fn decide(
     cond: Cond,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
     props: PropMask,
 ) -> Fire {
     let fires = |yes: bool| if yes { Fire::Yes } else { Fire::No };
@@ -567,19 +717,37 @@ pub(crate) fn decide(
         Cond::PeerFocus => fires(env.peer_focus),
         Cond::Bp(bp) | Cond::Min(bp) => fires(env.viewport_rem >= bp.rem()),
         Cond::Max(bp) => fires(env.viewport_rem < bp.rem()),
-        Cond::Container { bp, name } => match (name, env.container_rem) {
-            // The unnamed question answers from the nearest eligible
-            // container the Env carries. A NAMED container query needs
-            // THAT container's width — the Env answers the
-            // nearest-container question only, so the named layer
-            // reports (the honest boundary; the note says which
-            // container went unqueried).
-            (None, Some(width)) => fires(width >= bp.rem()),
-            _ => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
+        // The UNNAMED container question answers from the nearest
+        // eligible container the Env carries. The NAMED question needs
+        // THAT container's width — the seam answers it (a hit fires by
+        // the same boundary rules, an unknown container is a quiet
+        // miss), and the sourceless forms report (the honest boundary;
+        // the note says which container went unqueried).
+        Cond::Container {
+            bp,
+            name: Some(name),
+        } => match containers {
+            Some(source) => fires(
+                source
+                    .container(name)
+                    .is_some_and(|width| width >= bp.rem()),
+            ),
+            None => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
         },
-        Cond::MaxContainer { bp, name } => match (name, env.container_rem) {
-            (None, Some(width)) => fires(width < bp.rem()),
-            _ => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
+        Cond::Container { bp, name: None } => match env.container_rem {
+            Some(width) => fires(width >= bp.rem()),
+            None => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
+        },
+        Cond::MaxContainer {
+            bp,
+            name: Some(name),
+        } => match containers {
+            Some(source) => fires(source.container(name).is_some_and(|width| width < bp.rem())),
+            None => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
+        },
+        Cond::MaxContainer { bp, name: None } => match env.container_rem {
+            Some(width) => fires(width < bp.rem()),
+            None => Fire::Note(InterpNote::ContainerUnqueried { cond, props }),
         },
         // The element-own attribute probes answer through the seam
         // (plan §3.5's typed state bits): presence fires on any value,
@@ -617,11 +785,14 @@ pub(crate) fn decide(
 /// to, resolve their values through the caller's resolver, keep the
 /// last value per longhand in `Prop` order. The attribute-probe seam
 /// rides along as the (optional) probe source — `None` keeps the
-/// sourceless exclusion notes, `Some` answers the element-own probes.
+/// sourceless exclusion notes, `Some` answers the element-own probes —
+/// and the container-bounds seam rides beside it (the NAMED container
+/// queries ask it; `None` keeps their sourceless exclusion notes).
 fn walk(
     program: &Program,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
     resolve: impl Fn(Prop, Val) -> Result<Val, InterpError>,
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
@@ -630,7 +801,7 @@ fn walk(
     let mut conds: Vec<Cond> = Vec::new();
     let mut notes = Vec::new();
     for layer in program.layers {
-        match decide(layer.cond, env, probes, layer.mask) {
+        match decide(layer.cond, env, probes, containers, layer.mask) {
             Fire::Yes => {
                 for decl in layer.decls {
                     let val = resolve(decl.prop, decl.val)?;
@@ -675,6 +846,57 @@ fn walk(
     })
 }
 
+/// The pseudo-element walk: the TARGET's own cascade. Only the layers
+/// carrying the target's [`Cond`] participate — a pseudo-element's
+/// rules style a different render target, so the element's own layers
+/// (base, states, breakpoints, the sibling pseudo) are simply not part
+/// of the answer, silent rather than noted (the element walk's
+/// [`InterpNote::PseudoElement`] note reports them on ITS side). Same
+/// cascade shape as [`walk`]: within the target's layers, later fired
+/// declarations win per longhand, the winners come out `Prop`-sorted,
+/// and the winner condition is the pseudo-element's own.
+fn walk_pseudo(
+    program: &Program,
+    target: PseudoTarget,
+    resolve: impl Fn(Prop, Val) -> Result<Val, InterpError>,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!("interp_pseudo", layers = program.layers.len()).entered();
+    let wanted = target.cond();
+    let mut decls: Vec<Decl> = Vec::new();
+    let mut conds: Vec<Cond> = Vec::new();
+    for layer in program.layers {
+        if layer.cond != wanted {
+            continue;
+        }
+        for decl in layer.decls {
+            let val = resolve(decl.prop, decl.val)?;
+            match decls.binary_search_by_key(&decl.prop, |d| d.prop) {
+                Ok(index) => {
+                    decls[index].val = val;
+                }
+                Err(index) => {
+                    decls.insert(
+                        index,
+                        Decl {
+                            prop: decl.prop,
+                            val,
+                        },
+                    );
+                    conds.insert(index, wanted);
+                }
+            }
+        }
+        #[cfg(feature = "tracing")]
+        tracing::debug!(cond = ?wanted, fired = layer.decls.len(), "pseudo layer fired");
+    }
+    Ok(Interped {
+        decls,
+        conds,
+        notes: Vec::new(),
+    })
+}
+
 /// Resolve a compiled [`Program`] to its effective declarations under
 /// one probe situation — the theme-LESS form: token values
 /// ([`Val::Tok`]/[`Val::ModePair`]) refuse with the typed
@@ -691,7 +913,7 @@ fn walk(
 pub fn interp(program: &Program, env: &Env) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp_themeless", layers = program.layers.len()).entered();
-    walk(program, env, None, |prop, val| match val {
+    walk(program, env, None, None, |prop, val| match val {
         Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
         concrete => Ok(concrete),
     })
@@ -715,7 +937,7 @@ pub fn interp_theme(
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp_theme", layers = program.layers.len()).entered();
-    walk(program, env, None, |_, val| match val {
+    walk(program, env, None, None, |_, val| match val {
         Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
         Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
         concrete => Ok(concrete),
@@ -751,6 +973,7 @@ pub fn interp_probes(
         program,
         env,
         Some(probes as &dyn AttrProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -781,10 +1004,192 @@ pub fn interp_theme_probes(
         program,
         env,
         Some(probes as &dyn AttrProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
             concrete => Ok(concrete),
         },
     )
+}
+
+/// Resolve a compiled [`Program`] to its effective declarations under
+/// one probe situation and one [`ContainerProbe`] — the named-
+/// container half of the seam family (the `compile_with` convention's
+/// `*_with` shape): the NAMED container queries ask the source (the
+/// built-in [`ContainerState`] carries the named containers' widths; a
+/// host wires its own — a layout-phase bridge, a test double). A hit
+/// fires by the same AT/strictly-below boundary rules the viewport
+/// breakpoints obey; a container the source does not know is a QUIET
+/// skip (a CSS selector that does not match, never an exclusion). The
+/// UNNAMED container forms keep answering from [`Env::container_rem`].
+///
+/// The walk stays pure: same program + env + source, same answer.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a theme
+/// form and no token source rides along (use
+/// [`interp_theme_containers`] for the themed form).
+pub fn interp_containers(
+    program: &Program,
+    env: &Env,
+    containers: &impl ContainerProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!("interp_containers", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_containers`]: one [`TokenSource`]
+/// resolves the theme forms, one [`ContainerProbe`] answers the named
+/// container queries — both seams ride one walk (the DynCache loop
+/// compiles once and interps per frame with both).
+///
+/// # Errors
+/// The token source's own typed failures ([`InterpError::UnknownToken`],
+/// [`InterpError::UnknownPair`], [`InterpError::AlphaOnPair`],
+/// [`InterpError::AlphaNotFinite`] under the built-in table) — the walk
+/// stops and reports, never second-guesses.
+pub fn interp_theme_containers(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    containers: &impl ContainerProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_theme_containers", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The probe-composed form of [`interp_containers`]: one [`AttrProbe`]
+/// answers the element-own attribute probes, one [`ContainerProbe`]
+/// answers the named container queries — the full themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a theme
+/// form and no token source rides along (use
+/// [`interp_theme_probes_containers`] for the themed form).
+pub fn interp_probes_containers(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_probes_containers", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The FULL form: one [`TokenSource`] for the theme forms, one
+/// [`AttrProbe`] for the element-own attribute probes, one
+/// [`ContainerProbe`] for the named container queries — every seam the
+/// walk consults rides one call (the DynCache loop's own shape).
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_containers`])
+/// — the walk stops and reports, never second-guesses.
+pub fn interp_theme_probes_containers(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_containers",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// Resolve a compiled [`Program`]'s PSEUDO-ELEMENT cascade for one
+/// [`PseudoTarget`] — the theme-LESS form: the `::selection`/
+/// `::placeholder` render target's own effective declarations (only the
+/// layers carrying the target's condition participate; the element's
+/// own layers are a different target, silent here, noted by the
+/// element walk). Token values ([`Val::Tok`]/[`Val::ModePair`]) refuse
+/// with the typed [`InterpError::ThemeRequired`] boundary — they are
+/// the theme pass's forms; [`interp_pseudo_theme`] carries the source.
+/// The walk takes no [`Env`]: a pseudo layer fires by its condition
+/// alone (the flat fold collapses stacked variants onto the pseudo
+/// condition), and the themeless resolution consults nothing else —
+/// the themed form's `env` rides the pair selection, not the firing.
+///
+/// The walk stays pure: same program + target, same answer.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a theme
+/// form and no source rides along.
+pub fn interp_pseudo(program: &Program, target: PseudoTarget) -> Result<Interped, InterpError> {
+    walk_pseudo(program, target, |prop, val| match val {
+        Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+        concrete => Ok(concrete),
+    })
+}
+
+/// The themed form of [`interp_pseudo`]: the [`PseudoTarget`]'s own
+/// cascade with one [`TokenSource`] resolving the theme forms — the
+/// same two questions the element walk asks, on the pseudo render
+/// target (the mode still selects the pair halves; the `env` rides the
+/// resolution, not the firing — a pseudo layer fires by its condition
+/// alone).
+///
+/// # Errors
+/// The token source's own typed failures ([`InterpError::UnknownToken`],
+/// [`InterpError::UnknownPair`], [`InterpError::AlphaOnPair`],
+/// [`InterpError::AlphaNotFinite`] under the built-in table) — the walk
+/// stops and reports, never second-guesses.
+pub fn interp_pseudo_theme(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    target: PseudoTarget,
+) -> Result<Interped, InterpError> {
+    walk_pseudo(program, target, |_, val| match val {
+        Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+        Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+        concrete => Ok(concrete),
+    })
 }
