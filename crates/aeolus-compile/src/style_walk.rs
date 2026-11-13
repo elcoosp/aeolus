@@ -110,7 +110,7 @@ impl StyleWalk {
 /// [`program_style_with`] carries the source they resolve from).
 ///
 /// `layers` and `keywords` are the two slices the macro freezes — the
-/// [`StaticProgram`](crate::StaticProgram) shape `aeolus-rt` re-exports
+/// `StaticProgram` shape `aeolus-rt` re-exports
 /// (`layers` the specificity-sorted IR layers, `keywords` the row
 /// texts parallel to the flattened declarations). This crate cannot
 /// name that type (it lives one crate up, re-exporting this one), so
