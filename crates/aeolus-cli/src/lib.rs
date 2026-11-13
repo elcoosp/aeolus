@@ -27,8 +27,9 @@
 //!   ([`ThemeSpecError`]), never bare strings.
 
 use aeolus_compile::{
-    ClassKeywords, Config, Env, RustSheet, RustStrings, SourceFile, build as build_artifact,
-    compile, compile_theme, emit_rust, emit_rust_theme, interp_theme, keyword_texts, scan, sort,
+    ClassKeywords, Config, ContainerBound, ContainerState, Env, RustSheet, RustStrings, SourceFile,
+    build as build_artifact, compile, compile_theme, emit_rust, emit_rust_theme, interp_containers,
+    interp_theme, interp_theme_containers, keyword_texts, scan, sort,
 };
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
@@ -408,6 +409,10 @@ struct Args {
     /// The `--dark` probe flag (`expand` only): lift the mode tier the
     /// interp resolves under.
     dark: bool,
+    /// The `--container name=rem` bounds (`expand` only, repeatable):
+    /// the NAMED containers' widths the interp's container seam answers
+    /// the `@md/card:` layers from.
+    containers: Vec<(String, f32)>,
     positional: Vec<String>,
 }
 
@@ -417,6 +422,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut summary = false;
     let mut json = false;
     let mut dark = false;
+    let mut containers: Vec<(String, f32)> = Vec::new();
     let mut positional = Vec::new();
     let mut i = 0usize;
     while i < rest.len() {
@@ -441,6 +447,37 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--summary" if allow.contains(&"summary") => summary = true,
             "--json" if allow.contains(&"json") => json = true,
             "--dark" if allow.contains(&"dark") => dark = true,
+            "--container" if allow.contains(&"container") => {
+                i += 1;
+                let Some(value) = rest.get(i) else {
+                    let _ = writeln!(err, "--container needs name=rem (e.g. --container card=48)");
+                    return None;
+                };
+                let Some((name, rem)) = value.split_once('=') else {
+                    let _ = writeln!(err, "--container needs name=rem, got {value:?}");
+                    return None;
+                };
+                match rem.parse::<f32>() {
+                    // The bounds ride the walk's own f32 slots: a
+                    // non-finite or negative spelling is a CLI input
+                    // error, not a half-answered layer.
+                    Ok(rem) if rem.is_finite() && rem >= 0.0 => {
+                        containers.push((name.to_string(), rem));
+                    }
+                    Ok(rem) => {
+                        let _ = writeln!(
+                            err,
+                            "--container width must be a finite rem >= 0, got {rem:?}"
+                        );
+                        return None;
+                    }
+                    Err(_) => {
+                        let _ =
+                            writeln!(err, "--container width must parse as f32 rem, got {rem:?}");
+                        return None;
+                    }
+                }
+            }
             other => {
                 if other.starts_with("--") && other != "--" {
                     let _ = writeln!(err, "unknown flag {other:?} for this command");
@@ -457,6 +494,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         summary,
         json,
         dark,
+        containers,
         positional,
     })
 }
@@ -694,7 +732,7 @@ fn last_keyword_texts(annotations: &[ClassKeywords]) -> HashMap<(Cond, Prop), &'
 fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     #[cfg(feature = "tracing")]
     let _expand_span = tracing::debug_span!("aeolus_expand").entered();
-    let Some(args) = parse_flags(rest, err, &["theme", "json", "dark"]) else {
+    let Some(args) = parse_flags(rest, err, &["theme", "json", "dark", "container"]) else {
         return 2;
     };
     if args.positional.is_empty() {
@@ -725,9 +763,22 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         dark: args.dark,
         ..Env::default()
     };
-    let interped = match &table {
-        Some(table) => interp_theme(&compiled.program, table, &env),
-        None => compiled.interp(&env),
+    // The NAMED containers' widths ride the `--container name=rem`
+    // flags: the same bounds table the `ContainerProbe` seam documents,
+    // borrowed from the parsed args (the strings outlive the walk).
+    // Without any, `expand` keeps the sourceless shape — named layers
+    // report instead of answering.
+    let bounds: Vec<ContainerBound<'_>> = args
+        .containers
+        .iter()
+        .map(|(name, rem)| ContainerBound { name, rem: *rem })
+        .collect();
+    let state = ContainerState::new(&bounds);
+    let interped = match (&table, bounds.is_empty()) {
+        (Some(table), false) => interp_theme_containers(&compiled.program, table, &env, &state),
+        (Some(table), true) => interp_theme(&compiled.program, table, &env),
+        (None, false) => interp_containers(&compiled.program, &env, &state),
+        (None, true) => compiled.interp(&env),
     };
     let interped = match interped {
         Ok(interped) => interped,
@@ -1468,8 +1519,10 @@ USAGE:
                                                              lint class strings in sources
   aeolus explain [--theme <spec>] <classes...>               per-class Rust tokens (the emit (a) arm)
   aeolus sort    [--json] <classes...>                       registry-order class sort (the §5.5 parity line)
-  aeolus expand  [--theme <spec>] [--dark] [--json] <classes...>
-                                                             effective declarations (the interp (c) arm)
+  aeolus expand  [--theme <spec>] [--dark] [--container name=rem] [--json] <classes...>
+                                                             effective declarations (the interp (c) arm);
+                                                             --container names the bounds the named
+                                                             @container layers resolve from
   aeolus build   [--theme <spec>] [--out <path>] [--fail-on <mode>] [--json] <files/dirs...>
                                                              one stylesheet for the whole project
                                                              (scan → dedupe → registry-ordered rules
