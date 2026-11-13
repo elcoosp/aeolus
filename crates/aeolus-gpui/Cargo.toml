@@ -44,5 +44,11 @@ harness = false
 name = "variants"
 harness = false
 
+# The `variants!` slot dispatch's microbenchmark: the generated
+# `style_slot()` match over the slot × combo cartesian.
+[[bench]]
+name = "slots"
+harness = false
+
 [lints]
 workspace = true
