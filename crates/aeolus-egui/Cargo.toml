@@ -13,11 +13,27 @@ publish = false
 
 [dependencies]
 aeolus-core = { path = "../aeolus-core" }
+# The V1 runtime seam: the `StaticProgram`/`Env`/`AttrProbe`/`TokenSource`
+# types the program lane walks.
+aeolus-rt = { path = "../aeolus-rt" }
 # The immediate-mode library itself; windowing/frame integration lives in
 # `eframe`/`egui-winit`, which apps depend on — styling needs none of it and
 # everything here compiles headless (Context::default() works without a pass).
 egui = "0.37"
 tracing = "0.1"
+
+[dev-dependencies]
+# The V1 compile seam builds the static programs the program lane walks,
+# and the plan bridge feeds the differential pins.
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-theme = { workspace = true }
+# The program lane's microbenchmark (divan, stable — the workspace bench
+# idiom).
+divan = "0.1"
+
+[[bench]]
+name = "program"
+harness = false
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
