@@ -54,3 +54,41 @@ fn lower_class_is_the_public_seam() {
             .any(|entry| entry.prop == Prop::BoxShadow)
     );
 }
+
+#[test]
+fn the_ring_family_rides_the_polyfill_tier() {
+    // §3.7's ring row: no native slot, but the runtime composes the v4
+    // box-shadow list (aeolus_gpui::RingState) — the emit gates accept
+    // the ring longhands, the truly-native table stays honest.
+    assert!(!supports(Prop::RingWidth));
+    assert!(aeolus_codegen_gpui::polyfilled(Prop::RingWidth));
+    assert!(aeolus_codegen_gpui::polyfilled(Prop::RingColor));
+    assert!(aeolus_codegen_gpui::polyfilled(Prop::RingOffsetWidth));
+    assert!(aeolus_codegen_gpui::polyfilled(Prop::RingOffsetColor));
+    assert!(aeolus_codegen_gpui::expressible(Prop::RingWidth));
+    // The ring program emits where it used to refuse.
+    let compiled = compile_theme("ring-2 ring-red-500", &table(), &Config::default()).unwrap();
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    let tokens = GpuiEmit::default().emit(&compiled.program).unwrap();
+    assert!(
+        tokens
+            .to_string()
+            .replace(' ', "")
+            .contains("StaticProgram::new")
+    );
+    let tokens = lower_class(
+        "ring-2 ring-red-500 ring-offset-2 ring-offset-white",
+        &Config::default(),
+    )
+    .expect("the ring program emits through the public seam");
+    assert!(
+        tokens
+            .to_string()
+            .replace(' ', "")
+            .contains("StaticProgram::new")
+    );
+}
