@@ -25,5 +25,11 @@ divan = "0.1"
 name = "attrs"
 harness = false
 
+# The ring polyfill's microbenchmark (the §3.7 tier): the walk applying
+# a `tw!`-compiled ring program, and the accumulator's own composition.
+[[bench]]
+name = "ring"
+harness = false
+
 [lints]
 workspace = true
