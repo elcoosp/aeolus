@@ -319,8 +319,26 @@ fn container_layers_need_a_container_context() {
         orphan.decls.is_empty(),
         "no base rule, no container context"
     );
-    assert!(note_for(&orphan, Cond::Container(Bp::Md)).is_some());
-    assert!(note_for(&orphan, Cond::MaxContainer(Bp::Md)).is_some());
+    assert!(
+        note_for(
+            &orphan,
+            Cond::Container {
+                bp: Bp::Md,
+                name: None
+            }
+        )
+        .is_some()
+    );
+    assert!(
+        note_for(
+            &orphan,
+            Cond::MaxContainer {
+                bp: Bp::Md,
+                name: None
+            }
+        )
+        .is_some()
+    );
     // A container width answers the queries with the same min/max
     // boundary semantics as the viewport forms.
     let at = interp(
@@ -331,7 +349,16 @@ fn container_layers_need_a_container_context() {
         },
     )
     .expect("resolves");
-    assert!(note_for(&at, Cond::Container(Bp::Md)).is_none());
+    assert!(
+        note_for(
+            &at,
+            Cond::Container {
+                bp: Bp::Md,
+                name: None
+            }
+        )
+        .is_none()
+    );
     assert_eq!(resolved(&at, Prop::PaddingTop), Val::Rem(0.0));
     let below = interp(
         &compiled.program,
