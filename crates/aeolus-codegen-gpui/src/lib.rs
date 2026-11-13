@@ -45,13 +45,20 @@ impl Emit for GpuiEmit<'_> {
     type Output = TokenStream;
 
     fn emit(&self, program: &Program) -> Result<Self::Output, Vec<Unsupported>> {
+        // The keyword annotations are parallel to the flattened
+        // declarations (layer-major order — the `emit_static_program`
+        // contract), so the text-dependent verdicts read the same
+        // slice the frozen program carries.
+        let mut flat = 0usize;
         let refused: Vec<Unsupported> = program
             .layers
             .iter()
             .flat_map(|layer| layer.decls.iter())
             .filter_map(|decl| {
-                (!expressible(decl.prop))
-                    .then_some(Unsupported::new(decl.prop, "GPUI has no native slot"))
+                let keyword = self.keywords.get(flat).copied().unwrap_or_default();
+                flat += 1;
+                unsupported_reason(decl.prop, keyword)
+                    .map(|reason| Unsupported::new(decl.prop, reason))
             })
             .collect();
         if !refused.is_empty() {
@@ -105,27 +112,32 @@ pub fn lower_class(literal: &str, config: &Config) -> Result<TokenStream, Diagno
             .iter()
             .map(ToString::to_string)
             .collect(),
-        unsupported: compiled
-            .program
-            .layers
-            .iter()
-            .flat_map(|layer| layer.decls.iter())
-            .filter_map(|decl| {
-                (!expressible(decl.prop))
-                    .then_some(Unsupported::new(decl.prop, "GPUI has no native slot"))
-            })
-            .collect(),
+        unsupported: Vec::new(),
     };
-    diagnostics.unsupported.sort_by_key(|entry| entry.prop);
-    diagnostics.unsupported.dedup();
-    if !diagnostics.is_empty() {
-        return Err(diagnostics);
-    }
+    // The annotations first: the text-dependent verdicts (the gradient
+    // direction's row text) read the same slice the emit freezes.
     let annotations = keyword_texts(literal, config).map_err(|err| Diagnostics {
         messages: vec![err.to_string()],
         unsupported: Vec::new(),
     })?;
     let keywords = aeolus_compile::keyword_alignment(&compiled, &annotations);
+    let mut flat = 0usize;
+    for layer in compiled.program.layers {
+        for decl in layer.decls {
+            let keyword = keywords.get(flat).copied().unwrap_or_default();
+            flat += 1;
+            if let Some(reason) = unsupported_reason(decl.prop, keyword) {
+                diagnostics
+                    .unsupported
+                    .push(Unsupported::new(decl.prop, reason));
+            }
+        }
+    }
+    diagnostics.unsupported.sort_by_key(|entry| entry.prop);
+    diagnostics.unsupported.dedup();
+    if !diagnostics.is_empty() {
+        return Err(diagnostics);
+    }
     Ok(emit_static_program(&compiled.program, &keywords))
 }
 
@@ -319,6 +331,16 @@ pub const fn supports(prop: Prop) -> bool {
             | Prop::Opacity
             | Prop::Cursor
             | Prop::TextOverflow
+            // The gradient stops and their positions: GPUI's
+            // `linear_gradient` stops carry a colour and a percentage
+            // each, the v4 two-stop form. The via stop (three stops)
+            // and the direction longhand (whose verdict is the row
+            // TEXT's, see [`unsupported_reason`]) stay out of the
+            // per-prop table.
+            | Prop::GradientFrom
+            | Prop::GradientTo
+            | Prop::GradientFromPosition
+            | Prop::GradientToPosition
     )
 }
 
@@ -343,4 +365,49 @@ pub const fn polyfilled(prop: Prop) -> bool {
 /// boundary.
 pub const fn expressible(prop: Prop) -> bool {
     supports(prop) || polyfilled(prop)
+}
+
+/// The per-DECLARATION verdict: the per-prop tiers ([`expressible`])
+/// refined where the prop's answer is the ROW TEXT's. The direction
+/// longhand ([`Prop::BackgroundImage`]) expresses exactly when its
+/// composed row text names a shape GPUI's `Fill` carries — the
+/// `linear-gradient(to …)` directions ([`aeolus_compile::
+/// linear_gradient_angle`]) and the `bg-none` clear — while the
+/// radial/conic/placeholder texts refuse with the reason the
+/// diagnostic renders; the via stop refuses on its own slot shape
+/// (GPUI's gradient carries two stops). `None` = expressible.
+///
+/// `keyword` is the declaration's row text (the annotation a bare
+/// `Val::Kw` slot cannot recover): a direction decl with NO text
+/// cannot be gate-checked and refuses rather than guessing.
+pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
+    match prop {
+        Prop::BackgroundImage => {
+            if keyword.is_empty() {
+                Some(
+                    "the direction row's text is the annotation the bare IR cannot recover — \
+                     pass the keyword slice the pipeline freezes beside the layers",
+                )
+            } else if keyword == "none" || aeolus_compile::linear_gradient_angle(keyword).is_some()
+            {
+                None
+            } else {
+                Some(
+                    "GPUI's Fill carries only the linear-gradient directions (bg-linear-to-*) \
+                     — the radial/conic/placeholder texts have no slot",
+                )
+            }
+        }
+        Prop::GradientVia => Some(
+            "GPUI linear gradients carry two stops — the via stop has no slot (v4's \
+             three-stop form stays the documented boundary)",
+        ),
+        _ => {
+            if expressible(prop) {
+                None
+            } else {
+                Some("GPUI has no native slot")
+            }
+        }
+    }
 }
