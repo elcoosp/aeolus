@@ -229,7 +229,7 @@ Concrete findings:
 | ---------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | A. **Proc-macro codegen**                      | Class literal → straight-line target code at expansion time | gpui-rsx, StyleX/Panda/Vanilla-Extract ("zero-runtime" CSS-in-JS) | **Chosen for call sites**                                                                                                               |
 | B. **`const` data tables**                     | Resolve into `static` data, interpreted by a tiny loop      | `phf`, const lookup tables                                        | **Chosen for tables** (shadcn variants, non-codegen backends) — _not_ a `const fn` parser (no float `powf/cbrt`, painful compile times) |
-| C. **Whole-project scan + one generated file** | Scan sources, emit one global artifact, dedupe globally     | Tailwind v4 _Oxide_ scanner, UnoCSS on-demand                     | **Optional later** (`cargo aeolus build`) for global dedupe + CSS emission                                                              |
+| C. **Whole-project scan + one generated file** | Scan sources, emit one global artifact, dedupe globally     | Tailwind v4 _Oxide_ scanner, UnoCSS on-demand                     | **LANDED 2026-11** (`aeolus_compile::scan`/`build` + the CLI's `aeolus build`: the `ClassSource` extraction seam, the global dedupe, the registry-ordered rules, the self-contained vars block)                                                                                              |
 | D. Runtime + cache                             | What exists today                                           | —                                                                 | **Demote to the dynamic-string fallback only**                                                                                          |
 
 Techniques borrowed (as inspirations — verify details before citing publicly):
@@ -386,7 +386,7 @@ variants! { pub Button {
 ```
 
 User overrides go through `cn!` which resolves at compile time when static, or by `Program::overlay` (mask + copy) when not.
-`aeolus-shadcn` collapses into a set of `variants!` declarations — F6 disappears.
+`aeolus-shadcn` collapses into a set of `variants!` declarations — F6 disappears. (The composition half **landed 2026-11**: `aeolus_compile::overlay` — the pipeline-owned form of the sketch's `Program::overlay` method, the IR staying heap-free — composes two programs rightmost-wins per longhand, conflict-free out; `cn()` delegate-folds through the same walk, and the frozen⊕runtime shape is the `program_overlay` example's story.)
 
 **(3) Dynamic strings — the explicit slow lane.**
 
@@ -520,7 +520,7 @@ Do **not** block on these: the design works today and simply gets cheaper if the
 | **P3 – GPUI static**      | `aeolus-codegen-gpui`, `aeolus-macros` (`tw!`, `cn!`, `variants!`, `theme!`), `aeolus-gpui` (`TwExt`) — **landed 2026-11**; the §3.6 surface (3)'s dynamic lane (`aeolus_rt::ClassCell`, `TwExt::tw_dyn`, the `keyword_alignment` seam) landed 2026-11                                                                         | `iai` parity with hand-written; 0-alloc/0-lock contract tests; demo app         | 3       |
 | **P4 – Env variants**     | `AeolusRoot`/`Env`, `dark:`, breakpoints, group/state bits, aria/data — **frame Env + state layers landed 2026-11; the attribute-bits host state seam (`tw_probes`, the `AttrProbe` trait) landed 2026-11**                                         | Conformance score published for GPUI; diagnostics for unsupported variants      | 2       |
 | **P5 – Ecosystem**        | gpui-rsx integration PR, LSP/CLI, gpui-component bridge, docs book, public benchmarks, `1.0-rc`                                                                                                    | Third-party app migrated; migration guide; CI perf gates                        | 2–3     |
-| **P6 – Breadth**          | Other backends on `Program`, ring/gradient polyfills, container queries, motion layer, optional `cargo aeolus build` (global dedupe + CSS)                                                         | Per-feature                                                                     | ongoing |
+| **P6 – Breadth**          | Other backends on `Program`, ring/gradient polyfills, container queries, motion layer, optional `cargo aeolus build` (global dedupe + CSS — **the build half landed 2026-11**: `aeolus_compile::scan`/`build`, the CLI `build` command, the approach C row)                                                         | Per-feature                                                                     | ongoing |
 
 Critical path to _"replace gpui-rsx's Tailwind half"_: **P0 → P1 → P2 → P3 → P5** (≈12–14 weeks solo-ish; P4 can overlap P3 late).
 
