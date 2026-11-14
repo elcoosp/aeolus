@@ -480,7 +480,7 @@ impl TokenTable {
     pub fn light_rgba(&self, id: u16) -> Option<[u8; 4]> {
         self.light
             .get(usize::from(id))
-            .map(|color| color.to_rgba8())
+            .map(|color| color.gamut_map().to_rgba8())
     }
 
     /// True when the token carries a dark value (the T1 pair form).
@@ -496,7 +496,7 @@ impl TokenTable {
         self.dark
             .get(usize::from(id))
             .and_then(Option::as_ref)
-            .map(|color| color.to_rgba8())
+            .map(|color| color.gamut_map().to_rgba8())
     }
 
     /// The `(light, dark)` const pair at a [`Val::ModePair`] slot — the
@@ -505,7 +505,7 @@ impl TokenTable {
     pub fn pair_at(&self, slot: u16) -> Option<([u8; 4], [u8; 4])> {
         self.pairs
             .get(usize::from(slot))
-            .map(|(l, d)| (l.to_rgba8(), d.to_rgba8()))
+            .map(|(l, d)| (l.gamut_map().to_rgba8(), d.gamut_map().to_rgba8()))
     }
 
     /// How many const pairs the table carries (the T1 surface).
@@ -547,7 +547,7 @@ impl TokenTable {
             Tier::Baked => match alpha {
                 None => match self.pair_of[idx] {
                     Some(slot) => Ok(Val::ModePair(slot)),
-                    None => Ok(Val::Rgba(self.light[idx].to_rgba8())),
+                    None => Ok(Val::Rgba(self.light[idx].gamut_map().to_rgba8())),
                 },
                 Some(a) => {
                     if !a.is_finite() {
@@ -558,7 +558,10 @@ impl TokenTable {
                     }
                     let a = a.clamp(0.0, 1.0);
                     Ok(Val::Rgba(
-                        self.light[idx].mix_with_transparent(a * 100.0).to_rgba8(),
+                        self.light[idx]
+                            .mix_with_transparent(a * 100.0)
+                            .gamut_map()
+                            .to_rgba8(),
                     ))
                 }
             },
@@ -605,7 +608,7 @@ impl TokenTable {
             _ => &self.light[idx],
         };
         let a = alpha.clamp(0.0, 1.0);
-        Ok(base.mix_with_transparent(a * 100.0).to_rgba8())
+        Ok(base.mix_with_transparent(a * 100.0).gamut_map().to_rgba8())
     }
 }
 
