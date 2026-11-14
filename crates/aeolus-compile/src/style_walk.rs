@@ -58,7 +58,9 @@ use aeolus_core::plan::ResolvedStyle;
 use aeolus_ir::{Layer, Prop, Val};
 
 use crate::Config;
-use crate::interp::{AttrProbe, Env, Fire, InterpError, InterpNote, TokenSource, decide};
+use crate::interp::{
+    AttrProbe, Env, Fire, InterpError, InterpNote, StructProbe, TokenSource, decide,
+};
 use crate::plan::{PlanNoteKind, PlanWriter};
 
 // ---------------------------------------------------------------------------
@@ -124,7 +126,23 @@ pub fn program_style(
     keywords: &'static [&'static str],
     env: &Env,
 ) -> (ResolvedStyle, StyleWalk) {
-    run(layers, keywords, env, None, None)
+    run(layers, keywords, env, None, None, None)
+}
+
+/// [`program_style`] with the structural seam wired: a
+/// [`StructProbe`] source answers the [`Cond::Structural`] layers'
+/// DOM-position questions (the `interp_struct` convention — the
+/// built-in value is one Copy `StructFacts`,
+/// [`StructFacts::UNKNOWN`](crate::interp::StructFacts::UNKNOWN) the
+/// honest "the host knows nothing" answer). The probe and token
+/// seams stay sourceless (`None`), their reports riding the walk.
+pub fn program_style_struct(
+    layers: &'static [Layer],
+    keywords: &'static [&'static str],
+    env: &Env,
+    structs: Option<&dyn StructProbe>,
+) -> (ResolvedStyle, StyleWalk) {
+    run(layers, keywords, env, None, structs, None)
 }
 
 /// [`program_style`] with the interp's two seams wired: an
@@ -140,7 +158,7 @@ pub fn program_style_with(
     probes: Option<&dyn AttrProbe>,
     tokens: Option<&dyn TokenSource>,
 ) -> (ResolvedStyle, StyleWalk) {
-    run(layers, keywords, env, probes, tokens)
+    run(layers, keywords, env, probes, None, tokens)
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +170,7 @@ fn run(
     keywords: &'static [&'static str],
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    structs: Option<&dyn StructProbe>,
     tokens: Option<&dyn TokenSource>,
 ) -> (ResolvedStyle, StyleWalk) {
     #[cfg(feature = "tracing")]
@@ -187,7 +206,7 @@ fn run(
         // `*_containers` forms; this fold keeps the sourceless shape
         // (the style lane's named-container layers report, exactly as
         // they did before the seam landed).
-        match decide(layer.cond, env, probes, None, layer.mask) {
+        match decide(layer.cond, env, probes, None, structs, layer.mask) {
             Fire::Yes => {
                 for (di, decl) in layer.decls.iter().enumerate() {
                     let text = keywords
