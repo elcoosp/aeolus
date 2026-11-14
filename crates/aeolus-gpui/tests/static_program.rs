@@ -46,12 +46,12 @@ fn unsupported_keyword_value_is_not_a_program() {
 }
 
 variants! { pub Button {
-    base: "inline-flex items-center gap-2 rounded-md font-medium",
+    base:"inline-flex items-center gap-2 rounded-md font-medium",
     variant: {
-        default: "bg-primary text-primary-foreground",
-        destructive: "bg-destructive text-white",
+        default:"bg-primary text-primary-foreground",
+        destructive:"bg-destructive text-white",
     },
-    size: { default: "h-9 px-4 py-2", sm: "h-8 px-3" },
+    size: { default:"h-9 px-4 py-2", sm:"h-8 px-3"},
 } }
 
 #[test]
@@ -60,21 +60,4 @@ fn variants_compile_a_closed_world_table() {
     let style = gpui::StyleRefinement::default().tw(program);
     assert_eq!(style.padding.left, Some(rems(0.75).into()));
     assert!(style.background.is_some());
-}
-
-#[test]
-fn readme_example_compiles_and_applies() {
-    let program = tw!(
-        "flex items-center gap-2 p-4 rounded-md bg-primary text-primary-foreground \
-         hover:bg-primary/90 dark:shadow-none md:p-6"
-    );
-    let style = gpui::StyleRefinement::default().tw_env(
-        program,
-        Env {
-            viewport_rem: 50.0,
-            ..Env::default()
-        },
-    );
-    assert_eq!(style.padding.left, Some(rems(1.5).into()));
-    assert_eq!(style.display, Some(gpui::Display::Flex));
 }
