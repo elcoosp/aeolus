@@ -205,6 +205,53 @@ fn assert_plans_agree(v1: &StylePlan, v0: &StylePlan) {
         ea.animation, eb.animation
     );
 
+    // The shadow tier's plan slots (the §3.7 shadow row, the §7 seam):
+    // the dominant layer field-wise (the colour within the baked-table
+    // quantization — the bridge's colour rides the theme pass's
+    // `[u8; 4]` bake), the multi-layer rest, the inset set.
+    match (&a.shadow, &b.shadow) {
+        (None, None) => {}
+        (Some(x), Some(y)) => {
+            assert_eq!(x.offset_x, y.offset_x, "shadow offset_x disagrees");
+            assert_eq!(x.offset_y, y.offset_y, "shadow offset_y disagrees");
+            assert_eq!(x.blur, y.blur, "shadow blur disagrees");
+            assert_eq!(x.spread, y.spread, "shadow spread disagrees");
+            assert_eq!(x.inset, y.inset, "shadow inset disagrees");
+            assert!(
+                colors_agree(&x.color, &y.color),
+                "shadow colour disagrees: V1 {x:?} vs V0 {y:?}"
+            );
+        }
+        (x, y) => panic!("shadow presence disagrees: {x:?} vs {y:?}"),
+    }
+    assert_eq!(
+        a.extras.shadow_rest.len(),
+        b.extras.shadow_rest.len(),
+        "shadow_rest count disagrees"
+    );
+    for (i, (x, y)) in a
+        .extras
+        .shadow_rest
+        .iter()
+        .zip(b.extras.shadow_rest.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            (x.offset_x, x.offset_y, x.blur, x.spread, x.inset),
+            (y.offset_x, y.offset_y, y.blur, y.spread, y.inset),
+            "shadow_rest [{i}] geometry disagrees"
+        );
+        assert!(
+            colors_agree(&x.color, &y.color),
+            "shadow_rest [{i}] colour disagrees: V1 {x:?} vs V0 {y:?}"
+        );
+    }
+    assert_eq!(
+        a.extras.inset_shadows.len(),
+        b.extras.inset_shadows.len(),
+        "inset_shadows count disagrees"
+    );
+
     // The buckets: same routing, same layer conditions, same dark/responsive
     // presence. Rule conditions compare through their Debug shape (the
     // v0.x Cond carries owned Strings; the text is the identity).
@@ -375,6 +422,24 @@ const BATTERY: &[&str] = &[
     "skew-x-3",
     // grid (the numeric forms)
     "grid-cols-3",
+    // the shadow tier (the §3.7 shadow row, the §7 seam): the preset
+    // scale, the clear and the recolour interactions — every entry
+    // oracle-clean under the default theme (the audited --shadow-*
+    // tokens both sides read).
+    "shadow-2xs",
+    "shadow-xs",
+    "shadow-sm",
+    "shadow-md",
+    "shadow-lg",
+    "shadow-xl",
+    "shadow-2xl",
+    "shadow-none",
+    "shadow-lg shadow-red-500",
+    "shadow-red-500 shadow-lg",
+    "shadow-none shadow-red-500",
+    "shadow-red-500 shadow-none",
+    "shadow-sm shadow-lg",
+    "hover:shadow-lg",
     // the motion layer (the P6 row): the transition quartet, the
     // animation presets — every entry oracle-clean under the default
     // theme (the --animate-* and --ease-* tokens the default theme
@@ -678,18 +743,21 @@ fn same_condition_candidates_merge_into_one_layer() {
 // ---------------------------------------------------------------------------
 
 /// The longhands the v0.x plan cannot carry come back as TYPED notes
-/// with stable codes — never silent drops. The gradient and shadow
-/// preset rows lower into the IR fine; the plan shape is where they
-/// stop, and the note says so.
+/// with stable codes — never silent drops. The gradient row's
+/// un-composable placeholder texts and the shadow row's inset
+/// placeholder (whose `currentColor` has no plan answer) lower into the
+/// IR fine; the plan shape is where they stop, and the note says so.
 #[test]
 fn unmappable_families_report_typed_notes() {
     let source = ThemeSource::from_css(TAILWIND_DEFAULT_THEME, None).unwrap();
     let tokens = TokenTable::baked(&source).unwrap();
 
-    // `shadow-sm` lowers into the IR (BoxShadow preset); the v0.x plan
-    // slot wants a parsed BoxShadow, the row carries the preset text —
-    // the note names the boundary.
-    let sheet = emit_plan_theme("shadow-sm", &tokens, &Config::default()).unwrap();
+    // `shadow-sm` maps NOW (the shadow tier's plan half: the preset
+    // resolves through the oracle's own theme reader into the parsed
+    // slot — the slot-for-note trade the milestone bought); the inset
+    // placeholder keeps the note (the `currentColor` is the CSS arm's
+    // output, the oracle's own shadow-inner errors).
+    let sheet = emit_plan_theme("shadow-inner", &tokens, &Config::default()).unwrap();
     assert!(sheet.diagnostics.is_empty(), "the class itself lowered");
     assert_eq!(sheet.notes.len(), 1, "one note for the one class");
     let note = &sheet.notes[0];
