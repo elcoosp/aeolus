@@ -1,5 +1,5 @@
 //! The GPUI ring polyfill (architecture plan §3.7's `ring-*` row:
-//! "polyfill as spread-only `BoxShadow` — v4 semantics: ring = box-shadow
+//!"polyfill as spread-only `BoxShadow` — v4 semantics: ring = box-shadow
 //! spread"). The `--tw-ring-*` machinery the registry lowers into the
 //! four `Ring*` longhands composes into GPUI's `Vec<BoxShadow>` — the
 //! offset band and the ring band, in v4's own order — instead of the
