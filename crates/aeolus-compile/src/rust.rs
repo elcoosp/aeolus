@@ -529,7 +529,24 @@ pub(crate) fn run_rust(
                             tokens,
                             config,
                         ) {
-                            Ok(row_decls) => decls.extend(row_decls),
+                            Ok(row_decls) => {
+                                // The applied body's row texts ride the
+                                // registration ([`CustomValue::Applied`]'s
+                                // parallel slice) — the fragment's
+                                // `Val::Kw` slots render their annotations
+                                // through the same list the built-in rows
+                                // feed (first wins per longhand); the
+                                // fixed/functional forms carry no texts
+                                // (their values name themselves).
+                                if let custom::CustomValue::Applied(body) = utility.value {
+                                    for &(prop, text) in body.keywords {
+                                        if !annotations.iter().any(|&(seen, _)| seen == prop) {
+                                            annotations.push((prop, text));
+                                        }
+                                    }
+                                }
+                                decls.extend(row_decls);
+                            }
                             Err(reject) => {
                                 diagnostics.push(reject_diagnostic(
                                     candidate,
