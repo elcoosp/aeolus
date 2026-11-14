@@ -430,21 +430,28 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
         let env = env();
         // The base+env walk stays sourceless: the interaction closures
         // are GPUI's own state, the element-own attribute bits ride the
-        // `tw_probes` walk instead. The base walk's ring and gradient
-        // states seed every closure — `hover:ring-4` composes with the
-        // base's `ring-red-500` colour and `hover:from-blue-500` with
-        // the base's `from-red-500` stop the way CSS's vars persist
-        // across state layers.
+        // `tw_probes` walk instead. The base walk's ring, gradient and
+        // grid-placement states seed every closure — `hover:ring-4`
+        // composes with the base's `ring-red-500` colour,
+        // `hover:from-blue-500` with the base's `from-red-500` stop the
+        // way CSS's vars persist across state layers, and
+        // `hover:col-start-2` composes with the base's placement the
+        // way the cascade reads.
         let mut ring = RingState::default();
         let mut grad = GradState::default();
-        let mut this =
-            apply_matching_polyfills(self, &program, &env, None, None, None, &mut ring, &mut grad);
-        this = this.hover(|style| apply_state_polyfills(style, &program, is_hover, ring, grad));
-        this = this.focus(|style| apply_state_polyfills(style, &program, is_focus, ring, grad));
+        let mut grid = GridState::default();
+        let mut this = apply_matching_polyfills(
+            self, &program, &env, None, None, None, &mut ring, &mut grad, &mut grid,
+        );
+        this =
+            this.hover(|style| apply_state_polyfills(style, &program, is_hover, ring, grad, grid));
+        this =
+            this.focus(|style| apply_state_polyfills(style, &program, is_focus, ring, grad, grid));
         this = this.focus_visible(|style| {
-            apply_state_polyfills(style, &program, is_focus_visible, ring, grad)
+            apply_state_polyfills(style, &program, is_focus_visible, ring, grad, grid)
         });
-        this = this.active(|style| apply_state_polyfills(style, &program, is_active, ring, grad));
+        this = this
+            .active(|style| apply_state_polyfills(style, &program, is_active, ring, grad, grid));
         this
     }
 }
@@ -703,14 +710,16 @@ fn apply_matching<S: Styled>(
         structs,
         &mut RingState::default(),
         &mut GradState::default(),
+        &mut GridState::default(),
     )
 }
 
-/// [`apply_matching`] with BOTH polyfill accumulators threaded through
-/// — the shared walk body, so the base walk ([`TwExt::tw`]) and the
-/// [`TwStateExt`] closures compose the SAME `--tw-ring-*` and
-/// `--tw-gradient-*` state and the interaction closures inherit the
-/// base's bands and stops instead of resetting them.
+/// [`apply_matching`] with the polyfill accumulators AND the grid
+/// placement state threaded through — the shared walk body, so the base
+/// walk ([`TwExt::tw`]) and the [`TwStateExt`] closures compose the
+/// SAME `--tw-ring-*`, `--tw-gradient-*` and grid-placement state and
+/// the interaction closures inherit the base's bands, stops and
+/// placement instead of resetting them.
 fn apply_matching_polyfills<S: Styled>(
     mut style: S,
     program: &StaticProgram,
@@ -720,6 +729,7 @@ fn apply_matching_polyfills<S: Styled>(
     structs: Option<&dyn StructProbe>,
     ring: &mut RingState,
     grad: &mut GradState,
+    grid: &mut GridState,
 ) -> S {
     for (layer_index, layer) in program.layers.iter().enumerate() {
         if !cond_matches(layer.cond, env, probes, containers, structs) {
@@ -741,13 +751,21 @@ fn apply_matching_polyfills<S: Styled>(
                 grad.apply(decl.prop, decl.val, keyword);
                 continue;
             }
+            // The grid-placement longhands ride their accumulator: the
+            // span families are PAIR-shaped (see [`GridState`]), so
+            // they compose after the walk like the other accumulated
+            // surfaces.
+            if is_grid_prop(decl.prop) {
+                grid.apply(decl.prop, decl.val);
+                continue;
+            }
             if decl.prop == Prop::Color {
                 ring.apply(decl.prop, decl.val, keyword);
             }
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    apply_polyfills(style, ring, grad)
+    apply_polyfills(style, ring, grad, grid)
 }
 
 /// The four `--tw-ring-*` longhands the polyfill owns (the registry's
@@ -777,13 +795,108 @@ fn is_grad_prop(prop: Prop) -> bool {
     )
 }
 
+/// The grid-placement longhands the placement state owns (the registry's
+/// start/end/span rows lower into exactly these; the auto-track and
+/// auto-flow longhands carry no GPUI slot and stay the reported
+/// boundary).
+fn is_grid_prop(prop: Prop) -> bool {
+    matches!(
+        prop,
+        Prop::GridColumnStart | Prop::GridColumnEnd | Prop::GridRowStart | Prop::GridRowEnd
+    )
+}
+
+/// One axis of a frozen program's placements — the per-longhand
+/// cascade winners the walk recorded (a later layer's value overwrites
+/// an earlier layer's on the same longhand, the cascade sort's order).
+#[derive(Clone, Copy, Debug, Default)]
+struct AxisPlacement {
+    start: Option<f32>,
+    end: Option<f32>,
+}
+
+/// The grid-placement accumulator (the `RingState`/`GradState`
+/// precedent): the four start/end longhands ride ONE state because the
+/// span families are PAIR-shaped — the registry's `col-span`/`row-span`
+/// rows fan ONE class onto the equal (start, end) pair, and GPUI's grid
+/// carries that reading as the `Span` placement. Mapping the longhands
+/// per-declaration would read "start 3, end 3" — a degenerate
+/// zero-width range, never Tailwind's span 3. The compose rules:
+///
+/// * an equal POSITIVE start/end pair composes GPUI's `Span` form (the
+///   registry's span fingerprint — two DIFFERENT classes spelling the
+///   same equal pair read the same way, the pair shape is the span's);
+/// * every other recorded value maps 1:1 onto the line slots
+///   (`col_start`/`col_end`, `row_start`/`row_end` — negative lines
+///   included, the from-end form the registry's negative flag accepts);
+/// * an axis the program never mentions stays `Auto` — no accidental
+///   placement.
+#[derive(Clone, Copy, Debug, Default)]
+struct GridState {
+    column: AxisPlacement,
+    row: AxisPlacement,
+}
+
+impl GridState {
+    /// Record one placement declaration (non-numeric spellings are the
+    /// registry rows' own boundary — the rows carry `num()`/`arb()`
+    /// value kinds, so the fold produces `Val::Num`s; anything else
+    /// never reaches the walk's frozen form).
+    fn apply(&mut self, prop: Prop, val: Val) {
+        let Val::Num(n) = val else {
+            return;
+        };
+        match prop {
+            Prop::GridColumnStart => self.column.start = Some(n),
+            Prop::GridColumnEnd => self.column.end = Some(n),
+            Prop::GridRowStart => self.row.start = Some(n),
+            Prop::GridRowEnd => self.row.end = Some(n),
+            _ => {}
+        }
+    }
+}
+
 /// The polyfills' single application point: the composed v4 shadow list
 /// set in one `shadow()` call, the composed gradient in one `bg()` call
-/// — or nothing (an empty state never touches the refinement).
-fn apply_polyfills<S: Styled>(style: S, ring: &RingState, grad: &GradState) -> S {
+/// — or nothing (an empty state never touches the refinement). The grid
+/// placement composes beside them (an axis the program never mentioned
+/// never touches the refinement).
+fn apply_polyfills<S: Styled>(style: S, ring: &RingState, grad: &GradState, grid: &GridState) -> S {
     let mut style = apply_ring(style, ring);
     if let Some(background) = grad.background() {
         style = style.bg(background);
+    }
+    apply_grid(style, grid)
+}
+
+/// The grid placement's application point: the composed axis ranges
+/// through GPUI's own placement builders — the span fingerprint as one
+/// `col_span`/`row_span` call, the lines as the `col_start`/`col_end`/
+/// `row_start`/`row_end` pairs.
+fn apply_grid<S: Styled>(mut style: S, grid: &GridState) -> S {
+    match (grid.column.start, grid.column.end) {
+        (Some(start), Some(end)) if start == end && start > 0.0 => {
+            style = style.col_span(start as u16);
+        }
+        (Some(start), Some(end)) => {
+            style = style.col_start(start as i16);
+            style = style.col_end(end as i16);
+        }
+        (Some(start), None) => style = style.col_start(start as i16),
+        (None, Some(end)) => style = style.col_end(end as i16),
+        (None, None) => {}
+    }
+    match (grid.row.start, grid.row.end) {
+        (Some(start), Some(end)) if start == end && start > 0.0 => {
+            style = style.row_span(start as u16);
+        }
+        (Some(start), Some(end)) => {
+            style = style.row_start(start as i16);
+            style = style.row_end(end as i16);
+        }
+        (Some(start), None) => style = style.row_start(start as i16),
+        (None, Some(end)) => style = style.row_end(end as i16),
+        (None, None) => {}
     }
     style
 }
@@ -822,13 +935,14 @@ fn apply_dynamic<S: Styled>(
 
 /// The interaction-closure half of the walk: the layers the predicate
 /// selects (the closure's own state), composed over the base walk's
-/// ring and gradient states.
+/// ring, gradient and grid-placement states.
 fn apply_state_polyfills<S: Styled>(
     style: S,
     program: &StaticProgram,
     pred: fn(Cond) -> bool,
     mut ring: RingState,
     mut grad: GradState,
+    mut grid: GridState,
 ) -> S {
     let mut style = style;
     for (layer_index, layer) in program.layers.iter().enumerate() {
@@ -845,13 +959,17 @@ fn apply_state_polyfills<S: Styled>(
                 grad.apply(decl.prop, decl.val, keyword);
                 continue;
             }
+            if is_grid_prop(decl.prop) {
+                grid.apply(decl.prop, decl.val);
+                continue;
+            }
             if decl.prop == Prop::Color {
                 ring.apply(decl.prop, decl.val, keyword);
             }
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    apply_polyfills(style, &ring, &grad)
+    apply_polyfills(style, &ring, &grad, &grid)
 }
 
 // ---------------------------------------------------------------------------
@@ -872,6 +990,11 @@ fn apply_decl<S: Styled>(style: S, prop: Prop, val: Val, keyword: &str) -> S {
         Prop::AlignSelf => align_self(style, keyword),
         Prop::FlexGrow => with_num(style, val, Styled::flex_grow),
         Prop::FlexShrink => with_num(style, val, Styled::flex_shrink),
+        // The basis family: the pinned GPUI surface carries `flex_basis`
+        // (the §3.7 grid row's "native subset" finished for flex
+        // sizing) — the spacing rem, the fraction percentage and the
+        // arbitrary percentage all land on the one `Length` slot.
+        Prop::FlexBasis => with_length(style, val, Styled::flex_basis),
         Prop::GridTemplateColumns => match val {
             Val::Num(n) => style.grid_cols(n as u16),
             _ => style,
