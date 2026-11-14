@@ -2,7 +2,7 @@
 
 # Aeolus conformance — gpui
 
-**score: 55.37% expressible** (52.07% native + 3.31% polyfilled) over 121 longhands
+**score: 59.50% expressible** (56.20% native + 3.31% polyfilled) over 121 longhands
 
 The per-longhand tiers, in the IR's cascade order. The per-declaration refinements (the emit gates' text-dependent verdicts) live at the gates themselves — this is the per-longhand ceiling.
 
@@ -14,10 +14,15 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `right` | native |
 | `bottom` | native |
 | `left` | native |
+| `grid-row-start` | native |
+| `grid-row-end` | native |
+| `grid-column-start` | native |
+| `grid-column-end` | native |
 | `flex-direction` | native |
 | `flex-wrap` | native |
 | `flex-grow` | native |
 | `flex-shrink` | native |
+| `flex-basis` | native |
 | `justify-content` | native |
 | `align-items` | native |
 | `align-content` | native |
@@ -79,11 +84,6 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `inset-inline-end` | refused |
 | `z-index` | refused |
 | `order` | refused |
-| `grid-row-start` | refused |
-| `grid-row-end` | refused |
-| `grid-column-start` | refused |
-| `grid-column-end` | refused |
-| `flex-basis` | refused |
 | `justify-items` | refused |
 | `justify-self` | refused |
 | `place-content` | refused |
