@@ -28,8 +28,10 @@
 
 use aeolus_compile::{
     ClassKeywords, Config, ContainerBound, ContainerState, Env, RustSheet, RustStrings, SourceFile,
-    build as build_artifact, compile, compile_theme, emit_rust, emit_rust_theme, interp_containers,
-    interp_theme, interp_theme_containers, keyword_texts, scan, sort,
+    StructFacts, build as build_artifact, compile, compile_theme, emit_rust, emit_rust_theme,
+    interp_containers, interp_containers_struct, interp_struct, interp_theme,
+    interp_theme_containers, interp_theme_containers_struct, interp_theme_struct, keyword_texts,
+    scan, sort,
 };
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
@@ -413,6 +415,14 @@ struct Args {
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
     containers: Vec<(String, f32)>,
+    /// The `--child i/n` facts (`expand` only): the element's 0-based
+    /// child index and the parent's element-child count — the
+    /// [`StructFacts`] the interp's structural seam answers the
+    /// `first:`/`last:`/`odd:`/`even:`/`only:`/`nth-*:` layers from.
+    child: Option<(usize, usize)>,
+    /// The `--empty` flag (`expand` only): the childless-element fact
+    /// the `empty:` layer answers from.
+    empty: bool,
     positional: Vec<String>,
 }
 
@@ -423,6 +433,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut json = false;
     let mut dark = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
+    let mut child: Option<(usize, usize)> = None;
+    let mut empty = false;
     let mut positional = Vec::new();
     let mut i = 0usize;
     while i < rest.len() {
@@ -447,6 +459,34 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--summary" if allow.contains(&"summary") => summary = true,
             "--json" if allow.contains(&"json") => json = true,
             "--dark" if allow.contains(&"dark") => dark = true,
+            "--empty" if allow.contains(&"empty") => empty = true,
+            "--child" if allow.contains(&"child") => {
+                i += 1;
+                let Some(value) = rest.get(i) else {
+                    let _ = writeln!(err, "--child needs index/count (e.g. --child 0/3)");
+                    return None;
+                };
+                let Some((index, count)) = value.split_once('/') else {
+                    let _ = writeln!(err, "--child needs index/count, got {value:?}");
+                    return None;
+                };
+                match (index.parse::<usize>(), count.parse::<usize>()) {
+                    // The facts ride the walk's own usize slots: a
+                    // malformed or out-of-window spelling is a CLI
+                    // input error, not a half-answered layer (the
+                    // index must BE a child: 0-based, below the count).
+                    (Ok(index), Ok(count)) if count > 0 && index < count => {
+                        child = Some((index, count));
+                    }
+                    _ => {
+                        let _ = writeln!(
+                            err,
+                            "--child needs a 0-based index below a positive count, got {value:?}"
+                        );
+                        return None;
+                    }
+                }
+            }
             "--container" if allow.contains(&"container") => {
                 i += 1;
                 let Some(value) = rest.get(i) else {
@@ -495,6 +535,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         json,
         dark,
         containers,
+        child,
+        empty,
         positional,
     })
 }
@@ -732,7 +774,11 @@ fn last_keyword_texts(annotations: &[ClassKeywords]) -> HashMap<(Cond, Prop), &'
 fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     #[cfg(feature = "tracing")]
     let _expand_span = tracing::debug_span!("aeolus_expand").entered();
-    let Some(args) = parse_flags(rest, err, &["theme", "json", "dark", "container"]) else {
+    let Some(args) = parse_flags(
+        rest,
+        err,
+        &["theme", "json", "dark", "container", "child", "empty"],
+    ) else {
         return 2;
     };
     if args.positional.is_empty() {
@@ -774,11 +820,35 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         .map(|(name, rem)| ContainerBound { name, rem: *rem })
         .collect();
     let state = ContainerState::new(&bounds);
-    let interped = match (&table, bounds.is_empty()) {
-        (Some(table), false) => interp_theme_containers(&compiled.program, table, &env, &state),
-        (Some(table), true) => interp_theme(&compiled.program, table, &env),
-        (None, false) => interp_containers(&compiled.program, &env, &state),
-        (None, true) => compiled.interp(&env),
+    // The DOM-position facts ride the `--child i/n` / `--empty` flags:
+    // the same facts value the `StructProbe` seam documents, borrowed
+    // from the parsed args. Without either, `expand` keeps the
+    // sourceless shape — structural layers report instead of answering.
+    let facts = if args.empty {
+        StructFacts {
+            index: None,
+            sibling_count: None,
+            empty: true,
+        }
+    } else {
+        args.child.map_or(StructFacts::UNKNOWN, |(index, count)| {
+            StructFacts::new(index, count)
+        })
+    };
+    let structs_used = args.empty || args.child.is_some();
+    let interped = match (&table, bounds.is_empty(), structs_used) {
+        (Some(table), false, true) => {
+            interp_theme_containers_struct(&compiled.program, table, &env, &state, &facts)
+        }
+        (Some(table), false, false) => {
+            interp_theme_containers(&compiled.program, table, &env, &state)
+        }
+        (Some(table), true, true) => interp_theme_struct(&compiled.program, table, &env, &facts),
+        (Some(table), true, false) => interp_theme(&compiled.program, table, &env),
+        (None, false, true) => interp_containers_struct(&compiled.program, &env, &state, &facts),
+        (None, false, false) => interp_containers(&compiled.program, &env, &state),
+        (None, true, true) => interp_struct(&compiled.program, &env, &facts),
+        (None, true, false) => compiled.interp(&env),
     };
     let interped = match interped {
         Ok(interped) => interped,
