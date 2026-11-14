@@ -12,14 +12,14 @@
 use aeolus_gpui::prelude::*;
 
 variants! { pub Badge {
-    base: "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium",
+    base:"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium",
     variant: {
-        default: "bg-primary text-primary-foreground",
-        outline: "border border-gray-200 text-foreground",
+        default:"bg-primary text-primary-foreground",
+        outline:"border border-gray-200 text-foreground",
     },
-    size: { default: "h-9 px-4", sm: "h-8 px-3" },
+    size: { default:"h-9 px-4", sm:"h-8 px-3"},
     compound: [
-        { variant: outline, size: sm, class: "ring-2 ring-red-500" },
+        { variant: outline, size: sm, class:"ring-2 ring-red-500"},
     ],
 } }
 
@@ -37,7 +37,7 @@ fn main() {
             .flat_map(|layer| layer.decls.iter())
             .any(|decl| decl.prop == aeolus_ir::Prop::RingWidth);
         println!(
-            "  {variant:?} × {size:?}: ring rides = {ring} ({} layers)",
+            "{variant:?} × {size:?}: ring rides = {ring} ({} layers)",
             program.layers.len()
         );
     }
