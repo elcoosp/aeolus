@@ -161,3 +161,10 @@ harness = false
 [[bench]]
 name = "motion"
 harness = false
+
+# The structural seam's benchmarks (the plan §3.5 probe row): the
+# interp of the structural-mixed program, themeless (hit and
+# unknown-facts miss) and themed.
+[[bench]]
+name = "struct"
+harness = false
