@@ -409,18 +409,18 @@ fn attr_probe_layers_fire_through_the_seam() {
 
 #[test]
 fn unmapped_longhands_are_reported_never_dropped() {
-    // shadow-sm lowers into the IR (Prop::BoxShadow, the preset's var
-    // text) but has no Floem slot in the walk — the report names it.
+    // Floem's two lanes split the shadow tier honestly: the PLAN path
+    // paints the parsed bands (`apply_box_shadows`), while the V1
+    // program walk keeps the walk-level boundary — the preset text is a
+    // row-relative `Val::Kw`, no shadow-text parser rides the walk, so
+    // the report names it (never silent). The `selection:` test below
+    // keeps the report contract.
     let program = frozen("shadow-sm bg-primary");
     let (style, report) = lower_program(&program, &Env::default());
     assert_eq!(
         brush_rgba(style.get(Background).as_ref().unwrap()),
         PRIMARY,
         "the mapped longhand still lands"
-    );
-    assert!(
-        !report.is_empty(),
-        "the unmapped longhand is reported: {report:?}"
     );
     let names = report
         .dropped
@@ -430,7 +430,7 @@ fn unmapped_longhands_are_reported_never_dropped() {
         .collect::<Vec<_>>();
     assert!(
         names.iter().any(|what| what.contains("box-shadow")),
-        "the report names the longhand: {names:?}"
+        "the walk-level boundary is reported: {names:?}"
     );
 }
 
