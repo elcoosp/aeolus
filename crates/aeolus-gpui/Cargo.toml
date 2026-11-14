@@ -32,6 +32,14 @@ harness = false
 name = "containers"
 harness = false
 
+# The element-bounds wrapper's microbenchmark (the §3.5 row's measuring
+# half): the walk consuming the measured hand-off beside the built-in
+# static table, and the converged publish the wrapper's every-frame
+# prepaint runs.
+[[bench]]
+name = "container_query"
+harness = false
+
 # The motion lane's microbenchmark (the §3.7 row's GPUI half): the
 # frozen-shorthand parse, the built `Animation` and the cascade winner
 # walk the lane's entries run.
