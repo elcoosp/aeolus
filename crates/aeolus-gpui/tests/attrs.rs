@@ -1,5 +1,5 @@
 //! The attribute-bits host state seam (architecture plan §3.5's
-//! "typed state bits passed WITH the element" row, P4's last named
+//!"typed state bits passed WITH the element"row, P4's last named
 //! piece): `data-*:`/`aria-*:` layers answer through the interp arm's
 //! [`aeolus_rt::AttrProbe`] seam when the host passes the element's
 //! attribute bits — the GPUI half of the `interp_probes` entry point.
@@ -83,8 +83,8 @@ fn data_presence_layer_stays_quiet_without_the_bit() {
 
 #[test]
 fn aria_busy_layer_fires_on_the_true_bit() {
-    // Bare `aria-busy:` folds to the "true" value (the corpus's
-    // `[aria-busy="true"]`), so the "true" bit answers it.
+    // Bare `aria-busy:` folds to the"true"value (the corpus's
+    // `[aria-busy="true"]`), so the"true"bit answers it.
     let program = tw!("aria-busy:hidden");
     let rows = bits();
     let state = AttrState::new(&rows);
@@ -152,8 +152,8 @@ fn dark_and_attribute_layers_compose_in_one_walk() {
 #[test]
 fn custom_probe_impl_answers_the_walk() {
     // The seam is the trait, not the built-in: a host probe with owned
-    // state answers the same walk (the "host implements the ONE
-    // question itself" story the AttrProbe docs name).
+    // state answers the same walk (the"host implements the ONE
+    // question itself"story the AttrProbe docs name).
     struct OwnedBit {
         name: &'static str,
         value: String,
