@@ -25,6 +25,26 @@
 //! `AttributeUnqueried` notes), and the descendant `has-*` shapes stay
 //! the diagnosed boundary with or without bits.
 //!
+//! Named container queries (`@md/card:`, `@max-lg/sidebar:`) answer
+//! through the bounds seam (plan §3.5's `@container` row, the
+//! `ContainerProbe` half): [`TwExt::tw_containers`] walks with the
+//! named containers' widths in hand — the GPUI half of the interp
+//! arm's `interp_containers` entry point, the same AT/strictly-below
+//! boundary rules. The unnamed forms (`@md:`) keep answering from the
+//! [`Env`]'s nearest-container slot, and the element-bounds WRAPPER
+//! (who MEASURES the widths) stays the host's half — the walk consults
+//! the seam's answers, it never measures.
+//!
+//! Motion (`animate-*`) rides the stateful animation lane (plan §3.7's
+//! GPUI half, the `with_animation` boundary): [`TwAnimExt::tw_anim`] /
+//! [`TwAnimExt::tw_anim_dyn`] take the element id and the animator
+//! closure from the HOST — the two inputs the frozen static program
+//! cannot carry — and build the [`gpui::Animation`] from the frozen
+//! row text (the v4 shorthand `spin 1s linear infinite`). The `tw!`
+//! macro's capability gate keeps refusing motion classes at compile
+//! time; the lane's programs come from the dynamic lane or a host
+//! compile, and `animate-none` renders the element statically.
+//!
 //! The keyword texts are why the program is sufficient: `hidden` and
 //! `block` are both `Prop::Display` + `Val::Kw(0)` in the bare IR, so
 //! the runtime reads the row text frozen beside the layer.
@@ -40,13 +60,18 @@ use aeolus_compile::{CompileError, Config, Env, structural_fires};
 use aeolus_ir::{Cond, Prop, Val};
 use aeolus_rt::{ClassCell, StaticProgram, TokenTable};
 use gpui::{
-    AbsoluteLength, DefiniteLength, FontWeight, Hsla, IntoElement, Length,
-    StatefulInteractiveElement, Styled, TextAlign, px, relative, rems, rgba,
+    AbsoluteLength, Animation, AnimationElement, AnimationExt, DefiniteLength, ElementId,
+    FontWeight, Hsla, IntoElement, Length, StatefulInteractiveElement, Styled, TextAlign, px,
+    relative, rems, rgba,
 };
 
 mod grad;
+mod motion;
 mod ring;
 pub use grad::GradState;
+pub use motion::{
+    AnimSpec, Easing, animation, animation_for, animation_keyword, parse_animation, pulse_animator,
+};
 pub use ring::RingState;
 
 pub use aeolus_macro::{cn, theme, tw, tw_cn, variants};
@@ -55,17 +80,23 @@ pub use aeolus_rt::{Env as Environment, StaticProgram as Program, theme_from_css
 // bits ride the host state surface, so the prelude carries the probe
 // trait, the built-in bit table and the bit/kind constructors.
 pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState, StructFacts, StructProbe};
+// The container-bounds seam (plan §3.5's `@container` row): the NAMED
+// container queries (`@md/card:`) answer through the host's
+// [`ContainerProbe`] source, so the prelude carries the trait, the
+// built-in static table and its bound row.
+pub use aeolus_rt::{ContainerBound, ContainerProbe, ContainerState};
 
 /// The V1 consumption surface: macros, the program type and the two
 /// extension traits.
 pub mod prelude {
     pub use crate::{
-        AeolusRoot, GradState, TwExt, TwStateExt, begin_frame, cn, set_env, theme, theme_from_css,
-        tw, tw_cn, variants,
+        AeolusRoot, GradState, TwAnimExt, TwExt, TwStateExt, begin_frame, cn, set_env, theme,
+        theme_from_css, tw, tw_cn, variants,
     };
     pub use aeolus_compile::Env;
     pub use aeolus_rt::{
-        AttrBit, AttrKind, AttrProbe, AttrState, ClassCell, StaticProgram, StructFacts, StructProbe,
+        AttrBit, AttrKind, AttrProbe, AttrState, ClassCell, ContainerBound, ContainerProbe,
+        ContainerState, StaticProgram, StructFacts, StructProbe,
     };
 }
 
@@ -101,7 +132,7 @@ pub trait TwExt: Styled + Sized {
 
     /// Apply the program under an explicit probe environment.
     fn tw_env(self, program: StaticProgram, env: Env) -> Self {
-        apply_matching(self, &program, &env, None, None)
+        apply_matching(self, &program, &env, None, None, None)
     }
 
     /// Apply the program under the current `env()`, with the element's
@@ -125,7 +156,14 @@ pub trait TwExt: Styled + Sized {
     /// [`TwExt::tw_probes`] under an explicit probe environment — the
     /// `tw_env` pairing, with the attribute bits riding along.
     fn tw_env_probes(self, program: StaticProgram, env: Env, probes: &impl AttrProbe) -> Self {
-        apply_matching(self, &program, &env, Some(probes as &dyn AttrProbe), None)
+        apply_matching(
+            self,
+            &program,
+            &env,
+            Some(probes as &dyn AttrProbe),
+            None,
+            None,
+        )
     }
 
     /// Apply the program under the current `env()`, with the element's
@@ -149,6 +187,7 @@ pub trait TwExt: Styled + Sized {
             self,
             &program,
             &env,
+            None,
             None,
             Some(structs as &dyn StructProbe),
         )
@@ -179,6 +218,144 @@ pub trait TwExt: Styled + Sized {
             &program,
             &env,
             Some(probes as &dyn AttrProbe),
+            None,
+            Some(structs as &dyn StructProbe),
+        )
+    }
+
+    /// Apply the program under the current `env()`, with the named
+    /// containers' widths answering the named container-query layers
+    /// (`@md/card:`, `@max-lg/sidebar:`) — the GPUI half of the interp
+    /// arm's `interp_containers` entry point (plan §3.5's `@container`
+    /// row, the bounds seam's walk half). The UNNAMED forms (`@md:`)
+    /// keep answering from the [`Env`]'s nearest-container slot; the
+    /// NAMED question needs THAT container's width.
+    ///
+    /// `containers` is the [`ContainerProbe`] seam, the same shape as
+    /// the token and attribute seams: the built-in [`ContainerState`]
+    /// is a borrowed static table, and a host implements the ONE
+    /// question itself (a layout-phase measurement cache, a
+    /// component-tree walk, a test double). A hit fires by the same
+    /// AT/strictly-below boundary rules the viewport breakpoints obey,
+    /// a container the source does not know is a CSS-quiet miss, and a
+    /// sourceless walk keeps the named layers quiet (the interp reports
+    /// `ContainerUnqueried`; this walk has no note channel). The
+    /// element-bounds WRAPPER — who MEASURES the widths — stays the
+    /// host's half: this walk consults the answers, it never measures.
+    fn tw_containers(self, program: StaticProgram, containers: &impl ContainerProbe) -> Self {
+        self.tw_env_containers(program, env(), containers)
+    }
+
+    /// [`TwExt::tw_containers`] under an explicit probe environment —
+    /// the `tw_env` pairing, with the container bounds riding along.
+    fn tw_env_containers(
+        self,
+        program: StaticProgram,
+        env: Env,
+        containers: &impl ContainerProbe,
+    ) -> Self {
+        apply_matching(
+            self,
+            &program,
+            &env,
+            None,
+            Some(containers as &dyn ContainerProbe),
+            None,
+        )
+    }
+
+    /// [`TwExt::tw_probes`] and [`TwExt::tw_containers`] composed: the
+    /// attribute bits AND the named container bounds ride one walk (the
+    /// interp's `interp_probes_containers` pairing).
+    fn tw_probes_containers(
+        self,
+        program: StaticProgram,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+    ) -> Self {
+        self.tw_env_probes_containers(program, env(), probes, containers)
+    }
+
+    /// [`TwExt::tw_probes_containers`] under an explicit probe
+    /// environment.
+    fn tw_env_probes_containers(
+        self,
+        program: StaticProgram,
+        env: Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+    ) -> Self {
+        apply_matching(
+            self,
+            &program,
+            &env,
+            Some(probes as &dyn AttrProbe),
+            Some(containers as &dyn ContainerProbe),
+            None,
+        )
+    }
+
+    /// [`TwExt::tw_containers`] and [`TwExt::tw_struct`] composed: the
+    /// named container bounds AND the DOM-position facts ride one walk
+    /// (the interp's `interp_containers_struct` pairing).
+    fn tw_containers_struct(
+        self,
+        program: StaticProgram,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+    ) -> Self {
+        self.tw_env_containers_struct(program, env(), containers, structs)
+    }
+
+    /// [`TwExt::tw_containers_struct`] under an explicit probe
+    /// environment.
+    fn tw_env_containers_struct(
+        self,
+        program: StaticProgram,
+        env: Env,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+    ) -> Self {
+        apply_matching(
+            self,
+            &program,
+            &env,
+            None,
+            Some(containers as &dyn ContainerProbe),
+            Some(structs as &dyn StructProbe),
+        )
+    }
+
+    /// [`TwExt::tw_probes`], [`TwExt::tw_containers`] and
+    /// [`TwExt::tw_struct`] composed: the attribute bits, the named
+    /// container bounds and the DOM-position facts ride ONE walk (the
+    /// interp's `interp_probes_containers_struct` pairing).
+    fn tw_probes_containers_struct(
+        self,
+        program: StaticProgram,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+    ) -> Self {
+        self.tw_env_probes_containers_struct(program, env(), probes, containers, structs)
+    }
+
+    /// [`TwExt::tw_probes_containers_struct`] under an explicit probe
+    /// environment — the full seam matrix's walk form.
+    fn tw_env_probes_containers_struct(
+        self,
+        program: StaticProgram,
+        env: Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+    ) -> Self {
+        apply_matching(
+            self,
+            &program,
+            &env,
+            Some(probes as &dyn AttrProbe),
+            Some(containers as &dyn ContainerProbe),
             Some(structs as &dyn StructProbe),
         )
     }
@@ -251,7 +428,7 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
         let mut ring = RingState::default();
         let mut grad = GradState::default();
         let mut this =
-            apply_matching_polyfills(self, &program, &env, None, None, &mut ring, &mut grad);
+            apply_matching_polyfills(self, &program, &env, None, None, None, &mut ring, &mut grad);
         this = this.hover(|style| apply_state_polyfills(style, &program, is_hover, ring, grad));
         this = this.focus(|style| apply_state_polyfills(style, &program, is_focus, ring, grad));
         this = this.focus_visible(|style| {
@@ -263,6 +440,92 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
 }
 
 impl<T: StatefulInteractiveElement + Styled> TwStateExt for T {}
+
+/// The motion lane (plan §3.7's GPUI half, the `with_animation`
+/// boundary): apply a program's `animate-*` longhand through GPUI's
+/// own animation element. The frozen static program cannot carry the
+/// two inputs `with_animation` needs — the element id and the animator
+/// closure — so they are the HOST's arguments; the lane contributes
+/// the [`gpui::Animation`] itself, built from the frozen row text (the
+/// v4 shorthand `spin 1s linear infinite`), under the same condition
+/// semantics the base walk runs ([`animation_keyword`], the cascade's
+/// last matching `Animation` declaration).
+///
+/// The programs come from the dynamic lane or a host compile: the
+/// `tw!` macro's capability gate keeps refusing motion classes at
+/// compile time (the static emit's honest refusal stands — plan §3.7),
+/// while [`ClassCell`] compiles the same strings at runtime with no
+/// gate. `animate-none` — or a program with no matching animation —
+/// wraps the element statically: a zero-duration no-op animation, the
+/// host's animator never called, no per-frame scheduling.
+pub trait TwAnimExt: AnimationExt + Styled + Sized + 'static {
+    /// Apply the program's winning animation under the current `env()`.
+    /// The `animator` is the visual mapping GPUI calls per frame with
+    /// the EASED delta — element-specific (rotate/scale/translate have
+    /// no `Styled` slot), and [`pulse_animator`] is the built-in
+    /// opacity preset.
+    fn tw_anim(
+        self,
+        program: StaticProgram,
+        id: impl Into<ElementId>,
+        animator: impl Fn(Self, f32) -> Self + 'static,
+    ) -> AnimationElement<Self> {
+        self.tw_anim_env(program, env(), id, animator)
+    }
+
+    /// [`TwAnimExt::tw_anim`] under an explicit probe environment —
+    /// the `tw_env` pairing of the motion lane.
+    fn tw_anim_env(
+        self,
+        program: StaticProgram,
+        env: Env,
+        id: impl Into<ElementId>,
+        animator: impl Fn(Self, f32) -> Self + 'static,
+    ) -> AnimationElement<Self> {
+        let animation = animation_keyword(&program, &env)
+            .and_then(animation_for)
+            .unwrap_or_else(|| Animation::new(std::time::Duration::ZERO));
+        self.with_animation(id, animation, animator)
+    }
+
+    /// The motion lane's dynamic entrance (plan §3.6's surface (3)
+    /// pairing): compile `classes` through [`ClassCell`] — the full V1
+    /// pipeline, no GPUI capability gate — and apply the winning
+    /// animation. A FAILED compile keeps the cell's LAST GOOD program
+    /// (the honest per-frame degradation [`TwExt::tw_dyn`] runs).
+    fn tw_anim_dyn(
+        self,
+        cell: &ClassCell,
+        classes: &str,
+        id: impl Into<ElementId>,
+        animator: impl Fn(Self, f32) -> Self + 'static,
+    ) -> AnimationElement<Self> {
+        self.tw_anim_theme_dyn(cell, classes, None, id, animator)
+    }
+
+    /// [`TwAnimExt::tw_anim_dyn`] with a runtime token table — the
+    /// themed dynamic lane's full form (`tw_dyn_theme`'s pairing).
+    fn tw_anim_theme_dyn(
+        self,
+        cell: &ClassCell,
+        classes: &str,
+        tokens: Option<&TokenTable>,
+        id: impl Into<ElementId>,
+        animator: impl Fn(Self, f32) -> Self + 'static,
+    ) -> AnimationElement<Self> {
+        let compiled: Result<StaticProgram, CompileError> = match tokens {
+            Some(tokens) => cell.get_theme(classes, tokens, &Config::default()),
+            None => cell.get(classes, &Config::default()),
+        };
+        let program = match compiled {
+            Ok(program) => program,
+            Err(_) => cell.program(),
+        };
+        self.tw_anim_env(program, env(), id, animator)
+    }
+}
+
+impl<T: AnimationExt + Styled + 'static> TwAnimExt for T {}
 
 // ---------------------------------------------------------------------------
 // Condition matching
@@ -321,16 +584,18 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         Cond::Bp(bp) | Cond::Min(bp) => env.viewport_rem >= bp.rem(),
         Cond::Max(bp) => env.viewport_rem < bp.rem(),
         // The container queries: the unnamed form answers from the
-        // nearest eligible container the Env carries; a NAMED container
-        // (`@md/card:`) needs THAT container's width — the frame Env
-        // answers the nearest-container question only, so the named
-        // layer stays quiet here (the interp reports it as
-        // `ContainerUnqueried`; the walk has no note channel).
+        // nearest eligible container the Env carries; the NAMED form
+        // routes through `cond_matches`'s seam arm (that container's
+        // width is not frame state — the env alone has no answer for
+        // it), the guard keeps the match total so a new `Cond` variant
+        // fails to compile here instead of silently skipping.
         Cond::Container { bp, name: None } => env.container_rem.is_some_and(|rem| rem >= bp.rem()),
         Cond::MaxContainer { bp, name: None } => {
             env.container_rem.is_some_and(|rem| rem < bp.rem())
         }
-        Cond::Container { name: Some(_), .. } | Cond::MaxContainer { name: Some(_), .. } => false,
+        Cond::Container { name: Some(_), .. } | Cond::MaxContainer { name: Some(_), .. } => {
+            unreachable!("cond_matches routes the named container shapes to the seam arm")
+        }
     }
 }
 
@@ -339,13 +604,14 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
 // ---------------------------------------------------------------------------
 
 /// The one condition test the walk applies: the element-own attribute
-/// probes answer through the host's probe source (plan §3.5's "typed
-/// state bits passed WITH the element"), everything else through the
-/// env.
+/// probes answer through the host's probe source, the named container
+/// queries through the host's bounds source (plan §3.5's `@container`
+/// row), everything else through the env.
 fn cond_matches(
     cond: Cond,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
     structs: Option<&dyn StructProbe>,
 ) -> bool {
     match cond {
@@ -383,6 +649,29 @@ fn cond_matches(
             Some(source) => structural_fires(test, source.structure()),
             None => false,
         },
+        // The NAMED container queries answer through the bounds seam
+        // (the interp's `decide` semantics shared verbatim — one
+        // semantics, three walks): a hit fires by the same
+        // AT/strictly-below boundary rules the viewport breakpoints
+        // obey, a container the source does not know is a CSS-quiet
+        // miss. With no source the layers stay quiet (the interp
+        // reports `ContainerUnqueried`; this walk has no note channel,
+        // so the selector-miss skip stands). The unnamed forms never
+        // reach this arm — `env_matches` answers them from the Env.
+        Cond::Container {
+            bp,
+            name: Some(name),
+        } => match containers {
+            Some(source) => source.container(name).is_some_and(|rem| rem >= bp.rem()),
+            None => false,
+        },
+        Cond::MaxContainer {
+            bp,
+            name: Some(name),
+        } => match containers {
+            Some(source) => source.container(name).is_some_and(|rem| rem < bp.rem()),
+            None => false,
+        },
         other => env_matches(other, env),
     }
 }
@@ -392,6 +681,7 @@ fn apply_matching<S: Styled>(
     program: &StaticProgram,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
     structs: Option<&dyn StructProbe>,
 ) -> S {
     apply_matching_polyfills(
@@ -399,6 +689,7 @@ fn apply_matching<S: Styled>(
         program,
         env,
         probes,
+        containers,
         structs,
         &mut RingState::default(),
         &mut GradState::default(),
@@ -415,12 +706,13 @@ fn apply_matching_polyfills<S: Styled>(
     program: &StaticProgram,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
     structs: Option<&dyn StructProbe>,
     ring: &mut RingState,
     grad: &mut GradState,
 ) -> S {
     for (layer_index, layer) in program.layers.iter().enumerate() {
-        if !cond_matches(layer.cond, env, probes, structs) {
+        if !cond_matches(layer.cond, env, probes, containers, structs) {
             continue;
         }
         for (decl_index, decl) in layer.decls.iter().enumerate() {
@@ -515,7 +807,7 @@ fn apply_dynamic<S: Styled>(
         Ok(program) => program,
         Err(_) => cell.program(),
     };
-    apply_matching(style, &program, env, None, None)
+    apply_matching(style, &program, env, None, None, None)
 }
 
 /// The interaction-closure half of the walk: the layers the predicate
