@@ -238,7 +238,7 @@ Pay only for the dynamism you use:
 | `sm:` … `2xl:`                                             | `Env.bp` compare                                                      | ✅ 1 compare                                                  |
 | `data-*:` `aria-*:`                                        | typed `AttrProbe` bits (`tw_probes`), CSS selector semantics          | ✅                                                            |
 | `has-*:`                                                   | typed `Cond::Has`; element-side answered                              | ✅ (descendant probes diagnosed)                              |
-| `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (element-bounds wrapper = backend boundary)                |
+| `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
 | `selection:` `placeholder:`                                | `PseudoTarget` scoped cascades                                        | ✅                                                            |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
 | arbitrary selectors, unsupported forms                     | precise per-form reason + suggested alternative                       | 🛑 diagnosed, never silent                                    |
@@ -298,13 +298,13 @@ differential oracle — no big-bang migration.
 | **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill                             | ✅ landed                      |
 | **P4** Env & state      | frame `Env`, dark/breakpoints, state layers, `AttrProbe` host seam                                                                                | ✅ landed                      |
 | **P5** Ecosystem        | gpui-rsx integration PR (`lower_class` seam ready), LSP, gpui-component bridge, docs book, public benchmarks, **1.0-rc**                          | 🔜 next                        |
-| **P6** Breadth          | 5-backend re-target ✅ · ring + gradient lanes ✅ · motion pipeline ✅ · named containers + bounds seam ✅ · pseudo targets ✅ · project build ✅ | ✅ mostly — see boundaries     |
+| **P6** Breadth          | 5-backend re-target ✅ · ring + gradient lanes ✅ · motion pipeline ✅ · named containers + bounds seam + measuring wrapper ✅ · pseudo targets ✅ · project build ✅ | ✅ mostly — see boundaries     |
 
 **Open boundaries — typed, test-pinned, never silent:**
 
 - `calc()` / multi-token composites, arbitrary-property form, the wider v4 hint table → typed refusals
 - `has-*` descendant probes → diagnosed with reasons (element-side attribute probes are answered)
-- container **measurement** (who computes element widths) → `ContainerProbe` seam landed, and the GPUI walk answers named queries through it (`tw_containers`); the layout wrapper measuring the widths is host work
+- container **measurement** (who computes element widths) → the seam landed, the GPUI walk answers named queries through it (`tw_containers`), and the GPUI measuring wrapper landed beside it: `tw_container(name, &MeasuredContainers)` publishes the element box's width at the layout phase, the delta handshake asks for one re-render on a real change
 - GPUI motion's static emit keeps its per-longhand refusals (`with_animation` needs element id + animator — the stateful `TwAnimExt` lane applies them at runtime); >2-stop / radial / conic gradients refuse
 - per-backend gradient gaps (conic on Masonry, radial/conic on Iced, solid fills on egui) → capability matrix
 
@@ -327,14 +327,14 @@ differential oracle — no big-bang migration.
 | `aeolus-codegen`      | backend-neutral `Emit` trait + `Capability`/`Conformance` report                                                            |
 | `aeolus-codegen-gpui` | GPUI token emitter, native + polyfill capability tiers, `lower_class` third-party seam                                      |
 | `aeolus-macro`        | `tw!` / `cn!` / `tw_cn!` / `variants!` (compound + slots) / `theme!` — syn-free; emits the frozen program, never the string |
-| `aeolus-rt`           | host seam: `StaticProgram`, `Env`, `TokenTable`, `DynCache`, `ClassCell`, `theme_from_css`                                  |
+| `aeolus-rt`           | host seam: `StaticProgram`, `Env`, `TokenTable`, `DynCache`, `ClassCell`, `MeasuredContainers`, `theme_from_css`            |
 
 **Integration & tooling**
 
 | Crate                               | Role                                                                                            |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `aeolus-gpui` + five backend crates | see [Backends](#backends) — plan lane + V1 static-program lane each                             |
-| `aeolus-shadcn`                     | shadcn `new-york-v4` class tables verbatim + per-backend wrappers                               |
+| `aeolus-shadcn`                     | shadcn `new-york-v4` class tables verbatim + per-backend wrappers + the closed-world program tables (`ButtonPrograms`, the F6 fix) |
 | `aeolus-cli`                        | `resolve` `css` `diff` `cn` `check` `explain` `sort` `expand` `build` — zero external crates    |
 | `xtask`                             | `gen-tables` / `verify-tables` drift gates for the committed artifacts                          |
 | `aeolus-core`                       | v0.x `Resolver` + `StylePlan`: the runtime lane and the differential oracle — **publish-ready** |
@@ -352,7 +352,10 @@ cargo run -p aeolus-compile --example project_build     # scan → dedupe → wh
 cargo run -p aeolus-rt --example class_cell             # the dynamic lane: hit/miss counters, honest degradation
 cargo run -p aeolus-gpui --example ring                 # ring-* → v4 BoxShadow bands
 cargo run -p aeolus-gpui --example containers           # named @container queries through the bounds seam
+cargo run -p aeolus-gpui --example container_query      # the measuring wrapper: publish → walk → resize beat
+cargo run -p aeolus-gpui --example struct               # first:/last:/odd: through the DOM-position seam
 cargo run -p aeolus-gpui --example motion               # the animation lane: frozen shorthand → gpui::Animation
+cargo run -p aeolus-shadcn --example program_tables     # the closed-world program tables (the F6 fix)
 cargo run -p aeolus-codegen-gpui --example conformance  # the published score, from the emit gates themselves
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
