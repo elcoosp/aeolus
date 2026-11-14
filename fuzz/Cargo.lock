@@ -3,15 +3,50 @@
 version = 4
 
 [[package]]
+name = "aeolus-compile"
+version = "0.19.0"
+dependencies = [
+ "aeolus-core",
+ "aeolus-data",
+ "aeolus-ir",
+ "aeolus-syntax",
+ "aeolus-theme",
+]
+
+[[package]]
 name = "aeolus-core"
-version = "0.3.0"
+version = "0.19.0"
 
 [[package]]
 name = "aeolus-core-fuzz"
 version = "0.0.0"
 dependencies = [
+ "aeolus-compile",
  "aeolus-core",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "aeolus-data"
+version = "0.19.0"
+dependencies = [
+ "aeolus-ir",
+]
+
+[[package]]
+name = "aeolus-ir"
+version = "0.19.0"
+
+[[package]]
+name = "aeolus-syntax"
+version = "0.19.0"
+
+[[package]]
+name = "aeolus-theme"
+version = "0.19.0"
+dependencies = [
+ "aeolus-core",
+ "aeolus-ir",
 ]
 
 [[package]]
