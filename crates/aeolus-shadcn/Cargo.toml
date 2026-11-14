@@ -13,6 +13,13 @@ publish = false
 
 [dependencies]
 aeolus-core = { path = "../aeolus-core" }
+# The program tables' compile seam (plan §3.6's surface (2), the
+# closed-world const-table row): the verbatim v4 strings compile
+# through the V1 pipeline once per combo and intern.
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-rt = { path = "../aeolus-rt" }
+aeolus-theme = { workspace = true }
+aeolus-ir = { workspace = true }
 aeolus-xilem = { path = "../aeolus-xilem" }
 aeolus-floem = { path = "../aeolus-floem" }
 aeolus-iced = { path = "../aeolus-iced" }
@@ -30,6 +37,15 @@ tracing = "0.1"
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
 masonry_testing = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
+# The program tables' microbenchmark (divan, stable — the workspace
+# bench idiom).
+divan = "0.1"
+
+# The F6 story's two arms side by side (the string path's per-call
+# String build vs the program table's interned hit).
+[[bench]]
+name = "program"
+harness = false
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
