@@ -42,6 +42,12 @@ members = [
     "crates/aeolus-codegen",
     "crates/aeolus-codegen-gpui",
     "crates/aeolus-gpui",
+    # The P5 LSP surface (plan §5.5's tooling-parity line, the P5 row's
+    # "LSP hover/diagnostics"): the headless engine answers from the
+    # SAME pipeline the CLI runs (the extraction seam through the V1
+    # compile walk), the server loop is the stdio transport's thin
+    # shell. Same git-only discipline.
+    "crates/aeolus-lsp",
     # The generator story's driver (plan §3.2's row for aeolus-data,
     # the LAST named P2 slice, landed 2026-11): walks the crate's
     # `codegen::GeneratedArtifact` seam — `cargo xtask gen-tables`
