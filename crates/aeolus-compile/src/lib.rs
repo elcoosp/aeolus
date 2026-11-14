@@ -195,9 +195,12 @@ pub use dyn_cache::{
 };
 pub use interp::{
     AttrBit, AttrKind, AttrProbe, AttrState, ContainerBound, ContainerProbe, ContainerState, Env,
-    InterpError, InterpNote, Interped, PseudoTarget, TokenSource, interp, interp_containers,
-    interp_probes, interp_probes_containers, interp_pseudo, interp_pseudo_theme, interp_theme,
-    interp_theme_containers, interp_theme_probes, interp_theme_probes_containers,
+    InterpError, InterpNote, Interped, PseudoTarget, StructFacts, StructProbe, TokenSource, interp,
+    interp_containers, interp_containers_struct, interp_probes, interp_probes_containers,
+    interp_probes_containers_struct, interp_probes_struct, interp_pseudo, interp_pseudo_theme,
+    interp_struct, interp_theme, interp_theme_containers, interp_theme_containers_struct,
+    interp_theme_probes, interp_theme_probes_containers, interp_theme_probes_containers_struct,
+    interp_theme_probes_struct, interp_theme_struct, structural_fires,
 };
 pub use plan::{
     PlanNote, PlanNoteKind, PlanSheet, emit_plan, emit_plan_theme, emit_plan_theme_with,
@@ -212,7 +215,7 @@ pub use scan::{
 };
 pub use sort::{SortKey, Sorted, SortedClass, sort, sort_with};
 pub use statics::emit_static;
-pub use style_walk::{StyleWalk, program_style, program_style_with};
+pub use style_walk::{StyleWalk, program_style, program_style_struct, program_style_with};
 
 // The lowering audits the rows' meaning; a registry semantics bump must
 // re-audit it. Byte-wise const compare — `&str` equality is not a const
@@ -447,6 +450,146 @@ impl Compiled {
         containers: &impl ContainerProbe,
     ) -> Result<Interped, InterpError> {
         interp_theme_probes_containers(&self.program, tokens, env, probes, containers)
+    }
+
+    /// The structural half ([`interp_struct`] on [`Compiled::program`]):
+    /// the DOM-position layers ask the source (the built-in
+    /// [`StructFacts`] carries the element's facts; a host wires its
+    /// own). The facts decide the positional tests; an unknown field
+    /// quietly misses; the sourceless forms report
+    /// [`InterpNote::StructuralUnqueried`].
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_struct(
+        &self,
+        env: &Env,
+        structs: &impl StructProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_struct(&self.program, env, structs)
+    }
+
+    /// The themed form of [`Compiled::interp_struct`]: one
+    /// [`TokenSource`] for the theme forms, one [`StructProbe`] for the
+    /// structural layers.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_struct`]).
+    pub fn interp_theme_struct(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        structs: &impl StructProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_struct(&self.program, tokens, env, structs)
+    }
+
+    /// The probe-composed structural form: one [`AttrProbe`] for the
+    /// attribute probes, one [`StructProbe`] for the structural layers
+    /// ([`interp_probes_struct`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_struct(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_struct(&self.program, env, probes, structs)
+    }
+
+    /// The themed form of [`Compiled::interp_probes_struct`]: one
+    /// [`TokenSource`], one [`AttrProbe`], one [`StructProbe`].
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes_struct`]).
+    pub fn interp_theme_probes_struct(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_struct(&self.program, tokens, env, probes, structs)
+    }
+
+    /// The container-composed structural form: one [`ContainerProbe`],
+    /// one [`StructProbe`] ([`interp_containers_struct`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_containers_struct(
+        &self,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_containers_struct(&self.program, env, containers, structs)
+    }
+
+    /// The themed form of [`Compiled::interp_containers_struct`]: one
+    /// [`TokenSource`], one [`ContainerProbe`], one [`StructProbe`].
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_containers_struct`]).
+    pub fn interp_theme_containers_struct(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_containers_struct(&self.program, tokens, env, containers, structs)
+    }
+
+    /// The probe-and-container-composed structural form: one
+    /// [`AttrProbe`], one [`ContainerProbe`], one [`StructProbe`]
+    /// ([`interp_probes_containers_struct`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_containers_struct(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_containers_struct(&self.program, env, probes, containers, structs)
+    }
+
+    /// The FULL walk: one [`TokenSource`], one [`AttrProbe`], one
+    /// [`ContainerProbe`], one [`StructProbe`] — every seam the walk
+    /// consults rides one call
+    /// ([`interp_theme_probes_containers_struct`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_probes_containers_struct`]).
+    pub fn interp_theme_probes_containers_struct(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_containers_struct(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            containers,
+            structs,
+        )
     }
 
     /// Resolve this compile's program's PSEUDO-ELEMENT cascade for one
