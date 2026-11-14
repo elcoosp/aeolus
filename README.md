@@ -269,7 +269,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 - **Fuzz + property suites:** six fuzz targets (60 s CI sweeps), `compile ⇒ interpret == emit`
   metamorphic target, `/opacity` identity property test.
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1144 tests (1154 with instrumentation features).
+  **zero** allocations). Workspace battery: 1213 tests (1223 with all features enabled).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -350,11 +350,14 @@ cargo run -p aeolus-compile --example compile_pipeline  # lex → registry → l
 cargo run -p aeolus-compile --example theme_seam        # tiers + the /opacity identity
 cargo run -p aeolus-compile --example project_build     # scan → dedupe → whole-project stylesheet
 cargo run -p aeolus-rt --example class_cell             # the dynamic lane: hit/miss counters, honest degradation
+cargo run -p aeolus-compile --example dyn_store         # the DynStore storage seam: a host's own bounded store
+cargo run -p aeolus-core --example gamut                # the CSS Color 4 gamut mapping: clamp beside chroma reduction
 cargo run -p aeolus-gpui --example ring                 # ring-* → v4 BoxShadow bands
 cargo run -p aeolus-gpui --example containers           # named @container queries through the bounds seam
 cargo run -p aeolus-gpui --example container_query      # the measuring wrapper: publish → walk → resize beat
 cargo run -p aeolus-gpui --example struct               # first:/last:/odd: through the DOM-position seam
 cargo run -p aeolus-gpui --example motion               # the animation lane: frozen shorthand → gpui::Animation
+cargo run -p aeolus-gpui --example placement            # grid placement + flex-basis on GPUI's own slots
 cargo run -p aeolus-shadcn --example program_tables     # the closed-world program tables (the F6 fix)
 cargo run -p aeolus-codegen-gpui --example conformance  # the published score, from the emit gates themselves
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
@@ -368,6 +371,7 @@ cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-
 cargo run -p aeolus-core --example resolve
 cargo run -p aeolus-core --example plan_algebra
 cargo run -p aeolus-core --example cn_merge
+cargo run -p aeolus-core --example gamut  # the CSS Color 4 chroma reduction beside the clamp oracle
 # V1 compiler
 cargo run -p aeolus-syntax --example lex_candidates
 cargo run -p aeolus-data --example registry_lookup
@@ -384,6 +388,7 @@ cargo run -p aeolus-compile --example static_emit
 cargo run -p aeolus-compile --example interp
 cargo run -p aeolus-compile --example custom_seam
 cargo run -p aeolus-compile --example dyn_cache
+cargo run -p aeolus-compile --example dyn_store  # a host's own bounded store on the DynStore seam
 cargo run -p aeolus-compile --example arbitrary_values
 cargo run -p aeolus-compile --example attr_variants
 cargo run -p aeolus-compile --example probes
@@ -409,6 +414,7 @@ cargo run -p aeolus-gpui --example slots
 cargo run -p aeolus-gpui --example attr_state
 cargo run -p aeolus-gpui --example containers
 cargo run -p aeolus-gpui --example motion
+cargo run -p aeolus-gpui --example placement  # grid placement + flex-basis, GPUI's own slots
 # backends: plan lane + V1 program lane each
 cargo run -p aeolus-xilem --example styled_label
 cargo run -p aeolus-xilem --example program
