@@ -14,6 +14,11 @@
 //! DynCache      ─ the bounded dynamic-string cache (the interp/compile seam)
 //! overlay       ─ the IR-level composition seam (plan §3.6's surface (2):
 //!                 the frozen base under the runtime override, rightmost wins)
+//! MeasuredContainers
+//!               ─ the element-bounds WRAPPER's hand-off (plan §3.5's
+//!                 `@container` row, the "who MEASURES the widths" half):
+//!                 the shared ContainerProbe the measuring element
+//!                 publishes real layout widths into
 //! ```
 //!
 //! The keyword annotations are what makes a `static` program sufficient
@@ -36,6 +41,7 @@
 use aeolus_ir::{Layer, Program, Prop};
 
 mod class_cell;
+mod containers;
 
 pub use aeolus_compile::{
     AttrBit, AttrKind, AttrProbe, AttrState, CachedCompiled, CompileError, ContainerBound,
@@ -48,6 +54,7 @@ pub use aeolus_compile::{
 };
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
+pub use containers::MeasuredContainers;
 
 /// The static form a `tw!`-style macro emits.
 ///
