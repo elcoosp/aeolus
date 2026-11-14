@@ -47,10 +47,15 @@
 //! The v0.x plan is a TYPED slot set, and some row families lower into
 //! the IR fine but have no honest slot to land in:
 //!
-//! * [`Prop::BoxShadow`] — the row carries the preset CSS text (the
-//!   `--tw-shadow` machinery); the v0.x slot wants a parsed
-//!   [`BoxShadow`](aeolus_core::BoxShadow) layer. Parsing the preset
-//!   text is its own slice; the note names it.
+//! * [`Prop::BoxShadow`] — the shadow tier's plan half LANDED: the
+//!   closed-world preset texts (`var(--tw-shadow-{name})`) resolve
+//!   through the oracle's own theme reader into the parsed
+//!   [`BoxShadow`](aeolus_core::BoxShadow) layers (the dominant layer +
+//!   `shadow_rest`), the `shadow-none` clear lands its transparent
+//!   band, and the `shadow-{color}` recolour patches at `finish` in the
+//!   oracle's own pass order. The one honest remainder is the inset
+//!   placeholder's `currentColor` (`shadow-inner`) — the
+//!   [`PlanNoteKind::ShadowPreset`] note names it.
 //! * [`Prop::BackgroundImage`] — the gradient rows carry row CSS text;
 //!   the v0.x [`Gradient`](aeolus_core::Gradient) slot wants composed
 //!   stops. The CSS arm renders the real output today.
@@ -85,13 +90,13 @@ use aeolus_core::ast::{PseudoElement, State, Structural as V0Structural};
 use aeolus_core::cond::{Atom, Cond as V0Cond, Rule, Test};
 use aeolus_core::plan::{
     AlignItems, Animation as V0Animation, AutoEdges, BorderStyle as V0BorderStyle, BorderWidth,
-    ContentAlign, Cursor as V0Cursor, Display as V0Display, Ease as V0Ease,
-    FlexDirection as V0FlexDirection, Gradient, GradientStop, GradientStops,
+    BoxShadow as V0BoxShadow, ContentAlign, Cursor as V0Cursor, Display as V0Display,
+    Ease as V0Ease, FlexDirection as V0FlexDirection, Gradient, GradientStop, GradientStops,
     JustifyContent as V0JustifyContent, Overflow, OverflowKind, Padding, Position as V0Position,
     ResolvedStyle, SizedValue, StylePlan, Transition as V0Transition, TransitionSet as V0Set,
     VariantCondition, Visibility as V0Visibility,
 };
-use aeolus_core::{Breakpoint, Color, PointerEvents, TextProperty, TextValue};
+use aeolus_core::{Breakpoint, Color, PointerEvents, TailwindTheme, TextProperty, TextValue};
 use aeolus_data::registry::lookup_detailed;
 use aeolus_ir::{Bp, Cond, Decl, Prop, Structural, Val};
 use aeolus_syntax::parse_class_string;
@@ -178,8 +183,12 @@ pub enum PlanNoteKind {
     /// the v0.x gradient slot wants composed stops. The CSS arm renders
     /// this class's real output today.
     GradientRow,
-    /// The shadow preset rows lower into `BoxShadow` as the preset CSS
-    /// text; the v0.x slot wants a parsed `BoxShadow` layer.
+    /// The shadow row's inset placeholder (`shadow-inner`'s
+    /// `inset 0 0 0 0 currentColor`): the `currentColor` has no v0.x
+    /// plan answer (the oracle's own shadow-inner errors — the real
+    /// inset families ride `--inset-shadow-*`). The preset references
+    /// and the clear MAP now (the shadow tier's plan half); this is the
+    /// row's one honest remainder.
     ShadowPreset,
     /// The `has-*` inner fragment is selector text whose shape the v0.x
     /// `Test` surface cannot carry (the state/data/aria inners map; the
@@ -219,8 +228,10 @@ impl PlanNoteKind {
                  Gradient slot wants composed stops — emit_css renders the real output"
             }
             PlanNoteKind::ShadowPreset => {
-                "the shadow preset lowers into BoxShadow as the preset CSS text; the \
-                 v0.x slot wants a parsed layer — the CSS arm renders the real output"
+                "the shadow row's inset placeholder (shadow-inner's `inset 0 0 0 0 \
+                 currentColor`) has no v0.x plan answer — the `currentColor` is the \
+                 CSS arm's output; the preset references and the clear map into the \
+                 parsed slot"
             }
             PlanNoteKind::HasFragment { .. } => {
                 "the has-* inner is selector text outside the v0.x Test surface's \
@@ -384,6 +395,8 @@ fn run_plan(
     // (base → hover) resets it, the per-bucket semantics.
     let mut gradient = GradParts::default();
     let mut gradient_bucket: Option<Cond> = None;
+    let mut shadow = ShadowParts::default();
+    let mut shadow_bucket: Option<Cond> = None;
 
     for candidate in &candidates {
         if candidate.important {
@@ -570,6 +583,10 @@ fn run_plan(
             gradient = GradParts::default();
             gradient_bucket = Some(cond);
         }
+        if shadow_bucket != Some(cond) {
+            shadow = ShadowParts::default();
+            shadow_bucket = Some(cond);
+        }
         let mut writer = PlanWriter {
             config,
             notes: Vec::new(),
@@ -583,8 +600,12 @@ fn run_plan(
             gradient_from_pos: None,
             gradient_via_pos: None,
             gradient_to_pos: None,
+            shadow_preset: None,
+            shadow_clear: None,
+            shadow_color: None,
         };
         writer.adopt_gradient(gradient);
+        writer.adopt_shadow(&shadow);
         {
             let notes = &mut sheet.notes;
             bucket(
@@ -603,9 +624,11 @@ fn run_plan(
         }
         // The parts ride on: the next candidate in this bucket adopts
         // them (the direction class composes the stops another class
-        // wrote, wherever the source order put it). Taken before the
+        // wrote, the recolour class patches the clear another class
+        // landed, wherever the source order put them). Taken before the
         // notes flush (the notes move out of the writer).
         gradient = writer.take_gradient();
+        shadow = writer.take_shadow();
         for kind in writer.notes {
             sheet.notes.push(PlanNote {
                 span: candidate.span,
@@ -655,6 +678,16 @@ pub(crate) struct PlanWriter {
     pub(crate) gradient_from_pos: Option<f32>,
     pub(crate) gradient_via_pos: Option<f32>,
     pub(crate) gradient_to_pos: Option<f32>,
+    /// The shadow machinery one candidate accumulates (the gradient
+    /// parts' shape): the preset winner's parsed bands, the `shadow-
+    /// none` clear and the `shadow-{color}` recolour. The classes are
+    /// SEPARATE candidates, so the v0.x slot's composed form assembles
+    /// at `finish` — in the ORACLE'S OWN order (the preset's wholesale
+    /// replace beats the recolour's patch, wherever the source order
+    /// put the classes; the `differentiate` battery pins it).
+    pub(crate) shadow_preset: Option<Vec<V0BoxShadow>>,
+    pub(crate) shadow_clear: Option<V0BoxShadow>,
+    pub(crate) shadow_color: Option<Color>,
 }
 
 /// The gradient row's shape, parsed from the composed row text (the
@@ -683,6 +716,19 @@ pub(crate) struct GradParts {
     pub(crate) from_pos: Option<f32>,
     pub(crate) via_pos: Option<f32>,
     pub(crate) to_pos: Option<f32>,
+}
+
+/// The shadow parts one bucket accumulates (the [`GradParts`] shape,
+/// the v0.x oracle's per-bucket model): the preset winner's parsed
+/// bands, the `shadow-none` clear and the `shadow-{color}` recolour,
+/// carried candidate to candidate so the slot's composed form follows
+/// the ORACLE'S OWN pass order (the preset's wholesale replace beats
+/// the recolour's patch, wherever the source order put the classes).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct ShadowParts {
+    pub(crate) preset: Option<Vec<V0BoxShadow>>,
+    pub(crate) clear: Option<V0BoxShadow>,
+    pub(crate) color: Option<Color>,
 }
 
 /// The CSS angle of a `linear-gradient(to <edge>, …)` row text (0° = to
@@ -1026,12 +1072,21 @@ impl PlanWriter {
                 self.notes.push(PlanNoteKind::SlotUnsupported { prop });
             }
             // ---- dimensions -----------------------------------------
-            Prop::JustifySelf | Prop::ShadowColor => {
-                // `justify-self` (the v0.x Layout carries no self-justify
-                // field) and the shadow colour (the parsed-layer
-                // boundary the BoxShadow note owns) — the slot-less
-                // longhands' honest set.
+            // `justify-self` — the v0.x Layout carries no self-justify
+            // field (the slot-less longhands' honest set; the shadow
+            // colour left the set for the shadow tier's accumulator —
+            // the recolour patches the slot's layers at `finish`).
+            Prop::JustifySelf => {
                 self.notes.push(PlanNoteKind::SlotUnsupported { prop });
+            }
+            Prop::ShadowColor => {
+                // The `shadow-{color}` recolour (the premultiplied
+                // modifier baked into the theme pass's `Rgba`): the
+                // accumulator's patch input, applied at `finish` in the
+                // oracle's own pass order.
+                if let Val::Rgba(rgba) = val {
+                    self.shadow_color = Some(oklab(rgba));
+                }
             }
             Prop::Width
             | Prop::Height
@@ -1469,9 +1524,55 @@ impl PlanWriter {
             Prop::GridRowEnd | Prop::GridColumnEnd | Prop::GridAutoRows | Prop::GridAutoColumns => {
                 self.notes.push(PlanNoteKind::SlotUnsupported { prop });
             }
-            // ---- the shadow & gradient rows (the boundary families) ---
+            // ---- the shadow & gradient rows (the shadow tier) -------
             Prop::BoxShadow => {
-                self.notes.push(PlanNoteKind::ShadowPreset);
+                // The shadow tier's plan half (the §3.7 shadow row, the
+                // §7 migration seam): the closed-world preset texts
+                // resolve through the ORACLE'S OWN theme reader (the
+                // audited v4 default `--shadow-*` tokens — the same
+                // texts the CSS emit arm renders and the GPUI lane
+                // quotes) into the parsed `BoxShadow` layers the v0.x
+                // slot wants; the `shadow-none` clear lands its
+                // transparent band. The inset placeholder's
+                // `currentColor` has no plan answer (the oracle's own
+                // shadow-inner errors) — the note stays, the CSS arm
+                // renders the real output.
+                if let Some(text) = kw {
+                    if let Some(name) = text
+                        .strip_prefix("var(--tw-shadow-")
+                        .and_then(|rest| rest.strip_suffix(')'))
+                    {
+                        let specs = TailwindTheme::default().shadows(name);
+                        if specs.is_empty() {
+                            self.notes.push(PlanNoteKind::ShadowPreset);
+                        } else {
+                            self.shadow_preset = Some(
+                                specs
+                                    .iter()
+                                    .map(|spec| V0BoxShadow {
+                                        offset_x: spec.offset_x,
+                                        offset_y: spec.offset_y,
+                                        blur: spec.blur,
+                                        spread: spec.spread,
+                                        color: spec.color,
+                                        inset: spec.inset,
+                                    })
+                                    .collect(),
+                            );
+                        }
+                    } else if text == "0 0 #0000" {
+                        self.shadow_clear = Some(V0BoxShadow {
+                            offset_x: 0.0,
+                            offset_y: 0.0,
+                            blur: 0.0,
+                            spread: 0.0,
+                            color: Color::TRANSPARENT,
+                            inset: false,
+                        });
+                    } else {
+                        self.notes.push(PlanNoteKind::ShadowPreset);
+                    }
+                }
             }
             Prop::BackgroundImage => {
                 // The direction row's composed text parses into the
@@ -1751,6 +1852,46 @@ impl PlanWriter {
                 },
                 GradShape::None => Gradient::None,
             });
+        }
+        // The shadow slot's composed form, in the ORACLE'S OWN pass
+        // order: the preset's wholesale replace runs after the
+        // recolour's patch (the scalar-extras pass over the shadow-
+        // colour loop), so a preset beats the recolour wherever the
+        // source order put the classes, and a recolour without a
+        // preset patches only the `shadow-none` clear already in the
+        // slot. A recolour with NEITHER composes nothing (v4's
+        // `--tw-shadow-color` colours an EMPTY shadow).
+        if let Some(bands) = &self.shadow_preset {
+            if let [first, rest @ ..] = bands.as_slice() {
+                style.shadow = Some(first.clone());
+                style.extras.shadow_rest = rest.to_vec();
+            }
+        } else if let Some(mut clear) = self.shadow_clear.clone() {
+            if let Some(color) = self.shadow_color {
+                clear.color = color;
+            }
+            style.shadow = Some(clear);
+        }
+    }
+
+    // ---- the shadow parts (the per-bucket accumulator) ----------------
+
+    /// Adopt the bucket's running parts (the previous candidates'
+    /// preset, clear and recolour) into this candidate's writer.
+    pub(crate) fn adopt_shadow(&mut self, parts: &ShadowParts) {
+        self.shadow_preset.clone_from(&parts.preset);
+        self.shadow_clear.clone_from(&parts.clear);
+        self.shadow_color = parts.color;
+    }
+
+    /// Take the accumulated parts back out (the writer's own parts this
+    /// candidate added, over the adopted ones — the preset and the
+    /// clear replace wholesale, the recolour wins last).
+    pub(crate) fn take_shadow(&self) -> ShadowParts {
+        ShadowParts {
+            preset: self.shadow_preset.clone(),
+            clear: self.shadow_clear.clone(),
+            color: self.shadow_color,
         }
     }
 
