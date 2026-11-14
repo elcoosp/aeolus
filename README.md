@@ -38,7 +38,7 @@ it compiles it through the full V1 pipeline at macro-expansion time and emits a 
 | IR                 | heap-shaped `StylePlan` (`Vec`/`BTreeMap`/`Box`), per-edge set-mask patches       | `Copy` longhands (**121 props**) + `PropMask` bitsets — `p-4 ⊕ px-8` is bit ops         |
 | Theme lookups      | `HashMap<String, Token>` by name                                                  | **tiered tables**: T0 literals · T1 dark pairs · T2 one load + one multiply             |
 | `cn()` / overrides | string-level tw_merge at runtime                                                  | **IR-level `cn()` + `overlay`** — rightmost-wins per longhand, computed at compile time |
-| Utility semantics  | 4,000-line `match` walls                                                          | **189 registry rows as data** → generated index, docs, sort order, conformance          |
+| Utility semantics  | 4,000-line `match` walls                                                          | **209 registry rows as data** → generated index, docs, sort order, conformance          |
 | Backends           | re-lower plans on every call                                                      | all six consume the frozen program; GPUI gets macros, `Env` plumbing and polyfills      |
 | Dynamic strings    | one big runtime matcher                                                           | same compiler behind `DynCache` + `ClassCell` — **no capability split**                 |
 
@@ -161,7 +161,7 @@ Every stage is total and fuzzed; the same compiler serves macros, the runtime la
 ```mermaid
 flowchart LR
     A["class string"] --> S["aeolus-syntax<br/>zero-copy lexer + spans"]
-    D["aeolus-data<br/>189 registry rows"] --> C
+    D["aeolus-data<br/>209 registry rows"] --> C
     T["aeolus-theme<br/>app.css → T0/T1/T2 tiers"] --> C
     S --> C["aeolus-compile<br/>lookup · longhand lowering<br/>variants → Cond · cn()/overlay"]
     C --> P["Program (aeolus-ir)<br/>Copy longhands + PropMask<br/>cascade-sorted layers"]
@@ -281,7 +281,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1279 tests (1289 with all features enabled).
+  **zero** allocations). Workspace battery: 1348 tests (1358 with all features enabled).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -305,7 +305,7 @@ differential oracle — no big-bang migration.
 | Phase                   | Scope                                                                                                                                             | Status                         |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | **P0** Prove it         | iai/criterion gates vs hand-written builders; replace §4 targets                                                                                  | 🎯 targets pending measurement |
-| **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (189 rows) · `aeolus-ir` (121 longhands)                                                                          | ✅ landed                      |
+| **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (209 rows) · `aeolus-ir` (141 longhands)                                                                          | ✅ landed                      |
 | **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all four emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
 | **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill; shadow tier (`shadow-*` → GPUI's own `Vec<BoxShadow>`) | ✅ landed                      |
 | **P4** Env & state      | frame `Env`, dark/breakpoints, state layers, `AttrProbe` host seam                                                                                | ✅ landed                      |
@@ -328,7 +328,7 @@ differential oracle — no big-bang migration.
 | Crate            | Role                                                                                                                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `aeolus-syntax`  | zero-copy lexer: borrowed candidates + spans, `no_std + alloc`                                                         |
-| `aeolus-data`    | the registry as data: 189 audited rows → generated roots index, docs, sort order                                       |
+| `aeolus-data`    | the registry as data: 209 audited rows → generated roots index, docs, sort order                                       |
 | `aeolus-ir`      | `Copy` longhand IR: `Prop`/`Val`/`Decl`/`Layer`/`Program` + `PropMask` bitset algebra                                  |
 | `aeolus-theme`   | CSS-first `ThemeSource` → tiered `TokenTable`s; `@source` directives                                                   |
 | `aeolus-compile` | the pipeline: `compile`/`cn`/`overlay`, 4 emit arms, `Customs`, `DynCache`, `sort`, `scan`/`build`, `emit_plan` bridge |
