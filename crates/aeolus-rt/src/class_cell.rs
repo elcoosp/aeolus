@@ -39,7 +39,7 @@ use std::rc::Rc;
 
 use aeolus_compile::{
     ClassKeywords, CompileError, Compiled, Config, Customs, Diagnostic, compile, compile_theme,
-    compile_theme_with, compile_with, keyword_alignment, keyword_texts,
+    compile_theme_with, compile_with, keyword_alignment, keyword_texts_with,
 };
 use aeolus_ir::Layer;
 use aeolus_theme::TokenTable;
@@ -202,7 +202,7 @@ impl ClassCell {
     /// cached.
     pub fn get(&self, classes: &str, config: &Config) -> Result<StaticProgram, CompileError> {
         let identity = SlotIdentity::themeless(*config);
-        self.swap(identity, classes, compile)
+        self.swap(identity, classes, &Customs::new(), compile)
     }
 
     /// [`compile_theme`](aeolus_compile::compile_theme) over the cell: the
@@ -218,7 +218,7 @@ impl ClassCell {
         config: &Config,
     ) -> Result<StaticProgram, CompileError> {
         let identity = SlotIdentity::theme(*config, tokens);
-        self.swap(identity, classes, |input, config| {
+        self.swap(identity, classes, &Customs::new(), |input, config| {
             compile_theme(input, tokens, config)
         })
     }
@@ -236,7 +236,7 @@ impl ClassCell {
         config: &Config,
     ) -> Result<StaticProgram, CompileError> {
         let identity = SlotIdentity::custom(*config, customs);
-        self.swap(identity, classes, |input, config| {
+        self.swap(identity, classes, customs, |input, config| {
             compile_with(input, customs, config)
         })
     }
@@ -255,7 +255,7 @@ impl ClassCell {
         config: &Config,
     ) -> Result<StaticProgram, CompileError> {
         let identity = SlotIdentity::theme_custom(*config, tokens, customs);
-        self.swap(identity, classes, |input, config| {
+        self.swap(identity, classes, customs, |input, config| {
             compile_theme_with(input, tokens, customs, config)
         })
     }
@@ -288,11 +288,16 @@ impl ClassCell {
 
     /// The one path every entry point rides: probe (content + identity
     /// — never hash-only, the collision-safety rule), lower on a miss,
-    /// align, intern, store on a success.
+    /// align, intern, store on a success. The alignment reads the SAME
+    /// customs the compile ran (`keyword_texts_with`) — an applied
+    /// body's registered keyword texts reach the frozen slice, and the
+    /// theme-less entries' empty bag stays byte-identical to the old
+    /// theme-less call.
     fn swap(
         &self,
         identity: SlotIdentity,
         classes: &str,
+        customs: &Customs,
         lower: impl FnOnce(&str, &Config) -> Result<Compiled, CompileError>,
     ) -> Result<StaticProgram, CompileError> {
         let mut slot = self.slot.borrow_mut();
@@ -302,7 +307,8 @@ impl ClassCell {
         }
         self.misses.set(self.misses.get() + 1);
         let compiled = lower(classes, &identity.config)?;
-        let annotations: Vec<ClassKeywords> = keyword_texts(classes, &identity.config)?;
+        let annotations: Vec<ClassKeywords> =
+            keyword_texts_with(classes, customs, &identity.config)?;
         let texts = keyword_alignment(&compiled, &annotations);
         let program = StaticProgram::new(
             compiled.program.layers,
