@@ -1,5 +1,24 @@
 ## [Unreleased]
 
+### 🚀 Features — the named-container walk half (M1)
+- `aeolus-rt`: the bounds seam re-exported beside the probe seams (`ContainerProbe`/`ContainerState`/`ContainerBound`) and the `interp_containers` entry-point family joined the host surface.
+- `aeolus-gpui`: the walk answers NAMED container queries through the seam — `tw_containers`/`tw_env_containers` and the `*_probes`/`*_struct` composed pairings (the interp's `interp_probes_containers_struct` matrix mirrored); `cond_matches` carries the seam arm, the verdicts are the interp `decide` semantics shared verbatim (AT/strictly-below boundaries, unknown-name quiet miss, sourceless quiet skip), the unnamed forms keep the `Env`'s nearest-container answer, and the element-bounds WRAPPER stays the host's half.
+- Tests `aeolus-gpui/tests/containers.rs` (11 pins, RED-first — the differential pin walks `interp_containers` beside the walk), bench `benches/containers.rs` (sourceless 605ns / bounds-miss 603ns / bounds-hit 834ns), example `examples/containers.rs`.
+
+### 🚀 Features — the GPUI motion lane (M2)
+- `aeolus-gpui`: the §3.7 motion row's GPUI half lands as the STATEFUL lane — `aeolus_gpui::motion` parses the frozen v4 animate shorthand (`spin 1s linear infinite`) into `AnimSpec` (first duration f64-exact, easing keyword or `cubic-bezier(...)` with spaces, `infinite`, finite counts folding to one-shot, unknown functions never stealing the name), the CSS `--ease-*` curves solve by deterministic bisection, `animation`/`animation_for` build the `gpui::Animation`, `animation_keyword` answers the cascade's last matching `Animation` declaration under the probe env, and `pulse_animator` is the one `Styled`-expressible preset built in.
+- `aeolus-gpui`: `TwAnimExt` — `tw_anim`/`tw_anim_env` and the dynamic `tw_anim_dyn`/`tw_anim_theme_dyn` entrances through the ungated `ClassCell` (last-good degradation) — the host's element id and animator beside the lane's parse; `animate-none` wraps the element statically, the animator never called; the `tw!` macro's capability gate keeps refusing motion classes (the static emit boundary stands, its reason now pointing at the lane).
+- Tests `aeolus-gpui/tests/motion.rs` (14 pins, RED-first — grammar, curves, cascade winner, the lane wraps), bench `benches/motion.rs` (parse 360ns / build 412ns / winner walk 10ns), example `examples/motion.rs`.
+
+### 🛠 Fixed — docs drift
+- `README.md`: the Quickstart MSRV line now matches the manifests (1.88 for the compiler set, CLI and GPUI lane; 1.96 for the five framework backends + shadcn); the test battery re-derived (1144, 1154 instrumented); the missing consumer examples listed (`lower_class`, the two new demos).
+- `docs/AEOLUS_V1_ARCHITECTURE.md`: the §3.5 container row and §3.7 motion row (plus the P6 roadmap line) catch up with the walk half and the lane.
+
+### 🧹 Micro-debt
+- `CHANGELOG.md`: the doubled `## [0.12.0]` heading — the second block was the same release's prose summary — demoted to a `### Release summary` subsection.
+- `CONTRIBUTING.md`: the "StylePlan is the IR" guardrail was the v0.x framing — rewritten for the V1 `Copy` `Program` IR and the `lower_program` contract.
+- `.gitignore`: the handoff-ceremony ignore pair carried three times — collapsed to one commented block.
+
 ### 🚀 Features — the structural-variant probe fold (M1)
 - `aeolus-ir`: the `Structural` enum and `Cond::Structural` — the element's own DOM-position probe joins the typed surface (specificity band 2, the attribute-probe tier).
 - `aeolus-compile`: the fold accepts `first:`/`last:`/`odd:`/`even:`/`only:`/`empty:`/`nth-N:`/`nth-last-N:` (the oracle's `parse_nth` grammar); the `StructProbe` seam + built-in `StructFacts`/`StructFacts::UNKNOWN`; the `interp_*_struct` entry-point family; `program_style_struct`; `InterpNote::StructuralUnqueried`; `structural_fires` exported as the shared verdict fn; the CSS arm renders the v4 positional selectors; the plan bridge maps onto the oracle's `Test::Structural` (differential battery; `nth-last-N` pinned as the oracle's own parser gap).
@@ -481,7 +500,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Gitignore
 - Gate the v1 crates' 1.88 msrv and sweep the header drift
 
-## [0.12.0] — 2026-11-10 — the P2 slice 3: the IR-level `cn()` merge
+### Release summary — 0.12.0, the P2 slice 3: the IR-level `cn()` merge
 
 Release summary (the git-cliff block, filed in place): features — the
 compile seam hosts the ir-level cn merge, the merge bench, the consumer
