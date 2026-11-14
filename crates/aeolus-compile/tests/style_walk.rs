@@ -425,9 +425,9 @@ fn attr_probe_layers_fire_through_the_seam() {
 
 #[test]
 fn boundary_longhands_report_as_typed_notes_never_silently() {
-    // shadow-sm lowers into the IR (Prop::BoxShadow, the preset's var
-    // text) but the v0.x slot wants a parsed layer — the SAME typed
-    // boundary the plan bridge notes, carried on the walk.
+    // The shadow tier's plan half (the §3.7 shadow row) resolves the
+    // closed-world preset texts into the style's OWN shadow slot — the
+    // parsed `BoxShadow` layers the v0.x slot wants, no boundary note.
     let (layers, keywords) = frozen("shadow-sm bg-primary");
     let (style, walk) = program_style(layers, keywords, &Env::default());
     assert!(
@@ -435,10 +435,24 @@ fn boundary_longhands_report_as_typed_notes_never_silently() {
         "the mapped longhand still lands"
     );
     assert!(
+        style.shadow.is_some(),
+        "the preset resolves into the style's shadow slot, not a note"
+    );
+    assert!(
+        walk.boundaries.is_empty(),
+        "a closed-world preset is no boundary: {walk:?}"
+    );
+
+    // The inset placeholder (`shadow-inner`, `inset 0 0 0 0
+    // currentColor`) keeps the typed note — its `currentColor` has no
+    // plan answer (the oracle's own shadow-inner errors).
+    let (layers, keywords) = frozen("shadow-inner bg-primary");
+    let (_, walk) = program_style(layers, keywords, &Env::default());
+    assert!(
         walk.boundaries
             .iter()
             .any(|b| matches!(b, PlanNoteKind::ShadowPreset)),
-        "the shadow preset is a typed boundary: {walk:?}"
+        "the inset placeholder is a typed boundary: {walk:?}"
     );
 
     // place-content has no v0.x slot either (the SlotUnsupported set).
