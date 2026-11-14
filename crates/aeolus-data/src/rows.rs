@@ -719,7 +719,7 @@ pub static ROWS: &[UtilityRow] = &[
         any(&[num(), arb()]),
         &[Prop::GridColumnStart],
         "col-start",
-        false,
+        true,
         "utilities.ts grid-column",
     ),
     row(
@@ -727,7 +727,7 @@ pub static ROWS: &[UtilityRow] = &[
         any(&[num(), arb()]),
         &[Prop::GridColumnEnd],
         "col-end",
-        false,
+        true,
         "utilities.ts grid-column",
     ),
     row(
@@ -743,7 +743,7 @@ pub static ROWS: &[UtilityRow] = &[
         any(&[num(), arb()]),
         &[Prop::GridRowStart],
         "row-start",
-        false,
+        true,
         "utilities.ts grid-row",
     ),
     row(
@@ -751,7 +751,7 @@ pub static ROWS: &[UtilityRow] = &[
         any(&[num(), arb()]),
         &[Prop::GridRowEnd],
         "row-end",
-        false,
+        true,
         "utilities.ts grid-row",
     ),
     // ---- alignment -----------------------------------------------------------
