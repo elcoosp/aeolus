@@ -20,7 +20,11 @@
 //! ring longhands emits.
 
 use aeolus_codegen::conformance::{Capability, Tier};
-use aeolus_codegen::{Emit, Unsupported, ir_path};
+use aeolus_codegen::{Emit, ir_path};
+
+/// The emit gate's refusal type, re-exported for the macro surface's
+/// `audit` gate (the compile-error renderer reads `prop` + `reason`).
+pub use aeolus_codegen::Unsupported;
 use aeolus_compile::{Config, keyword_texts};
 use aeolus_ir::{Bp, Cond, Program, Prop, Val};
 use aeolus_theme::{ThemeSource, TokenTable};
@@ -145,6 +149,23 @@ pub fn lower_class(literal: &str, config: &Config) -> Result<TokenStream, Diagno
 /// Render the `aeolus_rt::StaticProgram` expression for one compiled
 /// program. `keywords` is parallel to the flattened declarations
 /// (layer-major order); a missing entry renders as `""` (no row text).
+/// The capability GATE the macro surface runs: walk the frozen
+/// program's declarations through the SAME [`GpuiEmit`]'s
+/// `unsupported_reason` gates the emit renders — the
+/// publish-the-emitter's-verdicts rule — and collect every refusal.
+/// The macro calls this before freezing, and a non-empty list is a
+/// compile error naming the class and the reason (plan §9's
+/// per-class diagnostic story): the honest-failure contract reaches
+/// `tw!`/`cn!`/`variants!`, so a class the GPUI target cannot express
+/// (the motion families, the gradient via stop) refuses at expansion
+/// time instead of freezing into a silent runtime no-op.
+pub fn audit(program: &Program, keywords: &[&str]) -> Vec<Unsupported> {
+    GpuiEmit { keywords }
+        .emit(program)
+        .err()
+        .unwrap_or_default()
+}
+
 pub fn emit_static_program(program: &Program, keywords: &[&str]) -> TokenStream {
     let ir = ir_path();
     let mut decl_consts = Vec::new();
@@ -238,6 +259,14 @@ fn cond_tokens(cond: Cond, ir: &TokenStream) -> TokenStream {
             let bp = bp_tokens(bp, ir);
             let name = name_tokens(name);
             quote! { #ir::Cond::MaxContainer { bp: #bp, name: #name } }
+        }
+        // The structural probes: the payload is the test itself (the
+        // ordinal rides the variant) — the frozen static item carries
+        // it verbatim, the interp walk's `StructProbe` seam answering
+        // at runtime.
+        Cond::Structural(test) => {
+            let name: TokenStream = format!("{test:?}").parse().expect("structural test name");
+            quote! { #ir::Cond::Structural(#ir::Structural::#name) }
         }
         other => {
             let name: TokenStream = format!("{other:?}").parse().expect("condition name");
