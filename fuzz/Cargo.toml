@@ -13,6 +13,11 @@ libfuzzer-sys = "0.4"
 [dependencies.aeolus-core]
 path = "../crates/aeolus-core"
 
+# The metamorphic target rides the V1 pipeline (the plan §5.3 line's
+# subject): compile ⇒ interpret ⇒ equals emit over arbitrary bytes.
+[dependencies.aeolus-compile]
+path = "../crates/aeolus-compile"
+
 [[bin]]
 name = "parse_class_string"
 path = "fuzz_targets/parse_class_string.rs"
@@ -54,6 +59,13 @@ bench = false
 [[bin]]
 name = "probe_eval"
 path = "fuzz_targets/probe_eval.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compile_interp_emit"
+path = "fuzz_targets/compile_interp_emit.rs"
 test = false
 doc = false
 bench = false
