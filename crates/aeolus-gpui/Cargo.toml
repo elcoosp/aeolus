@@ -79,5 +79,12 @@ harness = false
 name = "placement"
 harness = false
 
+# The shadow tier's microbenchmark (the §3.7 shadow row's native tier):
+# the walk applying a `tw!`-compiled shadow program (the preset bands
+# composed beside the ring's), and the accumulator's own composition.
+[[bench]]
+name = "shadow"
+harness = false
+
 [lints]
 workspace = true
