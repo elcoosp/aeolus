@@ -130,7 +130,7 @@ pub fn program_style(
 }
 
 /// [`program_style`] with the structural seam wired: a
-/// [`StructProbe`] source answers the [`Cond::Structural`] layers'
+/// [`StructProbe`] source answers the [`aeolus_ir::Cond::Structural`] layers'
 /// DOM-position questions (the `interp_struct` convention — the
 /// built-in value is one Copy `StructFacts`,
 /// [`StructFacts::UNKNOWN`](crate::interp::StructFacts::UNKNOWN) the
