@@ -63,7 +63,14 @@
 //! [`emit_css_theme_with`] lower and render them through the SAME
 //! typed read side, value pass, diagnostics and emit paths as the
 //! built-in surface (the `custom` module's docs carry the design) —
-//! and the DYN-CACHE seam: [`DynCache`] is the content-keyed, bounded,
+//! and the custom seam's CSS-FILE form ([`customs_from_css`], plan
+//! §5.4's "same file as web" line): the `@custom-variant` statements
+//! and the `@utility` bodies a theme CSS carries register onto the
+//! SAME `Customs` surface, the `@apply` composite bodies compiling at
+//! registration (the applied [`CustomValue::Applied`] form, keyword
+//! texts riding the registration) and the functional star bodies
+//! riding the SAME `CustomForm` grammar — and the DYN-CACHE seam:
+//! [`DynCache`] is the content-keyed, bounded,
 //! thread-safe cache over this pipeline (the leak-pool dedupe the
 //! storage note below promises), with the storage swappable through
 //! [`DynStore`] and the built-in [`TwoGenStore`] — and the
@@ -165,6 +172,7 @@
 mod arbitrary;
 mod css;
 mod custom;
+mod customs_css;
 mod dyn_cache;
 mod interp;
 mod lower;
@@ -190,7 +198,10 @@ use aeolus_theme::TokenTable;
 pub use css::{
     CssAt, CssRule, CssSheet, emit_css, emit_css_theme, emit_css_theme_with, emit_css_with,
 };
-pub use custom::{ClassifyVariant, CustomForm, CustomUtility, CustomValue, CustomVariant, Customs};
+pub use custom::{
+    AppliedBody, ClassifyVariant, CustomForm, CustomUtility, CustomValue, CustomVariant, Customs,
+};
+pub use customs_css::{CustomCssError, customs_from_css};
 pub use dyn_cache::{
     CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity, DynStore, TwoGenStore,
 };
@@ -1281,7 +1292,11 @@ pub struct ClassKeywords {
 /// # Errors
 /// [`CompileError::Empty`] for an empty class string (the same contract
 /// as [`compile`]).
-pub fn keyword_texts(input: &str, config: &Config) -> Result<Vec<ClassKeywords>, CompileError> {
+pub fn keyword_texts_with(
+    input: &str,
+    customs: &Customs,
+    config: &Config,
+) -> Result<Vec<ClassKeywords>, CompileError> {
     if input.trim().is_empty() {
         return Err(CompileError::Empty);
     }
@@ -1291,7 +1306,12 @@ pub fn keyword_texts(input: &str, config: &Config) -> Result<Vec<ClassKeywords>,
         if candidate.important {
             continue;
         }
-        let Ok(cond) = variant::fold(&candidate.variants, &Customs::new()) else {
+        // The fold runs over the SUPPLIED registrations: a custom
+        // variant alias's candidate cond is the alias's own typed
+        // condition — the exact key the alignment queues consume (the
+        // empty-Customs call stays byte-identical to the theme-less
+        // walk, the differential pins it).
+        let Ok(cond) = variant::fold(&candidate.variants, customs) else {
             continue;
         };
         let joined = candidate
@@ -1304,12 +1324,41 @@ pub fn keyword_texts(input: &str, config: &Config) -> Result<Vec<ClassKeywords>,
             },
             None => (lookup_detailed(candidate.body), candidate.body),
         };
-        let Ok(rows) = rows else { continue };
         let mut keywords = Vec::new();
-        for row in rows {
-            // Only READ the row tables: whether the value pass accepts
-            // the suffix is the compile walk's question, not this one.
-            keywords.extend(lower::kw_annotations(*row, effective_body));
+        match rows {
+            Ok(rows) => {
+                for row in rows {
+                    // Only READ the row tables: whether the value pass accepts
+                    // the suffix is the compile walk's question, not this one.
+                    keywords.extend(lower::kw_annotations(*row, effective_body));
+                }
+            }
+            Err(_) => {
+                // The customs are additive surface consulted on the
+                // registry's miss — the SAME read-side rule the compile
+                // walk applies. An applied body's keyword texts ride the
+                // registration ([`AppliedBody::keywords`], parallel to
+                // the stored decls the compile splices); the fixed and
+                // functional forms carry values that name themselves
+                // (numbers, colours, tokens) and contribute no texts.
+                // A double miss (registry AND customs) keeps the
+                // theme-less skip — the candidate never lowers, so it
+                // never contributes an alignment slot either.
+                let custom_hit = match customs.lookup(candidate.body) {
+                    Ok(utilities) => {
+                        for utility in utilities {
+                            if let CustomValue::Applied(body) = utility.value {
+                                keywords.extend(body.keywords.iter().copied());
+                            }
+                        }
+                        true
+                    }
+                    Err(_) => false,
+                };
+                if !custom_hit {
+                    continue;
+                }
+            }
         }
         // `config` rides for signature parity with the compile surface;
         // the row tables' texts are config-independent today (the
@@ -1325,6 +1374,20 @@ pub fn keyword_texts(input: &str, config: &Config) -> Result<Vec<ClassKeywords>,
         });
     }
     Ok(out)
+}
+
+/// The theme-less annotation walk ([`keyword_texts_with`] over empty
+/// registrations — the seam's own additive contract: empty customs are
+/// byte-identical to the theme-less siblings).
+///
+/// The row-keyword texts the static form freezes beside the layers —
+/// one [`ClassKeywords`] per candidate, each carrying the row tables'
+/// texts for the row-relative `Val::Kw` slots the bare IR cannot name.
+/// Registered customs produce no texts through this entry point (the
+/// theme-less default); the custom seam's callers walk
+/// [`keyword_texts_with`].
+pub fn keyword_texts(input: &str, config: &Config) -> Result<Vec<ClassKeywords>, CompileError> {
+    keyword_texts_with(input, &Customs::new(), config)
 }
 
 /// Align the per-class annotations with a compiled program — one ROW
