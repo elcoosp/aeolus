@@ -56,6 +56,38 @@ impl Bp {
     }
 }
 
+/// The element's own DOM-position tests — the structural variants
+/// (`first:`, `last:`, `odd:`, `even:`, `only:`, `empty:`, `nth-N:`,
+/// `nth-last-N:`). `Copy`, `const`-constructible, no heap: the payload
+/// is the ordinal itself, so the static form stays a `static` item end
+/// to end.
+///
+/// The parity and ordinal semantics are CSS's own and 1-BASED: the
+/// first child (index 0) is `:nth-child(odd)` / `:nth-child(1)`, the
+/// second even. `Nth(-1)` is a legal fold (the v0.x oracle's
+/// `parse_nth` accepts every `i32`) that renders a selector CSS never
+/// matches — the honest spelling pass, never a refusal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Structural {
+    /// `first:` (`:first-child`) — the parent's first element child.
+    First,
+    /// `last:` (`:last-child`) — the parent's final element child.
+    Last,
+    /// `odd:` (`:nth-child(odd)`) — the odd-numbered children.
+    Odd,
+    /// `even:` (`:nth-child(even)`) — the even-numbered children.
+    Even,
+    /// `only:` (`:only-child`) — the parent's single element child.
+    Only,
+    /// `empty:` (`:empty`) — the element carries no children.
+    Empty,
+    /// `nth-N:` (`:nth-child(N)`) — the Nth child, N 1-based.
+    Nth(i32),
+    /// `nth-last-N:` (`:nth-last-child(N)`) — the Nth child counting
+    /// from the end, N 1-based.
+    NthLast(i32),
+}
+
 /// The condition a layer fires under. `Copy`, `const`-constructible, no
 /// heap: the static program is a `static` item end to end.
 ///
@@ -160,6 +192,15 @@ pub enum Cond {
     /// `peer-has-*:` — a `.peer` sibling HAS a descendant matching the
     /// probe. Same payload contract as [`Cond::GroupHas`].
     PeerHas(&'static str),
+    /// `first:` / `last:` / `odd:` / `even:` / `only:` / `empty:` /
+    /// `nth-N:` / `nth-last-N:` — the element's own DOM-position probe
+    /// ([`Structural`]; plan §3.5's "typed state bits, not string
+    /// probes" row, the position half). The payload is the TEST itself
+    /// (the ordinal rides the variant), not selector text: a renderer
+    /// derives its own positional selector, a host probe answers from
+    /// the element's DOM-position facts (the interp arm documents the
+    /// facts → verdict semantics).
+    Structural(Structural),
     /// `sm:` / `md:` / ... — min-width media query.
     Bp(Bp),
     /// `min-md:` — explicit min-width form.
@@ -216,7 +257,8 @@ impl Cond {
             // output nests them on the `&` alongside `:hover`).
             | Cond::Data { .. }
             | Cond::Aria { .. }
-            | Cond::Has(_) => 2,
+            | Cond::Has(_)
+            | Cond::Structural(_) => 2,
             Cond::GroupHas(_) | Cond::PeerHas(_) => 3,
             Cond::GroupHover | Cond::GroupFocus | Cond::PeerHover | Cond::PeerFocus => 3,
             Cond::Bp(_) | Cond::Min(_) | Cond::Max(_) => 4,
@@ -254,7 +296,8 @@ impl Cond {
             | Cond::Aria { .. }
             | Cond::Has(_)
             | Cond::GroupHas(_)
-            | Cond::PeerHas(_) => None,
+            | Cond::PeerHas(_)
+            | Cond::Structural(_) => None,
             // Breakpoint names need the u8 formatting — not const. The
             // non-const wrapper covers them (see `source_text`), and a
             // NAMED container form has no static text either way (the
