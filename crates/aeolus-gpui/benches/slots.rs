@@ -11,19 +11,19 @@ use aeolus_gpui::prelude::*;
 
 variants! { pub Benched {
     slots: {
-        root: "flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
-        header: "flex flex-col gap-1.5 px-6",
-        title: "font-semibold leading-none",
+        root:"flex flex-col gap-6 rounded-xl border py-6",
+        header:"flex flex-col gap-1.5 px-6",
+        title:"font-semibold leading-none",
     },
     variant: {
-        default: "text-card-foreground",
-        destructive: "bg-destructive text-white",
-        outline: { root: "border-gray-200", title: "text-muted-foreground" },
+        default:"text-card-foreground",
+        destructive:"bg-destructive text-white",
+        outline: { root:"border-gray-200", title:"text-muted-foreground"},
     },
-    size: { default: "text-sm", sm: "text-xs", lg: "text-lg" },
+    size: { default:"text-sm", sm:"text-xs", lg:"text-lg"},
     compound: [
-        { variant: outline, size: sm, class: { root: "ring-2 ring-red-500" } },
-        { variant: destructive, class: "shadow-md" },
+        { variant: outline, size: sm, class: { root:"ring-2 ring-red-500"} },
+        { variant: destructive, class:""},
     ],
 } }
 
