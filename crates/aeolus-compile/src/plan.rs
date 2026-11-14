@@ -81,7 +81,7 @@
 
 use std::fmt;
 
-use aeolus_core::ast::{PseudoElement, State};
+use aeolus_core::ast::{PseudoElement, State, Structural as V0Structural};
 use aeolus_core::cond::{Atom, Cond as V0Cond, Rule, Test};
 use aeolus_core::plan::{
     AlignItems, Animation as V0Animation, AutoEdges, BorderStyle as V0BorderStyle, BorderWidth,
@@ -93,7 +93,7 @@ use aeolus_core::plan::{
 };
 use aeolus_core::{Breakpoint, Color, PointerEvents, TextProperty, TextValue};
 use aeolus_data::registry::lookup_detailed;
-use aeolus_ir::{Bp, Cond, Decl, Prop, Val};
+use aeolus_ir::{Bp, Cond, Decl, Prop, Structural, Val};
 use aeolus_syntax::parse_class_string;
 use aeolus_theme::TokenTable;
 
@@ -2294,6 +2294,13 @@ fn bucket(
             let when = V0Cond(vec![Atom::On(Test::Pseudo(PseudoElement::Placeholder))]);
             bucket_rule(plan, when, write);
         }
+        Cond::Structural(test) => {
+            // The oracle's own `Test::Structural` atom — the typed fold
+            // maps 1:1 onto it (the differential battery pins the
+            // layers slot for slot; the ordinal rides the variant).
+            let when = V0Cond(vec![Atom::On(Test::Structural(structural_of(test)))]);
+            bucket_rule(plan, when, write);
+        }
     }
 }
 
@@ -2372,6 +2379,22 @@ fn has_test(inner: &'static str) -> Result<Test, ()> {
         return Ok(test);
     }
     Err(())
+}
+
+/// The typed structural test → the v0.x oracle's own — a 1:1 map (the
+/// variants mirror `ast::Structural`, the ordinal rides through); the
+/// differential battery pins the folded layers slot for slot.
+fn structural_of(test: Structural) -> V0Structural {
+    match test {
+        Structural::First => V0Structural::First,
+        Structural::Last => V0Structural::Last,
+        Structural::Odd => V0Structural::Odd,
+        Structural::Even => V0Structural::Even,
+        Structural::Only => V0Structural::Only,
+        Structural::Empty => V0Structural::Empty,
+        Structural::Nth(n) => V0Structural::Nth(n),
+        Structural::NthLast(n) => V0Structural::NthLast(n),
+    }
 }
 
 fn breakpoint_of(bp: Bp) -> Breakpoint {
