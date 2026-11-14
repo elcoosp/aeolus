@@ -691,7 +691,39 @@ fn apply_decl(
         | Prop::Animation => {
             report.drop(
                 format!("{prop:?}"),
-                "no transition/animation surface at the pinned rev — the motion families ride                  the CSS emit arm",
+                "no transition/animation surface at the pinned rev — the motion families ride the CSS emit arm",
+            );
+            style
+        }
+        // ---- filters (the plan §3.7 backlog row's pipeline half) --------
+        //
+        // Floem's pinned-rev Style carries no filter surface — the
+        // filter longhands ride the CSS emit arm (the v0.x oracle
+        // refuses the family outright, so the plan path reports the
+        // same boundary).
+        Prop::FilterBlur
+        | Prop::FilterBrightness
+        | Prop::FilterContrast
+        | Prop::FilterGrayscale
+        | Prop::FilterHueRotate
+        | Prop::FilterInvert
+        | Prop::FilterSaturate
+        | Prop::FilterSepia
+        | Prop::FilterDropShadow
+        | Prop::Filter
+        | Prop::BackdropBlur
+        | Prop::BackdropBrightness
+        | Prop::BackdropContrast
+        | Prop::BackdropGrayscale
+        | Prop::BackdropHueRotate
+        | Prop::BackdropInvert
+        | Prop::BackdropOpacity
+        | Prop::BackdropSaturate
+        | Prop::BackdropSepia
+        | Prop::BackdropFilter => {
+            report.drop(
+                format!("{prop:?}"),
+                "no filter surface at the pinned rev — the filter families ride the CSS emit arm",
             );
             style
         }
