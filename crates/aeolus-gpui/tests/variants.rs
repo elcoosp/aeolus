@@ -1,6 +1,6 @@
 //! The `variants!` compound-variant contracts (the §9 open question's
-//! decision — "does `variants!` need slot-based multi-part components
-//! (`cva` "compound variants", `slots`)?"): a `compound:` LIST applies
+//! decision —"does `variants!` need slot-based multi-part components
+//! (`cva`"compound variants", `slots`)?"): a `compound:` LIST applies
 //! extra classes to every combo that matches ALL of an entry's
 //! constraints — the cva shape, resolved at EXPANSION time (the entries
 //! fold into the cartesian match arms the macro already renders, zero
@@ -10,11 +10,11 @@
 //! it does not, a one-group constraint applies across the other groups,
 //! multiple entries compose in order, and the plain table is unchanged.
 //!
-//! The SLOTS half pins the multi-part form (the same §9 row's "slots"
+//! The SLOTS half pins the multi-part form (the same §9 row's"slots"
 //! word, the tailwind-variants shape): a `slots:` map declares one base
 //! per part and generates a `Slot` enum plus a `style_slot(slot, …)`
 //! dispatch — a group value that is a STRING applies to every slot, a
-//! brace `{ slot: "classes" }` applies to the slots it names, and the
+//! brace `{ slot:"classes"}` applies to the slots it names, and the
 //! compound `class:` takes both forms the same way. Written FIRST (the
 //! RED spec): the suite fails while `slots:` is no part of the macro
 //! grammar.
@@ -22,14 +22,14 @@
 use aeolus_gpui::prelude::*;
 
 variants! { pub Badge {
-    base: "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium",
+    base:"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium",
     variant: {
-        default: "bg-primary text-primary-foreground",
-        outline: "border border-gray-200 text-foreground",
+        default:"bg-primary text-primary-foreground",
+        outline:"border border-gray-200 text-foreground",
     },
-    size: { default: "h-9 px-4", sm: "h-8 px-3" },
+    size: { default:"h-9 px-4", sm:"h-8 px-3"},
     compound: [
-        { variant: outline, size: sm, class: "ring-2 ring-red-500" },
+        { variant: outline, size: sm, class:"ring-2 ring-red-500"},
     ],
 } }
 
@@ -66,12 +66,12 @@ fn the_compound_entry_rides_only_the_matching_combos() {
 }
 
 variants! { pub Banner {
-    base: "flex items-center gap-2 rounded-md px-4 py-2 text-sm",
-    variant: { default: "bg-primary text-primary-foreground", outline: "border text-foreground" },
-    size: { default: "h-9", sm: "h-8" },
+    base:"flex items-center gap-2 rounded-md px-4 py-2 text-sm",
+    variant: { default:"bg-primary text-primary-foreground", outline:"border text-foreground"},
+    size: { default:"h-9", sm:"h-8"},
     compound: [
-        { variant: outline, class: "ring-2 ring-blue-500" },
-        { variant: outline, size: sm, class: "shadow-md" },
+        { variant: outline, class:"ring-2 ring-blue-500"},
+        { variant: outline, size: sm, class:"w-24"},
     ],
 } }
 
@@ -88,7 +88,7 @@ fn a_one_group_constraint_applies_across_the_other_groups() {
     };
 
     // `variant: outline` alone: BOTH sizes carry the ring; only the sm
-    // size carries the shadow (its entry constrains both groups).
+    // size carries the extra width (its entry constrains both groups).
     for size in [BannerSize::Default, BannerSize::Sm] {
         assert!(
             has_prop(Banner::style(BannerVariant::Outline, size), Prop::RingWidth),
@@ -98,14 +98,14 @@ fn a_one_group_constraint_applies_across_the_other_groups() {
     assert!(
         has_prop(
             Banner::style(BannerVariant::Outline, BannerSize::Sm),
-            Prop::BoxShadow
+            Prop::Width
         ),
         "the two-group entry rides its combo"
     );
     assert!(
         !has_prop(
             Banner::style(BannerVariant::Outline, BannerSize::Default),
-            Prop::BoxShadow
+            Prop::Width
         ),
         "the two-group entry stays out of the other size"
     );
@@ -119,10 +119,10 @@ fn a_one_group_constraint_applies_across_the_other_groups() {
 }
 
 variants! { pub Chip {
-    base: "inline-flex items-center rounded-full px-2 text-xs",
-    label: { solid: "bg-primary text-primary-foreground", soft: "bg-secondary text-secondary-foreground" },
+    base:"inline-flex items-center rounded-full px-2 text-xs",
+    label: { solid:"bg-primary text-primary-foreground", soft:"bg-secondary text-secondary-foreground"},
     compound: [
-        { label: solid, class: "ring-1 ring-primary" },
+        { label: solid, class:"ring-1 ring-primary"},
     ],
 } }
 
@@ -147,7 +147,7 @@ fn the_plain_grammar_is_unchanged_and_compound_names_any_group() {
 }
 
 variants! { pub Plain {
-    base: "inline-flex items-center rounded-md px-4 py-2",
+    base:"inline-flex items-center rounded-md px-4 py-2",
 } }
 
 #[test]
@@ -160,20 +160,20 @@ fn the_base_only_table_still_compiles() {
 }
 
 // ---------------------------------------------------------------------------
-// The slots half: the multi-part form (the same §9 row's "slots" word)
+// The slots half: the multi-part form (the same §9 row's"slots"word)
 // ---------------------------------------------------------------------------
 
 variants! { pub Card {
     slots: {
-        root: "flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
-        header: "flex flex-col gap-1.5 px-6",
-        title: "font-semibold leading-none",
+        root:"flex flex-col gap-6 rounded-xl border py-6",
+        header:"flex flex-col gap-1.5 px-6",
+        title:"font-semibold leading-none",
     },
     variant: {
-        default: "text-card-foreground",
-        outline: { root: "border-gray-200", title: "text-muted-foreground" },
+        default:"text-card-foreground",
+        outline: { root:"border-gray-200", title:"text-muted-foreground"},
     },
-    size: { default: "text-sm", lg: "text-lg" },
+    size: { default:"text-sm", lg:"text-lg"},
 } }
 
 #[test]
@@ -253,14 +253,14 @@ fn a_group_string_applies_to_every_slot_and_a_brace_to_the_slots_it_names() {
 }
 
 variants! { pub Notice {
-    slots: { body: "rounded-md px-4 py-3 text-sm", icon: "shrink-0" },
+    slots: { body:"rounded-md px-4 py-3 text-sm", icon:"shrink-0"},
     tone: {
-        info: "bg-blue-500",
-        warn: { body: "bg-amber-500", icon: "text-amber-500" },
+        info:"bg-blue-500",
+        warn: { body:"bg-amber-500", icon:"text-amber-500"},
     },
     compound: [
-        { tone: info, class: { body: "ring-2 ring-blue-500" } },
-        { tone: warn, class: "shadow-md" },
+        { tone: info, class: { body:"ring-2 ring-blue-500"} },
+        { tone: warn, class:"w-24"},
     ],
 } }
 
@@ -290,17 +290,17 @@ fn a_compound_class_takes_both_forms_per_slot() {
     );
 
     // The string compound class rides EVERY slot: both parts take the
-    // shadow.
+    // extra width.
     let body_warn = Notice::style_slot(NoticeSlot::Body, NoticeTone::Warn);
     let icon_warn = Notice::style_slot(NoticeSlot::Icon, NoticeTone::Warn);
     assert!(
-        has_prop(body_warn, Prop::BoxShadow) && has_prop(icon_warn, Prop::BoxShadow),
+        has_prop(body_warn, Prop::Width) && has_prop(icon_warn, Prop::Width),
         "the string compound class applies to every slot"
     );
 }
 
 variants! { pub Panel {
-    slots: { shell: "rounded-lg border bg-card", inner: "p-4" },
+    slots: { shell:"rounded-lg border bg-card", inner:"p-4"},
 } }
 
 #[test]
