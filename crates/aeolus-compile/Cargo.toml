@@ -129,6 +129,13 @@ harness = false
 name = "plan_bridge"
 harness = false
 
+# The shadow tier's benchmarks (the §3.7 shadow row, the §7 seam): the
+# preset resolution through the oracle's own theme reader, the recolour
+# compose and the differential pair's walks.
+[[bench]]
+name = "shadow"
+harness = false
+
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
