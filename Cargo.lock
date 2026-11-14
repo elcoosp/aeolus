@@ -93,6 +93,7 @@ dependencies = [
  "aeolus-compile",
  "aeolus-ir",
  "aeolus-theme",
+ "divan",
  "proc-macro2",
  "quote",
 ]
