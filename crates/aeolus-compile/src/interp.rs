@@ -309,6 +309,131 @@ impl ContainerProbe for ContainerState<'_> {
 }
 
 // ---------------------------------------------------------------------------
+// The structural seam: StructProbe
+// ---------------------------------------------------------------------------
+
+/// The element's DOM-position facts — the ONE answer the structural
+/// seam carries. Three fields cover every positional test the
+/// [`Structural`](aeolus_ir::Structural) family encodes:
+///
+/// * `index` — the element's 0-based position among its parent's
+///   element children (`first` is 0; CSS's 1-based ordinals subtract
+///   the one);
+/// * `sibling_count` — the parent's element-child count, THIS element
+///   included (`last` is `index + 1 == count`; `only` is
+///   `count == 1`);
+/// * `empty` — the element carries no children (`:empty`; a fact about
+///   the element's OWN children, independent of its position).
+///
+/// CSS parity: the first child (index 0) is `:nth-child(odd)` and
+/// `:nth-child(1)`, the second (index 1) even.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct StructFacts {
+    /// The element's 0-based child index, or `None` when the host does
+    /// not know (an unknown index quietly misses every index-based
+    /// test — a positional selector that cannot be evaluated never
+    /// matches).
+    pub index: Option<usize>,
+    /// The parent's element-child count (this element included), or
+    /// `None` when the host does not know.
+    pub sibling_count: Option<usize>,
+    /// The element carries no children (the `:empty` test).
+    pub empty: bool,
+}
+
+impl StructFacts {
+    /// The unknown-facts value: every index-based test quietly misses,
+    /// `empty` false — the honest "the host answered but knows
+    /// nothing" answer (a QUIET miss, never an exclusion note; the
+    /// sourceless forms carry the note instead).
+    pub const UNKNOWN: Self = Self {
+        index: None,
+        sibling_count: None,
+        empty: false,
+    };
+
+    /// The facts for one positioned element: `index` 0-based,
+    /// `sibling_count` the parent's element-child count (this element
+    /// included), not empty.
+    pub const fn new(index: usize, sibling_count: usize) -> Self {
+        Self {
+            index: Some(index),
+            sibling_count: Some(sibling_count),
+            empty: false,
+        }
+    }
+}
+
+/// The structural SEAM the interpreter walks through for the
+/// [`Cond::Structural`](aeolus_ir::Cond::Structural) layers: where the
+/// element's DOM-position facts come from. The same shape as the token
+/// seam's [`TokenSource`], the attribute seam's [`AttrProbe`], the
+/// container seam's [`ContainerProbe`] and the cache's
+/// [`DynStore`](crate::DynStore): the walk is generic over the source,
+/// [`StructFacts`] is the built-in (one Copy value), and a host
+/// implements the ONE question itself (a layout bridge that knows the
+/// element's position in its parent, a component-tree walk, a test
+/// double recording what it was asked).
+///
+/// The seam's answer IS the CSS semantics: the facts decide the
+/// positional tests (`first:` is index 0, `last:` the final child,
+/// `odd:`/`even:` the 1-based parity, `only:` the single child,
+/// `empty:` the childless element, `nth-N:`/`nth-last-N:` the 1-based
+/// ordinals), an unknown field QUIETLY misses its tests (a positional
+/// selector that cannot be evaluated never matches), and the
+/// SOURCELESS forms (no `*_struct` entry point) keep the honest
+/// exclusion instead: a structural layer they cannot answer reports
+/// [`InterpNote::StructuralUnqueried`].
+pub trait StructProbe {
+    /// The element's DOM-position facts. Asked once per structural
+    /// layer the walk meets (the answers are not cached — the trait
+    /// object is a borrow, the facts are Copy).
+    fn structure(&self) -> StructFacts;
+}
+
+impl StructProbe for StructFacts {
+    fn structure(&self) -> StructFacts {
+        *self
+    }
+}
+
+/// The verdict one [`Structural`](aeolus_ir::Structural) test takes
+/// under one element's facts — the CSS semantics the seam documents,
+/// in one place so the interp walk and any host-side re-derivation
+/// cannot drift (the GPUI walk consumes this through the crate
+/// surface — the `one decide, two walks` discipline extended to the
+/// structural seam's third walk).
+pub fn structural_fires(test: aeolus_ir::Structural, facts: StructFacts) -> bool {
+    use aeolus_ir::Structural;
+    match test {
+        Structural::First => facts.index == Some(0),
+        Structural::Last => match (facts.index, facts.sibling_count) {
+            (Some(index), Some(count)) => index + 1 == count,
+            _ => false,
+        },
+        // 1-based CSS parity: index 0 is the first child, `odd`.
+        Structural::Odd => facts.index.is_some_and(|index| index % 2 == 0),
+        Structural::Even => facts.index.is_some_and(|index| index % 2 == 1),
+        Structural::Only => facts.index == Some(0) && facts.sibling_count == Some(1),
+        Structural::Empty => facts.empty,
+        // The 1-based ordinal: `nth-3` is index 2. A non-positive
+        // ordinal (the oracle's `parse_nth` accepts every `i32`) never
+        // matches — the selector CSS never matches either. The compare
+        // stays in the usize domain via `try_from` (no wrap casts).
+        Structural::Nth(n) => usize::try_from(n)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_sub(1))
+            .is_some_and(|ordinal| facts.index == Some(ordinal)),
+        Structural::NthLast(n) => usize::try_from(n).is_ok_and(|ordinal| {
+            facts
+                .index
+                .zip(facts.sibling_count)
+                .is_some_and(|(index, count)| count - index == ordinal)
+        }),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The token seam: TokenSource
 // ---------------------------------------------------------------------------
 
@@ -588,6 +713,24 @@ pub enum InterpNote {
         /// The longhands the unqueried layer sets.
         props: PropMask,
     },
+    /// A structural layer ([`Cond::Structural`] — `first:`, `last:`,
+    /// `odd:`, `even:`, `only:`, `empty:`, `nth-N:`, `nth-last-N:`) the
+    /// walk could not answer: the entry point carries no
+    /// [`StructProbe`] source (the plain [`interp`]/[`interp_theme`]/
+    /// `*_probes`/`*_containers` forms — the `*_struct` forms carry the
+    /// seam, and a source-ANSWERED miss is a CSS-quiet skip instead).
+    /// The element's DOM-position facts are not frame state — the
+    /// [`Env`] cannot answer them (they describe ONE element's position
+    /// among its siblings, not the window) — so there is no sourceless
+    /// fallback value. CSS semantics — a positional selector that
+    /// cannot be evaluated never matches — so the layer did not fire,
+    /// reported so the exclusion is never silent.
+    StructuralUnqueried {
+        /// The unqueried layer's condition.
+        cond: Cond,
+        /// The longhands the unqueried layer sets.
+        props: PropMask,
+    },
 }
 
 impl fmt::Display for InterpNote {
@@ -597,7 +740,8 @@ impl fmt::Display for InterpNote {
         let names: Vec<&str> = match self {
             InterpNote::PseudoElement { props, .. }
             | InterpNote::ContainerUnqueried { props, .. }
-            | InterpNote::AttributeUnqueried { props, .. } => {
+            | InterpNote::AttributeUnqueried { props, .. }
+            | InterpNote::StructuralUnqueried { props, .. } => {
                 props.to_vec().iter().map(|p| p.name()).collect()
             }
         };
@@ -617,6 +761,12 @@ impl fmt::Display for InterpNote {
                 f,
                 "the {cond:?} layer never matched: the Env answers element \
                  states, not attribute/DOM probes ({props} unset)"
+            ),
+            InterpNote::StructuralUnqueried { cond, .. } => write!(
+                f,
+                "the {cond:?} layer never matched: no StructProbe source \
+                 rides — the element's DOM-position facts are not frame \
+                 state ({props} unset)"
             ),
         }
     }
@@ -696,6 +846,7 @@ pub(crate) fn decide(
     env: &Env,
     probes: Option<&dyn AttrProbe>,
     containers: Option<&dyn ContainerProbe>,
+    structs: Option<&dyn StructProbe>,
     props: PropMask,
 ) -> Fire {
     let fires = |yes: bool| if yes { Fire::Yes } else { Fire::No };
@@ -772,6 +923,16 @@ pub(crate) fn decide(
         Cond::Has(_) | Cond::GroupHas(_) | Cond::PeerHas(_) => {
             Fire::Note(InterpNote::AttributeUnqueried { cond, props })
         }
+        // The structural probes ask the DOM-position seam (the
+        // position half of the plan §3.5 typed-state-bits row): the
+        // facts decide — an unknown field quietly misses its tests (a
+        // positional selector that cannot be evaluated never matches)
+        // — and the sourceless forms report (the element's position is
+        // not frame state; the Env cannot answer it).
+        Cond::Structural(test) => match structs {
+            Some(source) => fires(structural_fires(test, source.structure())),
+            None => Fire::Note(InterpNote::StructuralUnqueried { cond, props }),
+        },
         // The pseudo-elements are render TARGETS, not element state: the
         // interp resolves the element's own cascade, so these layers are
         // excluded and reported — never folded in, never an error.
@@ -793,6 +954,7 @@ fn walk(
     env: &Env,
     probes: Option<&dyn AttrProbe>,
     containers: Option<&dyn ContainerProbe>,
+    structs: Option<&dyn StructProbe>,
     resolve: impl Fn(Prop, Val) -> Result<Val, InterpError>,
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
@@ -801,7 +963,7 @@ fn walk(
     let mut conds: Vec<Cond> = Vec::new();
     let mut notes = Vec::new();
     for layer in program.layers {
-        match decide(layer.cond, env, probes, containers, layer.mask) {
+        match decide(layer.cond, env, probes, containers, structs, layer.mask) {
             Fire::Yes => {
                 for decl in layer.decls {
                     let val = resolve(decl.prop, decl.val)?;
@@ -913,7 +1075,7 @@ fn walk_pseudo(
 pub fn interp(program: &Program, env: &Env) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp_themeless", layers = program.layers.len()).entered();
-    walk(program, env, None, None, |prop, val| match val {
+    walk(program, env, None, None, None, |prop, val| match val {
         Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
         concrete => Ok(concrete),
     })
@@ -937,7 +1099,7 @@ pub fn interp_theme(
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp_theme", layers = program.layers.len()).entered();
-    walk(program, env, None, None, |_, val| match val {
+    walk(program, env, None, None, None, |_, val| match val {
         Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
         Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
         concrete => Ok(concrete),
@@ -974,6 +1136,7 @@ pub fn interp_probes(
         env,
         Some(probes as &dyn AttrProbe),
         None,
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1004,6 +1167,7 @@ pub fn interp_theme_probes(
         program,
         env,
         Some(probes as &dyn AttrProbe),
+        None,
         None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
@@ -1042,6 +1206,7 @@ pub fn interp_containers(
         env,
         None,
         Some(containers as &dyn ContainerProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1073,6 +1238,7 @@ pub fn interp_theme_containers(
         env,
         None,
         Some(containers as &dyn ContainerProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -1103,6 +1269,7 @@ pub fn interp_probes_containers(
         env,
         Some(probes as &dyn AttrProbe),
         Some(containers as &dyn ContainerProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1136,6 +1303,276 @@ pub fn interp_theme_probes_containers(
         env,
         Some(probes as &dyn AttrProbe),
         Some(containers as &dyn ContainerProbe),
+        None,
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// Resolve a compiled [`Program`] to its effective declarations under
+/// one probe situation and one [`StructProbe`] — the structural half
+/// of the seam family (the `compile_with` convention's `*_with` shape):
+/// the [`Cond::Structural`](aeolus_ir::Cond::Structural) layers ask the
+/// source (the built-in [`StructFacts`] carries the element's
+/// DOM-position facts; a host wires its own — a layout bridge, a test
+/// double). The facts DECIDE the positional tests (`first:` is index 0,
+/// `last:` the final child, `odd:`/`even:` the 1-based parity, `only:`
+/// the single child, `empty:` the childless element, `nth-N:`/
+/// `nth-last-N:` the 1-based ordinals); an unknown field quietly
+/// misses its tests (a positional selector that cannot be evaluated
+/// never matches). The sourceless forms keep the honest exclusion
+/// ([`InterpNote::StructuralUnqueried`]).
+///
+/// The walk stays pure: same program + env + source, same answer.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a theme
+/// form and no token source rides along (use [`interp_theme_struct`]
+/// for the themed form).
+pub fn interp_struct(
+    program: &Program,
+    env: &Env,
+    structs: &impl StructProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!("interp_struct", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        Some(structs as &dyn StructProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_struct`]: one [`TokenSource`] resolves
+/// the theme forms, one [`StructProbe`] answers the structural layers —
+/// both seams ride one walk (the DynCache loop compiles once and
+/// interps per frame with both).
+///
+/// # Errors
+/// The token source's own typed failures ([`InterpError::UnknownToken`],
+/// [`InterpError::UnknownPair`], [`InterpError::AlphaOnPair`],
+/// [`InterpError::AlphaNotFinite`] under the built-in table) — the walk
+/// stops and reports, never second-guesses.
+pub fn interp_theme_struct(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    structs: &impl StructProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_theme_struct", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        Some(structs as &dyn StructProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The probe-composed form of [`interp_struct`]: one [`AttrProbe`]
+/// answers the element-own attribute probes, one [`StructProbe`]
+/// answers the structural layers — both element-own seams ride one
+/// walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a theme
+/// form and no token source rides along (use
+/// [`interp_theme_probes_struct`] for the themed form).
+pub fn interp_probes_struct(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    structs: &impl StructProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_probes_struct", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        Some(structs as &dyn StructProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_probes_struct`]: one [`TokenSource`],
+/// one [`AttrProbe`], one [`StructProbe`] — the element-own seams and
+/// the token forms ride one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes`])
+/// — the walk stops and reports, never second-guesses.
+pub fn interp_theme_probes_struct(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    structs: &impl StructProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_theme_probes_struct", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        Some(structs as &dyn StructProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The container-composed form of [`interp_struct`]: one
+/// [`ContainerProbe`] answers the named container queries, one
+/// [`StructProbe`] answers the structural layers.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a theme
+/// form and no token source rides along (use
+/// [`interp_theme_containers_struct`] for the themed form).
+pub fn interp_containers_struct(
+    program: &Program,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_containers_struct", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_containers_struct`]: one [`TokenSource`],
+/// one [`ContainerProbe`], one [`StructProbe`].
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_containers`])
+/// — the walk stops and reports, never second-guesses.
+pub fn interp_theme_containers_struct(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_containers_struct",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The probe-and-container-composed form of [`interp_struct`]: one
+/// [`AttrProbe`], one [`ContainerProbe`], one [`StructProbe`] — the
+/// themeless walk's every element-own seam rides one call.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a theme
+/// form and no token source rides along (use
+/// [`interp_theme_probes_containers_struct`] for the themed form).
+pub fn interp_probes_containers_struct(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_containers_struct",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The FULL walk: one [`TokenSource`] for the theme forms, one
+/// [`AttrProbe`] for the element-own attribute probes, one
+/// [`ContainerProbe`] for the named container queries, one
+/// [`StructProbe`] for the structural layers — every seam the walk
+/// consults rides one call (the DynCache loop's own shape).
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_containers`])
+/// — the walk stops and reports, never second-guesses.
+pub fn interp_theme_probes_containers_struct(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_containers_struct",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
