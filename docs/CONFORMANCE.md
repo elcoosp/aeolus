@@ -2,7 +2,7 @@
 
 # Aeolus conformance — gpui
 
-**score: 59.50% expressible** (56.20% native + 3.31% polyfilled) over 121 longhands
+**score: 61.16% expressible** (57.85% native + 3.31% polyfilled) over 121 longhands
 
 The per-longhand tiers, in the IR's cascade order. The per-declaration refinements (the emit gates' text-dependent verdicts) live at the gates themselves — this is the per-longhand ceiling.
 
@@ -74,7 +74,9 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `overflow-y` | native |
 | `visibility` | native |
 | `opacity` | native |
+| `box-shadow` | native |
 | `cursor` | native |
+| `--tw-shadow-color` | native |
 | `text-overflow` | native |
 | `--tw-ring-offset-width` | polyfill |
 | `--tw-ring-offset-color` | polyfill |
@@ -109,14 +111,12 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `overscroll-behavior-x` | refused |
 | `overscroll-behavior-y` | refused |
 | `isolation` | refused |
-| `box-shadow` | refused |
 | `container-type` | refused |
 | `resize` | refused |
 | `pointer-events` | refused |
 | `user-select` | refused |
 | `fill` | refused |
 | `stroke` | refused |
-| `--tw-shadow-color` | refused |
 | `--tw-translate-x` | refused |
 | `--tw-translate-y` | refused |
 | `--tw-rotate` | refused |
