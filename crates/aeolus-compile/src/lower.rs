@@ -552,6 +552,14 @@ pub(crate) enum NumForm {
     /// `{n}` — the grid line numbers (`col-start-2` is line 2; the same
     /// text as [`NumForm::Unit`], a named arm for the audit table).
     Line,
+    /// `{fn}({n}%)` — the filter family's percent functions
+    /// (`brightness-110` → `brightness(110%)`; the v4 bare-integer
+    /// percent form — the unit lives in the render table, the IR slot
+    /// is the raw number).
+    FnPct(&'static str),
+    /// `{fn}({n}deg)` — the filter family's degree functions
+    /// (`hue-rotate-30` → `hue-rotate(30deg)`).
+    FnDeg(&'static str),
 }
 
 /// The `Number`-row rendering table, keyed by root. The registry tests
@@ -589,6 +597,28 @@ pub(crate) const NUMBER_FORMS: &[(&str, NumForm, Option<&str>)] = &[
     // numbers the duration/delay roots in milliseconds.
     ("duration", NumForm::Ms, None),
     ("delay", NumForm::Ms, None),
+    // The filter family's percent/degree functions (the §3.7 backlog
+    // row's pipeline half): the v4 bare-integer percent form, the
+    // rendered text the fn-wrapped form. The `Prop::name`s ARE the
+    // var-reference names, so no override rides.
+    ("brightness", NumForm::FnPct("brightness"), None),
+    ("contrast", NumForm::FnPct("contrast"), None),
+    ("grayscale", NumForm::FnPct("grayscale"), None),
+    ("hue-rotate", NumForm::FnDeg("hue-rotate"), None),
+    ("invert", NumForm::FnPct("invert"), None),
+    ("saturate", NumForm::FnPct("saturate"), None),
+    ("sepia", NumForm::FnPct("sepia"), None),
+    // The backdrop mirrors: the SAME fn-wrapped forms (v4's own theme
+    // fallback chains render the same functions), the backdrop-only
+    // opacity primitive beside them.
+    ("backdrop-brightness", NumForm::FnPct("brightness"), None),
+    ("backdrop-contrast", NumForm::FnPct("contrast"), None),
+    ("backdrop-grayscale", NumForm::FnPct("grayscale"), None),
+    ("backdrop-hue-rotate", NumForm::FnDeg("hue-rotate"), None),
+    ("backdrop-invert", NumForm::FnPct("invert"), None),
+    ("backdrop-opacity", NumForm::FnPct("opacity"), None),
+    ("backdrop-saturate", NumForm::FnPct("saturate"), None),
+    ("backdrop-sepia", NumForm::FnPct("sepia"), None),
     ("stroke", NumForm::Px, Some("stroke-width")),
     ("grid-cols", NumForm::Repeat, None),
     ("grid-rows", NumForm::Repeat, None),
@@ -643,7 +673,85 @@ pub(crate) fn row_to_css(
         if alpha.is_some() && !rendered.iter().all(|r| r.colour_form) {
             return Err(Reject::Modifier);
         }
-        return Ok(rendered
+        // The filter family's chain lines (the §3.7 backlog row): a
+        // primitive's rule re-declares the composed chain beside its
+        // own var line — v4's own emission form (the vars carry the
+        // per-primitive values, the chain's text is identical in every
+        // rule so the cascade never loses a component). The backdrop
+        // half re-declares BOTH properties (the `-webkit-` prefix
+        // beside the standard one). The composed properties' OWN rows
+        // (`filter`, `filter-none`, `backdrop-filter`,
+        // `backdrop-filter-none`) render the chain/reset directly —
+        // no append, and the composed backdrop row's line expands into
+        // the prefixed pair.
+        let mut out: Vec<RenderedCss> = rendered;
+        match row.targets.first() {
+            Some(
+                Prop::FilterBlur
+                | Prop::FilterBrightness
+                | Prop::FilterContrast
+                | Prop::FilterGrayscale
+                | Prop::FilterHueRotate
+                | Prop::FilterInvert
+                | Prop::FilterSaturate
+                | Prop::FilterSepia
+                | Prop::FilterDropShadow,
+            ) => out.push(RenderedCss {
+                prop: Prop::Filter,
+                prop_name: Prop::Filter.name(),
+                value: CssValue {
+                    base: aeolus_data::rows::FILTER_CHAIN.to_string(),
+                    dark: None,
+                },
+                colour_form: false,
+            }),
+            Some(
+                Prop::BackdropBlur
+                | Prop::BackdropBrightness
+                | Prop::BackdropContrast
+                | Prop::BackdropGrayscale
+                | Prop::BackdropHueRotate
+                | Prop::BackdropInvert
+                | Prop::BackdropOpacity
+                | Prop::BackdropSaturate
+                | Prop::BackdropSepia,
+            ) => {
+                for prop_name in ["-webkit-backdrop-filter", "backdrop-filter"] {
+                    out.push(RenderedCss {
+                        prop: Prop::BackdropFilter,
+                        prop_name,
+                        value: CssValue {
+                            base: aeolus_data::rows::BACKDROP_FILTER_CHAIN.to_string(),
+                            dark: None,
+                        },
+                        colour_form: false,
+                    });
+                }
+            }
+            Some(Prop::BackdropFilter) => {
+                // The composed backdrop property's own rows: each
+                // rendered line (the chain, the reset) expands into the
+                // prefixed pair — v4's own emission order.
+                let mut expanded: Vec<RenderedCss> = Vec::with_capacity(out.len() * 2);
+                for decl in out {
+                    expanded.push(RenderedCss {
+                        prop: Prop::BackdropFilter,
+                        prop_name: "-webkit-backdrop-filter",
+                        value: decl.value.clone(),
+                        colour_form: false,
+                    });
+                    expanded.push(RenderedCss {
+                        prop: Prop::BackdropFilter,
+                        prop_name: "backdrop-filter",
+                        value: decl.value,
+                        colour_form: false,
+                    });
+                }
+                out = expanded;
+            }
+            _ => {}
+        }
+        return Ok(out
             .into_iter()
             .map(|r| CssDecl {
                 prop: r.prop,
@@ -828,21 +936,49 @@ fn arbitrary_val_css(
         }
         ArbVal::Px(v) => Ok(fan_css(
             targets,
-            &format!("{}px", num_text(flip(v, negative))),
+            &filter_arbitrary_text(row.root, &format!("{}px", num_text(flip(v, negative)))),
             false,
         )),
         ArbVal::Rem(v) => Ok(fan_css(
             targets,
-            &format!("{}rem", num_text(flip(v, negative))),
+            &filter_arbitrary_text(row.root, &format!("{}rem", num_text(flip(v, negative)))),
             false,
         )),
         ArbVal::Pct(v) => Ok(fan_css(
             targets,
-            &format!("{}%", num_text(flip(v, negative))),
+            &filter_arbitrary_text(row.root, &format!("{}%", num_text(flip(v, negative)))),
             false,
         )),
-        ArbVal::Num(v) => Ok(fan_css(targets, &num_text(flip(v, negative)), false)),
+        ArbVal::Num(v) => Ok(fan_css(
+            targets,
+            &filter_arbitrary_text(row.root, &num_text(flip(v, negative))),
+            false,
+        )),
     }
+}
+
+/// The filter family's arbitrary value text: the single-value forms
+/// wrap into the family's own function (`blur-[2px]` → `blur(2px)` —
+/// v4's `${fn}(${value})` handle, the raw passthrough inside). The
+/// backdrop roots wrap with the same functions (v4's own theme
+/// fallback chains render the same `blur(…)`/`brightness(…)` forms).
+/// Every other root renders the unit text verbatim.
+fn filter_arbitrary_text(root: &str, text: &str) -> String {
+    let wrapped = match root {
+        "blur" | "brightness" | "contrast" | "grayscale" | "hue-rotate" | "invert" | "saturate"
+        | "sepia" | "drop-shadow" => root,
+        "backdrop-blur" => "blur",
+        "backdrop-brightness" => "brightness",
+        "backdrop-contrast" => "contrast",
+        "backdrop-grayscale" => "grayscale",
+        "backdrop-hue-rotate" => "hue-rotate",
+        "backdrop-invert" => "invert",
+        "backdrop-opacity" => "opacity",
+        "backdrop-saturate" => "saturate",
+        "backdrop-sepia" => "sepia",
+        _ => return text.to_string(),
+    };
+    format!("{wrapped}({text})")
 }
 
 /// The scalar number text: whole values render bare (`32px`, not
@@ -946,6 +1082,8 @@ fn number_css(
         NumForm::Unit | NumForm::Line => format!("{n}"),
         NumForm::Repeat => format!("repeat({n}, minmax(0, 1fr))"),
         NumForm::Span => format!("span {n}"),
+        NumForm::FnPct(name) => format!("{name}({n}%)"),
+        NumForm::FnDeg(name) => format!("{name}({n}deg)"),
     };
     let Some(override_name) = prop_override else {
         return Ok(fan_css(targets, &text, false));
