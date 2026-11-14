@@ -168,6 +168,7 @@ mod custom;
 mod dyn_cache;
 mod interp;
 mod lower;
+mod metamorphic;
 mod plan;
 mod rust;
 mod scan;
@@ -201,6 +202,10 @@ pub use interp::{
     interp_struct, interp_theme, interp_theme_containers, interp_theme_containers_struct,
     interp_theme_probes, interp_theme_probes_containers, interp_theme_probes_containers_struct,
     interp_theme_probes_struct, interp_theme_struct, structural_fires,
+};
+pub use metamorphic::{
+    MetamorphicMismatch, MetamorphicNote, MetamorphicReport, SituationReport, metamorphic_check,
+    metamorphic_check_theme, metamorphic_check_theme_with, metamorphic_check_with,
 };
 pub use plan::{
     PlanNote, PlanNoteKind, PlanSheet, emit_plan, emit_plan_theme, emit_plan_theme_with,
