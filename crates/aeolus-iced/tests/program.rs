@@ -424,22 +424,35 @@ fn attr_probe_layers_fire_through_the_seam() {
 
 #[test]
 fn unmapped_longhands_are_reported_never_dropped() {
-    // shadow-sm lowers into the IR (Prop::BoxShadow, the preset's var
-    // text) but the walk's slot writer reports the preset family — the
-    // report names it.
+    // shadow-sm MAPS NOW (the plan bridge's shadow slot: the preset
+    // resolves into the parsed BoxShadow layers the v0.x slot carries —
+    // the first band paints, the extra preset layers ride the report);
+    // the selection layer below keeps the report honest.
     let program = frozen("shadow-sm bg-primary");
     let (style, report) = lower_program(&program, &Env::default());
     assert!(
         close(bg_of(&style), Some(PRIMARY)),
         "the mapped longhand lands"
     );
-    assert!(!report.is_empty(), "the unmapped longhand is reported");
+    assert!(
+        style.container.shadow.blur_radius != 0.0 || style.container.shadow.offset.y != 0.0,
+        "the preset's first band paints through the plan slot: {:?}",
+        style.container.shadow
+    );
     assert!(
         report
             .dropped
             .iter()
+            .any(|(what, _)| what.contains("shadow layers")),
+        "the extra preset layers ride the report: {:?}",
+        report.dropped
+    );
+    assert!(
+        !report
+            .dropped
+            .iter()
             .any(|(what, _)| what.contains("box-shadow")),
-        "the report names the longhand: {:?}",
+        "the preset family no longer drops: {:?}",
         report.dropped
     );
 
