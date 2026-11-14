@@ -31,7 +31,6 @@
 
 use aeolus_compile::Config;
 use aeolus_lsp::{AeolusEngine, EngineConfig};
-use aeolus_theme::{ThemeSource, TokenTable};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,13 +45,6 @@ const DOC: &str =
 /// The engine with the default (shadcn baked) theme.
 fn engine() -> AeolusEngine {
     AeolusEngine::new(EngineConfig::default())
-}
-
-/// The engine over a host CSS theme — the `--theme <path>` shape.
-fn engine_with_theme(css: &str) -> AeolusEngine {
-    let source = ThemeSource::from_css(css, None).expect("host CSS parses");
-    let table = TokenTable::baked(&source).expect("host table builds");
-    AeolusEngine::new(EngineConfig::new(Some(table)))
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +90,7 @@ fn close_drops_the_document() {
 
 #[test]
 fn unknown_uri_answers_empty() {
-    let mut lsp = engine();
+    let lsp = engine();
     assert!(lsp.analyze("file:///never-opened.rs").is_empty());
     assert!(lsp.hover("file:///never-opened.rs", 0, 0).is_none());
 }
