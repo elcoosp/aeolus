@@ -9,7 +9,7 @@
 # (see deny.toml: advisories are a per-release manual review,
 # SECURITY.md).
 #
-# Fuzzing runs all SIX libfuzzer targets for 60s each on every push to
+# Fuzzing runs all SEVEN libfuzzer targets for 60s each on every push to
 # main and on a weekly schedule (catching regressions without bloating
 # every PR by more than ~4 minutes).
 
@@ -124,8 +124,10 @@ jobs:
       - uses: taiki-e/install-action@cargo-fuzz
       - name: Fuzz 60s per target
         run: |
-          # All six targets in fuzz/Cargo.toml — parse_variant and
-          # probe_eval were wired as targets but never swept by CI.
-          for t in parse_class_string color_parse cn theme_from_css parse_variant probe_eval; do
+          # All seven targets in fuzz/Cargo.toml — parse_variant and
+          # probe_eval were wired as targets but never swept by CI, and
+          # compile_interp_emit (the plan §5.3 metamorphic line) joined
+          # the set with the aeolus-compile dependency.
+          for t in parse_class_string color_parse cn theme_from_css parse_variant probe_eval compile_interp_emit; do
             cargo +nightly fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=4096
           done
