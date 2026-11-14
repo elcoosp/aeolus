@@ -3,9 +3,9 @@
 # Gates, in mission order. The root workspace covers the publishable
 # pair (aeolus-core + aeolus-macro), the CLI, aeolus-shadcn, the six
 # backend crates (they resolve their git-pinned framework deps directly,
-# no repos/ checkout needed), the five V1 pipeline crates and the P3
-# runtime/codegen/generator set — 19 members over `--workspace`.
-# cargo-deny runs the licenses gate only
+# no repos/ checkout needed), the five V1 pipeline crates, the P5 LSP
+# surface and the P3 runtime/codegen/generator set — 20 members over
+# `--workspace`. cargo-deny runs the licenses gate only
 # (see deny.toml: advisories are a per-release manual review,
 # SECURITY.md).
 #
