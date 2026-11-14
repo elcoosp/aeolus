@@ -1,15 +1,8 @@
 target
 commit.sh
-.github/pr-body.md
-ship.toml
-ship.toml
-.github/pr-body.md
 
-# The handoff ceremony files (the PR description and the per-file
-# commit plan the shipping tooling consumes — tree state, not source).
-ship.toml
+# The handoff ceremony files stay untracked (the ship tool reads them
+# in-tree — the PR description and the per-file commit plan, tree
+# state, not source).
 .github/pr-body.md
-
-# The handoff ceremony files stay untracked (the ship tool reads them in-tree).
 ship.toml
-.github/pr-body.md
