@@ -506,6 +506,37 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
              (aeolus_gpui's TwAnimExt) applies animation at runtime (plan \
              §3.7's motion row)",
         ),
+        // ---- the filter family (the §3.7 backlog row) -----------------
+        //
+        // GPUI's style surface carries no filter/backdrop-filter slot —
+        // the static emit's refusal stands (the motion families'
+        // precedent), while the CSS arm renders the v4 var-chain form
+        // the browser cascade composes. The reason names the consumer
+        // so the macro gate's message points at the lane that works.
+        Prop::FilterBlur
+        | Prop::FilterBrightness
+        | Prop::FilterContrast
+        | Prop::FilterGrayscale
+        | Prop::FilterHueRotate
+        | Prop::FilterInvert
+        | Prop::FilterSaturate
+        | Prop::FilterSepia
+        | Prop::FilterDropShadow
+        | Prop::Filter
+        | Prop::BackdropBlur
+        | Prop::BackdropBrightness
+        | Prop::BackdropContrast
+        | Prop::BackdropGrayscale
+        | Prop::BackdropHueRotate
+        | Prop::BackdropInvert
+        | Prop::BackdropOpacity
+        | Prop::BackdropSaturate
+        | Prop::BackdropSepia
+        | Prop::BackdropFilter => Some(
+            "GPUI's style surface carries no filter slot — the filter \
+             families stay the CSS/interp arms' output (the §3.7 \
+             backlog row's pipeline half)",
+        ),
         Prop::BackgroundImage => {
             if keyword.is_empty() {
                 Some(
