@@ -12,6 +12,11 @@ publish = false
 aeolus-ir = { workspace = true }
 aeolus-codegen = { path = "../aeolus-codegen" }
 aeolus-compile = { path = "../aeolus-compile" }
+# The registry's row tables are the per-decl gate's one source of
+# truth: the shadow tier's text-dependent verdicts read the same
+# `SHADOW_PRESETS` texts the row lowers into (the zero-dep registry
+# crate rides along dependency-light).
+aeolus-data = { path = "../aeolus-data" }
 aeolus-theme = { workspace = true }
 proc-macro2 = "1"
 quote = "1"
