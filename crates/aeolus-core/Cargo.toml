@@ -24,6 +24,12 @@ harness = false
 name = "snapshot"
 harness = false
 
+# The gamut seam's microbenchmarks (plan §9's mitigation): the clamp
+# oracle beside the CSS Color 4 chroma reduction, in-gamut and out.
+[[bench]]
+name = "gamut"
+harness = false
+
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
