@@ -9,16 +9,16 @@ use divan::Bencher;
 use aeolus_gpui::prelude::*;
 
 variants! { pub Benched {
-    base: "inline-flex items-center gap-2 rounded-md font-medium",
+    base:"inline-flex items-center gap-2 rounded-md font-medium",
     variant: {
-        default: "bg-primary text-primary-foreground",
-        destructive: "bg-destructive text-white",
-        outline: "border border-gray-200 text-foreground",
+        default:"bg-primary text-primary-foreground",
+        destructive:"bg-destructive text-white",
+        outline:"border border-gray-200 text-foreground",
     },
-    size: { default: "h-9 px-4 py-2", sm: "h-8 px-3", lg: "h-10 px-6" },
+    size: { default:"h-9 px-4 py-2", sm:"h-8 px-3", lg:"h-10 px-6"},
     compound: [
-        { variant: outline, size: sm, class: "ring-2 ring-red-500" },
-        { variant: destructive, class: "shadow-md" },
+        { variant: outline, size: sm, class:"ring-2 ring-red-500"},
+        { variant: destructive, class:""},
     ],
 } }
 
