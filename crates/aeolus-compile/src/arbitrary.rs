@@ -203,13 +203,19 @@ pub(crate) const COLOUR_GROUPS: &[&str] = &[
     "stroke",
 ];
 
-/// The one manually-listed scalar group: the `text` font-size row's
-/// arbitrary length lowers onto `FontSize` ONLY (the audited v0.x
-/// oracle's reading — the composite (size, line-height) pair rides the
-/// NAMED sizes; `text-[13px]` never touches line-height). The row has
-/// no numeric arm (its shape is the composite table), so the mechanical
-/// scalar rule misses it — the entry here is the audit surface.
-pub(crate) const EXTRA_SCALAR_GROUPS: &[&str] = &["font-size"];
+/// The manually-listed scalar groups: rows whose shape contract carries
+/// no numeric arm yet take a scalar arbitrary value. The `text`
+/// font-size row's arbitrary length lowers onto `FontSize` ONLY (the
+/// audited v0.x oracle's reading — the composite (size, line-height)
+/// pair rides the NAMED sizes; `text-[13px]` never touches
+/// line-height). The filter family's keyword-scale rows (`blur`,
+/// `drop-shadow`, and the backdrop mirror `backdrop-blur`) take the
+/// single-value lengths (`blur-[2px]`), the v4 `${fn}(${value})`
+/// handle's own passthrough — no numeric arm (the scales are keyword
+/// tables), so the mechanical scalar rule misses them — the entries
+/// here are the audit surface.
+pub(crate) const EXTRA_SCALAR_GROUPS: &[&str] =
+    &["font-size", "blur", "drop-shadow", "backdrop-blur"];
 
 /// The font-size row's arbitrary fan: `FontSize` alone (see
 /// [`EXTRA_SCALAR_GROUPS`] for the why).
