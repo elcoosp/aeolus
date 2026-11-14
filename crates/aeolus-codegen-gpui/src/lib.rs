@@ -323,12 +323,28 @@ pub const fn supports(prop: Prop) -> bool {
             | Prop::FlexWrap
             | Prop::FlexGrow
             | Prop::FlexShrink
+            // The flex-basis slot: the pinned GPUI surface carries
+            // `flex_basis` (a `Length` refinement beside the grow/shrink
+            // factors) — the §3.7 grid row's "native subset" extends to
+            // the whole flex-sizing family.
+            | Prop::FlexBasis
             | Prop::JustifyContent
             | Prop::AlignItems
             | Prop::AlignContent
             | Prop::AlignSelf
             | Prop::GridTemplateColumns
             | Prop::GridTemplateRows
+            // The grid PLACEMENT slots: the pinned surface carries
+            // `col_start`/`col_end` and `row_start`/`row_end` (line
+            // indexes on the refinement's `GridLocation` ranges) — the
+            // span families ride the same longhands (the registry's
+            // span rows fan onto the equal (start, end) pair the walk
+            // composes into GPUI's `Span` placement). The auto-track
+            // and auto-flow slots stay the reported boundary.
+            | Prop::GridColumnStart
+            | Prop::GridColumnEnd
+            | Prop::GridRowStart
+            | Prop::GridRowEnd
             | Prop::GapRow
             | Prop::GapCol
             | Prop::AspectRatio
