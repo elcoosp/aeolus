@@ -190,6 +190,13 @@ fn run(
         gradient_from_pos: None,
         gradient_via_pos: None,
         gradient_to_pos: None,
+        // The shadow accumulator is PER LAYER here (the plan bridge's
+        // per-candidate shape): each fired layer's preset/clear/recolour
+        // composes at the layer's own `finish`, the fired layers being
+        // independent buckets the same way the bridge's are.
+        shadow_preset: None,
+        shadow_clear: None,
+        shadow_color: None,
     };
     let mut notes: Vec<InterpNote> = Vec::new();
     let mut refusals: Vec<(Prop, String)> = Vec::new();
