@@ -448,7 +448,7 @@ fn run(
     // same variant classifier, the candidate's OWN sheet through the
     // emit arm (the parts the whole must compose to).
     let (candidates, _) = parse_class_string(input);
-    let kw_map = keyword_map(input, &config)?;
+    let kw_map = keyword_map(input, config)?;
     let mut lowered: Vec<Lowered> = Vec::new();
     for candidate in &candidates {
         if candidate.important {
@@ -651,13 +651,13 @@ fn situation_walk(
             match note {
                 InterpNote::PseudoElement { .. } => {} // the PseudoTarget note rides per candidate
                 InterpNote::ContainerUnqueried { .. } => {
-                    notes.push(MetamorphicNote::ContainerUnqueried)
+                    notes.push(MetamorphicNote::ContainerUnqueried);
                 }
                 InterpNote::AttributeUnqueried { .. } => {
-                    notes.push(MetamorphicNote::AttributeUnqueried)
+                    notes.push(MetamorphicNote::AttributeUnqueried);
                 }
                 InterpNote::StructuralUnqueried { .. } => {
-                    notes.push(MetamorphicNote::StructuralUnqueried)
+                    notes.push(MetamorphicNote::StructuralUnqueried);
                 }
             }
         }
@@ -901,9 +901,8 @@ fn value_agrees(interp: &str, css: &str) -> bool {
     if interp == css {
         return true;
     }
-    match (parse_f32(interp), parse_f32(css)) {
-        (Some(a), Some(b)) => return a == b,
-        _ => {}
+    if let (Some(a), Some(b)) = (parse_f32(interp), parse_f32(css)) {
+        return a == b;
     }
     match (parse_colour(interp), parse_colour(css)) {
         (Some(a), Some(b)) => a == b,
@@ -981,9 +980,9 @@ fn parse_f32(text: &str) -> Option<f32> {
 /// own rule; empty texts skipped, exactly the CLI's fold).
 fn keyword_map(
     input: &str,
-    config: &Config,
+    config: Config,
 ) -> Result<HashMap<(Cond, Prop), &'static str>, CompileError> {
-    let annotations = keyword_texts(input, config)?;
+    let annotations = keyword_texts(input, &config)?;
     let mut map = HashMap::new();
     for class in annotations {
         for (prop, text) in class.keywords {
