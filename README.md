@@ -269,7 +269,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 - **Fuzz + property suites:** six fuzz targets (60 s CI sweeps), `compile ⇒ interpret == emit`
   metamorphic target, `/opacity` identity property test.
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1213 tests (1223 with all features enabled).
+  **zero** allocations). Workspace battery: 1252 tests (1262 with all features enabled).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -295,7 +295,7 @@ differential oracle — no big-bang migration.
 | **P0** Prove it         | iai/criterion gates vs hand-written builders; replace §4 targets                                                                                  | 🎯 targets pending measurement |
 | **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (189 rows) · `aeolus-ir` (121 longhands)                                                                          | ✅ landed                      |
 | **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all four emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
-| **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill                             | ✅ landed                      |
+| **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill; shadow tier (`shadow-*` → GPUI's own `Vec<BoxShadow>`) | ✅ landed                      |
 | **P4** Env & state      | frame `Env`, dark/breakpoints, state layers, `AttrProbe` host seam                                                                                | ✅ landed                      |
 | **P5** Ecosystem        | gpui-rsx integration PR (`lower_class` seam ready), LSP, gpui-component bridge, docs book, public benchmarks, **1.0-rc**                          | 🔜 next                        |
 | **P6** Breadth          | 5-backend re-target ✅ · ring + gradient lanes ✅ · motion pipeline ✅ · named containers + bounds seam + measuring wrapper ✅ · pseudo targets ✅ · project build ✅ | ✅ mostly — see boundaries     |
@@ -306,6 +306,7 @@ differential oracle — no big-bang migration.
 - `has-*` descendant probes → diagnosed with reasons (element-side attribute probes are answered)
 - container **measurement** (who computes element widths) → the seam landed, the GPUI walk answers named queries through it (`tw_containers`), and the GPUI measuring wrapper landed beside it: `tw_container(name, &MeasuredContainers)` publishes the element box's width at the layout phase, the delta handshake asks for one re-render on a real change
 - GPUI motion's static emit keeps its per-longhand refusals (`with_animation` needs element id + animator — the stateful `TwAnimExt` lane applies them at runtime); >2-stop / radial / conic gradients refuse
+- the shadow tier's `shadow-inner` placeholder keeps its typed note on the plan bridge (the `currentColor` has no plan answer); GPUI composes it (the pinned `BoxShadow` carries the `inset` flag), and the plan presets/`shadow-none`/`shadow-{color}` map through the oracle's own pass order (a preset beats the recolour, the oracle's own observable semantics)
 - per-backend gradient gaps (conic on Masonry, radial/conic on Iced, solid fills on egui) → capability matrix
 
 ## Crate map
@@ -353,6 +354,8 @@ cargo run -p aeolus-rt --example class_cell             # the dynamic lane: hit/
 cargo run -p aeolus-compile --example dyn_store         # the DynStore storage seam: a host's own bounded store
 cargo run -p aeolus-core --example gamut                # the CSS Color 4 gamut mapping: clamp beside chroma reduction
 cargo run -p aeolus-gpui --example ring                 # ring-* → v4 BoxShadow bands
+cargo run -p aeolus-gpui --example shadow               # shadow-* → GPUI's own BoxShadow list (the native tier)
+cargo run -p aeolus-compile --example shadow_plan       # the plan bridge's shadow slot: presets + recolour, differential
 cargo run -p aeolus-gpui --example containers           # named @container queries through the bounds seam
 cargo run -p aeolus-gpui --example container_query      # the measuring wrapper: publish → walk → resize beat
 cargo run -p aeolus-gpui --example struct               # first:/last:/odd: through the DOM-position seam
@@ -400,6 +403,7 @@ cargo run -p aeolus-compile --example container_bounds
 cargo run -p aeolus-compile --example struct_probe  # the structural seam, facts in, layers out
 cargo run -p aeolus-compile --example pseudo_targets
 cargo run -p aeolus-compile --example motion
+cargo run -p aeolus-compile --example shadow_plan  # the plan bridge's shadow slot, the differential walk
 # codegen & runtime
 cargo run -p aeolus-codegen --example text_emit
 cargo run -p aeolus-codegen-gpui --example conformance
@@ -415,6 +419,7 @@ cargo run -p aeolus-gpui --example attr_state
 cargo run -p aeolus-gpui --example containers
 cargo run -p aeolus-gpui --example motion
 cargo run -p aeolus-gpui --example placement  # grid placement + flex-basis, GPUI's own slots
+cargo run -p aeolus-gpui --example shadow     # shadow-* on GPUI's own BoxShadow list
 # backends: plan lane + V1 program lane each
 cargo run -p aeolus-xilem --example styled_label
 cargo run -p aeolus-xilem --example program
