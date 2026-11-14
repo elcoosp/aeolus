@@ -1,7 +1,7 @@
 //! The dynamic lane's GPUI half (architecture plan §3.6's surface (3)):
 //! [`TwExt::tw_dyn`] and its `_env`/`_theme` pairings ride the
-//! [`aeolus_rt::ClassCell`] view-state cell — "compiled when the string
-//! changes, a hash compare per frame otherwise" — and apply through the
+//! [`aeolus_rt::ClassCell`] view-state cell —"compiled when the string
+//! changes, a hash compare per frame otherwise"— and apply through the
 //! SAME walk the static programs take.
 //!
 //! The pins:
@@ -83,7 +83,7 @@ fn tw_dyn_reports_the_token_boundary() {
 fn tw_dyn_degrades_to_the_last_good_program() {
     let cell = ClassCell::new();
     let good = gpui::StyleRefinement::default().tw_dyn(&cell, "p-4");
-    let degraded = gpui::StyleRefinement::default().tw_dyn(&cell, "   ");
+    let degraded = gpui::StyleRefinement::default().tw_dyn(&cell, "");
     assert_eq!(degraded.padding.top, good.padding.top);
     assert_eq!(degraded.padding.left, good.padding.left);
 }
