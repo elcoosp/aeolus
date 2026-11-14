@@ -182,6 +182,10 @@ flowchart LR
 
 **Differential triangle:** new compiler ⟷ v0.x `Resolver` (kept in-tree as oracle) ⟷ real
 `tailwindcss` v4.1.17 (193-entry golden corpus). Any disagreement is a bug in one of the three.
+**The metamorphic checker** (`aeolus_compile::metamorphic_check*`) walks the triangle's in-tree
+half per string: `interp(compile(s))` must equal the CSS emit's cascade-resolved rules for every
+probe situation the string names — the diagnostics channels byte-equal, the sheet the
+per-candidate parts, every documented divergence a typed note.
 
 ## Backends
 
@@ -259,6 +263,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 | `aeolus build`                             | scan → global dedupe → registry-ordered rules + self-contained `:root`/`.dark` vars block; diagnostics at **every** occurrence                                                        |
 | `aeolus check`                             | unknown classes with suggestions, unsupported utilities with reasons, `cn()` conflicts with winner attribution; `--fail-on` exit codes                                                |
 | `cargo xtask gen-tables` / `verify-tables` | regenerate & drift-gate the committed artifacts: roots index, [docs/REGISTRY.md](docs/REGISTRY.md), [docs/CONFORMANCE.md](docs/CONFORMANCE.md) — a stale row fails plain `cargo test` |
+| `aeolus-lsp` (the LSP server)              | editor hover + diagnostics over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location; `bin/aeolus-lsp` speaks stdio JSON-RPC |
 
 ## Correctness & performance
 
@@ -266,10 +271,11 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   compiler (193 entries, growing by mining Tailwind's own test cases).
 - **Differential pins everywhere:** lexer ⟷ v0.x parser, `cn()` ⟷ tw_merge oracle, plan bridge ⟷
   v0.x resolver, index ⟷ linear scan, `ClassCell` ⟷ macro-frozen program (byte-equal).
-- **Fuzz + property suites:** six fuzz targets (60 s CI sweeps), `compile ⇒ interpret == emit`
-  metamorphic target, `/opacity` identity property test.
+- **Fuzz + property suites:** seven fuzz targets (60 s CI sweeps — the §5.3 metamorphic
+  `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
+  identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1252 tests (1262 with all features enabled).
+  **zero** allocations). Workspace battery: 1279 tests (1289 with all features enabled).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -297,7 +303,7 @@ differential oracle — no big-bang migration.
 | **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all four emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
 | **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill; shadow tier (`shadow-*` → GPUI's own `Vec<BoxShadow>`) | ✅ landed                      |
 | **P4** Env & state      | frame `Env`, dark/breakpoints, state layers, `AttrProbe` host seam                                                                                | ✅ landed                      |
-| **P5** Ecosystem        | gpui-rsx integration PR (`lower_class` seam ready), LSP, gpui-component bridge, docs book, public benchmarks, **1.0-rc**                          | 🔜 next                        |
+| **P5** Ecosystem        | gpui-rsx integration PR (`lower_class` seam ready), **LSP landed 2026-11** (`aeolus-lsp`: hover + diagnostics over the same pipeline), gpui-component bridge, docs book, public benchmarks, **1.0-rc** | 🔜 next — the LSP row is in |
 | **P6** Breadth          | 5-backend re-target ✅ · ring + gradient lanes ✅ · motion pipeline ✅ · named containers + bounds seam + measuring wrapper ✅ · pseudo targets ✅ · project build ✅ | ✅ mostly — see boundaries     |
 
 **Open boundaries — typed, test-pinned, never silent:**
@@ -337,6 +343,7 @@ differential oracle — no big-bang migration.
 | `aeolus-gpui` + five backend crates | see [Backends](#backends) — plan lane + V1 static-program lane each                             |
 | `aeolus-shadcn`                     | shadcn `new-york-v4` class tables verbatim + per-backend wrappers + the closed-world program tables (`ButtonPrograms`, the F6 fix) |
 | `aeolus-cli`                        | `resolve` `css` `diff` `cn` `check` `explain` `sort` `expand` `build` — zero external crates    |
+| `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges + hover signatures) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) |
 | `xtask`                             | `gen-tables` / `verify-tables` drift gates for the committed artifacts                          |
 | `aeolus-core`                       | v0.x `Resolver` + `StylePlan`: the runtime lane and the differential oracle — **publish-ready** |
 
@@ -363,6 +370,8 @@ cargo run -p aeolus-gpui --example motion               # the animation lane: fr
 cargo run -p aeolus-gpui --example placement            # grid placement + flex-basis on GPUI's own slots
 cargo run -p aeolus-shadcn --example program_tables     # the closed-world program tables (the F6 fix)
 cargo run -p aeolus-codegen-gpui --example conformance  # the published score, from the emit gates themselves
+cargo run -p aeolus-compile --example metamorphic       # compile ⇒ interpret ⇒ equals emit: the per-situation agreement report
+cargo run -p aeolus-lsp --example lsp_hover             # the LSP engine headless: diagnostics + hover renderings
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
 ```
@@ -404,6 +413,7 @@ cargo run -p aeolus-compile --example struct_probe  # the structural seam, facts
 cargo run -p aeolus-compile --example pseudo_targets
 cargo run -p aeolus-compile --example motion
 cargo run -p aeolus-compile --example shadow_plan  # the plan bridge's shadow slot, the differential walk
+cargo run -p aeolus-compile --example metamorphic  # the metamorphic checker: per-situation agreement report
 # codegen & runtime
 cargo run -p aeolus-codegen --example text_emit
 cargo run -p aeolus-codegen-gpui --example conformance
@@ -434,6 +444,9 @@ cargo run -p aeolus-slint --example program
 # CLI as a library
 cargo run -p aeolus-cli --example theme_spec
 cargo run -p aeolus-cli --example explain
+# the P5 LSP row
+cargo run -p aeolus-lsp --example lsp_hover
+cargo run -p aeolus-lsp --bin aeolus-lsp  # the stdio server (an editor spawns this)
 ```
 
 </details>
