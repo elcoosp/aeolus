@@ -154,6 +154,87 @@ fn the_motion_layer_stays_the_reported_gpui_boundary() {
 }
 
 #[test]
+fn the_filter_layer_stays_the_reported_gpui_boundary() {
+    // The plan §3.7 backlog row's pipeline half: GPUI's style surface
+    // carries no filter/backdrop-filter slot — the ten filter longhands
+    // refuse per longhand, the honest boundary the diagnostics render
+    // (the CSS arm carries the v4 var-chain form, the interp answers
+    // the primitives).
+    for prop in [
+        Prop::FilterBlur,
+        Prop::FilterBrightness,
+        Prop::FilterContrast,
+        Prop::FilterGrayscale,
+        Prop::FilterHueRotate,
+        Prop::FilterInvert,
+        Prop::FilterSaturate,
+        Prop::FilterSepia,
+        Prop::FilterDropShadow,
+        Prop::Filter,
+    ] {
+        assert!(!supports(prop), "{prop:?} refused");
+        assert!(!polyfilled(prop), "{prop:?} refused");
+        assert_eq!(
+            aeolus_codegen_gpui::Caps.tier(prop),
+            aeolus_codegen::conformance::Tier::Refused
+        );
+    }
+
+    // The emit gate refuses the program, naming the filter longhand:
+    let compiled = compile_theme("blur-md brightness-110", &table(), &Config::default()).unwrap();
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    let err = GpuiEmit::default().emit(&compiled.program).unwrap_err();
+    assert!(
+        err.iter().any(|entry| entry.prop == Prop::FilterBlur),
+        "the blur longhand in the refusal report: {err:?}"
+    );
+    assert!(
+        err.iter().any(|entry| entry.prop == Prop::FilterBrightness),
+        "the brightness longhand in the refusal report: {err:?}"
+    );
+
+    // The third-party seam reports the same refusal as diagnostics:
+    let err = lower_class("blur-md", &Config::default()).unwrap_err();
+    assert!(
+        err.unsupported
+            .iter()
+            .any(|entry| entry.prop == Prop::FilterBlur)
+    );
+
+    // The backdrop half (the plan §3.7 backlog row's second half) rides
+    // the same refusal — the backdrop longhands refuse per longhand:
+    for prop in [
+        Prop::BackdropBlur,
+        Prop::BackdropBrightness,
+        Prop::BackdropContrast,
+        Prop::BackdropGrayscale,
+        Prop::BackdropHueRotate,
+        Prop::BackdropInvert,
+        Prop::BackdropOpacity,
+        Prop::BackdropSaturate,
+        Prop::BackdropSepia,
+        Prop::BackdropFilter,
+    ] {
+        assert!(!supports(prop), "{prop:?} refused");
+        assert!(!polyfilled(prop), "{prop:?} refused");
+        assert_eq!(
+            aeolus_codegen_gpui::Caps.tier(prop),
+            aeolus_codegen::conformance::Tier::Refused
+        );
+    }
+    let err = lower_class("backdrop-blur-md", &Config::default()).unwrap_err();
+    assert!(
+        err.unsupported
+            .iter()
+            .any(|entry| entry.prop == Prop::BackdropBlur)
+    );
+}
+
+#[test]
 fn the_conformance_seam_reads_the_capability_tables() {
     // The §5.1 conformance seam: the GPUI target's `Capability` impl
     // reads the SAME `supports`/`polyfilled` tables the emit gates run,
