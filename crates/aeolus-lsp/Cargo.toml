@@ -1,0 +1,44 @@
+[package]
+name = "aeolus-lsp"
+description = "Aeolus V1 language-server surface: hover and diagnostics over the same pipeline the CLI runs, over the P5 row's tooling-parity line (docs/AEOLUS_V1_ARCHITECTURE.md §5.5, the P5 row)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+# The V1 pipeline: the diagnostics channels, the candidate walk and the
+# extraction seam are the engine's whole backend — the LSP answers from
+# the SAME compiler the CLI and the macros run, never a parallel matcher
+# (the plan §3.6 capability-split rule).
+aeolus-compile = { path = "../aeolus-compile" }
+# The IR types the hover render names (`Prop::name`, the folded `Cond`).
+aeolus-ir = { workspace = true }
+# The candidate walk the hover resolution keys on (the same lexer walk
+# the compile runs — the candidate spans come from the lexer itself).
+aeolus-syntax = { path = "../aeolus-syntax" }
+# The theme pass: the engine's default table rides the built-in shadcn
+# bake; a host CSS rides the same `ThemeSource` the CLI accepts.
+aeolus-theme = { workspace = true }
+# The LSP wire types and the sync stdio transport (the classic
+# `lsp-server` pairing — one thread per side, no async runtime on the
+# UI-adjacent path). The engine itself is headless and carries none of
+# these; only the server half does.
+lsp-server = "0.7"
+lsp-types = "0.97"
+serde_json = "1"
+
+[dev-dependencies]
+# The engine's microbenchmarks (divan, stable — the workspace bench
+# idiom): the analyze walk and the hover resolution over a synthetic
+# document.
+divan = "0.1"
+
+[[bench]]
+name = "lsp"
+harness = false
+
+[lints]
+workspace = true
