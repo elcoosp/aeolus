@@ -217,12 +217,17 @@ dependencies = [
 name = "aeolus-shadcn"
 version = "0.19.0"
 dependencies = [
+ "aeolus-compile",
  "aeolus-core",
  "aeolus-egui",
  "aeolus-floem",
  "aeolus-iced",
+ "aeolus-ir",
+ "aeolus-rt",
  "aeolus-slint",
+ "aeolus-theme",
  "aeolus-xilem",
+ "divan",
  "egui",
  "floem",
  "iced_widget",
