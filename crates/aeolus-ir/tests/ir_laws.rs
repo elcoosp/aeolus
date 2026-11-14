@@ -102,9 +102,14 @@ fn trbl_edges_are_pairwise_disjoint_masks() {
 }
 
 #[test]
-fn prop_mask_fits_u128_and_props_are_unique() {
-    // The bitset budget: the longhand list must stay within u128.
-    assert!(Prop::ALL.len() <= 128, "Prop grew past the PropMask budget");
+fn prop_mask_fits_two_words_and_props_are_unique() {
+    // The bitset budget (the §3.3 sketch's `u128×k` mask, at k=2): the
+    // longhand list must stay within the two-word budget (256 bits) —
+    // the filter layer's growth retired the one-word form.
+    assert!(
+        Prop::ALL.len() <= 256,
+        "Prop grew past the two-word PropMask budget"
+    );
     // And the ALL table must be duplicate-free with dense discriminants.
     for (i, &p) in Prop::ALL.iter().enumerate() {
         assert_eq!(p as u16, i as u16, "Prop::ALL[{i}] discriminant drifted");
