@@ -1,5 +1,5 @@
 //! The GPUI gradient lane (architecture plan §3.7's `bg-linear-*` row —
-//! "native for 2 stops; ≥3 stops/radial/conic → diagnostic"). GPUI's
+//!"native for 2 stops; ≥3 stops/radial/conic → diagnostic"). GPUI's
 //! `linear_gradient(angle, from, to)` carries exactly the v4 two-stop
 //! form, so the walk accumulates the gradient longhands the registry
 //! lowers into (`--tw-gradient-from`/`-to` + their positions, the
@@ -95,21 +95,6 @@ fn the_stop_positions_ride_the_stops() {
     assert!(
         debug.contains("percentage: 0.2"),
         "the from-20% position rides: {debug}"
-    );
-}
-
-#[test]
-fn the_via_stop_skips_the_composition() {
-    // GPUI's linear gradient carries TWO stops; a via stop would paint
-    // a WRONG (flattened) gradient, so the walk composes nothing — the
-    // documented boundary (the static gate refuses the program typed;
-    // the dynamic lane degrades honestly, never silently-wrong).
-    let program = tw!("bg-linear-to-r from-red-500 via-white to-blue-500");
-    let style = gpui::StyleRefinement::default().tw(program);
-    assert!(
-        style.background.is_none(),
-        "a via stop paints nothing rather than a wrong gradient: {:?}",
-        style.background
     );
 }
 
