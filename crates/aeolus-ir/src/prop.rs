@@ -297,6 +297,81 @@ pub enum Prop {
     /// shorthand the row's table carries — the v4 default theme's
     /// `--animate-*` values).
     Animation,
+    // ---- filters (cascade tail; the plan §3.7 backlog row's pipeline
+    // half) ---------------------------------------------------------------
+    /// `--tw-blur` (`blur-*`; the keyword text is the blur function the
+    /// row's table carries — the v4 default theme's `--blur-*` values;
+    /// the `none` arm's off text is the v4 one-space form). Arbitrary
+    /// lengths ride the `Px` slot.
+    FilterBlur,
+    /// `--tw-brightness` (`brightness-*`), the percent-scale `Num`
+    /// slots (v4's bare-integer percent form; the unit lives in the
+    /// render tables, the motion layer's precedent).
+    FilterBrightness,
+    /// `--tw-contrast` (`contrast-*`), the percent-scale `Num` slots.
+    FilterContrast,
+    /// `--tw-grayscale` (`grayscale-*`; the bare root carries the v4
+    /// 100% default), the percent-scale `Num` slots.
+    FilterGrayscale,
+    /// `--tw-hue-rotate` (`hue-rotate-*`), the degree `Num` slots; the
+    /// row's negative flag rides (`-hue-rotate-30`).
+    FilterHueRotate,
+    /// `--tw-invert` (`invert-*`; the bare root carries the v4 100%
+    /// default), the percent-scale `Num` slots.
+    FilterInvert,
+    /// `--tw-saturate` (`saturate-*`), the percent-scale `Num` slots.
+    FilterSaturate,
+    /// `--tw-sepia` (`sepia-*`; the bare root carries the v4 100%
+    /// default), the percent-scale `Num` slots.
+    FilterSepia,
+    /// `--tw-drop-shadow` (`drop-shadow-*`; the keyword text is the
+    /// composed drop-shadow list the row's table carries — the v4
+    /// default theme's `--drop-shadow-*` presets, the bare root the
+    /// two-layer default). Arbitrary single shadows ride the text
+    /// boundaries; the `{color}` recolour arm is the documented
+    /// boundary (the shadow tier's own colour machinery reaches it).
+    FilterDropShadow,
+    /// `filter` — the COMPOSED property (`filter`, `filter-none`,
+    /// `filter-[…]`): the keyword text is the composed chain the
+    /// primitives' var references resolve (the CSS arm re-declares it
+    /// beside every primitive's var line, v4's own emission form).
+    Filter,
+    // ---- backdrop filters (cascade tail; the plan §3.7 backlog row's
+    // second half) --------------------------------------------------------
+    /// `--tw-backdrop-blur` (`backdrop-blur-*`; the row shares the
+    /// filter half's scale — v4's own `--backdrop-blur`→`--blur` theme
+    /// fallback).
+    BackdropBlur,
+    /// `--tw-backdrop-brightness` (`backdrop-brightness-*`), the
+    /// percent-scale `Num` slots.
+    BackdropBrightness,
+    /// `--tw-backdrop-contrast` (`backdrop-contrast-*`), the
+    /// percent-scale `Num` slots.
+    BackdropContrast,
+    /// `--tw-backdrop-grayscale` (`backdrop-grayscale-*`; the bare root
+    /// carries the v4 100% default), the percent-scale `Num` slots.
+    BackdropGrayscale,
+    /// `--tw-backdrop-hue-rotate` (`backdrop-hue-rotate-*`), the degree
+    /// `Num` slots; the row's negative flag rides
+    /// (`-backdrop-hue-rotate-15`).
+    BackdropHueRotate,
+    /// `--tw-backdrop-invert` (`backdrop-invert-*`; the bare root
+    /// carries the v4 100% default), the percent-scale `Num` slots.
+    BackdropInvert,
+    /// `--tw-backdrop-opacity` (`backdrop-opacity-*`) — the backdrop
+    /// chain's OWN ninth var, no filter-half counterpart.
+    BackdropOpacity,
+    /// `--tw-backdrop-saturate` (`backdrop-saturate-*`), the
+    /// percent-scale `Num` slots.
+    BackdropSaturate,
+    /// `--tw-backdrop-sepia` (`backdrop-sepia-*`; the bare root carries
+    /// the v4 100% default), the percent-scale `Num` slots.
+    BackdropSepia,
+    /// `backdrop-filter` — the COMPOSED property (`backdrop-filter`,
+    /// `backdrop-filter-none`, `backdrop-filter-[…]`); the CSS arm
+    /// renders the `-webkit-` prefix beside the standard property
+    /// (v4's own emission form).
+    BackdropFilter,
 }
 
 impl Prop {
@@ -424,6 +499,26 @@ impl Prop {
         Self::TransitionTimingFunction,
         Self::TransitionDelay,
         Self::Animation,
+        Self::FilterBlur,
+        Self::FilterBrightness,
+        Self::FilterContrast,
+        Self::FilterGrayscale,
+        Self::FilterHueRotate,
+        Self::FilterInvert,
+        Self::FilterSaturate,
+        Self::FilterSepia,
+        Self::FilterDropShadow,
+        Self::Filter,
+        Self::BackdropBlur,
+        Self::BackdropBrightness,
+        Self::BackdropContrast,
+        Self::BackdropGrayscale,
+        Self::BackdropHueRotate,
+        Self::BackdropInvert,
+        Self::BackdropOpacity,
+        Self::BackdropSaturate,
+        Self::BackdropSepia,
+        Self::BackdropFilter,
     ];
 
     /// The CSS longhand name (`padding-top`, `grid-template-columns`, ...).
@@ -552,92 +647,144 @@ impl Prop {
             Prop::TransitionTimingFunction => "transition-timing-function",
             Prop::TransitionDelay => "transition-delay",
             Prop::Animation => "animation",
+            // The filter family renders its var-reference names (the
+            // shadow tier's `--tw-shadow-color` precedent): the CSS
+            // arm's var lines and the metamorphic comparison key are
+            // the same string.
+            Prop::FilterBlur => "--tw-blur",
+            Prop::FilterBrightness => "--tw-brightness",
+            Prop::FilterContrast => "--tw-contrast",
+            Prop::FilterGrayscale => "--tw-grayscale",
+            Prop::FilterHueRotate => "--tw-hue-rotate",
+            Prop::FilterInvert => "--tw-invert",
+            Prop::FilterSaturate => "--tw-saturate",
+            Prop::FilterSepia => "--tw-sepia",
+            Prop::FilterDropShadow => "--tw-drop-shadow",
+            Prop::Filter => "filter",
+            // The backdrop family renders its var-reference names too —
+            // the composed property's name is the standard spelling (the
+            // `-webkit-` prefix is the CSS arm's own render form).
+            Prop::BackdropBlur => "--tw-backdrop-blur",
+            Prop::BackdropBrightness => "--tw-backdrop-brightness",
+            Prop::BackdropContrast => "--tw-backdrop-contrast",
+            Prop::BackdropGrayscale => "--tw-backdrop-grayscale",
+            Prop::BackdropHueRotate => "--tw-backdrop-hue-rotate",
+            Prop::BackdropInvert => "--tw-backdrop-invert",
+            Prop::BackdropOpacity => "--tw-backdrop-opacity",
+            Prop::BackdropSaturate => "--tw-backdrop-saturate",
+            Prop::BackdropSepia => "--tw-backdrop-sepia",
+            Prop::BackdropFilter => "backdrop-filter",
         }
     }
 }
 
 /// A bitset over [`Prop`] — one `u128`, `Copy`, `const`-constructible.
+/// The plan §3.3 sketch's `u128×k` mask, at k=2: the longhand list
+/// outgrew one word when the CSS filter family joined the cascade tail
+/// (131 longhands), so the mask carries TWO `u128` words — the low
+/// word holds discriminants 0..128, the high word the rest. The
+/// algebra is word-blind: every operation walks both words, and the
+/// tests pin a one-word implementation cannot pass
+/// (`mask_two_word.rs`).
 ///
 /// This is the v0.8 per-edge set-mask idea generalized to the whole
 /// longhand list: a [`crate::Layer`] carries the mask of the longhands its
 /// declarations set, so two layers' interaction (`p-4` vs `hover:px-8`,
 /// `size-4` vs `w-4`) is `union`/`contains` — no per-backend tables.
 ///
-/// The v4 longhand surface this pipeline ports is 110 longhands; the
-/// remaining 18 bits are headroom (append-only [`Prop`] growth). The
-/// budget is asserted, not assumed: see `prop_mask_fits_u128` in tests.
+/// The budget is asserted, not assumed: the two words hold 256 bits
+/// against the current 141-longhand surface (the filter + backdrop
+/// layers' twenty are the latest append-only blocks; append-only
+/// growth is the plan's own rule) — see `prop_mask_fits_two_words` in
+/// tests.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(C)]
-pub struct PropMask(u128);
+pub struct PropMask([u128; 2]);
+
+/// The bits per mask word (the layout the discriminant→(word, bit)
+/// split computes from).
+const WORD_BITS: u32 = 128;
 
 impl PropMask {
     /// The empty mask (no longhands set).
-    pub const EMPTY: Self = Self(0);
+    pub const EMPTY: Self = Self([0; 2]);
 
     /// Build from a longhand slice (the registry row target lists).
     pub const fn of(props: &[Prop]) -> Self {
-        let mut m = 0u128;
+        let mut m = Self::EMPTY;
         let mut i = 0;
         // `while` is the const-eval loop form (no `for` in const fn).
         while i < props.len() {
-            m |= 1 << (props[i] as u16);
+            m = m.insert(props[i]);
             i += 1;
         }
-        Self(m)
+        m
     }
 
     /// Set one longhand.
     pub const fn insert(self, p: Prop) -> Self {
-        Self(self.0 | 1 << (p as u16))
+        let bit = p as u16 as u32;
+        let word = (bit / WORD_BITS) as usize;
+        let mut words = self.0;
+        words[word] |= 1 << (bit % WORD_BITS);
+        Self(words)
     }
 
     /// Is the longhand set?
     pub const fn contains(self, p: Prop) -> bool {
-        self.0 & 1 << (p as u16) != 0
+        let bit = p as u16 as u32;
+        self.0[(bit / WORD_BITS) as usize] & 1 << (bit % WORD_BITS) != 0
     }
 
     /// Are ALL of `other`'s bits set? (layer dominance: `px-8` covers the
     /// x-edges `p-4` set).
     pub const fn covers(self, other: Self) -> bool {
-        self.0 & other.0 == other.0
+        self.0[0] & other.0[0] == other.0[0] && self.0[1] & other.0[1] == other.0[1]
     }
 
     /// No longhands set.
     pub const fn is_empty(self) -> bool {
-        self.0 == 0
+        self.0[0] == 0 && self.0[1] == 0
     }
 
     /// Union (`p-4 ⊕ px-8` — the overlay merge).
     pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
+        Self([self.0[0] | other.0[0], self.0[1] | other.0[1]])
     }
 
     /// Intersection (the edges two layers BOTH set — where a cascade
     /// decision is needed).
     pub const fn intersect(self, other: Self) -> Self {
-        Self(self.0 & other.0)
+        Self([self.0[0] & other.0[0], self.0[1] & other.0[1]])
     }
 
     /// Difference (`self` minus `other` — what a later layer evicts).
     pub const fn difference(self, other: Self) -> Self {
-        Self(self.0 & !other.0)
+        Self([self.0[0] & !other.0[0], self.0[1] & !other.0[1]])
     }
 
     /// How many longhands are set (diagnostics + the registry's fan-out
     /// audit).
     pub const fn len(self) -> u32 {
-        self.0.count_ones()
+        self.0[0].count_ones() + self.0[1].count_ones()
     }
 
     /// Call `f` for every set longhand, in discriminant (cascade) order.
     /// Callback form: the static form never allocates.
     pub fn for_each(self, mut f: impl FnMut(Prop)) {
-        let mut bits = self.0;
-        while bits != 0 {
-            let idx = bits.trailing_zeros() as u16;
-            // `from_idx` is total: every bit below 110 is a valid Prop.
-            f(Self::from_idx(idx));
-            bits &= bits - 1; // clear the lowest set bit
+        // Low word first, then high: discriminant order IS bit order
+        // across the two words.
+        let mut word = 0usize;
+        while word < self.0.len() {
+            let mut bits = self.0[word];
+            while bits != 0 {
+                let idx = word as u32 * WORD_BITS + bits.trailing_zeros();
+                // `from_idx` is total: every bit the mask can set is a
+                // valid Prop (bits only come from `Prop` values).
+                f(Self::from_idx(idx as u16));
+                bits &= bits - 1; // clear the lowest set bit
+            }
+            word += 1;
         }
     }
 
