@@ -58,9 +58,12 @@ dropped feature to be visible:
   (see `FxHasher`, the shunting-yard `calc()` evaluator, the
   two-generation caches). Property/dev tooling may be dev-dependencies
   (`proptest`, `divan`).
-- **`StylePlan` is the IR.** Backends negotiate through
-  `BackendCapabilities`; a new backend lowering must map every slot or
-  report it.
+- **The V1 IR is `aeolus-ir`'s `Copy` `Program`** (longhand `Decl`s,
+  `PropMask` overlay algebra); the v0.x `StylePlan` + `Resolver` stay
+  in `aeolus-core` as the differential oracle and the runtime lane.
+  A new backend lowering (`lower_program`) consumes the frozen
+  `StaticProgram` and must map every `Prop` or report it onto its
+  `LoweringReport` — never a silent skip.
 - **The Shadcn class tables are verbatim** from the upstream registry
   (commit pinned in `reports/06-shadcn-v1/SHADCN_V1.md`). Do not "fix"
   them to make tests pass — the tables are the oracle; fix the resolver.
