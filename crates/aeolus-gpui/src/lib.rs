@@ -57,6 +57,12 @@
 //! so the four `--tw-ring-*` longhands the walk sees compose into the
 //! v4 box-shadow list ([`RingState`], the spread-only `BoxShadow`
 //! bands) instead of the silent no-op the un-mapped arm used to be.
+//! The shadow family rides the §3.7 native tier beside it: GPUI's own
+//! `box_shadow: Vec<BoxShadow>` carries the v4 band shape (the pinned
+//! `BoxShadow` even carries the `inset` flag), so the `shadow-*`/
+//! `shadow-{color}` families compose into the SAME list through the
+//! [`ShadowState`] accumulator — the ring's bands and the preset's
+//! bands in one v4-ordered call.
 
 use std::cell::RefCell;
 
@@ -73,12 +79,14 @@ mod containers;
 mod grad;
 mod motion;
 mod ring;
+mod shadow;
 pub use containers::{ContainerQuery, TwContainerExt, container_rem};
 pub use grad::GradState;
 pub use motion::{
     AnimSpec, Easing, animation, animation_for, animation_keyword, parse_animation, pulse_animator,
 };
 pub use ring::RingState;
+pub use shadow::{SHADOW_PRESET_TEXTS, ShadowState, parse_shadow_bands};
 
 pub use aeolus_macro::{cn, theme, tw, tw_cn, variants};
 pub use aeolus_rt::theme_from_css;
@@ -430,28 +438,42 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
         let env = env();
         // The base+env walk stays sourceless: the interaction closures
         // are GPUI's own state, the element-own attribute bits ride the
-        // `tw_probes` walk instead. The base walk's ring, gradient and
-        // grid-placement states seed every closure — `hover:ring-4`
+        // `tw_probes` walk instead. The base walk's ring, gradient, grid
+        // and shadow states seed every closure — `hover:ring-4`
         // composes with the base's `ring-red-500` colour,
-        // `hover:from-blue-500` with the base's `from-red-500` stop the
-        // way CSS's vars persist across state layers, and
+        // `hover:from-blue-500` with the base's `from-red-500` stop,
+        // `hover:shadow-md` with the base's `shadow-lg` bands the way
+        // CSS's vars persist across state layers, and
         // `hover:col-start-2` composes with the base's placement the
         // way the cascade reads.
         let mut ring = RingState::default();
         let mut grad = GradState::default();
         let mut grid = GridState::default();
+        let mut shadow = ShadowState::default();
         let mut this = apply_matching_polyfills(
-            self, &program, &env, None, None, None, &mut ring, &mut grad, &mut grid,
+            self,
+            &program,
+            &env,
+            None,
+            None,
+            None,
+            &mut ring,
+            &mut grad,
+            &mut grid,
+            &mut shadow,
         );
-        this =
-            this.hover(|style| apply_state_polyfills(style, &program, is_hover, ring, grad, grid));
-        this =
-            this.focus(|style| apply_state_polyfills(style, &program, is_focus, ring, grad, grid));
-        this = this.focus_visible(|style| {
-            apply_state_polyfills(style, &program, is_focus_visible, ring, grad, grid)
+        this = this.hover(|style| {
+            apply_state_polyfills(style, &program, is_hover, ring, grad, grid, shadow)
         });
-        this = this
-            .active(|style| apply_state_polyfills(style, &program, is_active, ring, grad, grid));
+        this = this.focus(|style| {
+            apply_state_polyfills(style, &program, is_focus, ring, grad, grid, shadow)
+        });
+        this = this.focus_visible(|style| {
+            apply_state_polyfills(style, &program, is_focus_visible, ring, grad, grid, shadow)
+        });
+        this = this.active(|style| {
+            apply_state_polyfills(style, &program, is_active, ring, grad, grid, shadow)
+        });
         this
     }
 }
@@ -711,15 +733,16 @@ fn apply_matching<S: Styled>(
         &mut RingState::default(),
         &mut GradState::default(),
         &mut GridState::default(),
+        &mut ShadowState::default(),
     )
 }
 
 /// [`apply_matching`] with the polyfill accumulators AND the grid
 /// placement state threaded through — the shared walk body, so the base
 /// walk ([`TwExt::tw`]) and the [`TwStateExt`] closures compose the
-/// SAME `--tw-ring-*`, `--tw-gradient-*` and grid-placement state and
-/// the interaction closures inherit the base's bands, stops and
-/// placement instead of resetting them.
+/// SAME `--tw-ring-*`, `--tw-gradient-*`, grid-placement and
+/// `shadow-*` state and the interaction closures inherit the base's
+/// bands, stops, placement and shadow bands instead of resetting them.
 fn apply_matching_polyfills<S: Styled>(
     mut style: S,
     program: &StaticProgram,
@@ -730,6 +753,7 @@ fn apply_matching_polyfills<S: Styled>(
     ring: &mut RingState,
     grad: &mut GradState,
     grid: &mut GridState,
+    shadow: &mut ShadowState,
 ) -> S {
     for (layer_index, layer) in program.layers.iter().enumerate() {
         if !cond_matches(layer.cond, env, probes, containers, structs) {
@@ -759,23 +783,41 @@ fn apply_matching_polyfills<S: Styled>(
                 grid.apply(decl.prop, decl.val);
                 continue;
             }
+            // The shadow longhands ride their accumulator the same
+            // way: the `shadow-*` presets and the `shadow-{color}`
+            // recolour compose into ONE box-shadow list after the
+            // walk (the v4 band list, the [`ShadowState`] machinery).
+            if is_shadow_prop(decl.prop) {
+                shadow.apply(decl.prop, decl.val, keyword);
+                continue;
+            }
             if decl.prop == Prop::Color {
                 ring.apply(decl.prop, decl.val, keyword);
+                shadow.apply(decl.prop, decl.val, keyword);
             }
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    apply_polyfills(style, ring, grad, grid)
+    apply_polyfills(style, ring, grad, grid, shadow)
 }
 
 /// The four `--tw-ring-*` longhands the polyfill owns (the registry's
 /// ring rows lower into exactly these; `ring-inset` lowers into
-/// `Prop::BoxShadow` and stays the reported boundary).
+/// `Prop::BoxShadow` and stays the reported boundary — its bare
+/// `inset` text is outside the shadow tier's closed-world preset
+/// forms, so the emit gate keeps refusing it).
 fn is_ring_prop(prop: Prop) -> bool {
     matches!(
         prop,
         Prop::RingWidth | Prop::RingColor | Prop::RingOffsetWidth | Prop::RingOffsetColor
     )
+}
+
+/// The shadow tier's longhands (plan §3.7's shadow row): the composed
+/// preset band list (`Prop::BoxShadow`) and the `shadow-{color}`
+/// recolour (`Prop::ShadowColor`) — the [`ShadowState`] machinery.
+fn is_shadow_prop(prop: Prop) -> bool {
+    matches!(prop, Prop::BoxShadow | Prop::ShadowColor)
 }
 
 /// The gradient family the §3.7 lane owns: the direction row's
@@ -860,9 +902,26 @@ impl GridState {
 /// set in one `shadow()` call, the composed gradient in one `bg()` call
 /// — or nothing (an empty state never touches the refinement). The grid
 /// placement composes beside them (an axis the program never mentioned
-/// never touches the refinement).
-fn apply_polyfills<S: Styled>(style: S, ring: &RingState, grad: &GradState, grid: &GridState) -> S {
-    let mut style = apply_ring(style, ring);
+/// never touches the refinement), and the shadow tier's band list
+/// composes into the SAME box-shadow call as the ring's — the ring's
+/// bands first, the preset's bands after, v4's own list order (`box-
+/// shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow),
+/// var(--tw-shadow)`; the first layer paints on top, so the ring sits
+/// over the preset's inner edge exactly as the v4 list reads).
+fn apply_polyfills<S: Styled>(
+    style: S,
+    ring: &RingState,
+    grad: &GradState,
+    grid: &GridState,
+    shadow: &ShadowState,
+) -> S {
+    let mut shadows = ring.shadows();
+    shadows.extend(shadow.shadows());
+    let mut style = if shadows.is_empty() {
+        style
+    } else {
+        style.shadow(shadows)
+    };
     if let Some(background) = grad.background() {
         style = style.bg(background);
     }
@@ -900,18 +959,6 @@ fn apply_grid<S: Styled>(mut style: S, grid: &GridState) -> S {
     }
     style
 }
-
-/// The ring polyfill's application point: the composed v4 list in one
-/// `shadow()` call, or nothing (an empty state never touches the
-/// refinement — `ring-0` leaves no shadow layers behind).
-fn apply_ring<S: Styled>(style: S, ring: &RingState) -> S {
-    let shadows = ring.shadows();
-    if shadows.is_empty() {
-        return style;
-    }
-    style.shadow(shadows)
-}
-
 /// The dynamic lane's apply: the compiled program (or, on a failed
 /// compile, the cell's LAST GOOD program — the honest per-frame
 /// degradation) through the same walk the static programs take.
@@ -935,7 +982,7 @@ fn apply_dynamic<S: Styled>(
 
 /// The interaction-closure half of the walk: the layers the predicate
 /// selects (the closure's own state), composed over the base walk's
-/// ring, gradient and grid-placement states.
+/// ring, gradient, grid-placement and shadow states.
 fn apply_state_polyfills<S: Styled>(
     style: S,
     program: &StaticProgram,
@@ -943,6 +990,7 @@ fn apply_state_polyfills<S: Styled>(
     mut ring: RingState,
     mut grad: GradState,
     mut grid: GridState,
+    mut shadow: ShadowState,
 ) -> S {
     let mut style = style;
     for (layer_index, layer) in program.layers.iter().enumerate() {
@@ -963,13 +1011,18 @@ fn apply_state_polyfills<S: Styled>(
                 grid.apply(decl.prop, decl.val);
                 continue;
             }
+            if is_shadow_prop(decl.prop) {
+                shadow.apply(decl.prop, decl.val, keyword);
+                continue;
+            }
             if decl.prop == Prop::Color {
                 ring.apply(decl.prop, decl.val, keyword);
+                shadow.apply(decl.prop, decl.val, keyword);
             }
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    apply_polyfills(style, &ring, &grad, &grid)
+    apply_polyfills(style, &ring, &grad, &grid, &shadow)
 }
 
 // ---------------------------------------------------------------------------
