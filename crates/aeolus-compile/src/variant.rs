@@ -25,12 +25,21 @@
 //!   fragment the corpus renders (`:has(*:focus)`,
 //!   `:has(*[data-slot="card-action"])`).
 //!
+//! * `first:` / `last:` / `odd:` / `even:` / `only:` / `empty:` /
+//!   `nth-N:` / `nth-last-N:` — the STRUCTURAL family, the element's
+//!   own DOM-position probes (the differential oracle is the v0.x
+//!   resolver's own `Structural` table, pinned against the real
+//!   tailwindcss v4.1.17 output; the `nth-` grammar is the oracle's
+//!   `parse_nth` — every `i32`, the selector forms `nth-[2n+1]:`
+//!   staying outside).
+//!
 //! What does NOT fold (arbitrary variants, unregistered spellings,
-//! compound `has-` inners, structural inners, parent-relative compounds
-//! like `group-data-*`) comes back as a typed unsupported-variant
-//! diagnostic — never a silent drop.
+//! compound `has-` inners — including structural inners, `has-first:` —
+//! parent-relative compounds like `group-data-*`, and the structural
+//! parent-relative compositions `group-first:`/`peer-last:`) comes back
+//! as a typed unsupported-variant diagnostic — never a silent drop.
 
-use aeolus_ir::{Bp, Cond};
+use aeolus_ir::{Bp, Cond, Structural};
 
 use crate::custom::ClassifyVariant;
 
@@ -132,6 +141,37 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
     }
     if let Some(rest) = name.strip_prefix("peer-has-") {
         return has_inner_fragment(rest).map(Cond::PeerHas);
+    }
+    // The structural family: the bare spellings first, then the `nth-`
+    // ordinals. `nth-last-` is checked BEFORE `nth-` — the shared
+    // prefix would otherwise route `nth-last-2` into the `nth-` arm and
+    // parse-fail `-last-2`. The ordinal grammar is the v0.x oracle's
+    // own `parse_nth` (every `i32`; the bracketed selector forms
+    // `nth-[2n+1]` stay outside — the `nth-` arm's parse refuses them
+    // and the diagnostic is the honest report).
+    if let Some(rest) = name.strip_prefix("nth-last-") {
+        return rest
+            .parse::<i32>()
+            .ok()
+            .map(|n| Cond::Structural(Structural::NthLast(n)));
+    }
+    if let Some(rest) = name.strip_prefix("nth-") {
+        return rest
+            .parse::<i32>()
+            .ok()
+            .map(|n| Cond::Structural(Structural::Nth(n)));
+    }
+    let bare = match name {
+        "first" => Some(Structural::First),
+        "last" => Some(Structural::Last),
+        "odd" => Some(Structural::Odd),
+        "even" => Some(Structural::Even),
+        "only" => Some(Structural::Only),
+        "empty" => Some(Structural::Empty),
+        _ => None,
+    };
+    if let Some(test) = bare {
+        return Some(Cond::Structural(test));
     }
     if let Some(rest) = name.strip_prefix("min-") {
         return breakpoint(rest).map(Cond::Min);
