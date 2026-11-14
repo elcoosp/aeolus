@@ -66,6 +66,14 @@ harness = false
 name = "css"
 harness = false
 
+# The custom-authoring CSS-file form's benchmarks (plan §5.4's "same
+# file as web" line): the registration walk (parse + the `@apply`
+# compiles), the applied hit against the expanded built-ins, and the
+# customs-aware annotation walk's empty-bag floor.
+[[bench]]
+name = "custom_css"
+harness = false
+
 # The dyn-cache benchmarks (the leak-pool dedupe slice): the cold path
 # (probe + pipeline + store) against the warm hit and the uncached
 # free functions.
