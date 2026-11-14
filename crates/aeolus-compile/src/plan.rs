@@ -1537,6 +1537,38 @@ impl PlanWriter {
             Prop::GridRowEnd | Prop::GridColumnEnd | Prop::GridAutoRows | Prop::GridAutoColumns => {
                 self.notes.push(PlanNoteKind::SlotUnsupported { prop });
             }
+            // ---- the filter family (the §3.7 backlog row's pipeline half)
+            //
+            // The v0.x oracle refuses the filter family outright (its own
+            // typed `unsupported` arm — "no filter/scroll engines"), so
+            // there is NO slot to fold into: the plan bridge reports the
+            // same honesty with its own note kind (the grid-auto-rows
+            // precedent). The V1 side carries the family end to end — the
+            // CSS arm renders the v4 var-chain form, the interp answers
+            // the primitives — the differential contract here is the
+            // note itself.
+            Prop::FilterBlur
+            | Prop::FilterBrightness
+            | Prop::FilterContrast
+            | Prop::FilterGrayscale
+            | Prop::FilterHueRotate
+            | Prop::FilterInvert
+            | Prop::FilterSaturate
+            | Prop::FilterSepia
+            | Prop::FilterDropShadow
+            | Prop::Filter
+            | Prop::BackdropBlur
+            | Prop::BackdropBrightness
+            | Prop::BackdropContrast
+            | Prop::BackdropGrayscale
+            | Prop::BackdropHueRotate
+            | Prop::BackdropInvert
+            | Prop::BackdropOpacity
+            | Prop::BackdropSaturate
+            | Prop::BackdropSepia
+            | Prop::BackdropFilter => {
+                self.notes.push(PlanNoteKind::SlotUnsupported { prop });
+            }
             // ---- the shadow & gradient rows (the shadow tier) -------
             Prop::BoxShadow => {
                 // The shadow tier's plan half (the §3.7 shadow row, the
