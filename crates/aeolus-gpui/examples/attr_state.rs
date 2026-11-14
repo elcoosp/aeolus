@@ -1,5 +1,5 @@
 //! Consumer demonstration: the attribute-bits host state seam (plan
-//! §3.5's "typed state bits passed WITH the element", P4's last named
+//! §3.5's"typed state bits passed WITH the element", P4's last named
 //! piece). A GPUI element's `data-*`/`aria-*` state is not a string
 //! probe — the host passes its typed attribute bits and the
 //! `data-*:`/`aria-*:` layers answer per CSS selector semantics. The
@@ -17,7 +17,7 @@ fn main() {
     // the `aria-busy` save-in-progress layer and the `data-[state=open]`
     // separation layer.
     let program = tw!("flex items-center gap-2 rounded-md p-4 \
-         aria-busy:opacity-50 aria-busy:pointer-events-none \
+         aria-busy:opacity-50 \
          data-[state=open]:mt-2");
 
     // The element's attribute bits — what a real host reads off the
@@ -41,16 +41,16 @@ fn main() {
     //    `AttributeUnqueried` notes. The base card applies.
     let base = gpui::StyleRefinement::default().tw(program);
     println!("── sourceless walk (no bits) ──");
-    println!("  padding:      {:?}", base.padding.top);
-    println!("  opacity:      {:?}", base.opacity);
+    println!("padding:      {:?}", base.padding.top);
+    println!("opacity:      {:?}", base.opacity);
 
     // 2. The probe walk (`.tw_probes`): the bits answer, the
     //    attribute layers fire — one probe lookup per probed layer, no
-    //    allocation, the plan §3.5 "1 mask test" cost.
+    //    allocation, the plan §3.5"1 mask test"cost.
     let busy_open = gpui::StyleRefinement::default().tw_probes(program, &attrs);
     println!("── probe walk (aria-busy=true, data-state=open) ──");
-    println!("  padding:      {:?}", busy_open.padding.top);
-    println!("  opacity:      {:?}", busy_open.opacity);
+    println!("padding:      {:?}", busy_open.padding.top);
+    println!("opacity:      {:?}", busy_open.opacity);
 
     // 3. A different element in the same list: the bits are per
     //    element, the program is shared. The closed row (no
@@ -63,5 +63,5 @@ fn main() {
     let closed_attrs = AttrState::new(&closed);
     let closed_style = gpui::StyleRefinement::default().tw_probes(program, &closed_attrs);
     println!("── probe walk (aria-busy=true, no data-state) ──");
-    println!("  opacity:      {:?}", closed_style.opacity);
+    println!("opacity:      {:?}", closed_style.opacity);
 }
