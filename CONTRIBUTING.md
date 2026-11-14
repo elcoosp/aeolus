@@ -43,7 +43,7 @@ dropped feature to be visible:
 - Do not weaken tests to make them pass.
 - Do not ship `muda-stub` as a published artifact (it is dev-sandbox-only;
   see `reports/09-publishing/PUBLISHING.md`).
-- Do not bump the MSRV (1.88) without updating **every** manifest's
+- Do not bump the MSRV (1.88 for the core/CLI/pipeline crates, 1.96 for the backend crates — the CI gates both) without updating **every** manifest's
   `rust-version`.
 
 ### 4. Git hygiene
