@@ -7,7 +7,7 @@
 //!
 //! Written FIRST (the RED spec).
 
-use aeolus_lsp::{Handled, Session, handle_message};
+use aeolus_lsp::{Session, handle_message};
 use lsp_server::{Message, Notification, Request, RequestId};
 use serde_json::json;
 
