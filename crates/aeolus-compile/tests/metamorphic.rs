@@ -44,8 +44,8 @@
 //! pin below.
 
 use aeolus_compile::{
-    CompileError, Config, CustomForm, CustomUtility, Customs, Env, MetamorphicNote,
-    metamorphic_check, metamorphic_check_theme,
+    CompileError, Config, CustomForm, CustomUtility, Customs, MetamorphicNote, metamorphic_check,
+    metamorphic_check_theme,
 };
 use aeolus_ir::{Bp, Prop};
 use aeolus_theme::{ThemeSource, TokenTable};
@@ -200,7 +200,7 @@ fn stacked_variants_pin_the_conjunctive_env_and_the_fold_note() {
         .iter()
         .find(|s| s.label == "hover+md")
         .expect("the stacked situation is walked");
-    assert_eq!(stacked.env.hover, true);
+    assert!(stacked.env.hover);
     assert_eq!(stacked.env.viewport_rem, Bp::Md.rem());
     assert_eq!(stacked.interp_decls, 4);
     // The documented divergence is the typed note: the CSS arm renders
@@ -258,7 +258,7 @@ fn themed_pairs_agree_in_both_modes() {
         .find(|s| s.label == "base (dark)")
         .expect("the dark-mode walk rides the battery");
     assert!(dark.mismatches.is_empty());
-    assert_eq!(dark.env.dark, true);
+    assert!(dark.env.dark);
 }
 
 #[test]
