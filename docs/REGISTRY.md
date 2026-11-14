@@ -56,11 +56,11 @@ Generated from `aeolus-data`'s committed rows — do not edit.
 | `auto-cols` | any-of | grid-auto-columns | `grid-auto-columns` | no | utilities.ts grid-auto-columns |
 | `auto-rows` | any-of | grid-auto-rows | `grid-auto-rows` | no | utilities.ts grid-auto-rows |
 | `col-span` | any-of | grid-column-start, grid-column-end | `col-span` | no | utilities.ts grid-column |
-| `col-start` | any-of | grid-column-start | `col-start` | no | utilities.ts grid-column |
-| `col-end` | any-of | grid-column-end | `col-end` | no | utilities.ts grid-column |
+| `col-start` | any-of | grid-column-start | `col-start` | yes | utilities.ts grid-column |
+| `col-end` | any-of | grid-column-end | `col-end` | yes | utilities.ts grid-column |
 | `row-span` | any-of | grid-row-start, grid-row-end | `row-span` | no | utilities.ts grid-row |
-| `row-start` | any-of | grid-row-start | `row-start` | no | utilities.ts grid-row |
-| `row-end` | any-of | grid-row-end | `row-end` | no | utilities.ts grid-row |
+| `row-start` | any-of | grid-row-start | `row-start` | yes | utilities.ts grid-row |
+| `row-end` | any-of | grid-row-end | `row-end` | yes | utilities.ts grid-row |
 | `items` | any-of | align-items | `align-items` | no | utilities.ts align-items |
 | `content` | any-of | align-content | `align-content` | no | utilities.ts align-content |
 | `justify` | any-of | justify-content | `justify-content` | no | utilities.ts justify-content |
