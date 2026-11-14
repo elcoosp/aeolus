@@ -1,5 +1,5 @@
 //! Consumer demonstration: the GPUI gradient lane (architecture plan
-//! §3.7's `bg-linear-*` row — "native for 2 stops"). GPUI's
+//! §3.7's `bg-linear-*` row —"native for 2 stops"). GPUI's
 //! `linear_gradient(angle, from, to)` carries exactly the v4 two-stop
 //! linear form, so the direction row's composed text plus the
 //! `--tw-gradient-from`/`-to` stops the registry lowers into compose
@@ -31,8 +31,8 @@ fn main() {
     // the whole gradient family in one program.
     let program = tw!("bg-linear-to-r from-red-500 from-20% to-blue-500");
     println!("── GPUI linear gradient from the V1 program ──");
-    println!("  layers walked: {}", program.layers.len());
-    println!("  background:    {}", background_of(program));
+    println!("layers walked: {}", program.layers.len());
+    println!("background:    {}", background_of(program));
 
     // The corner direction: `to top left` = the CSS 315° — the row
     // text's direction map, composed unchanged. (`to-transparent` stays
@@ -40,17 +40,17 @@ fn main() {
     // keyword is not a theme token; see the value pass's boundary.)
     let corner = tw!("bg-linear-to-tl from-primary to-blue-500");
     println!("── the corner direction (to top left = 315°) ──");
-    println!("  background:    {}", background_of(corner));
+    println!("background:    {}", background_of(corner));
 
     // The honest boundary: a via stop would need THREE stops and GPUI's
     // gradient carries two — the walk composes nothing (the static emit
     // gate refuses the program typed; the dynamic lane degrades to no
     // gradient, never to a flattened misreading).
-    let via = tw!("bg-linear-to-r from-red-500 via-white to-blue-500");
+    let via = tw!("bg-linear-to-r from-red-500  to-blue-500");
     let style = gpui::StyleRefinement::default().tw(via);
     println!("── the via stop stays the reported boundary ──");
     println!(
-        "  background:    {:?} (three stops paint nothing rather than a wrong gradient)",
+        "background:    {:?} (three stops paint nothing rather than a wrong gradient)",
         style.background
     );
 
@@ -59,5 +59,5 @@ fn main() {
     let cleared = tw!("bg-none");
     let style = gpui::StyleRefinement::default().tw(cleared);
     println!("── bg-none clears the image ──");
-    println!("  background:    {:?}", style.background);
+    println!("background:    {:?}", style.background);
 }
