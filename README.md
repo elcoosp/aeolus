@@ -268,7 +268,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 - **Fuzz + property suites:** six fuzz targets (60 s CI sweeps), `compile ⇒ interpret == emit`
   metamorphic target, `/opacity` identity property test.
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1,112 tests (1,122 with instrumentation features).
+  **zero** allocations). Workspace battery: 1119 tests (1129 with instrumentation features).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -351,6 +351,7 @@ cargo run -p aeolus-compile --example project_build     # scan → dedupe → wh
 cargo run -p aeolus-rt --example class_cell             # the dynamic lane: hit/miss counters, honest degradation
 cargo run -p aeolus-gpui --example ring                 # ring-* → v4 BoxShadow bands
 cargo run -p aeolus-codegen-gpui --example conformance  # the published score, from the emit gates themselves
+cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 ```
 
 <details><summary><b>All examples, by crate</b></summary>
@@ -384,6 +385,7 @@ cargo run -p aeolus-compile --example sort_order
 cargo run -p aeolus-compile --example project_build
 cargo run -p aeolus-compile --example named_containers
 cargo run -p aeolus-compile --example container_bounds
+cargo run -p aeolus-compile --example struct_probe  # the structural seam, facts in, layers out
 cargo run -p aeolus-compile --example pseudo_targets
 cargo run -p aeolus-compile --example motion
 # codegen & runtime
