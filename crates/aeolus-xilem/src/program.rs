@@ -112,7 +112,8 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
         let cond = match note {
             InterpNote::PseudoElement { cond, .. }
             | InterpNote::ContainerUnqueried { cond, .. }
-            | InterpNote::AttributeUnqueried { cond, .. } => *cond,
+            | InterpNote::AttributeUnqueried { cond, .. }
+            | InterpNote::StructuralUnqueried { cond, .. } => *cond,
         };
         let what = cond
             .source()
