@@ -229,6 +229,12 @@ Pay only for the dynamism you use:
 - `theme!` emits an `include_str!` pin, so editing the CSS triggers a Cargo rebuild.
 - **CSS-first authoring, all four forms:** `@theme`, `@utility` (incl. functional `--value()`),
   `@custom-variant`, `@source` (inline literals, walked paths, pruned paths — feeds `check`/`build`).
+  The `@custom-variant`/`@utility` statements register onto the same typed `Customs` surface
+  (`customs_from_css`): `@apply` composite bodies compile at registration — the multi-decl
+  `CustomValue::Applied` form, the body's keyword texts riding beside the decls — and the functional
+  star bodies (`--value(integer|number|percentage|color)`, `--spacing(n)`) ride the same
+  `CustomForm` grammar the typed API takes; every malformed statement, refused selector and
+  outside-the-grammar value is a typed `CustomCssError`.
 
 ## Variants & state
 
@@ -399,6 +405,7 @@ cargo run -p aeolus-compile --example rust_tokens
 cargo run -p aeolus-compile --example static_emit
 cargo run -p aeolus-compile --example interp
 cargo run -p aeolus-compile --example custom_seam
+cargo run -p aeolus-compile --example custom_css  # the CSS-file form: @apply composites + functional stars
 cargo run -p aeolus-compile --example dyn_cache
 cargo run -p aeolus-compile --example dyn_store  # a host's own bounded store on the DynStore seam
 cargo run -p aeolus-compile --example arbitrary_values
