@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+### 🚀 Features — the structural-variant probe fold (M1)
+- `aeolus-ir`: the `Structural` enum and `Cond::Structural` — the element's own DOM-position probe joins the typed surface (specificity band 2, the attribute-probe tier).
+- `aeolus-compile`: the fold accepts `first:`/`last:`/`odd:`/`even:`/`only:`/`empty:`/`nth-N:`/`nth-last-N:` (the oracle's `parse_nth` grammar); the `StructProbe` seam + built-in `StructFacts`/`StructFacts::UNKNOWN`; the `interp_*_struct` entry-point family; `program_style_struct`; `InterpNote::StructuralUnqueried`; `structural_fires` exported as the shared verdict fn; the CSS arm renders the v4 positional selectors; the plan bridge maps onto the oracle's `Test::Structural` (differential battery; `nth-last-N` pinned as the oracle's own parser gap).
+- `aeolus-codegen-gpui`: the static emit renders `Cond::Structural(Structural::…)`.
+- `aeolus-rt`/`aeolus-gpui`: the seam re-exported; `tw_struct`/`tw_env_struct`/`tw_probes_struct`/`tw_env_probes_struct` answer the structural layers through the same verdicts.
+- Backends: floem's walk reports the structural boundary honestly; the four program-lane backends translate the new note; the CLI's `expand` gains `--child i/n` + `--empty`.
+- Tests `tests/structural.rs` (17 pins, RED-first), `aeolus-gpui/tests/struct.rs` (9 pins), bench `benches/struct.rs`, example `examples/struct_probe.rs`.
+
+### 🚀 Features — the macro capability gate (M2)
+- `aeolus-codegen-gpui`: `audit(program, keywords)` — the `Emit` impl's own `unsupported_reason` verdicts over a frozen program; `Unsupported` re-exported.
+- `aeolus-macro`: `tw!`/`cn!`/`tw_cn!`/`variants!` run the gate before freezing — a class the GPUI target cannot express (motion families, the gradient via stop, the `BoxShadow`/`PointerEvents` slots) is a compile error naming the class and the emitter's reasons, instead of a silent runtime no-op.
+- Tests `tests/gate.rs` (RED-first), bench `benches/gate.rs`, example `examples/gate.rs`.
+
+### 🛠 Fixed — docs drift
+- `SECURITY.md`: the supported-version table (0.12.x → 0.19.x) and the published-crate scope.
+- `README.md`: the test count re-derived mechanically, the missing consumer examples (`struct_probe`, `gate`).
+- `CONTRIBUTING.md`: the 1.88/1.96 MSRV split the CI actually gates is stated.
+
 ### 🚀 Features
 
 - *(ir)* The motion longhands (the plan P6 row, the IR half): `Prop::TransitionProperty`/`TransitionDuration`/`TransitionTimingFunction`/`TransitionDelay`/`Animation` append at the cascade tail (116 → 121 longhands — the plan doc's own 110 was the stale figure this pass corrects; the mask budget test still asserts the u128 fit) — the `transition-*`/`duration-*`/`ease-*`/`delay-*`/`animate-*` families get their own typed slots, the row-table keyword texts riding where only the pipeline can read them
