@@ -1,5 +1,5 @@
 //! Consumer demonstration: the GPUI ring polyfill (architecture plan
-//! §3.7's `ring-*` row — "polyfill as spread-only `BoxShadow`"). GPUI
+//! §3.7's `ring-*` row —"polyfill as spread-only `BoxShadow`"). GPUI
 //! has no ring primitive, so the four `--tw-ring-*` longhands the
 //! registry lowers into compose into the v4 box-shadow list — the
 //! offset band and the ring band, spread-only — instead of the silent
@@ -26,7 +26,7 @@ fn main() {
     // inner edge, exactly the v4 look.
     let style = gpui::StyleRefinement::default().tw(program);
     println!("── GPUI box shadows from the V1 ring program ──");
-    println!("  layers walked:   {}", program.layers.len());
+    println!("layers walked:   {}", program.layers.len());
     for (i, shadow) in style
         .box_shadow
         .as_deref()
@@ -35,7 +35,7 @@ fn main() {
         .enumerate()
     {
         println!(
-            "  shadow [{i}]:       spread {:?}  blur {:?}  inset {}",
+            "shadow [{i}]:       spread {:?}  blur {:?}  inset {}",
             shadow.spread_radius, shadow.blur_radius, shadow.inset
         );
     }
@@ -59,7 +59,7 @@ fn main() {
         .enumerate()
     {
         println!(
-            "  shadow [{i}]:       spread {:?}  blur {:?}  inset {}",
+            "shadow [{i}]:       spread {:?}  blur {:?}  inset {}",
             shadow.spread_radius, shadow.blur_radius, shadow.inset
         );
     }
@@ -72,7 +72,7 @@ fn main() {
     let shadows = style.box_shadow.as_deref().unwrap_or_default();
     println!("── bare ring = 1px in the current text colour ──");
     println!(
-        "  bands:           {} (spread {:?})",
+        "bands:           {} (spread {:?})",
         shadows.len(),
         shadows.first().map(|s| s.spread_radius)
     );
