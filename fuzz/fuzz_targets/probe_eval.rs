@@ -24,6 +24,11 @@ impl Probe for FuzzProbe {
             // Element-kind tests (v0.3): the fuzz probe "knows" tags too —
             // a third deterministic answer channel.
             Test::Tag(_) => self.bits & 128 != 0,
+            // Pseudo-element render targets (v0.9 §1): a fourth
+            // deterministic answer channel — the target's own contract
+            // (every answer flips deterministically) keeps the arm a
+            // bit, the default-probe "no" answer is the non-flip side.
+            Test::Pseudo(_) => self.bits & 256 != 0,
         }
     }
 
