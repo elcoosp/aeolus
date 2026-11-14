@@ -38,6 +38,17 @@ use aeolus_compile::{
 use aeolus_ir::Cond;
 use aeolus_theme::{ThemeSource, TokenTable};
 
+/// The gate refusal list rendered as the compile-error tail: one
+/// line per refusal, the longhand and the emitter's own reason (the
+/// `Emit` impl's verdicts, never a parallel claim).
+fn render_refusals(refusals: &[aeolus_codegen_gpui::Unsupported]) -> String {
+    let mut out = String::new();
+    for refusal in refusals {
+        let _ = write!(out, "\n  {:?}: {}", refusal.prop, refusal.reason);
+    }
+    out
+}
+
 /// Compile a class string at build time into an `aeolus_rt::StaticProgram`.
 #[proc_macro]
 pub fn tw(input: TokenStream) -> TokenStream {
@@ -50,6 +61,16 @@ pub fn tw(input: TokenStream) -> TokenStream {
         Err(msg) => return compile_error(&input, &msg),
     };
     let keywords = keyword_alignment(&compiled, &classes);
+    let refusals = aeolus_codegen_gpui::audit(&compiled.program, &keywords);
+    if !refusals.is_empty() {
+        return compile_error(
+            &input,
+            &format!(
+                "aeolus: {literal:?} uses capabilities GPUI cannot express:{}",
+                render_refusals(&refusals)
+            ),
+        );
+    }
     aeolus_codegen_gpui::emit_static_program(&compiled.program, &keywords).into()
 }
 
@@ -78,6 +99,17 @@ pub fn cn(input: TokenStream) -> TokenStream {
         Err(err) => return compile_error(&input, &format!("cn!: {err}")),
     };
     let keywords = last_keywords(&merged, &classes);
+    let joined = strings.join(" ");
+    let refusals = aeolus_codegen_gpui::audit(&merged.program, &keywords);
+    if !refusals.is_empty() {
+        return compile_error(
+            &input,
+            &format!(
+                "aeolus: cn!({joined:?}) uses capabilities GPUI cannot express:{}",
+                render_refusals(&refusals)
+            ),
+        );
+    }
     aeolus_codegen_gpui::emit_static_program(&merged.program, &keywords).into()
 }
 
@@ -822,6 +854,13 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
                     let (program, class_annotations) =
                         compile_literal(&full).map_err(|err| format!("variants!: {err}"))?;
                     let keywords = keyword_alignment(&program, &class_annotations);
+                    let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
+                    if !refusals.is_empty() {
+                        return Err(format!(
+                            "variants!: {full:?} uses capabilities GPUI cannot express:{}",
+                            render_refusals(&refusals)
+                        ));
+                    }
                     let tokens =
                         aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
                     arms.push_str(&format!(
@@ -839,6 +878,13 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
                 let (program, _) =
                     compile_literal(&base).map_err(|err| format!("variants!: {err}"))?;
                 let keywords = keyword_alignment(&program, &[]);
+                let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
+                if !refusals.is_empty() {
+                    return Err(format!(
+                        "variants!: {base:?} uses capabilities GPUI cannot express:{}",
+                        render_refusals(&refusals)
+                    ));
+                }
                 let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
                 output.push_str(&enum_defs);
                 output.push_str(&format!(
@@ -897,6 +943,13 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
                 let (program, class_annotations) =
                     compile_literal(&classes).map_err(|err| format!("variants!: {err}"))?;
                 let keywords = keyword_alignment(&program, &class_annotations);
+                let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
+                if !refusals.is_empty() {
+                    return Err(format!(
+                        "variants!: {classes:?} uses capabilities GPUI cannot express:{}",
+                        render_refusals(&refusals)
+                    ));
+                }
                 let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
                 arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
             }
@@ -959,6 +1012,13 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
                     let (program, class_annotations) =
                         compile_literal(&classes).map_err(|err| format!("variants!: {err}"))?;
                     let keywords = keyword_alignment(&program, &class_annotations);
+                    let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
+                    if !refusals.is_empty() {
+                        return Err(format!(
+                            "variants!: {classes:?} uses capabilities GPUI cannot express:{}",
+                            render_refusals(&refusals)
+                        ));
+                    }
                     let tokens =
                         aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
                     arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
