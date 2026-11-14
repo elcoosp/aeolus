@@ -450,10 +450,14 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
         // ---- the motion layer (the plan §3.7 transition/animate row) ---
         //
         // GPUI's style surface carries no transition slot, and its
-        // animation story (`with_animation`) needs an element id + state
-        // the frozen static program does not name — the plan's own
-        // "Phase 6 motion layer" boundary, reported per longhand, the
-        // CSS/interp/plan arms rendering the real output.
+        // animation story (`with_animation`) needs an element id +
+        // animator the frozen static program does not name — the
+        // static emit's refusal stands (plan §3.7's motion row), while
+        // the STATEFUL motion lane (aeolus_gpui's `TwAnimExt` —
+        // `tw_anim`/`tw_anim_dyn`, the host's id and animator beside
+        // the lane's own frozen-shorthand parse) applies animation at
+        // runtime; the CSS/interp/plan arms render the transition
+        // families' real output.
         Prop::TransitionProperty | Prop::TransitionTimingFunction => Some(
             "GPUI's style surface carries no transition slot — the motion \
              families stay the CSS/interp/plan arms' output (plan §3.7)",
@@ -463,8 +467,10 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
              families stay the CSS/interp/plan arms' output (plan §3.7)",
         ),
         Prop::Animation => Some(
-            "GPUI's with_animation needs an element id + state the frozen \
-             static program does not name (plan §3.7's motion row)",
+            "GPUI's with_animation needs an element id + animator the frozen \
+             static program does not name — the stateful motion lane \
+             (aeolus_gpui's TwAnimExt) applies animation at runtime (plan \
+             §3.7's motion row)",
         ),
         Prop::BackgroundImage => {
             if keyword.is_empty() {
