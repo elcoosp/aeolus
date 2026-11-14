@@ -17,10 +17,16 @@
 //! POLYFILL tier ([`polyfilled`]): no native slot, but the runtime
 //! composes the v4 box-shadow list from GPUI's own `Vec<BoxShadow>`
 //! (`aeolus_gpui::RingState`), so a program whose only refusals are
-//! ring longhands emits.
+//! ring longhands emits. The shadow family rides the §3.7 NATIVE tier
+//! beside it — GPUI's `Vec<BoxShadow>` carries the v4 band shape (the
+//! pinned `BoxShadow` even carries the `inset` flag), so the
+//! `shadow-*` presets and the `shadow-{color}` recolour land on the
+//! one slot (`aeolus_gpui::ShadowState`, the band list beside the
+//! ring's).
 
 use aeolus_codegen::conformance::{Capability, Tier};
 use aeolus_codegen::{Emit, ir_path};
+use aeolus_data::tables::SHADOW_PRESETS;
 
 /// The emit gate's refusal type, re-exported for the macro surface's
 /// `audit` gate (the compile-error renderer reads `prop` + `reason`).
@@ -398,6 +404,18 @@ pub const fn supports(prop: Prop) -> bool {
             | Prop::GradientTo
             | Prop::GradientFromPosition
             | Prop::GradientToPosition
+            // The shadow tier (plan §3.7's shadow row, "direct"):
+            // GPUI's own `box_shadow: Vec<BoxShadow>` carries the v4
+            // band shape — offset, blur, spread, colour, and the
+            // `inset` flag the `shadow-inner` placeholder needs — so
+            // the composed preset list (`Prop::BoxShadow`, whose
+            // per-decl verdict is the row TEXT's, see
+            // [`unsupported_reason`]) and the `shadow-{color}`
+            // recolour (`Prop::ShadowColor`) land natively
+            // (`aeolus_gpui::ShadowState`, the band list beside the
+            // ring's).
+            | Prop::BoxShadow
+            | Prop::ShadowColor
     )
 }
 
@@ -508,6 +526,31 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
             "GPUI linear gradients carry two stops — the via stop has no slot (v4's \
              three-stop form stays the documented boundary)",
         ),
+        Prop::BoxShadow => {
+            if keyword.is_empty() {
+                Some(
+                    "the shadow row's composed text is the annotation the bare IR cannot \
+                     recover — pass the keyword slice the pipeline freezes beside the layers",
+                )
+            } else if SHADOW_PRESETS.iter().any(|(_, text)| *text == keyword) {
+                // The closed-world forms the registry's shadow row
+                // lowers — the seven `var(--tw-shadow-{name})` preset
+                // references, the `0 0 #0000` clear and the
+                // `inset 0 0 0 0 currentColor` placeholder (whose
+                // `inset` flag the pinned `BoxShadow` carries) — all
+                // compose into GPUI's band list
+                // (`aeolus_gpui::ShadowState`). The registry's table is
+                // the one source of truth: a row-text edit that forgets
+                // this gate fails the pin.
+                None
+            } else {
+                Some(
+                    "the shadow row's text is outside the audited preset forms (the \
+                     var(--tw-shadow-*) references, the clear, the inset placeholder) — \
+                     the multi-token arbitrary lists are the compile seam's own refusal",
+                )
+            }
+        }
         _ => {
             if expressible(prop) {
                 None
