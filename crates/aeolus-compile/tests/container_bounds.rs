@@ -56,7 +56,8 @@ fn note_for<'a>(interp: &'a aeolus_compile::Interped, cond: &'a Cond) -> Option<
     interp.notes.iter().find(|note| match note {
         InterpNote::PseudoElement { cond: c, .. }
         | InterpNote::ContainerUnqueried { cond: c, .. }
-        | InterpNote::AttributeUnqueried { cond: c, .. } => c == cond,
+        | InterpNote::AttributeUnqueried { cond: c, .. }
+        | InterpNote::StructuralUnqueried { cond: c, .. } => c == cond,
     })
 }
 
