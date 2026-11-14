@@ -4,7 +4,7 @@
 
 | version | supported |
 |---|---|
-| 0.12.x | ✅ |
+| 0.19.x | ✅ |
 | < 0.12 | ❌ (security fixes ride the latest minor) |
 
 Aeolus is a **style compiler**. It parses untrusted-ish text (Tailwind class
