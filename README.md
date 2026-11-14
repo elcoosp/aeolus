@@ -50,7 +50,8 @@ it compiles it through the full V1 pipeline at macro-expansion time and emits a 
 
 ## Quickstart
 
-Rust **1.96+** for the GUI path; `aeolus-core` and the five V1 compiler crates build on **1.88**.
+Rust **1.88** for the compiler set, CLI and the GPUI lane; the five framework backends and
+`aeolus-shadcn` build on **1.96** (their pinned frameworks' own requirement).
 Crates are consumed from git (see [Status](#status--roadmap)):
 
 ```toml
@@ -268,7 +269,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 - **Fuzz + property suites:** six fuzz targets (60 s CI sweeps), `compile ⇒ interpret == emit`
   metamorphic target, `/opacity` identity property test.
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1119 tests (1129 with instrumentation features).
+  **zero** allocations). Workspace battery: 1144 tests (1154 with instrumentation features).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -303,8 +304,8 @@ differential oracle — no big-bang migration.
 
 - `calc()` / multi-token composites, arbitrary-property form, the wider v4 hint table → typed refusals
 - `has-*` descendant probes → diagnosed with reasons (element-side attribute probes are answered)
-- container **measurement** (who computes element widths) → `ContainerProbe` seam landed; the layout wrapper is backend work
-- GPUI motion (`with_animation` needs element id + state) and >2-stop / radial / conic gradients → per-longhand refusals
+- container **measurement** (who computes element widths) → `ContainerProbe` seam landed, and the GPUI walk answers named queries through it (`tw_containers`); the layout wrapper measuring the widths is host work
+- GPUI motion's static emit keeps its per-longhand refusals (`with_animation` needs element id + animator — the stateful `TwAnimExt` lane applies them at runtime); >2-stop / radial / conic gradients refuse
 - per-backend gradient gaps (conic on Masonry, radial/conic on Iced, solid fills on egui) → capability matrix
 
 ## Crate map
@@ -350,8 +351,11 @@ cargo run -p aeolus-compile --example theme_seam        # tiers + the /opacity i
 cargo run -p aeolus-compile --example project_build     # scan → dedupe → whole-project stylesheet
 cargo run -p aeolus-rt --example class_cell             # the dynamic lane: hit/miss counters, honest degradation
 cargo run -p aeolus-gpui --example ring                 # ring-* → v4 BoxShadow bands
+cargo run -p aeolus-gpui --example containers           # named @container queries through the bounds seam
+cargo run -p aeolus-gpui --example motion               # the animation lane: frozen shorthand → gpui::Animation
 cargo run -p aeolus-codegen-gpui --example conformance  # the published score, from the emit gates themselves
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
+cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
 ```
 
 <details><summary><b>All examples, by crate</b></summary>
@@ -400,6 +404,8 @@ cargo run -p aeolus-gpui --example grad
 cargo run -p aeolus-gpui --example variants
 cargo run -p aeolus-gpui --example slots
 cargo run -p aeolus-gpui --example attr_state
+cargo run -p aeolus-gpui --example containers
+cargo run -p aeolus-gpui --example motion
 # backends: plan lane + V1 program lane each
 cargo run -p aeolus-xilem --example styled_label
 cargo run -p aeolus-xilem --example program
