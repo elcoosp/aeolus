@@ -170,3 +170,31 @@ fn the_full_compile_surface_is_cell_shaped() {
             .any(|decl| matches!(decl.val, aeolus_ir::Val::Rgba(_)))
     );
 }
+
+/// The applied-custom utilities' keyword texts reach the frozen slice:
+/// `get_with` aligns through the SAME registrations the compile ran
+/// (`keyword_texts_with`), so a registered `@apply` body whose classes
+/// carry row-relative `Val::Kw` slots freezes with its texts — the
+/// `hidden` row's `none` lands on the applied Display declaration the
+/// walk reads.
+#[test]
+fn applied_customs_freeze_their_keyword_texts() {
+    use aeolus_compile::customs_from_css;
+    use aeolus_ir::Prop;
+
+    let config = Config::default();
+    let customs = customs_from_css("@utility brand-gone { @apply hidden; }\n", &config)
+        .expect("the applied body registers");
+    let cell = ClassCell::new();
+    let program = cell
+        .get_with("brand-gone", &customs, &config)
+        .expect("compiles");
+    assert!(cell.diagnostics().is_empty());
+    assert_eq!(program.layers.len(), 1);
+    assert_eq!(program.layers[0].decls[0].prop, Prop::Display);
+    assert_eq!(
+        program.keyword(0, 0),
+        Some("none"),
+        "the registered text rides the frozen slice"
+    );
+}
