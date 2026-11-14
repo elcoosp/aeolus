@@ -25,6 +25,20 @@ divan = "0.1"
 name = "attrs"
 harness = false
 
+# The named-container bounds seam's microbenchmark (the §3.5 row's
+# walk half): the walk applying a program with named `@container`
+# layers, with and without the host's bounds in hand.
+[[bench]]
+name = "containers"
+harness = false
+
+# The motion lane's microbenchmark (the §3.7 row's GPUI half): the
+# frozen-shorthand parse, the built `Animation` and the cascade winner
+# walk the lane's entries run.
+[[bench]]
+name = "motion"
+harness = false
+
 # The ring polyfill's microbenchmark (the §3.7 tier): the walk applying
 # a `tw!`-compiled ring program, and the accumulator's own composition.
 [[bench]]
