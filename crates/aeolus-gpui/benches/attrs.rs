@@ -25,12 +25,12 @@ fn main() {
 /// program builds in one helper the three benches share.)
 fn button_program() -> StaticProgram {
     tw!(
-        "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2"
+        "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2"
     )
 }
 
 /// The element's attribute bits: the one bit the Button string probes
-/// (the `aria-invalid` "true" state a form host carries on a failed
+/// (the `aria-invalid`"true"state a form host carries on a failed
 /// submit).
 fn button_bits() -> [AttrBit<'static>; 1] {
     [AttrBit {
