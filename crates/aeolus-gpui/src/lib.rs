@@ -36,7 +36,7 @@
 
 use std::cell::RefCell;
 
-use aeolus_compile::{CompileError, Config, Env};
+use aeolus_compile::{CompileError, Config, Env, structural_fires};
 use aeolus_ir::{Cond, Prop, Val};
 use aeolus_rt::{ClassCell, StaticProgram, TokenTable};
 use gpui::{
@@ -54,7 +54,7 @@ pub use aeolus_rt::{Env as Environment, StaticProgram as Program, theme_from_css
 // The attribute-bits seam (plan §3.5): the element's own `data-`/`aria-`
 // bits ride the host state surface, so the prelude carries the probe
 // trait, the built-in bit table and the bit/kind constructors.
-pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState};
+pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState, StructFacts, StructProbe};
 
 /// The V1 consumption surface: macros, the program type and the two
 /// extension traits.
@@ -64,7 +64,9 @@ pub mod prelude {
         tw, tw_cn, variants,
     };
     pub use aeolus_compile::Env;
-    pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState, ClassCell, StaticProgram};
+    pub use aeolus_rt::{
+        AttrBit, AttrKind, AttrProbe, AttrState, ClassCell, StaticProgram, StructFacts, StructProbe,
+    };
 }
 
 thread_local! {
@@ -99,7 +101,7 @@ pub trait TwExt: Styled + Sized {
 
     /// Apply the program under an explicit probe environment.
     fn tw_env(self, program: StaticProgram, env: Env) -> Self {
-        apply_matching(self, &program, &env, None)
+        apply_matching(self, &program, &env, None, None)
     }
 
     /// Apply the program under the current `env()`, with the element's
@@ -123,7 +125,62 @@ pub trait TwExt: Styled + Sized {
     /// [`TwExt::tw_probes`] under an explicit probe environment — the
     /// `tw_env` pairing, with the attribute bits riding along.
     fn tw_env_probes(self, program: StaticProgram, env: Env, probes: &impl AttrProbe) -> Self {
-        apply_matching(self, &program, &env, Some(probes as &dyn AttrProbe))
+        apply_matching(self, &program, &env, Some(probes as &dyn AttrProbe), None)
+    }
+
+    /// Apply the program under the current `env()`, with the element's
+    /// DOM-position facts answering the structural layers (`first:`,
+    /// `last:`, `odd:`, `even:`, `only:`, `empty:`, `nth-N:`,
+    /// `nth-last-N:`) — the GPUI half of the interp arm's
+    /// `interp_struct` entry point. `structs` is the [`StructProbe`]
+    /// seam (the built-in [`StructFacts`] is one Copy value): the
+    /// verdicts are the interp's own `structural_fires`, shared
+    /// verbatim, an unknown fact quietly missing its test, and a
+    /// sourceless structural layer staying quiet (the interp reports
+    /// `StructuralUnqueried`; this walk has no note channel).
+    fn tw_struct(self, program: StaticProgram, structs: &impl StructProbe) -> Self {
+        self.tw_env_struct(program, env(), structs)
+    }
+
+    /// [`TwExt::tw_struct`] under an explicit probe environment — the
+    /// `tw_env` pairing, with the DOM-position facts riding along.
+    fn tw_env_struct(self, program: StaticProgram, env: Env, structs: &impl StructProbe) -> Self {
+        apply_matching(
+            self,
+            &program,
+            &env,
+            None,
+            Some(structs as &dyn StructProbe),
+        )
+    }
+
+    /// [`TwExt::tw_probes`] and [`TwExt::tw_struct`] composed: the
+    /// attribute bits AND the DOM-position facts ride one walk (the
+    /// interp's `interp_probes_struct` pairing).
+    fn tw_probes_struct(
+        self,
+        program: StaticProgram,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+    ) -> Self {
+        self.tw_env_probes_struct(program, env(), probes, structs)
+    }
+
+    /// [`TwExt::tw_probes_struct`] under an explicit probe environment.
+    fn tw_env_probes_struct(
+        self,
+        program: StaticProgram,
+        env: Env,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+    ) -> Self {
+        apply_matching(
+            self,
+            &program,
+            &env,
+            Some(probes as &dyn AttrProbe),
+            Some(structs as &dyn StructProbe),
+        )
     }
 
     /// The dynamic lane's one-call entrance (plan §3.6's surface (3)):
@@ -193,7 +250,8 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
         // across state layers.
         let mut ring = RingState::default();
         let mut grad = GradState::default();
-        let mut this = apply_matching_polyfills(self, &program, &env, None, &mut ring, &mut grad);
+        let mut this =
+            apply_matching_polyfills(self, &program, &env, None, None, &mut ring, &mut grad);
         this = this.hover(|style| apply_state_polyfills(style, &program, is_hover, ring, grad));
         this = this.focus(|style| apply_state_polyfills(style, &program, is_focus, ring, grad));
         this = this.focus_visible(|style| {
@@ -254,6 +312,12 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         Cond::GroupHas(_) | Cond::PeerHas(_) => {
             unreachable!("cond_matches routes the attribute shapes to the probe arms")
         }
+        // The structural shape routes through `cond_matches`'s seam arm
+        // the same way (the facts are not frame state — the env alone
+        // has no answer for them).
+        Cond::Structural(_) => {
+            unreachable!("cond_matches routes the structural shapes to the seam arm")
+        }
         Cond::Bp(bp) | Cond::Min(bp) => env.viewport_rem >= bp.rem(),
         Cond::Max(bp) => env.viewport_rem < bp.rem(),
         // The container queries: the unnamed form answers from the
@@ -278,7 +342,12 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
 /// probes answer through the host's probe source (plan §3.5's "typed
 /// state bits passed WITH the element"), everything else through the
 /// env.
-fn cond_matches(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> bool {
+fn cond_matches(
+    cond: Cond,
+    env: &Env,
+    probes: Option<&dyn AttrProbe>,
+    structs: Option<&dyn StructProbe>,
+) -> bool {
     match cond {
         // The element-own probes answer through the seam — the interp's
         // `decide` semantics applied at the host: a presence spelling
@@ -305,6 +374,15 @@ fn cond_matches(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> bool {
         // the diagnosed boundary (the interp reports them as notes), so
         // the walk skips them with or without a source.
         Cond::Has(_) | Cond::GroupHas(_) | Cond::PeerHas(_) => false,
+        // The structural probes answer through the DOM-position seam
+        // (the interp's `structural_fires` verdict, shared verbatim —
+        // one semantics, three walks). With no source the layers stay
+        // quiet (the interp reports `StructuralUnqueried`; this walk
+        // has no note channel, so the selector-miss skip stands).
+        Cond::Structural(test) => match structs {
+            Some(source) => structural_fires(test, source.structure()),
+            None => false,
+        },
         other => env_matches(other, env),
     }
 }
@@ -314,12 +392,14 @@ fn apply_matching<S: Styled>(
     program: &StaticProgram,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    structs: Option<&dyn StructProbe>,
 ) -> S {
     apply_matching_polyfills(
         style,
         program,
         env,
         probes,
+        structs,
         &mut RingState::default(),
         &mut GradState::default(),
     )
@@ -335,11 +415,12 @@ fn apply_matching_polyfills<S: Styled>(
     program: &StaticProgram,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    structs: Option<&dyn StructProbe>,
     ring: &mut RingState,
     grad: &mut GradState,
 ) -> S {
     for (layer_index, layer) in program.layers.iter().enumerate() {
-        if !cond_matches(layer.cond, env, probes) {
+        if !cond_matches(layer.cond, env, probes, structs) {
             continue;
         }
         for (decl_index, decl) in layer.decls.iter().enumerate() {
@@ -434,7 +515,7 @@ fn apply_dynamic<S: Styled>(
         Ok(program) => program,
         Err(_) => cell.program(),
     };
-    apply_matching(style, &program, env, None)
+    apply_matching(style, &program, env, None, None)
 }
 
 /// The interaction-closure half of the walk: the layers the predicate
