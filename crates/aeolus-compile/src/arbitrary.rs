@@ -474,12 +474,19 @@ fn parse_num(s: &str) -> Result<f32, ArbRejection> {
 /// The colour parse through the audited [`Color`], with the alpha
 /// modifier baked on the parsed object (ONE srgb round-trip, byte-
 /// identical to the token path's literal bake): `None` = "not a
-/// colour at all" (the caller falls through or refuses).
+/// colour at all" (the caller falls through or refuses). The sRGB bake
+/// runs the CSS Color 4 gamut mapping (`Color::gamut_map`, plan §9's
+/// mitigation) after the alpha mix — mix first, then map, the CSS
+/// reading — so a literal and its token spelling agree and an
+/// out-of-gamut `oklch()` lands ON the gamut boundary, hue-true.
 fn colour_of(value: &str, alpha: Option<f32>) -> Option<[u8; 4]> {
     match Color::parse(value) {
         Ok(color) => Some(match alpha {
-            None => color.to_rgba8(),
-            Some(alpha) => color.mix_with_transparent(alpha * 100.0).to_rgba8(),
+            None => color.gamut_map().to_rgba8(),
+            Some(alpha) => color
+                .mix_with_transparent(alpha * 100.0)
+                .gamut_map()
+                .to_rgba8(),
         }),
         // The audited parser's own typed miss: junk text is not a
         // colour — the unit grammar's boundary names it.
