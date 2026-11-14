@@ -58,7 +58,7 @@
 //! tiered tables, modifier and all.
 
 use aeolus_data::LookupError;
-use aeolus_ir::{Cond, Prop, Val};
+use aeolus_ir::{Cond, Decl, Prop, Val};
 
 use crate::Config;
 use crate::lower::{self, Reject};
@@ -131,8 +131,11 @@ impl CustomForm {
 }
 
 /// The value a custom utility lowers to: a FIXED literal (baked at
-/// registration) or a FUNCTIONAL form (the class suffix fills the
-/// slot).
+/// registration), a FUNCTIONAL form (the class suffix fills the
+/// slot) or an APPLIED body (the CSS-file form's
+/// `@utility name { @apply …; }` — the apply classes compiled at
+/// registration and stored interned; the architecture plan §5.4
+/// "same file as web" line).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CustomValue {
     /// `@utility brand-r { border-radius: 0.375rem; }` — the value is
@@ -144,6 +147,36 @@ pub enum CustomValue {
     /// `@utility brand-p-* { padding: --spacing(n); }` — the suffix
     /// lowers through the form's grammar.
     Functional(CustomForm),
+    /// `@utility brand-badge { @apply rounded-md px-2 py-0.5; }` — the
+    /// apply body compiled AT REGISTRATION (through the same pipeline,
+    /// the registration-order customs resolving) and stored interned:
+    /// different `Val`s per longhand — the multi-decl shape the
+    /// single-`Val` forms cannot hold — exactly the declarations the
+    /// body's classes lower to (the differential pins the parity). The
+    /// class is the bare root (a suffix is a shape rejection); the
+    /// `/opacity` modifier and the `-` negation refuse (a composite
+    /// body has no single bake to premultiply and no single sign to
+    /// flip), and a variant-carrying body refused at registration —
+    /// the flat `Cond` model composes the CANDIDATE's own condition,
+    /// never the body's. The body's keyword texts ride BESIDE the
+    /// decls ([`AppliedBody::keywords`], parallel slices — the static
+    /// program's own contract), the annotation seam's source for the
+    /// row-relative `Val::Kw` slots a registered body can carry.
+    Applied(AppliedBody),
+}
+
+/// The applied body's two parallel slices: the declarations the apply
+/// classes lowered to and the keyword texts the row-relative `Val::Kw`
+/// slots answer through (the `StaticProgram` layers/keywords contract,
+/// registered instead of frozen). `keywords` is parallel to `decls` —
+/// one text per declaration, `""` for values that carry their own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AppliedBody {
+    /// The compiled `@apply` body's declarations (one Base layer).
+    pub decls: &'static [Decl],
+    /// The row texts parallel to `decls` (the annotation seam's read
+    /// side — [`crate::keyword_texts_with`] hands them out per hit).
+    pub keywords: &'static [(Prop, &'static str)],
 }
 
 /// One registered custom utility: the class root, the value shape and
@@ -189,6 +222,25 @@ impl CustomUtility {
             root: intern(root),
             value: CustomValue::Functional(form),
             targets: intern_props(targets),
+        }
+    }
+
+    /// Register an applied (composite) utility: the class is the bare
+    /// root and the body IS the given declaration list plus its
+    /// parallel keyword texts — the compiled `@apply` body the CSS-file
+    /// form lowers at registration ([`crate::customs_from_css`]). The
+    /// slices are stored as given: the caller interns them (the
+    /// registration path leaks the compiled body, the same documented
+    /// storage every registration rides).
+    pub fn applied(
+        root: &str,
+        decls: &'static [Decl],
+        keywords: &'static [(Prop, &'static str)],
+    ) -> Self {
+        Self {
+            root: intern(root),
+            value: CustomValue::Applied(AppliedBody { decls, keywords }),
+            targets: &[],
         }
     }
 }
@@ -331,6 +383,7 @@ impl Customs {
                 let label = match utility.value {
                     CustomValue::Fixed(_) => "fixed",
                     CustomValue::Functional(form) => form.label(),
+                    CustomValue::Applied(_) => "applied",
                 };
                 if !tried.contains(&label) {
                     tried.push(label);
@@ -383,7 +436,10 @@ fn suffix_of<'a>(body: &'a str, root: &str) -> Option<&'a str> {
 fn value_accepts(value: CustomValue, body: &str, root: &str) -> bool {
     let suffix = suffix_of(body, root);
     match value {
-        CustomValue::Fixed(_) => suffix.is_none(),
+        // The fixed and applied forms are bare-root shapes: a suffix is
+        // a shape rejection (the applied body's classes are the root's
+        // whole meaning).
+        CustomValue::Fixed(_) | CustomValue::Applied(_) => suffix.is_none(),
         CustomValue::Functional(form) => match form {
             CustomForm::Integer => suffix.is_some_and(integral),
             CustomForm::Number => suffix.is_some_and(|s| s.parse::<f32>().is_ok()),
@@ -422,6 +478,22 @@ pub(crate) fn utility_to_decls(
     config: Config,
 ) -> Result<Vec<aeolus_ir::Decl>, Reject> {
     let val = match utility.value {
+        CustomValue::Applied(body) => {
+            // The applied body's boundaries are the composite form's
+            // own: no single bake to premultiply (the modifier), no
+            // single sign to flip (the negation) — the whole row
+            // refuses, never half-applies. The stored decls ARE the
+            // lower form: the registration compiled the apply body
+            // through this same pipeline, so the hit splices the body
+            // verbatim (the differential pins the parity).
+            if alpha.is_some() {
+                return Err(Reject::Modifier);
+            }
+            if negative {
+                return Err(Reject::Negation);
+            }
+            return Ok(body.decls.to_vec());
+        }
         CustomValue::Fixed(val) => {
             // The modifier boundary on the fixed forms: the audited
             // premultiply bake lives in the theme pass's token path, and
@@ -511,7 +583,51 @@ pub(crate) fn utility_to_css(
     tokens: Option<&aeolus_theme::TokenTable>,
     config: Config,
 ) -> Result<Vec<lower::CssDecl>, Reject> {
+    // The applied form renders per stored declaration: the row-relative
+    // keyword slots render their REGISTRATION-TIME text (the same slice
+    // the annotation seam hands the backends — the CSS value of a
+    // keyword row IS its table text), every other value renders through
+    // the shared `val_css` forms.
+    if let CustomValue::Applied(body) = utility.value {
+        if alpha.is_some() {
+            return Err(Reject::Modifier);
+        }
+        if negative {
+            return Err(Reject::Negation);
+        }
+        let mut out = Vec::with_capacity(body.decls.len());
+        for decl in body.decls {
+            let value = match decl.val {
+                Val::Kw(_) => {
+                    let text = body
+                        .keywords
+                        .iter()
+                        .find(|(prop, _)| *prop == decl.prop)
+                        .map(|(_, text)| *text)
+                        .unwrap_or_default();
+                    lower::CssValue {
+                        base: text.to_string(),
+                        dark: None,
+                    }
+                }
+                _ => val_css(decl.val, tokens)?,
+            };
+            out.push(lower::CssDecl {
+                prop: decl.prop,
+                prop_name: decl.prop.name(),
+                value,
+            });
+        }
+        return Ok(out);
+    }
     let val = match utility.value {
+        // The applied form rendered above; this arm is the drift guard
+        // the match totality wants — typed, never a panic.
+        CustomValue::Applied(_) => {
+            return Err(Reject::Value {
+                reason: lower::REASON_SHAPE_MISMATCH,
+            });
+        }
         CustomValue::Fixed(val) => {
             if alpha.is_some() {
                 return Err(Reject::Modifier);
