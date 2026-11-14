@@ -588,6 +588,7 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
                 aeolus_ir::Cond::Data { .. }
                     | aeolus_ir::Cond::Aria { .. }
                     | aeolus_ir::Cond::Has(_)
+                    | aeolus_ir::Cond::Structural(_)
             )
         {
             apply_cond_shape(&mut set, cond);
@@ -729,10 +730,35 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
             set.parent_prerendered = true;
             set.peer = true;
         }
+        // The structural probes: the v4 positional selectors (the same
+        // forms the v0.x oracle's `structural_pseudo` renders — one
+        // grammar, the render cannot drift the fold).
+        Cond::Structural(test) => set.pseudos.push(structural_pseudo(test)),
         Cond::Bp(bp) | Cond::Min(bp) => set.at = Some(CssAt::MediaMin(bp)),
         Cond::Max(bp) => set.at = Some(CssAt::MediaMax(bp)),
         Cond::Container { bp, name } => set.at = Some(CssAt::ContainerMin { bp, name }),
         Cond::MaxContainer { bp, name } => set.at = Some(CssAt::ContainerMax { bp, name }),
+    }
+}
+
+/// The positional selector suffix for one structural test — the v0.x
+/// oracle's `structural_pseudo` forms (`first:` → `:first-child`, the
+/// `nth-N:` ordinals 1-based, the parity spellings CSS's own words).
+/// The fixed forms are static text; the ordinal forms intern into the
+/// leak pool (the variant.rs payload precedent — the CSS emitter runs
+/// per build, never per render, so the one-time cost is the pool's
+/// own discipline).
+fn structural_pseudo(test: aeolus_ir::Structural) -> &'static str {
+    use aeolus_ir::Structural;
+    match test {
+        Structural::First => ":first-child",
+        Structural::Last => ":last-child",
+        Structural::Odd => ":nth-child(odd)",
+        Structural::Even => ":nth-child(even)",
+        Structural::Only => ":only-child",
+        Structural::Empty => ":empty",
+        Structural::Nth(n) => Box::leak(format!(":nth-child({n})").into_boxed_str()),
+        Structural::NthLast(n) => Box::leak(format!(":nth-last-child({n})").into_boxed_str()),
     }
 }
 
