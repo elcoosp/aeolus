@@ -2,7 +2,7 @@
 
 # Aeolus conformance — gpui
 
-**score: 61.16% expressible** (57.85% native + 3.31% polyfilled) over 121 longhands
+**score: 52.48% expressible** (49.65% native + 2.84% polyfilled) over 141 longhands
 
 The per-longhand tiers, in the IR's cascade order. The per-declaration refinements (the emit gates' text-dependent verdicts) live at the gates themselves — this is the per-longhand ceiling.
 
@@ -129,3 +129,23 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `transition-timing-function` | refused |
 | `transition-delay` | refused |
 | `animation` | refused |
+| `--tw-blur` | refused |
+| `--tw-brightness` | refused |
+| `--tw-contrast` | refused |
+| `--tw-grayscale` | refused |
+| `--tw-hue-rotate` | refused |
+| `--tw-invert` | refused |
+| `--tw-saturate` | refused |
+| `--tw-sepia` | refused |
+| `--tw-drop-shadow` | refused |
+| `filter` | refused |
+| `--tw-backdrop-blur` | refused |
+| `--tw-backdrop-brightness` | refused |
+| `--tw-backdrop-contrast` | refused |
+| `--tw-backdrop-grayscale` | refused |
+| `--tw-backdrop-hue-rotate` | refused |
+| `--tw-backdrop-invert` | refused |
+| `--tw-backdrop-opacity` | refused |
+| `--tw-backdrop-saturate` | refused |
+| `--tw-backdrop-sepia` | refused |
+| `backdrop-filter` | refused |
