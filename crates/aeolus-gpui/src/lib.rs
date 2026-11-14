@@ -31,9 +31,13 @@
 //! named containers' widths in hand — the GPUI half of the interp
 //! arm's `interp_containers` entry point, the same AT/strictly-below
 //! boundary rules. The unnamed forms (`@md:`) keep answering from the
-//! [`Env`]'s nearest-container slot, and the element-bounds WRAPPER
-//! (who MEASURES the widths) stays the host's half — the walk consults
-//! the seam's answers, it never measures.
+//! [`Env`]'s nearest-container slot, and the element-bounds WRAPPER —
+//! who MEASURES the widths — is the [`TwContainerExt::tw_container`]
+//! element beside it: a stateless measuring relay that publishes the
+//! width of its own box into the shared [`MeasuredContainers`]
+//! hand-off at the layout phase (the prepaint bounds), re-rendering on
+//! a measurement delta, while the walk consults the answers and never
+//! measures.
 //!
 //! Motion (`animate-*`) rides the stateful animation lane (plan §3.7's
 //! GPUI half, the `with_animation` boundary): [`TwAnimExt::tw_anim`] /
@@ -65,9 +69,11 @@ use gpui::{
     relative, rems, rgba,
 };
 
+mod containers;
 mod grad;
 mod motion;
 mod ring;
+pub use containers::{ContainerQuery, TwContainerExt, container_rem};
 pub use grad::GradState;
 pub use motion::{
     AnimSpec, Easing, animation, animation_for, animation_keyword, parse_animation, pulse_animator,
@@ -75,7 +81,7 @@ pub use motion::{
 pub use ring::RingState;
 
 pub use aeolus_macro::{cn, theme, tw, tw_cn, variants};
-pub use aeolus_rt::{Env as Environment, StaticProgram as Program, theme_from_css};
+pub use aeolus_rt::theme_from_css;
 // The attribute-bits seam (plan §3.5): the element's own `data-`/`aria-`
 // bits ride the host state surface, so the prelude carries the probe
 // trait, the built-in bit table and the bit/kind constructors.
@@ -83,20 +89,22 @@ pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState, StructFacts, Struct
 // The container-bounds seam (plan §3.5's `@container` row): the NAMED
 // container queries (`@md/card:`) answer through the host's
 // [`ContainerProbe`] source, so the prelude carries the trait, the
-// built-in static table and its bound row.
-pub use aeolus_rt::{ContainerBound, ContainerProbe, ContainerState};
+// built-in static table and its bound row — plus the element-bounds
+// WRAPPER's hand-off ([`MeasuredContainers`], what the
+// [`TwContainerExt::tw_container`] measuring element publishes into).
+pub use aeolus_rt::{ContainerBound, ContainerProbe, ContainerState, MeasuredContainers};
 
 /// The V1 consumption surface: macros, the program type and the two
 /// extension traits.
 pub mod prelude {
     pub use crate::{
-        AeolusRoot, GradState, TwAnimExt, TwExt, TwStateExt, begin_frame, cn, set_env, theme,
-        theme_from_css, tw, tw_cn, variants,
+        AeolusRoot, ContainerQuery, GradState, TwAnimExt, TwContainerExt, TwExt, TwStateExt,
+        begin_frame, cn, container_rem, set_env, theme, theme_from_css, tw, tw_cn, variants,
     };
     pub use aeolus_compile::Env;
     pub use aeolus_rt::{
         AttrBit, AttrKind, AttrProbe, AttrState, ClassCell, ContainerBound, ContainerProbe,
-        ContainerState, StaticProgram, StructFacts, StructProbe,
+        ContainerState, MeasuredContainers, StaticProgram, StructFacts, StructProbe,
     };
 }
 
@@ -240,8 +248,10 @@ pub trait TwExt: Styled + Sized {
     /// a container the source does not know is a CSS-quiet miss, and a
     /// sourceless walk keeps the named layers quiet (the interp reports
     /// `ContainerUnqueried`; this walk has no note channel). The
-    /// element-bounds WRAPPER — who MEASURES the widths — stays the
-    /// host's half: this walk consults the answers, it never measures.
+    /// element-bounds WRAPPER — who MEASURES the widths — is the
+    /// [`TwContainerExt::tw_container`] element beside this walk: it
+    /// publishes its measured box into a [`MeasuredContainers`] hand-off,
+    /// and this walk consults the answers, it never measures.
     fn tw_containers(self, program: StaticProgram, containers: &impl ContainerProbe) -> Self {
         self.tw_env_containers(program, env(), containers)
     }
