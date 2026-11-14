@@ -9,3 +9,7 @@ ship.toml
 # commit plan the shipping tooling consumes — tree state, not source).
 ship.toml
 .github/pr-body.md
+
+# The handoff ceremony files stay untracked (the ship tool reads them in-tree).
+ship.toml
+.github/pr-body.md
