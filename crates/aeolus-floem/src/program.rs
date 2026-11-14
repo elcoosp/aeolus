@@ -207,6 +207,15 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
             "the descendant has-* shape is not an attribute bit — the plan §3.5 boundary (the \
              interp reports AttributeUnqueried)",
         ),
+        // The structural layers ask the interp arm's StructProbe seam —
+        // the element's DOM-position facts are not frame state (the Env
+        // cannot answer them), and this walk consults no structural
+        // source: the layer is excluded and reported (the interp's
+        // `StructuralUnqueried` note on the walk's report channel).
+        Cond::Structural(_) => Fire::Excluded(
+            "the structural query needs the element's DOM-position facts — the interp's \
+             StructProbe seam answers them (the interp reports StructuralUnqueried)",
+        ),
         // The pseudo-elements style a DIFFERENT render target, never the
         // element's own cascade.
         Cond::Selection | Cond::Placeholder => Fire::Excluded(
