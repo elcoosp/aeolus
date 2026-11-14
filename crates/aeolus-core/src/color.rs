@@ -194,9 +194,11 @@ impl Color {
 
     /// Convert to sRGB (0..1) + alpha, clamping out-of-gamut values.
     ///
-    /// No gamut mapping beyond clamping in v1 (documented limitation;
-    /// Tailwind's own palette is gamut-safe). The clamp is NOT cosmetic:
-    /// out-of-gamut Oklab can produce *negative* linear components, and
+    /// This is the v0.x oracle's clamp conversion — the differential
+    /// triangle's ground truth, UNCHANGED — while the V1 pipeline's
+    /// bake runs the CSS Color 4 chroma reduction beside it
+    /// ([`Color::gamut_map`]). The clamp is NOT cosmetic: out-of-gamut
+    /// Oklab can produce *negative* linear components, and
     /// `powf(1/2.4)` on a negative base is NaN — found by the Phase-4
     /// property test (`oklab_srgb_roundtrip`, minimal case oklab(0, 0,
     /// 0.2738)).
@@ -230,6 +232,94 @@ impl Color {
         let [r, g, b, a] = self.to_srgba();
         let f = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
         [f(r), f(g), f(b), f(a)]
+    }
+
+    /// CSS Color 4 gamut mapping (§13): reduce the OkLCh chroma to the
+    /// largest value that survives the sRGB conversion — hue and
+    /// lightness untouched, alpha carried through. The architecture
+    /// plan §9 colour-gamut row's mitigation ("gamut-map once") and
+    /// §3.2's aeolus-theme row's own "oklch→sRGB gamut-mapped once"
+    /// contract: the bake runs this ONCE per token, the backends
+    /// receive legal sRGBA.
+    ///
+    /// Where [`to_srgba`] clamps channels independently (the hue moves,
+    /// the colour goes muddy), this walks the chroma down the colour's
+    /// own hue ray until the linear-sRGB triple fits the gamut — the
+    /// CSS rendering of an out-of-gamut `oklch()` token, not a repair
+    /// of it.
+    ///
+    /// **The identity contract:** a colour that never left the gamut
+    /// returns unchanged, so the early-out runs the SAME matrix math
+    /// [`to_srgba`] runs and every in-gamut conversion produces the
+    /// same bytes it always did (the golden corpus's ground truth).
+    /// The finiteness pre-clamps mirror [`to_srgba`]'s — L into [0, 1],
+    /// the chroma magnitude into the ±0.5 axis clamp's radius — in
+    /// POLAR form so the hue survives where the axis clamp would have
+    /// broken it; any parsed value stays finite (the fuzz findings
+    /// hold on this path too).
+    pub fn gamut_map(self) -> Self {
+        // 0.5·√2 is the radius of `to_srgba`'s ±0.5 chroma-axis clamp —
+        // the same finiteness bound, hue-preserving instead of
+        // per-axis.
+        const CHROMA_LIMIT: f32 = 0.5 * core::f32::consts::SQRT_2;
+        // The in-gamut tolerance on the linear channels and the binary
+        // search's chroma epsilon: the search converges in ~20 steps
+        // (chroma ≤ 0.71), the fixed iteration cap keeps the walk
+        // deterministic, and the final linear clamp in `to_srgba`
+        // handles the sub-epsilon remainder.
+        const GAMUT_EPS: f32 = 1e-6;
+        const CHROMA_EPS: f32 = 1e-6;
+        const MAX_STEPS: u32 = 40;
+
+        let chroma_full = (self.a * self.a + self.b * self.b).sqrt();
+        let clamped_l = self.l.clamp(0.0, 1.0);
+        // The head of the walk: the ORIGINAL components when nothing
+        // clamped (the identity path must be exact), the hue-preserving
+        // reconstruction where the finiteness bounds fired.
+        let head = if clamped_l == self.l && chroma_full <= CHROMA_LIMIT {
+            self
+        } else {
+            let hue = self.b.atan2(self.a);
+            Self::oklch(
+                clamped_l,
+                chroma_full.min(CHROMA_LIMIT),
+                hue.to_degrees(),
+                self.alpha,
+            )
+        };
+        let (lr, lg, lb) = linear_srgb_from_oklab(head.l, head.a, head.b);
+        let in_linear_gamut = |c: f32| (-GAMUT_EPS..=1.0 + GAMUT_EPS).contains(&c);
+        let in_gamut = |(r, g, b): (f32, f32, f32)| {
+            in_linear_gamut(r) && in_linear_gamut(g) && in_linear_gamut(b)
+        };
+        if in_gamut((lr, lg, lb)) {
+            return head;
+        }
+        // Binary search the chroma along the head's fixed (L, hue) ray:
+        // the linear gamut boundary is monotone in chroma there, so the
+        // largest in-gamut chroma converges (CSS Color 4 §13's
+        // algorithm; `low` only ever advances onto VERIFIED in-gamut
+        // chroma values, so the answer is in gamut by construction).
+        // The bisection midpoint takes the overflow-safe form (the
+        // `low + (high - low) / 2` shape, not the naive sum) — and
+        // `f32::midpoint` stabilized past this crate's MSRV, the same
+        // reason the cache keeps its `chunks_exact` spelling.
+        let hue = head.b.atan2(head.a);
+        let (mut low, mut high) = (0.0f32, (head.a * head.a + head.b * head.b).sqrt());
+        for _ in 0..MAX_STEPS {
+            if high - low <= CHROMA_EPS {
+                break;
+            }
+            let mid = low + (high - low) / 2.0;
+            let candidate = Self::oklch(head.l, mid, hue.to_degrees(), self.alpha);
+            let channels = linear_srgb_from_oklab(candidate.l, candidate.a, candidate.b);
+            if in_gamut(channels) {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        Self::oklch(head.l, low, hue.to_degrees(), self.alpha)
     }
 
     /// CSS `color-mix(in oklab, self p%, transparent)`.
