@@ -543,8 +543,21 @@ fn run_plan(
                             config,
                         ) {
                             Ok(produced) => {
-                                for decl in produced {
-                                    written.push((decl, None, false));
+                                // The applied body's row texts ride the
+                                // registration (parallel to the stored
+                                // decls) — the `Val::Kw` slots the body's
+                                // own classes carried keep their
+                                // annotations here like every built-in
+                                // decl does; the fixed/functional forms
+                                // carry no texts (their values name
+                                // themselves).
+                                let texts = match utility.value {
+                                    custom::CustomValue::Applied(body) => body.keywords,
+                                    _ => &[],
+                                };
+                                for (index, decl) in produced.into_iter().enumerate() {
+                                    let text = texts.get(index).map(|(_, text)| *text);
+                                    written.push((decl, text, false));
                                 }
                             }
                             Err(reject) => {
