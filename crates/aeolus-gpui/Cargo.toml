@@ -72,5 +72,12 @@ harness = false
 name = "slots"
 harness = false
 
+# The grid-placement + flex-basis tier's microbenchmark (the §3.7 grid
+# row's finished native subset): the line placements, the span-pair
+# compose and the basis family's value shapes through the walk.
+[[bench]]
+name = "placement"
+harness = false
+
 [lints]
 workspace = true
