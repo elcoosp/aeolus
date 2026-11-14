@@ -191,3 +191,19 @@ harness = false
 [[bench]]
 name = "struct"
 harness = false
+
+# The filter layer's benchmarks (the plan §3.7 backlog row's pipeline
+# half): the compile of the filter families against the Button floor,
+# the CSS emit of the var-chain form and the interp of the
+# filter-mixed program.
+[[bench]]
+name = "filters"
+harness = false
+
+# The backdrop-filter layer's benchmarks (the plan §3.7 backlog row's
+# second half): the compile of the backdrop families against the Button
+# floor, the CSS emit of the prefixed var-chain form and the interp of
+# the backdrop-mixed program.
+[[bench]]
+name = "backdrop_filters"
+harness = false
