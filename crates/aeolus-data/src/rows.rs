@@ -282,11 +282,85 @@ pub const ANIMATE_PRESETS: &[(&str, &str)] = &[
     ("none", "none"),
 ];
 
+// -- The filter family's shared texts (the plan §3.7 backlog row) -----------
+//
+// The keyword texts are the v4.1.17 default theme's own values — the
+// `--blur-*`/`--drop-shadow-*` tokens and the bare-integer percent
+// forms, quoted verbatim from the pinned upstream. `pub`: the compile
+// seam's CSS arm renders the chain beside every primitive's var line
+// (the gradient direction's `linear_gradient_angle` precedent — one
+// source, several readers).
+
+/// The `blur-{suffix}` scale — the v4 default theme's `--blur-*` values
+/// in keyword-slot order (`blur-md` → slot 3), the `none` arm the v4
+/// one-space off text (the var resolves to whitespace, the chain loses
+/// the blur).
+pub const BLUR_SCALE: &[(&str, &str)] = &[
+    ("none", " "),
+    ("xs", "blur(4px)"),
+    ("sm", "blur(8px)"),
+    ("md", "blur(12px)"),
+    ("lg", "blur(16px)"),
+    ("xl", "blur(24px)"),
+    ("2xl", "blur(40px)"),
+    ("3xl", "blur(64px)"),
+];
+
+/// The `drop-shadow-{suffix}` presets — the v4 default theme's
+/// `--drop-shadow-*` tokens composed into their `drop-shadow()`
+/// functions (the bare utility's own rendering form), keyword-slot
+/// order (`drop-shadow-md` → slot 3), the `none` arm the v4 off text.
+pub const DROP_SHADOW_PRESETS: &[(&str, &str)] = &[
+    ("none", " "),
+    ("xs", "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))"),
+    ("sm", "drop-shadow(0 1px 2px rgb(0 0 0 / 0.15))"),
+    ("md", "drop-shadow(0 3px 3px rgb(0 0 0 / 0.12))"),
+    ("lg", "drop-shadow(0 4px 4px rgb(0 0 0 / 0.15))"),
+    ("xl", "drop-shadow(0 9px 7px rgb(0 0 0 / 0.1))"),
+    ("2xl", "drop-shadow(0 25px 25px rgb(0 0 0 / 0.15))"),
+];
+
+/// Bare `drop-shadow` — the v4 default `--drop-shadow` token's
+/// two-layer composition (the utility segments the comma-separated
+/// token and wraps each band).
+pub const DROP_SHADOW_DEFAULT: &str = "drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)) \
+     drop-shadow(0 1px 1px rgb(0 0 0 / 0.06))";
+
+/// The composed `filter` chain — v4's own `cssFilterValue`: the
+/// primitive vars in the canonical order, each with the empty
+/// fallback so an unset primitive contributes nothing. Every filter
+/// class's rule re-declares it (v4's own emission form — the vars
+/// carry the per-primitive values, the chain's text is identical in
+/// every rule so the cascade never loses a component).
+pub const FILTER_CHAIN: &str = "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) \
+     var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) \
+     var(--tw-sepia,) var(--tw-drop-shadow,)";
+
+/// The `filter-{suffix}` keyword arms — the composed property's reset
+/// (`filter-none`); the bare root carries the chain itself.
+pub const FILTER_RESETS: &[(&str, &str)] = &[("none", "none")];
+
+/// The composed `backdrop-filter` chain — v4's own
+/// `cssBackdropFilterValue`: the backdrop primitive vars in the
+/// canonical order, each with the empty fallback. Every backdrop
+/// class's rule re-declares it on BOTH properties (the `-webkit-`
+/// prefix beside the standard one — v4's own emission form).
+pub const BACKDROP_FILTER_CHAIN: &str = "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) \
+     var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) \
+     var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) \
+     var(--tw-backdrop-sepia,)";
+
+/// The `backdrop-filter-{suffix}` keyword arms — the composed
+/// property's reset (`backdrop-filter-none`); the bare root carries
+/// the chain itself.
+pub const BACKDROP_FILTER_RESETS: &[(&str, &str)] = &[("none", "none")];
+
 // -- The registry ---------------------------------------------------------
 
 /// Every registry row, in root order. The P1 port grew to **184 rows**
-/// in-tree (189 since the P6 motion layer: the transition quartet and
-/// the animation root appended at the cascade tail) — the audit count
+/// in-tree (209 since the backdrop layer: the motion layer's transition
+/// quartet and the animation root, the ten filter roots, then the ten
+/// backdrop roots appended at the cascade tail) — the audit count
 /// `registry::generate_docs` renders from these rows. The plan's "top
 /// ~150" was the floor, not the ceiling.
 pub static ROWS: &[UtilityRow] = &[
@@ -1834,5 +1908,199 @@ pub static ROWS: &[UtilityRow] = &[
         "animate",
         false,
         "utilities.ts animation (registry-local group; oracle None)",
+    ),
+    // ---- filters (the plan §3.7 backlog row's pipeline half) ---------------
+    //
+    // The `blur-*`/`brightness-*`/`contrast-*`/`grayscale-*`/
+    // `hue-rotate-*`/`invert-*`/`saturate-*`/`sepia-*`/`drop-shadow-*`/
+    // `filter` families. The tw_merge oracle leaves every root
+    // ungrouped (`collision_group` returns `None` — the motion
+    // precedent), so each carries a registry-local group name, marked
+    // in its v4 reference. The keyword texts are the v4.1.17 default
+    // theme's own values (`--blur-*`/`--drop-shadow-*` tokens, the
+    // bare-integer percent forms) quoted verbatim from the pinned
+    // upstream `utilities.ts`/`theme.css`; the composed `filter` chain
+    // is v4's own `cssFilterValue`, the string every filter class's
+    // rule re-declares (the CSS arm renders the primitive's var line
+    // beside it — v4's own emission form). The bare-percentage
+    // families carry NO bare arm where v4 has no default (`brightness`
+    // bare is a typed shape refusal, the theme key's absence); the
+    // `grayscale`/`invert`/`sepia` bare roots carry the v4 100%
+    // default. The `drop-shadow-{color}` recolour arm is the
+    // documented boundary (the shadow tier's colour machinery reaches
+    // it; the size/color two-var interplay stays out of the registry).
+    row(
+        "blur",
+        any(&[bare("blur(8px)"), kw(BLUR_SCALE), arb()]),
+        &[Prop::FilterBlur],
+        "blur",
+        false,
+        "utilities.ts blur (registry-local group; oracle None)",
+    ),
+    row(
+        "brightness",
+        any(&[num(), arb()]),
+        &[Prop::FilterBrightness],
+        "brightness",
+        false,
+        "utilities.ts brightness (registry-local group; oracle None)",
+    ),
+    row(
+        "contrast",
+        any(&[num(), arb()]),
+        &[Prop::FilterContrast],
+        "contrast",
+        false,
+        "utilities.ts contrast (registry-local group; oracle None)",
+    ),
+    row(
+        "grayscale",
+        any(&[bare("grayscale(100%)"), num(), arb()]),
+        &[Prop::FilterGrayscale],
+        "grayscale",
+        false,
+        "utilities.ts grayscale (registry-local group; oracle None)",
+    ),
+    row(
+        "hue-rotate",
+        any(&[num(), arb()]),
+        &[Prop::FilterHueRotate],
+        "hue-rotate",
+        true,
+        "utilities.ts hue-rotate (registry-local group; oracle None)",
+    ),
+    row(
+        "invert",
+        any(&[bare("invert(100%)"), num(), arb()]),
+        &[Prop::FilterInvert],
+        "invert",
+        false,
+        "utilities.ts invert (registry-local group; oracle None)",
+    ),
+    row(
+        "saturate",
+        any(&[num(), arb()]),
+        &[Prop::FilterSaturate],
+        "saturate",
+        false,
+        "utilities.ts saturate (registry-local group; oracle None)",
+    ),
+    row(
+        "sepia",
+        any(&[bare("sepia(100%)"), num(), arb()]),
+        &[Prop::FilterSepia],
+        "sepia",
+        false,
+        "utilities.ts sepia (registry-local group; oracle None)",
+    ),
+    row(
+        "drop-shadow",
+        any(&[bare(DROP_SHADOW_DEFAULT), kw(DROP_SHADOW_PRESETS), arb()]),
+        &[Prop::FilterDropShadow],
+        "drop-shadow",
+        false,
+        "utilities.ts drop-shadow (registry-local group; oracle None)",
+    ),
+    row(
+        "filter",
+        any(&[bare(FILTER_CHAIN), kw(FILTER_RESETS), arb()]),
+        &[Prop::Filter],
+        "filter",
+        false,
+        "utilities.ts filter (registry-local group; oracle None)",
+    ),
+    // ---- backdrop filters (the plan §3.7 backlog row's second half) --------
+    //
+    // The `backdrop-*` mirrors: the SAME value grammar the filter half
+    // carries (v4's own theme fallback chains — `backdrop-blur` reads
+    // `--backdrop-blur` then `--blur`), the backdrop-only ninth
+    // primitive (`backdrop-opacity-*`, the chain's own var with no
+    // filter-half counterpart), and the composed `backdrop-filter`
+    // root whose rules render BOTH properties (`-webkit-` beside the
+    // standard one). The `drop-shadow` recolour arm has no backdrop
+    // counterpart in v4's chain — no rows here.
+    row(
+        "backdrop-blur",
+        any(&[bare("blur(8px)"), kw(BLUR_SCALE), arb()]),
+        &[Prop::BackdropBlur],
+        "backdrop-blur",
+        false,
+        "utilities.ts backdrop-blur (registry-local group; oracle None)",
+    ),
+    row(
+        "backdrop-brightness",
+        any(&[num(), arb()]),
+        &[Prop::BackdropBrightness],
+        "backdrop-brightness",
+        false,
+        "utilities.ts backdrop-brightness (registry-local group; oracle None)",
+    ),
+    row(
+        "backdrop-contrast",
+        any(&[num(), arb()]),
+        &[Prop::BackdropContrast],
+        "backdrop-contrast",
+        false,
+        "utilities.ts backdrop-contrast (registry-local group; oracle None)",
+    ),
+    row(
+        "backdrop-grayscale",
+        any(&[bare("grayscale(100%)"), num(), arb()]),
+        &[Prop::BackdropGrayscale],
+        "backdrop-grayscale",
+        false,
+        "utilities.ts backdrop-grayscale (registry-local group; oracle None)",
+    ),
+    row(
+        "backdrop-hue-rotate",
+        any(&[num(), arb()]),
+        &[Prop::BackdropHueRotate],
+        "backdrop-hue-rotate",
+        true,
+        "utilities.ts backdrop-hue-rotate (registry-local group; oracle None)",
+    ),
+    row(
+        "backdrop-invert",
+        any(&[bare("invert(100%)"), num(), arb()]),
+        &[Prop::BackdropInvert],
+        "backdrop-invert",
+        false,
+        "utilities.ts backdrop-invert (registry-local group; oracle None)",
+    ),
+    row(
+        "backdrop-opacity",
+        any(&[num(), arb()]),
+        &[Prop::BackdropOpacity],
+        "backdrop-opacity",
+        false,
+        "utilities.ts backdrop-opacity (registry-local group; oracle None)",
+    ),
+    row(
+        "backdrop-saturate",
+        any(&[num(), arb()]),
+        &[Prop::BackdropSaturate],
+        "backdrop-saturate",
+        false,
+        "utilities.ts backdrop-saturate (registry-local group; oracle None)",
+    ),
+    row(
+        "backdrop-sepia",
+        any(&[bare("sepia(100%)"), num(), arb()]),
+        &[Prop::BackdropSepia],
+        "backdrop-sepia",
+        false,
+        "utilities.ts backdrop-sepia (registry-local group; oracle None)",
+    ),
+    row(
+        "backdrop-filter",
+        any(&[
+            bare(BACKDROP_FILTER_CHAIN),
+            kw(BACKDROP_FILTER_RESETS),
+            arb(),
+        ]),
+        &[Prop::BackdropFilter],
+        "backdrop-filter",
+        false,
+        "utilities.ts backdrop-filter (registry-local group; oracle None)",
     ),
 ];
