@@ -185,6 +185,17 @@ pub enum MetamorphicNote {
     /// A structural layer the sourceless walk cannot answer (the
     /// interp's [`InterpNote::StructuralUnqueried`], translated).
     StructuralUnqueried,
+    /// The CSS arm's composed-filter chain line (`filter: var(--tw-blur,)
+    /// …` — the filter family's v4 emission form): the re-declaration
+    /// the primitive rules carry beside their var lines. The IR keeps
+    /// the PRIMITIVES (one longhand each); the chain is the CSS
+    /// cascade's own composition, so the pair is COUNTED here, never
+    /// compared as text.
+    FilterCompose {
+        /// The longhand the chain re-declares (the composed property's
+        /// IR name — `filter`).
+        prop: String,
+    },
 }
 
 impl fmt::Display for MetamorphicNote {
@@ -204,6 +215,12 @@ impl fmt::Display for MetamorphicNote {
                 f,
                 "the {prop} value is a runtime token: the CSS keeps the \
                  var() reference, the interp resolves the probe's bytes"
+            ),
+            MetamorphicNote::FilterCompose { prop } => write!(
+                f,
+                "the {prop} chain line is the CSS cascade's own \
+                 composition (the filter family's var-chain form); the \
+                 IR keeps the primitives the vars name"
             ),
             MetamorphicNote::ContainerUnqueried => write!(
                 f,
@@ -561,6 +578,7 @@ fn situation_walk(
     // the dark companion sits AFTER its base rule, so under dark the
     // pair's dark half wins).
     let mut css_map: BTreeMap<String, String> = BTreeMap::new();
+    let mut compose_notes: Vec<MetamorphicNote> = Vec::new();
     for candidate in lowered {
         if !fires(env, &candidate.conds) {
             continue;
@@ -576,6 +594,20 @@ fn situation_walk(
             for line in rule.body.lines() {
                 if let Some((name, value)) = line.split_once(": ") {
                     let value = value.trim_end_matches(';');
+                    // The filter family's chain lines: the composition
+                    // re-declarations the primitive rules carry beside
+                    // their var lines (the filter chain; the backdrop
+                    // chain on BOTH properties) — the typed note,
+                    // never a text comparison (the IR keeps the
+                    // primitives).
+                    if value == aeolus_data::rows::FILTER_CHAIN
+                        || value == aeolus_data::rows::BACKDROP_FILTER_CHAIN
+                    {
+                        compose_notes.push(MetamorphicNote::FilterCompose {
+                            prop: css_prop_to_ir(name).to_string(),
+                        });
+                        continue;
+                    }
                     css_map.insert(css_prop_to_ir(name).to_string(), value.to_string());
                 }
             }
@@ -646,6 +678,7 @@ fn situation_walk(
     // The interp's own exclusion notes, translated (the sourceless
     // probe layers: quiet on both sides, reported here).
     let mut notes: Vec<MetamorphicNote> = token_notes;
+    notes.extend(compose_notes);
     if let Ok(resolved) = &interped {
         for note in &resolved.notes {
             match note {
@@ -904,10 +937,54 @@ fn value_agrees(interp: &str, css: &str) -> bool {
     if let (Some(a), Some(b)) = (parse_f32(interp), parse_f32(css)) {
         return a == b;
     }
+    // The filter family's fn-wrapped numbers (`brightness(110%)` vs the
+    // interp's bare `110`, `blur(2px)` vs `2px`): the comparison key is
+    // the PROP, which fixes the function, so the number carries the
+    // agreement.
+    if let (Some(a), Some(b)) = (parse_f32(interp), parse_f32_fn_wrap(css)) {
+        return a == b;
+    }
+    if let (Some(a), Some(b)) = (parse_f32_fn_wrap(interp), parse_f32(css)) {
+        return a == b;
+    }
     match (parse_colour(interp), parse_colour(css)) {
         (Some(a), Some(b)) => a == b,
         _ => false,
     }
+}
+
+/// The filter functions the fn-wrap parse accepts (the family's own
+/// `fn(number)` forms — everything else stays textual).
+const FN_WRAP_FNS: &[&str] = &[
+    "blur",
+    "brightness",
+    "contrast",
+    "grayscale",
+    "hue-rotate",
+    "invert",
+    "saturate",
+    "sepia",
+];
+
+/// Parse a fn-wrapped numeric text — `brightness(110%)`,
+/// `hue-rotate(30deg)`, `blur(2px)`: the name must be one of the
+/// filter functions, the inner text a bare/unit-carrying number.
+/// Multi-value texts (the composed drop-shadow lists) parse to
+/// nothing — the comparison stays textual there.
+fn parse_f32_fn_wrap(text: &str) -> Option<f32> {
+    let (name, inner) = text.strip_suffix(')')?.split_once('(')?;
+    if !FN_WRAP_FNS.contains(&name.trim()) {
+        return None;
+    }
+    let inner = inner.trim();
+    // The wrapped text must be ENTIRELY one single-value number: a
+    // composed list (the multi-band drop-shadow presets) carries
+    // separators or a second function — the comparison stays textual
+    // there.
+    if inner.contains([' ', ',', '(']) {
+        return None;
+    }
+    parse_f32(inner)
 }
 
 /// Parse a rendered colour text into its bytes: the hex spellings (the
