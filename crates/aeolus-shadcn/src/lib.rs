@@ -12,6 +12,13 @@
 //! Four consumption layers:
 //! - **[`classes`]** — pure `&str` tables + variant enums; backend-agnostic,
 //!   suitable for `cn()` merging and for the `tw!` macro.
+//! - **[`program`]** — the closed-world PROGRAM TABLES (plan §3.6's surface
+//!   (2), §10's "shadcn components are `const` tables"): the same verbatim
+//!   strings compiled through the V1 pipeline ONCE per combo and interned —
+//!   `ButtonPrograms::program(variant, size)` is a table hit, never a
+//!   `String` build plus a re-resolve per call (the F6 finding, gone); the
+//!   token table is the handle's (the built-in `ThemeSource::shadcn` bake
+//!   or a host's own).
 //! - **[`xilem`] interactive** — `button` (a real `StyledButton` widget:
 //!   pointer/keyboard/accesskit activation, disabled state) and `input`
 //!   (Masonry `TextInput` with the controlled-value contract) are REAL
@@ -53,6 +60,7 @@ pub mod classes;
 pub mod egui;
 pub mod floem;
 pub mod iced;
+pub mod program;
 pub mod slint;
 pub mod xilem;
 
