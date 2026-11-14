@@ -94,6 +94,14 @@ harness = false
 name = "pseudo_targets"
 harness = false
 
+# The metamorphic seam's benchmarks (plan §5.3's differential line, the
+# `compile ⇒ interpret ⇒ equals emit` target): the full three-walk check
+# over the shadcn Button surface, themed and themeless, against the
+# single-utility floor.
+[[bench]]
+name = "metamorphic"
+harness = false
+
 # The static-data emit arm's benchmarks (plan §3.1 emit (b)): freezing
 # the compiled program into the byte-stable static item, against the
 # compile floor.
