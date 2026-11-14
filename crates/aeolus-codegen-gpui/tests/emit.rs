@@ -15,15 +15,21 @@ fn supports_matches_the_runtime_mapping() {
     assert!(supports(Prop::PaddingTop));
     assert!(supports(Prop::Background));
     assert!(supports(Prop::Display));
-    assert!(!supports(Prop::BoxShadow));
+    // The shadow tier is NATIVE at the pinned rev (§3.7's shadow row,
+    // "direct": GPUI's `box_shadow: Vec<BoxShadow>` carries the v4 band
+    // shape — the walk composes through `aeolus_gpui::ShadowState`).
+    assert!(supports(Prop::BoxShadow));
+    assert!(supports(Prop::ShadowColor));
     assert!(!supports(Prop::Rotate));
 }
 
 #[test]
 fn emit_refuses_unsupported_longhands() {
-    let compiled = compile_theme("shadow-md", &table(), &Config::default()).unwrap();
+    // The transform family stays the reported boundary (GPUI's `Styled`
+    // carries no transform slots — plan §3.7's transforms row).
+    let compiled = compile_theme("rotate-45", &table(), &Config::default()).unwrap();
     let err = GpuiEmit::default().emit(&compiled.program).unwrap_err();
-    assert!(err.iter().any(|entry| entry.prop == Prop::BoxShadow));
+    assert!(err.iter().any(|entry| entry.prop == Prop::Rotate));
 }
 
 #[test]
@@ -47,12 +53,12 @@ fn lower_class_is_the_public_seam() {
             .replace(' ', "")
             .contains("StaticProgram::new")
     );
-    let diagnostics: Diagnostics = lower_class("shadow-md", &Config::default()).unwrap_err();
+    let diagnostics: Diagnostics = lower_class("rotate-45", &Config::default()).unwrap_err();
     assert!(
         diagnostics
             .unsupported
             .iter()
-            .any(|entry| entry.prop == Prop::BoxShadow)
+            .any(|entry| entry.prop == Prop::Rotate)
     );
 }
 
