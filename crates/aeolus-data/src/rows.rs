@@ -1673,6 +1673,51 @@ pub static ROWS: &[UtilityRow] = &[
         false,
         "utilities.ts text-underline-offset",
     ),
+    // ---- text decoration (the §3.7 typography surface's decoration
+    // half) ---------------------------------------------------------------
+    //
+    // The `decoration-{style}`/`decoration-{thickness}`/`decoration-{color}`
+    // family. The tw_merge oracle GROUPS all three (the `collision_group`
+    // arms grew beside the rows — style, thickness, colour are THREE
+    // properties that COEXIST, each group self-conflicting). The audited
+    // v4.1.17 grammar: the static style utilities, the static thickness
+    // keywords, and the functional root whose bare value is a
+    // NON-NEGATIVE INTEGER thickness (the v4 `isPositiveInteger`
+    // round-trip rule — `decoration-2.5` and `decoration-02` are not
+    // utilities, so the shape is its own kind, the `Number` sibling's
+    // stricter twin) else a colour token (the `/opacity` modifier
+    // rides). The arbitrary values split by type — length/percentage →
+    // thickness, colour → colour (the sibling-row gate's own split:
+    // `decoration-[3px]` is the thickness row's alone,
+    // `decoration-[#0f0f0f]` the colour row's).
+    row(
+        "decoration",
+        kw(tables::TEXT_DECORATION_STYLES),
+        &[Prop::TextDecorationStyle],
+        "decoration-style",
+        false,
+        "utilities.ts text-decoration-style",
+    ),
+    row(
+        "decoration",
+        any(&[
+            kw(tables::DECORATION_THICKNESS_KEYWORDS),
+            ValueKind::PositiveInt,
+            arb(),
+        ]),
+        &[Prop::TextDecorationThickness],
+        "decoration-thickness",
+        false,
+        "utilities.ts text-decoration-thickness",
+    ),
+    row(
+        "decoration",
+        any(&[color(), arb()]),
+        &[Prop::TextDecorationColor],
+        "decoration-color",
+        false,
+        "utilities.ts text-decoration-color",
+    ),
     row(
         "uppercase",
         bare("uppercase"),
