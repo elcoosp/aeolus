@@ -11,12 +11,14 @@
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 use lsp_types::{
     Color, ColorInformation, ColorProviderCapability, CompletionItem, CompletionItemKind,
-    CompletionList, CompletionOptions, CompletionParams, DidChangeTextDocumentParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentColorParams, Hover,
+    CompletionList, CompletionOptions, CompletionParams, DiagnosticOptions,
+    DiagnosticServerCapabilities, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DocumentColorParams, DocumentDiagnosticParams,
+    DocumentDiagnosticReport, DocumentDiagnosticReportResult, FullDocumentDiagnosticReport, Hover,
     HoverContents, HoverProviderCapability, InitializeResult, MarkupContent, MarkupKind,
-    NumberOrString, PublishDiagnosticsParams, ServerCapabilities, ServerInfo,
-    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, Uri,
+    NumberOrString, PublishDiagnosticsParams, RelatedFullDocumentDiagnosticReport,
+    ServerCapabilities, ServerInfo, TextDocumentPositionParams, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
 };
 use serde_json::Value;
 use std::str::FromStr;
@@ -182,6 +184,40 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/documentDiagnostic" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The pull model (LSP 3.17's fifth request): the engine's
+            // analyze walk IS the report — the same findings the push
+            // channel publishes, recomputed on demand (no result ID:
+            // the engine never caches, so the answer is always a full
+            // report).
+            let answer = serde_json::from_value::<DocumentDiagnosticParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let items = session
+                        .engine
+                        .analyze(params.text_document.uri.as_str())
+                        .iter()
+                        .map(wire_diagnostic)
+                        .collect::<Vec<_>>();
+                    DocumentDiagnosticReportResult::Report(DocumentDiagnosticReport::Full(
+                        RelatedFullDocumentDiagnosticReport {
+                            related_documents: None,
+                            full_document_diagnostic_report: FullDocumentDiagnosticReport {
+                                result_id: None,
+                                items,
+                            },
+                        },
+                    ))
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |report| Some(serde_json::to_value(report).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
         "textDocument/completion" => {
             if !session.initialized {
                 return Handled::default();
@@ -289,6 +325,31 @@ fn handle_notification(session: &mut Session, notification: Notification) -> Han
 // The publish + respond helpers
 // ---------------------------------------------------------------------------
 
+/// One engine finding onto the protocol's Diagnostic — the mapping BOTH
+/// channels share (the push channel's publish and the pull channel's
+/// report; one walk, two transports, one render). The findings are the
+/// non-fatal WARNING tier: every miss degrades, nothing aborts (the
+/// CLI's own honesty contract at the editor).
+fn wire_diagnostic(finding: &crate::EngineDiagnostic) -> lsp_types::Diagnostic {
+    lsp_types::Diagnostic {
+        range: lsp_types::Range {
+            start: lsp_types::Position {
+                line: finding.range.start.line,
+                character: finding.range.start.character,
+            },
+            end: lsp_types::Position {
+                line: finding.range.end.line,
+                character: finding.range.end.character,
+            },
+        },
+        severity: Some(lsp_types::DiagnosticSeverity::WARNING),
+        code: Some(NumberOrString::String(finding.code.clone())),
+        message: finding.message.clone(),
+        source: Some("aeolus".to_string()),
+        ..lsp_types::Diagnostic::default()
+    }
+}
+
 /// Publish the engine's findings for one URI (the didOpen/didChange/
 /// didClose half). A URI the `Url` parser rejects skips the publish —
 /// the wire gave it, and no editor can have named it either.
@@ -297,27 +358,7 @@ fn publish(engine: &mut AeolusEngine, uri: &str) -> Handled {
         return Handled::default();
     };
     let version = engine.version(uri);
-    let diagnostics = engine
-        .analyze(uri)
-        .iter()
-        .map(|finding| lsp_types::Diagnostic {
-            range: lsp_types::Range {
-                start: lsp_types::Position {
-                    line: finding.range.start.line,
-                    character: finding.range.start.character,
-                },
-                end: lsp_types::Position {
-                    line: finding.range.end.line,
-                    character: finding.range.end.character,
-                },
-            },
-            severity: Some(lsp_types::DiagnosticSeverity::WARNING),
-            code: Some(NumberOrString::String(finding.code.clone())),
-            message: finding.message.clone(),
-            source: Some("aeolus".to_string()),
-            ..lsp_types::Diagnostic::default()
-        })
-        .collect();
+    let diagnostics = engine.analyze(uri).iter().map(wire_diagnostic).collect();
     let params = serde_json::to_value(PublishDiagnosticsParams {
         uri: parsed,
         diagnostics,
@@ -353,6 +394,16 @@ fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         color_provider: Some(ColorProviderCapability::Simple(true)),
+        // The pull model rides beside the push channel: the client can
+        // ask any time (the refresh path, a newly focused file) and the
+        // engine recomputes — per document, no cross-file model, no
+        // workspace-wide pull (the document map is the answer's scope).
+        diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
+            identifier: None,
+            inter_file_dependencies: false,
+            workspace_diagnostics: false,
+            ..DiagnosticOptions::default()
+        })),
         completion_provider: Some(CompletionOptions {
             // The class grammar's own separators: `-` joins root and
             // suffix, `:` ends a variant segment — the two keystrokes
