@@ -267,6 +267,44 @@ fn requests_before_initialize_ride_silently() {
     );
     assert!(!handled.exit);
 }
+
+#[test]
+fn requests_after_shutdown_ride_silently() {
+    // The shutdown flag is the lifecycle's own gate (not dead state): a
+    // request after the client shut down has no capabilities contract
+    // left, so it rides the same quiet-drop — and a repeated `shutdown`
+    // still answers null (a client waiting on it must not hang).
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(
+        &mut session,
+        request(9, "shutdown", serde_json::Value::Null),
+    );
+    let _ = handle_message(&mut session, did_open(&uri(), 1, DOC));
+    let handled = handle_message(
+        &mut session,
+        request(
+            12,
+            "textDocument/hover",
+            json!({
+                "textDocument": {"uri": uri()},
+                "position": {"line": 1, "character": 16}
+            }),
+        ),
+    );
+    assert!(
+        handled.outgoing.is_empty(),
+        "post-shutdown hover rides silently: {handled:?}"
+    );
+    let handled = handle_message(
+        &mut session,
+        request(13, "shutdown", serde_json::Value::Null),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("a repeated shutdown still answers (never a hang)");
+    };
+    assert!(response.result.is_none());
+}
 // ---------------------------------------------------------------------------
 // The completion wire (the third request the server answers): the
 // capability rides initialize, the request maps the engine's answer
@@ -636,6 +674,282 @@ fn pull_diagnostics_with_malformed_params_answers_null() {
     let handled = handle_message(
         &mut session,
         request(11, "textDocument/documentDiagnostic", json!({"uri": 42})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request still answers (never a hang)");
+    };
+    assert_eq!(response.result, Some(serde_json::Value::Null));
+}
+// ---------------------------------------------------------------------------
+// The semanticTokens wire (the sixth request, LSP 3.16's highlighter
+// feed): the capability rides initialize with the legend named, the
+// request maps the engine's absolute tokens onto the protocol's delta
+// encoding. The legend's ORDER is the wire contract the encoder indexes
+// — the tests pin it beside the deltas.
+// ---------------------------------------------------------------------------
+
+fn semantic_tokens_request(id: i32, uri: &str) -> Message {
+    request(
+        id,
+        "textDocument/semanticTokens/full",
+        json!({ "textDocument": { "uri": uri } }),
+    )
+}
+
+#[test]
+fn initialize_advertises_semantic_tokens() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("initialize answers a response");
+    };
+    let result = response.result.expect("the capabilities carry a result");
+    let provider = &result["capabilities"]["semanticTokensProvider"];
+    assert!(
+        !provider.is_null(),
+        "the semantic-tokens capability rides: {result}"
+    );
+    let legend = &provider["legend"];
+    let token_types = legend["tokenTypes"].as_array().expect("the legend rides");
+    let types: Vec<&str> = token_types
+        .iter()
+        .map(|value| value.as_str().expect("a legend entry is a string"))
+        .collect();
+    // The legend the engine's kinds index into: a lowered candidate is
+    // the protocol's own `class`, a refused one the server's custom
+    // `refused` type (an editor that does not know it renders neutral).
+    assert_eq!(types.first(), Some(&"class"), "index 0: the lowered class");
+    assert_eq!(types.get(1), Some(&"refused"), "index 1: the typed refusal");
+    assert!(
+        legend["tokenModifiers"]
+            .as_array()
+            .is_some_and(std::vec::Vec::is_empty),
+        "no modifiers: the kinds carry the whole story"
+    );
+    assert_eq!(
+        provider["full"], true,
+        "the full-document walk is the advertised shape"
+    );
+}
+
+#[test]
+fn semantic_tokens_answer_delta_encoded() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    handle_message(&mut session, did_open(&uri(), 1, PULL_DOC));
+    let handled = handle_message(&mut session, semantic_tokens_request(13, &uri()));
+    assert!(!handled.exit, "the walk does not end the session");
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("semanticTokens answers a response");
+    };
+    assert_eq!(response.id, RequestId::from(13));
+    let result = response.result.expect("the tokens carry a result");
+    let data = result["data"]
+        .as_array()
+        .expect("the flat delta array rides");
+    assert_eq!(data.len(), 10, "two candidates, five u32s each: {result}");
+    let words: Vec<u32> = data
+        .iter()
+        .map(|value| value.as_u64().expect("a u32 word") as u32)
+        .collect();
+    // The fixture: `p-4 not-a-root` on line 1 — the first token's
+    // deltas are ABSOLUTE (line, character); the second rides the
+    // deltas the protocol re-derives.
+    let p4 = PULL_DOC
+        .find("\"p-4 not-a-root\"")
+        .expect("the fixture holds")
+        + 1;
+    let line_start = PULL_DOC[..p4].rfind('\n').map_or(0, |i| i + 1);
+    let p4_character = PULL_DOC[line_start..p4]
+        .chars()
+        .map(char::len_utf16)
+        .sum::<usize>() as u32;
+    assert_eq!(words[0], 1, "deltaLine: the token's line (absolute first)");
+    assert_eq!(words[1], p4_character, "deltaStart: the absolute column");
+    assert_eq!(words[2], 3, "length: p-4");
+    assert_eq!(words[3], 0, "tokenType: class (the legend's index 0)");
+    assert_eq!(words[4], 0, "no modifiers");
+    // `not-a-root` follows on the SAME line: deltaLine 0, deltaStart
+    // relative to the PREVIOUS TOKEN's start (the protocol's own rule)
+    // — the miss's absolute column (p-4's + the spelling + the space)
+    // minus the previous token's start.
+    assert_eq!(words[5], 0, "deltaLine: same line");
+    assert_eq!(
+        words[6],
+        p4_character + 3 + 1 - p4_character,
+        "deltaStart: relative to the previous token's start"
+    );
+    assert_eq!(words[7], 10, "length: not-a-root");
+    assert_eq!(words[8], 1, "tokenType: refused (the legend's index 1)");
+    assert_eq!(words[9], 0, "no modifiers");
+}
+
+#[test]
+fn semantic_tokens_answer_empty_on_a_clean_document() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    handle_message(&mut session, did_open(&uri(), 1, "fn clean() {}\n"));
+    let handled = handle_message(&mut session, semantic_tokens_request(13, &uri()));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("semanticTokens answers a response");
+    };
+    let result = response.result.expect("the tokens carry a result");
+    let data = result["data"]
+        .as_array()
+        .expect("the flat delta array rides");
+    assert!(data.is_empty(), "no candidates, no tokens: {result}");
+}
+
+#[test]
+fn semantic_tokens_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(&mut session, semantic_tokens_request(13, &uri()));
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
+
+#[test]
+fn semantic_tokens_with_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(13, "textDocument/semanticTokens/full", json!({"uri": 42})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request still answers (never a hang)");
+    };
+    assert_eq!(response.result, Some(serde_json::Value::Null));
+}
+// ---------------------------------------------------------------------------
+// The colorPresentation wire (the seventh request): the paired half of
+// the colorProvider capability — the swatches advertise, the picker's
+// presentations spell. The request's colour (the protocol's 0..1
+// fractions) maps back onto the engine's byte rgba, the answer's
+// spellings ride as the picker's edits over the requested range.
+// ---------------------------------------------------------------------------
+
+/// The documentColor → colorPresentation round trip the harness reuses:
+/// the swatch the fourth request answers is the colour the seventh
+/// spells back.
+fn swatch_of(session: &mut Session) -> (serde_json::Value, serde_json::Value) {
+    let handled = handle_message(
+        session,
+        request(
+            9,
+            "textDocument/documentColor",
+            json!({ "textDocument": { "uri": uri() } }),
+        ),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("documentColor answers a response");
+    };
+    let result = response.result.expect("the swatches carry a result");
+    let item = &result.as_array().expect("the colour array rides")[0];
+    (item["color"].clone(), item["range"].clone())
+}
+
+#[test]
+fn colour_presentation_answers_the_spellings() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    handle_message(&mut session, did_open(&uri(), 1, COLOUR_DOC));
+    let (color, range) = swatch_of(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(
+            14,
+            "textDocument/colorPresentation",
+            json!({
+                "textDocument": { "uri": uri() },
+                "color": color,
+                "range": range,
+            }),
+        ),
+    );
+    assert!(!handled.exit, "the presentation does not end the session");
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("colorPresentation answers a response");
+    };
+    assert_eq!(response.id, RequestId::from(14));
+    let result = response.result.expect("the presentations carry a result");
+    let items = result.as_array().expect("the presentation array rides");
+    assert!(
+        !items.is_empty(),
+        "the swatch's own colour spells back: {result}"
+    );
+    let primary = items
+        .iter()
+        .find(|item| item["label"] == "bg-primary")
+        .expect("the opaque token spelling rides");
+    // The edit writes the spelling over the range the picker names
+    // (the colour's own range — the swap writes the class).
+    let edit = &primary["textEdit"];
+    assert_eq!(edit["newText"], "bg-primary");
+    assert_eq!(edit["range"], range, "the requested range rides");
+}
+
+#[test]
+fn colour_presentation_of_an_unmatched_colour_answers_empty() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    handle_message(&mut session, did_open(&uri(), 1, COLOUR_DOC));
+    let handled = handle_message(
+        &mut session,
+        request(
+            14,
+            "textDocument/colorPresentation",
+            json!({
+                "textDocument": { "uri": uri() },
+                "color": {"red": 0.004, "green": 0.008, "blue": 0.012, "alpha": 0.016},
+                "range": {"start": {"line": 1, "character": 13}, "end": {"line": 1, "character": 23}},
+            }),
+        ),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("colorPresentation answers a response");
+    };
+    let result = response.result.expect("the presentations carry a result");
+    let items = result.as_array().expect("the presentation array rides");
+    assert!(
+        items.is_empty(),
+        "an unmatched colour answers the honest empty: {result}"
+    );
+}
+
+#[test]
+fn colour_presentation_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(
+            14,
+            "textDocument/colorPresentation",
+            json!({
+                "textDocument": { "uri": uri() },
+                "color": {"red": 0.0, "green": 0.0, "blue": 0.0, "alpha": 1.0},
+                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+            }),
+        ),
+    );
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
+
+#[test]
+fn colour_presentation_with_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(14, "textDocument/colorPresentation", json!({"uri": 42})),
     );
     let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
         panic!("the request still answers (never a hang)");
