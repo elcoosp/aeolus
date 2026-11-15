@@ -221,6 +221,14 @@ harness = false
 name = "filters"
 harness = false
 
+# The decoration family's benchmarks (the §3.7 typography surface's
+# decoration half): the compile of the three-row root's sibling walk
+# against the Button floor, the CSS emit of the four property forms,
+# and the cached-loop warm path.
+[[bench]]
+name = "decoration"
+harness = false
+
 # The backdrop-filter layer's benchmarks (the plan §3.7 backlog row's
 # second half): the compile of the backdrop families against the Button
 # floor, the CSS emit of the prefixed var-chain form and the interp of
