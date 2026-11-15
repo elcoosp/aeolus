@@ -154,14 +154,16 @@ fn the_motion_layer_stays_the_reported_gpui_boundary() {
 }
 
 #[test]
-fn the_filter_layer_stays_the_reported_gpui_boundary() {
-    // The plan §3.7 backlog row's pipeline half: GPUI's style surface
-    // carries no filter/backdrop-filter slot — the ten filter longhands
-    // refuse per longhand, the honest boundary the diagnostics render
-    // (the CSS arm carries the v4 var-chain form, the interp answers
-    // the primitives).
+fn the_filter_tier_splits_the_polyfill_half_from_the_spatial_refusal() {
+    // The plan §3.7 filter row's GPUI polyfill half: the seven
+    // colour-matrix longhands, the `drop-shadow-*` presets and the
+    // bare `filter`/`filter-none` reset arm ride the POLYFILL tier
+    // (the ring row's precedent — the walk composes them into the
+    // element's own colour slots and GPUI's `Vec<BoxShadow>`), while
+    // the SPATIAL half (`blur-*`) and the backdrop mirrors keep the
+    // typed refusal (no GPUI slot; the CSS/interp arms carry the real
+    // output).
     for prop in [
-        Prop::FilterBlur,
         Prop::FilterBrightness,
         Prop::FilterContrast,
         Prop::FilterGrayscale,
@@ -172,42 +174,63 @@ fn the_filter_layer_stays_the_reported_gpui_boundary() {
         Prop::FilterDropShadow,
         Prop::Filter,
     ] {
-        assert!(!supports(prop), "{prop:?} refused");
-        assert!(!polyfilled(prop), "{prop:?} refused");
+        assert!(!supports(prop), "{prop:?} is the polyfill tier, not native");
+        assert!(polyfilled(prop), "{prop:?} rides the polyfill tier");
         assert_eq!(
             aeolus_codegen_gpui::Caps.tier(prop),
-            aeolus_codegen::conformance::Tier::Refused
+            aeolus_codegen::conformance::Tier::Polyfill
         );
     }
 
-    // The emit gate refuses the program, naming the filter longhand:
-    let compiled = compile_theme("blur-md brightness-110", &table(), &Config::default()).unwrap();
+    // The colour-matrix program emits where it used to refuse:
+    let compiled = compile_theme(
+        "brightness-110 contrast-125 grayscale",
+        &table(),
+        &Config::default(),
+    )
+    .unwrap();
     assert!(
         compiled.diagnostics.is_empty(),
         "{:?}",
         compiled.diagnostics
     );
+    let tokens = GpuiEmit::default().emit(&compiled.program).unwrap();
+    assert!(
+        tokens
+            .to_string()
+            .replace(' ', "")
+            .contains("StaticProgram::new")
+    );
+    let tokens = lower_class("grayscale invert saturate-0", &Config::default())
+        .expect("the matrix program emits through the public seam");
+    assert!(
+        tokens
+            .to_string()
+            .replace(' ', "")
+            .contains("StaticProgram::new")
+    );
+
+    // The drop-shadow presets emit (the audited band texts the walk
+    // parses) — with the keyword slice the macro freezes, the
+    // annotation the band gate reads:
+    let compiled = aeolus_compile::compile("drop-shadow-md", &Config::default()).unwrap();
+    let classes = aeolus_compile::keyword_texts("drop-shadow-md", &Config::default()).unwrap();
+    let keywords = aeolus_compile::keyword_alignment(&compiled, &classes);
+    assert!(
+        GpuiEmit::new(&keywords).emit(&compiled.program).is_ok(),
+        "the drop-shadow preset emits"
+    );
+    // A keyword-less emit (no annotation slice) refuses the band gate
+    // rather than guessing:
     let err = GpuiEmit::default().emit(&compiled.program).unwrap_err();
     assert!(
-        err.iter().any(|entry| entry.prop == Prop::FilterBlur),
-        "the blur longhand in the refusal report: {err:?}"
-    );
-    assert!(
-        err.iter().any(|entry| entry.prop == Prop::FilterBrightness),
-        "the brightness longhand in the refusal report: {err:?}"
+        err.iter().any(|entry| entry.prop == Prop::FilterDropShadow),
+        "the annotation-less band refuses"
     );
 
-    // The third-party seam reports the same refusal as diagnostics:
-    let err = lower_class("blur-md", &Config::default()).unwrap_err();
-    assert!(
-        err.unsupported
-            .iter()
-            .any(|entry| entry.prop == Prop::FilterBlur)
-    );
-
-    // The backdrop half (the plan §3.7 backlog row's second half) rides
-    // the same refusal — the backdrop longhands refuse per longhand:
+    // The spatial + backdrop halves keep the typed refusal:
     for prop in [
+        Prop::FilterBlur,
         Prop::BackdropBlur,
         Prop::BackdropBrightness,
         Prop::BackdropContrast,
@@ -226,6 +249,22 @@ fn the_filter_layer_stays_the_reported_gpui_boundary() {
             aeolus_codegen::conformance::Tier::Refused
         );
     }
+    let compiled = compile_theme("blur-md brightness-110", &table(), &Config::default()).unwrap();
+    let err = GpuiEmit::default().emit(&compiled.program).unwrap_err();
+    assert!(
+        err.iter().any(|entry| entry.prop == Prop::FilterBlur),
+        "the blur longhand in the refusal report: {err:?}"
+    );
+    assert!(
+        !err.iter().any(|entry| entry.prop == Prop::FilterBrightness),
+        "the brightness longhand rides the polyfill tier: {err:?}"
+    );
+    let err = lower_class("blur-md", &Config::default()).unwrap_err();
+    assert!(
+        err.unsupported
+            .iter()
+            .any(|entry| entry.prop == Prop::FilterBlur)
+    );
     let err = lower_class("backdrop-blur-md", &Config::default()).unwrap_err();
     assert!(
         err.unsupported
@@ -280,8 +319,8 @@ fn the_conformance_seam_reads_the_capability_tables() {
         assert!(!supports(prop));
         assert!(polyfilled(prop));
     }
-    // The ring family is the whole polyfill tier (the §3.7 ring row).
-    // The ring family is the whole polyfill tier (the §3.7 ring row),
+    // The ring family and the filter tier's polyfill half are the whole
+    // polyfill set (the §3.7 ring row + the filter row's landed half),
     // in Prop::ALL's own discriminant order.
     assert_eq!(
         report.polyfill(),
@@ -290,6 +329,15 @@ fn the_conformance_seam_reads_the_capability_tables() {
             Prop::RingOffsetColor,
             Prop::RingColor,
             Prop::RingWidth,
+            Prop::FilterBrightness,
+            Prop::FilterContrast,
+            Prop::FilterGrayscale,
+            Prop::FilterHueRotate,
+            Prop::FilterInvert,
+            Prop::FilterSaturate,
+            Prop::FilterSepia,
+            Prop::FilterDropShadow,
+            Prop::Filter,
         ]
     );
 }
