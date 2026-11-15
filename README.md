@@ -261,15 +261,17 @@ aeolus sort "block p-4 mx-2 hover:block"              # canonical registry order
 aeolus explain "p-4 flex-col" --theme shadcn          # class → the Rust tokens it emits
 aeolus expand "hidden dark:block" --dark              # effective declarations under a probe Env
 aeolus build src/ --theme shadcn-dark --out app.css   # whole project → ONE stylesheet
+aeolus plan "p-4 hover:px-8" --theme shadcn | jq .    # the V1 lane's plan bridge → the same snapshot JSON
 aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · diff · cn also available
 ```
 
 | Tool                                       | What it does                                                                                                                                                                          |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `aeolus build`                             | scan → global dedupe → registry-ordered rules + self-contained `:root`/`.dark` vars block; diagnostics at **every** occurrence                                                        |
+| `aeolus plan`                              | the V1 lane's plan bridge (`Target::Plan`): the v0.x `StylePlan` the backends consume, as the same canonical snapshot JSON `resolve` prints; slot-boundary notes + per-class misses ride stderr, `--fail-on` keys on the typed codes                        |
 | `aeolus check`                             | unknown classes with suggestions, unsupported utilities with reasons, `cn()` conflicts with winner attribution; `--fail-on` exit codes                                                |
 | `cargo xtask gen-tables` / `verify-tables` | regenerate & drift-gate the committed artifacts: roots index, [docs/REGISTRY.md](docs/REGISTRY.md), [docs/CONFORMANCE.md](docs/CONFORMANCE.md) — a stale row fails plain `cargo test` |
-| `aeolus-lsp` (the LSP server)              | editor hover, diagnostics, completion and colour swatches over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location, `completion` at the typing edge (registry spellings, theme tokens, the closed variant set — the compiler's own audited tables), `documentColor` swatches (the table's resolved light-tier rgba); `bin/aeolus-lsp` speaks stdio JSON-RPC |
+| `aeolus-lsp` (the LSP server)              | editor hover, diagnostics, completion and colour swatches over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location, `completion` at the typing edge (registry spellings, theme tokens, the closed variant set — the compiler's own audited tables), `documentColor` swatches (the table's resolved light-tier rgba), `documentDiagnostic` pull (LSP 3.17 — the SAME findings the push channel publishes, recomputed on demand); `bin/aeolus-lsp` speaks stdio JSON-RPC |
 
 ## Correctness & performance
 
@@ -349,8 +351,8 @@ differential oracle — no big-bang migration.
 | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `aeolus-gpui` + five backend crates | see [Backends](#backends) — plan lane + V1 static-program lane each                             |
 | `aeolus-shadcn`                     | shadcn `new-york-v4` class tables verbatim + per-backend wrappers + the closed-world program tables (`ButtonPrograms`, the F6 fix) |
-| `aeolus-cli`                        | `resolve` `css` `diff` `cn` `check` `explain` `sort` `expand` `build` — zero external crates    |
-| `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges, hover signatures, completion from the audited tables, colour swatches) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) |
+| `aeolus-cli`                        | `resolve` `css` `diff` `cn` `check` `explain` `sort` `expand` `build` `plan` — zero external crates    |
+| `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges, hover signatures, completion from the audited tables, colour swatches, `documentDiagnostic` pull) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) |
 | `xtask`                             | `gen-tables` / `verify-tables` drift gates for the committed artifacts                          |
 | `aeolus-core`                       | v0.x `Resolver` + `StylePlan`: the runtime lane and the differential oracle — **publish-ready** |
 
@@ -390,6 +392,7 @@ cargo run -p aeolus-lsp --example lsp_colours           # the colour swatches: t
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
 cargo run -p aeolus-macro --example frozen_program  # what a tw! expansion actually emits
+cargo run -p aeolus-macro --example variants        # variants!/tw_cn!/theme!: the cva tables + the baked theme
 ```
 
 <details><summary><b>All examples, by crate</b></summary>
@@ -464,10 +467,12 @@ cargo run -p aeolus-slint --example program
 # CLI as a library
 cargo run -p aeolus-cli --example theme_spec
 cargo run -p aeolus-cli --example explain
+cargo run -p aeolus-cli --example plan            # the plan bridge: snapshot + notes + the two lanes' answer
 # the P5 LSP row
 cargo run -p aeolus-lsp --example lsp_hover
 cargo run -p aeolus-lsp --example lsp_completion  # completion at the typing edge
 cargo run -p aeolus-lsp --example lsp_colours     # the documentColor swatches
+cargo run -p aeolus-lsp --example lsp_diagnostics # the documentDiagnostic pull (the push channel's findings, pulled)
 cargo run -p aeolus-lsp --bin aeolus-lsp  # the stdio server (an editor spawns this)
 ```
 
