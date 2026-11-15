@@ -1855,6 +1855,17 @@ impl PlanWriter {
                     );
                 }
             }
+            // The decoration family's colour/thickness/style longhands
+            // (the §3.7 typography surface's decoration half): the v0.x
+            // text surface carries the LINE slot only — the three land
+            // as the typed `SlotUnsupported` notes (the underline-offset
+            // precedent: the lowering is correct in the IR, the v0.x
+            // shape is the limit).
+            Prop::TextDecorationColor
+            | Prop::TextDecorationThickness
+            | Prop::TextDecorationStyle => {
+                self.notes.push(PlanNoteKind::SlotUnsupported { prop });
+            }
             Prop::WhiteSpace => {
                 if let Some(text) = kw {
                     set_text(style, TextProperty::Whitespace, TextValue::Keyword(text));
