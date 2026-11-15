@@ -14,6 +14,11 @@
 //!                                        compare, exit 1 on ANY drift
 //! cargo xtask gen-tables --check       — verify-tables' alias
 //!                                        (the CI-friendly spelling)
+//! cargo xtask gen-gpui-caps            — (re)write the §3.7 capability
+//!                                        table (the codegen-gpui src
+//!                                        module)
+//! cargo xtask verify-gpui-caps         — the capability table's
+//!                                        focused drift gate
 //! ```
 //!
 //! Both commands take `--root <dir>` to resolve the artifacts'
@@ -29,9 +34,10 @@
 
 use std::path::{Path, PathBuf};
 
-use aeolus_codegen::conformance::Conformance;
-use aeolus_codegen_gpui::Caps;
+use aeolus_codegen::conformance::{Capability, Conformance, Tier};
+use aeolus_codegen_gpui::{Caps, unsupported_reason};
 use aeolus_data::codegen::{self, GeneratedArtifact};
+use aeolus_ir::Prop;
 
 /// The driver's usage text (the `--help` surface and the usage-error
 /// suffix; the same single-source shape as the CLI's `USAGE`).
@@ -39,13 +45,17 @@ const USAGE: &str = "aeolus xtask — the committed-artifact generator\n\n\
 USAGE:\n    \
 cargo xtask list\n    \
 cargo xtask gen-tables [--check] [--root <dir>]\n    \
-cargo xtask verify-tables [--root <dir>]\n\n\
+cargo xtask verify-tables [--root <dir>]\n    \
+cargo xtask gen-gpui-caps [--check] [--root <dir>]\n    \
+cargo xtask verify-gpui-caps [--root <dir>]\n\n\
 commands:\n    \
-list           print every committed artifact (name + workspace path)\n    \
-gen-tables     regenerate every artifact's committed bytes from the rows\n    \
-verify-tables  regenerate and compare; exit 1 on any drift (the test battery pins it)\n\n\
+list             print every committed artifact (name + workspace path)\n    \
+gen-tables       regenerate every artifact's committed bytes from the rows\n    \
+verify-tables    regenerate and compare; exit 1 on any drift (the test battery pins it)\n    \
+gen-gpui-caps    regenerate the §3.7 capability table (the codegen-gpui src module)\n    \
+verify-gpui-caps the capability table's focused drift gate (exit 1 on drift)\n\n\
 flags:\n    \
---check        gen-tables: compare instead of write (the verify-tables behaviour)\n    \
+--check        gen commands: compare instead of write (the verify behaviour)\n    \
 --root <dir>   resolve the artifacts' workspace-relative paths against <dir>\n    \
                (default: this workspace's root)\n";
 
@@ -129,12 +139,93 @@ gate. -->\n\n",
     }
 }
 
-/// The FULL artifact list: the data crate's registry-derived artifacts
-/// plus the conformance page this driver renders from the codegen
-/// crates' capability impls.
+// ---------------------------------------------------------------------------
+// The GPUI capability table: the §3.7 generator slice's committed module
+// ---------------------------------------------------------------------------
+
+/// The committed per-longhand capability table
+/// (`crates/aeolus-codegen-gpui/src/caps_generated.rs`, the §3.7
+/// matrix's generated form — the slice the architecture doc sketched
+/// and this driver now lands): the [Conformance] partition's
+/// per-longhand rows rendered from the backends' OWN capability impls
+/// (`Caps` — the emit gates' own tables), so the committed module is
+/// the emitter's verdicts, never a parallel claim. The crate consumes
+/// the module (`aeolus_codegen_gpui::PROP_CAPABILITIES`) and pins it
+/// equal in `tests/caps_generated.rs`; the same gen/verify walk pins
+/// the committed bytes here.
+struct GpuiCaps;
+
+impl GeneratedArtifact for GpuiCaps {
+    fn name(&self) -> &'static str {
+        "gpui-caps"
+    }
+
+    fn path(&self) -> &'static str {
+        "crates/aeolus-codegen-gpui/src/caps_generated.rs"
+    }
+
+    fn generate(&self) -> String {
+        // One row per IR longhand, in `Prop::ALL`'s own (cascade) order:
+        // the tier `Caps` answers and — for a refused longhand only —
+        // the typed boundary reason the emit gate's per-prop answer
+        // carries (the text-dependent verdicts say so honestly: their
+        // reason names the annotation the verdict is the ROW TEXT's;
+        // an expressible longhand carries the empty reason).
+        let mut rows = String::with_capacity(4096);
+        for prop in Prop::ALL {
+            let tier = Caps.tier(*prop);
+            let reason = match tier {
+                Tier::Refused => unsupported_reason(*prop, "").unwrap_or_default(),
+                Tier::Native | Tier::Polyfill => "",
+            };
+            let reason = reason.replace('\\', "\\\\").replace('"', "\\\"");
+            rows.push_str(&format!(
+                "    PropCapability {{ prop: Prop::{prop:?}, tier: Tier::{tier:?}, reason: \"{reason}\" }},\n"
+            ));
+        }
+        format!(
+            "//! The generated GPUI capability table — the §3.7 matrix's \
+per-longhand form (plan §3.7's generator slice: the committed \
+`caps_generated.rs` beside the hand-maintained tier tables it pins).\n\
+//!\n\
+//! GENERATED by `cargo xtask gen-gpui-caps` from \
+`aeolus_codegen_gpui::Caps` (the emit gates' own verdicts over \
+`Prop::ALL`) — DO NOT EDIT. The committed bytes are pinned equal to \
+the regeneration in `tests/caps_generated.rs`, and `cargo xtask \
+verify-gpui-caps` is the same check from the CLI side; a \
+capability-table edit that forgets the regeneration fails \
+`cargo test` first.\n\
+//!\n\
+//! The rows' semantics: one [`crate::PropCapability`] per IR longhand \
+in `Prop::ALL`'s own (cascade) order — the tier the emit gates run \
+and, for a refused longhand, the typed boundary reason the emit \
+gate's per-prop answer carries (the text-dependent verdicts — the \
+gradient direction row, the shadow and filter preset gates — name \
+the annotation the verdict is the ROW TEXT's; the per-declaration \
+refinements stay at the gates, the per-longhand ceiling the \
+conformance page renders). An expressible longhand carries the \
+empty reason.\n\n\
+use aeolus_codegen::conformance::Tier;\n\
+use aeolus_ir::Prop;\n\n\
+use crate::PropCapability;\n\n\
+/// The per-longhand verdict table ([`crate::PROP_CAPABILITIES`], the \
+crate's public reading of the §3.7 matrix).\n\
+#[rustfmt::skip]\n\
+pub static PROP_CAPABILITIES: &[PropCapability] = &[\n\
+{rows}\
+];\n"
+        )
+    }
+}
+
+/// The FULL artifact list: the data crate's registry-derived artifacts,
+/// the conformance page this driver renders from the codegen crates'
+/// capability impls, and the capability table the same impls render
+/// into the codegen-gpui crate's own src.
 fn artifacts() -> Vec<&'static dyn GeneratedArtifact> {
     let mut list: Vec<&'static dyn GeneratedArtifact> = codegen::artifacts().to_vec();
     list.push(&ConformanceDocs);
+    list.push(&GpuiCaps);
     list
 }
 
@@ -184,6 +275,16 @@ where
         }
         "gen-tables" => walk(&root, check, out),
         "verify-tables" => walk(&root, true, out),
+        "gen-gpui-caps" => {
+            let (exit, report) = walk_one(&root, check, &GpuiCaps);
+            let _ = out.write_all(report.as_bytes());
+            exit
+        }
+        "verify-gpui-caps" => {
+            let (exit, report) = walk_one(&root, true, &GpuiCaps);
+            let _ = out.write_all(report.as_bytes());
+            exit
+        }
         other => {
             let _ = writeln!(err, "unknown command {other:?}\n{USAGE}");
             EXIT_USAGE
@@ -199,37 +300,51 @@ fn walk(root: &Path, check: bool, out: &mut dyn std::io::Write) -> i32 {
     let mut exit = EXIT_OK;
     let mut report = String::new();
     for artifact in artifacts() {
-        let path = root.join(artifact.path());
-        let generated = artifact.generate();
-        let outcome = if check {
-            match std::fs::read_to_string(&path) {
-                Ok(committed) if committed == generated => Outcome::Clean,
-                Ok(_) => Outcome::Drifted,
-                Err(_) => Outcome::Missing,
-            }
-        } else {
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            match std::fs::write(&path, &generated) {
-                Ok(()) => Outcome::Wrote(generated.len()),
-                Err(io_err) => {
-                    let _ = writeln!(
-                        out,
-                        "{}  {}  write failed: {io_err}",
-                        artifact.name(),
-                        artifact.path()
-                    );
-                    exit = EXIT_DRIFT;
-                    continue;
-                }
-            }
-        };
-        report.push_str(&outcome.report(artifact.name(), artifact.path()));
-        if !matches!(outcome, Outcome::Clean | Outcome::Wrote(_)) {
-            exit = EXIT_DRIFT;
-        }
+        let (artifact_exit, artifact_report) = walk_one(root, check, artifact);
+        exit = exit.max(artifact_exit);
+        report.push_str(&artifact_report);
     }
     let _ = out.write_all(report.as_bytes());
     exit
+}
+
+/// Walk ONE artifact in the requested mode — the focused gate the
+/// dedicated commands run (the same write/verify contract as the full
+/// [`walk`], scoped to a single committed file). The exit code rides
+/// beside the artifact's report line (empty only on a write failure,
+/// whose message is the report).
+fn walk_one(root: &Path, check: bool, artifact: &'static dyn GeneratedArtifact) -> (i32, String) {
+    let path = root.join(artifact.path());
+    let generated = artifact.generate();
+    let outcome = if check {
+        match std::fs::read_to_string(&path) {
+            Ok(committed) if committed == generated => Outcome::Clean,
+            Ok(_) => Outcome::Drifted,
+            Err(_) => Outcome::Missing,
+        }
+    } else {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match std::fs::write(&path, &generated) {
+            Ok(()) => Outcome::Wrote(generated.len()),
+            Err(io_err) => {
+                return (
+                    EXIT_DRIFT,
+                    format!(
+                        "{}  {}  write failed: {io_err}\n",
+                        artifact.name(),
+                        artifact.path()
+                    ),
+                );
+            }
+        }
+    };
+    let report = outcome.report(artifact.name(), artifact.path());
+    let exit = if matches!(outcome, Outcome::Clean | Outcome::Wrote(_)) {
+        EXIT_OK
+    } else {
+        EXIT_DRIFT
+    };
+    (exit, report)
 }
