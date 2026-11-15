@@ -10,21 +10,25 @@
 
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 use lsp_types::{
-    Color, ColorInformation, ColorPresentation, ColorPresentationParams, ColorProviderCapability,
-    CompletionItem, CompletionItemKind, CompletionList, CompletionOptions, CompletionParams,
-    DiagnosticOptions, DiagnosticServerCapabilities, DidChangeTextDocumentParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentColorParams,
-    DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
-    FullDocumentDiagnosticReport, Hover, HoverContents, HoverProviderCapability, InitializeResult,
-    InlayHint, InlayHintKind, InlayHintLabel, InlayHintOptions, InlayHintParams,
-    InlayHintServerCapabilities, InlayHintTooltip, MarkupContent, MarkupKind, NumberOrString,
-    PublishDiagnosticsParams, RelatedFullDocumentDiagnosticReport, SemanticToken,
-    SemanticTokenType, SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend,
-    SemanticTokensOptions, SemanticTokensParams, SemanticTokensServerCapabilities,
-    ServerCapabilities, ServerInfo, TextDocumentPositionParams, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkDoneProgressOptions,
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
+    CodeActionProviderCapability, Color, ColorInformation, ColorPresentation,
+    ColorPresentationParams, ColorProviderCapability, CompletionItem, CompletionItemKind,
+    CompletionList, CompletionOptions, CompletionParams, DiagnosticOptions,
+    DiagnosticServerCapabilities, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DocumentColorParams, DocumentDiagnosticParams,
+    DocumentDiagnosticReport, DocumentDiagnosticReportResult, DocumentHighlight,
+    DocumentHighlightParams, FullDocumentDiagnosticReport, Hover, HoverContents,
+    HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind, InlayHintLabel,
+    InlayHintOptions, InlayHintParams, InlayHintServerCapabilities, InlayHintTooltip,
+    MarkupContent, MarkupKind, NumberOrString, OneOf, PublishDiagnosticsParams,
+    RelatedFullDocumentDiagnosticReport, SemanticToken, SemanticTokenType, SemanticTokens,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
+    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, TextDocumentPositionParams,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
+    WorkDoneProgressOptions, WorkspaceEdit,
 };
 use serde_json::Value;
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use crate::engine::{AeolusEngine, EngineConfig};
@@ -382,6 +386,117 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/codeAction" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The quick fixes (LSP 3.16's codeAction): the engine's
+            // answer for the requested range's start (the cursor the
+            // editor invokes the action on) — each finding riding the
+            // diagnostic it repairs, the correction as the edit over
+            // the finding's own range.
+            let answer = serde_json::from_value::<CodeActionParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let position = params.range.start;
+                    session
+                        .engine
+                        .code_actions(
+                            params.text_document.uri.as_str(),
+                            position.line,
+                            position.character,
+                        )
+                        .iter()
+                        .map(|action| {
+                            // The edit over the finding's own range (the
+                            // wire's TextEdit pair, the mapping the push
+                            // channel's ranges ride).
+                            let edit_range = lsp_types::Range {
+                                start: lsp_types::Position {
+                                    line: action.diagnostic.range.start.line,
+                                    character: action.diagnostic.range.start.character,
+                                },
+                                end: lsp_types::Position {
+                                    line: action.diagnostic.range.end.line,
+                                    character: action.diagnostic.range.end.character,
+                                },
+                            };
+                            CodeActionOrCommand::CodeAction(CodeAction {
+                                title: action.title.clone(),
+                                // The kind the editors filter on: the
+                                // correction is a quick fix, never a
+                                // refactor.
+                                kind: Some(CodeActionKind::QUICKFIX),
+                                // The finding the action repairs (the
+                                // editor's filter key — the same
+                                // mapping the push channel publishes).
+                                diagnostics: Some(vec![wire_diagnostic(&action.diagnostic)]),
+                                edit: Some(WorkspaceEdit {
+                                    changes: Some(HashMap::from([(
+                                        params.text_document.uri.clone(),
+                                        vec![TextEdit {
+                                            range: edit_range,
+                                            new_text: action.replacement.clone(),
+                                        }],
+                                    )])),
+                                    ..WorkspaceEdit::default()
+                                }),
+                                ..CodeAction::default()
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |actions| Some(serde_json::to_value(actions).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
+        "textDocument/documentHighlight" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The click-to-find answer (LSP 3.16's documentHighlight):
+            // the engine's occurrences of the cursor's candidate, each
+            // riding its byte-true range (no kind: a plain highlight,
+            // the honest shape).
+            let answer = serde_json::from_value::<DocumentHighlightParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let position = params.text_document_position_params.position;
+                    session
+                        .engine
+                        .document_highlights(
+                            params
+                                .text_document_position_params
+                                .text_document
+                                .uri
+                                .as_str(),
+                            position.line,
+                            position.character,
+                        )
+                        .iter()
+                        .map(|highlight| DocumentHighlight {
+                            range: lsp_types::Range {
+                                start: lsp_types::Position {
+                                    line: highlight.range.start.line,
+                                    character: highlight.range.start.character,
+                                },
+                                end: lsp_types::Position {
+                                    line: highlight.range.end.line,
+                                    character: highlight.range.end.character,
+                                },
+                            },
+                            kind: None,
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |highlights| Some(serde_json::to_value(highlights).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
         _ => Handled::default(),
     }
 }
@@ -545,13 +660,23 @@ fn respond(id: RequestId, result: Option<Value>) -> Handled {
 }
 
 /// The advertised capabilities: hover, completion, colour swatches, the
-/// semantic tokens, the inlay hints and full-text sync. The engine never
+/// semantic tokens, the inlay hints, the quick fixes, the document
+/// highlights and full-text sync. The engine never
 /// forks the pipeline, so the capability surface is the pipeline's own
 /// honesty contract at the editor.
 fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         color_provider: Some(ColorProviderCapability::Simple(true)),
+        // The quick fixes: every answer is the pipeline's own
+        // correction (the audited tables' spellings) with the edit over
+        // the finding's range — no resolve round-trip, the action is
+        // final.
+        code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+        // The click-to-find highlights: the textual occurrences of the
+        // cursor's candidate, document order, no compile verdict
+        // riding.
+        document_highlight_provider: Some(OneOf::Left(true)),
         // The inline answers (LSP 3.17): the engine's hints are final —
         // no resolve round-trip (the completion's own contract), the
         // label and tooltip ride the hint itself.
