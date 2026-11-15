@@ -81,3 +81,54 @@ fn audit_refuses_the_gradient_via_stop() {
         "the via stop refuses (the two-stop limit), got {refusals:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The decoration family (the §3.7 typography surface's landed half): the
+// colour and thickness longhands are NATIVE (GPUI's pinned surface
+// carries `text_decoration_color` and the `text_decoration_0..8`
+// thickness methods), the style keywords split by the pinned line shape
+// (solid/wavy expressible; double/dotted/dashed refuse — GPUI renders a
+// single solid line), and the thickness keywords/auto forms refuse (the
+// absolute-pixel slot has no auto/from-font answer).
+// ---------------------------------------------------------------------------
+
+/// The decoration family's expressible surface audits clean: the line
+/// row, the colour row, the numeric thickness, the solid/wavy styles.
+#[test]
+fn audit_passes_the_expressible_decoration_surface() {
+    for literal in [
+        "underline decoration-red-500 decoration-2",
+        "underline decoration-wavy decoration-solid decoration-[3px]",
+        "line-through decoration-[#0f0f0f]",
+    ] {
+        let (program, keywords) = frozen(literal);
+        let refusals = audit(&program, &keywords);
+        assert!(
+            refusals.is_empty(),
+            "{literal}: the expressible decoration surface audits clean, got {refusals:?}"
+        );
+    }
+}
+
+/// The style keywords GPUI renders no slot for refuse per-decl (the row
+/// TEXT's verdict, the box-shadow preset gate's pattern), and the
+/// thickness keywords/percentage forms refuse on the absolute-px slot.
+#[test]
+fn audit_refuses_the_unrenderable_style_and_thickness_forms() {
+    for literal in [
+        "decoration-double",
+        "decoration-dotted",
+        "decoration-dashed",
+        "decoration-auto",
+        "decoration-from-font",
+        "decoration-[50%]",
+        "decoration-[0.25rem]",
+    ] {
+        let (program, keywords) = frozen(literal);
+        let refusals = audit(&program, &keywords);
+        assert!(
+            !refusals.is_empty(),
+            "{literal}: the unrenderable form refuses at the gate"
+        );
+    }
+}
