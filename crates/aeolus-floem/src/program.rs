@@ -47,7 +47,7 @@ use floem::taffy::prelude::{
 use floem::taffy::style::Overflow;
 
 use aeolus_ir::{Cond, Prop, Val};
-use aeolus_rt::{AttrKind, AttrProbe, Env, StaticProgram, TokenSource};
+use aeolus_rt::{AttrKind, AttrProbe, Env, InterpError, StaticProgram, TokenSource};
 
 use crate::LoweringReport;
 
@@ -946,6 +946,22 @@ fn line_height(val: Val, keyword: &str, report: &mut LoweringReport) -> Option<L
 /// own two questions, the mode riding every ask); a refusal — no source
 /// wired, an unknown slot — reports with the prop named and returns
 /// `None`, so the longhand stays visibly unset rather than transparent.
+/// The typed refusal a colour slot can carry (the crate's typed-error
+/// convention — the text renders at the report boundary, it never
+/// travels as a bare `String`). The no-source texts are the two slots'
+/// own lanes (the runtime tier's explicit slow lane, the static dark
+/// pair's baked table).
+enum ColourRefusal {
+    /// The slot's value is not a colour form at all.
+    NotAColour(Val),
+    /// The source answered, but not with a colour.
+    SourceAnswered(Val),
+    /// The source's own typed refusal (the interp's audited set).
+    Source(InterpError),
+    /// No source wired — the two slots' lane notes.
+    NoSource(&'static str),
+}
+
 fn color_of(
     val: Val,
     env: &Env,
@@ -954,33 +970,31 @@ fn color_of(
     report: &mut LoweringReport,
 ) -> Option<PenikoColor> {
     let what = format!("{prop:?}");
-    let resolved: Result<[u8; 4], String> = match val {
+    let resolved: Result<[u8; 4], ColourRefusal> = match val {
         Val::Rgba(rgba) => Ok(rgba),
         Val::Tok { id, alpha } => match tokens {
             Some(source) => match source.resolve(id, alpha, env.dark) {
                 Ok(Val::Rgba(rgba)) => Ok(rgba),
-                Ok(other) => Err(format!("the source answered {other:?}, not a colour")),
-                Err(err) => Err(err.to_string()),
+                Ok(other) => Err(ColourRefusal::SourceAnswered(other)),
+                Err(err) => Err(ColourRefusal::Source(err)),
             },
-            None => Err(
+            None => Err(ColourRefusal::NoSource(
                 "no TokenSource — pass one via lower_program_with (the runtime tier's \
-                         explicit slow lane)"
-                    .to_string(),
-            ),
+                 explicit slow lane)",
+            )),
         },
         Val::ModePair(slot) => match tokens {
             Some(source) => match source.resolve_pair(slot, env.dark) {
                 Ok(Val::Rgba(rgba)) => Ok(rgba),
-                Ok(other) => Err(format!("the source answered {other:?}, not a colour")),
-                Err(err) => Err(err.to_string()),
+                Ok(other) => Err(ColourRefusal::SourceAnswered(other)),
+                Err(err) => Err(ColourRefusal::Source(err)),
             },
-            None => Err(
+            None => Err(ColourRefusal::NoSource(
                 "no TokenSource — pass one via lower_program_with (the static dark \
-                         pair rides the baked table)"
-                    .to_string(),
-            ),
+                 pair rides the baked table)",
+            )),
         },
-        other => Err(format!("the value {other:?} is not a colour")),
+        other => Err(ColourRefusal::NotAColour(other)),
     };
     match resolved {
         Ok(rgba) => Some(PenikoColor::new([
@@ -989,7 +1003,17 @@ fn color_of(
             f32::from(rgba[2]) / 255.0,
             f32::from(rgba[3]) / 255.0,
         ])),
-        Err(reason) => {
+        Err(refusal) => {
+            let reason = match refusal {
+                ColourRefusal::NotAColour(other) => {
+                    format!("the value {other:?} is not a colour")
+                }
+                ColourRefusal::SourceAnswered(other) => {
+                    format!("the source answered {other:?}, not a colour")
+                }
+                ColourRefusal::Source(err) => err.to_string(),
+                ColourRefusal::NoSource(text) => text.to_string(),
+            };
             report.drop(what, reason);
             None
         }
