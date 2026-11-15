@@ -439,3 +439,27 @@ actually resolving their declarations plus the answered miss, i.e. the
 walk now does MORE work because more layers fire, not because the seam
 is expensive. The layer decision itself stays a branch; the host's
 probe table is a small linear scan.
+
+## LSP engine run (2026-11-15, release profile, divan 0.1.21)
+
+The editor surface's three per-keystroke paths and the didOpen swatch
+walk (`crates/aeolus-lsp/benches/lsp.rs`), over the synthetic .rs
+fixture document (two lowered strings + one unknown root — the same
+fixture the completion's token fragment rides). The completion number
+is the fragment at the typing edge (`bg-pri` inside the second string):
+the registry walk over the rows' audited tables plus the theme tokens
+through the colour gate, the answer ranked and deduped.
+
+| benchmark | median | note |
+|---|---|---|
+| `analyze_document` | **213.9 µs** | the full diagnostics publish over the fixture (the extraction seam through the compile walk, per-position UTF-16 translation) |
+| `completion_fragment` | **17.9 µs** | the typing-edge completion (`bg-pri`): bare roots + keyword tables + theme tokens + the closed variant set, ranked |
+| `document_colours_walk` | **4.29 µs** | the didOpen swatch walk (the per-candidate compile resolving the IR's colour slots) |
+| `hover_resolved_class` | **4.13 µs** | the per-cursor-move hover resolution (baseline) |
+
+Verdict: the completion's ~18 µs is the row-walk cost (213 rows' tables
++ the token table's names, per keystroke, no cache) — an order under
+any editor's perceived latency, and the rank/dedupe rides the same
+walk; the swatch walk is the per-candidate compile's own cost (four
+classes, one compile each) and lands at the hover baseline. Absolute
+numbers are environment-specific; the ratios are the point.
