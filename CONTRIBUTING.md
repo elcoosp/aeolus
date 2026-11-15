@@ -83,7 +83,7 @@ cargo package -p aeolus-core -p aeolus-macro --allow-dirty --no-verify
 cargo deny check licenses
 ```
 
-Fuzz (short local smoke; CI runs 60s per target over all SIX):
+Fuzz (short local smoke; CI runs 60s per target over all SEVEN):
 
 ```sh
 cargo +nightly fuzz run parse_class_string -- -max_total_time=60
@@ -92,6 +92,7 @@ cargo +nightly fuzz run cn                -- -max_total_time=60
 cargo +nightly fuzz run theme_from_css    -- -max_total_time=60
 cargo +nightly fuzz run parse_variant     -- -max_total_time=60
 cargo +nightly fuzz run probe_eval        -- -max_total_time=60
+cargo +nightly fuzz run compile_interp_emit -- -max_total_time=60
 ```
 
 The backend crates resolve their framework deps from pinned git revs —
