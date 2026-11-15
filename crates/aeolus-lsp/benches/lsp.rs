@@ -73,3 +73,50 @@ fn document_colours_walk(bencher: Bencher) {
     lsp.open("file:///card.rs", DOC, 1);
     bencher.bench(|| lsp.document_colours("file:///card.rs"));
 }
+
+/// The pull path (LSP 3.17's documentDiagnostic): the client's
+/// on-demand recompute through the state machine — initialize and
+/// didOpen once, then the request per iteration (the params parse, the
+/// analyze walk, the wire mapping and the report serialization: what a
+/// refresh or a newly focused file costs the session).
+#[divan::bench]
+fn document_diagnostics_pull(bencher: Bencher) {
+    use aeolus_lsp::{Session, handle_message};
+    use lsp_server::{Message, Notification, Request, RequestId};
+    use serde_json::json;
+    use std::sync::Mutex;
+
+    let session = Mutex::new(Session::new(Default::default()));
+    let _ = handle_message(
+        &mut session.lock().expect("the bench session locks"),
+        Message::Request(Request {
+            id: RequestId::from(0),
+            method: "initialize".to_string(),
+            params: json!({"capabilities": {}}),
+        }),
+    );
+    let _ = handle_message(
+        &mut session.lock().expect("the bench session locks"),
+        Message::Notification(Notification {
+            method: "textDocument/didOpen".to_string(),
+            params: json!({
+                "textDocument": {
+                    "uri": "file:///card.rs",
+                    "languageId": "rust",
+                    "version": 1,
+                    "text": DOC,
+                }
+            }),
+        }),
+    );
+    bencher.bench(|| {
+        handle_message(
+            &mut session.lock().expect("the bench session locks"),
+            Message::Request(Request {
+                id: RequestId::from(11),
+                method: "textDocument/documentDiagnostic".to_string(),
+                params: json!({"textDocument": {"uri": "file:///card.rs"}}),
+            }),
+        )
+    });
+}
