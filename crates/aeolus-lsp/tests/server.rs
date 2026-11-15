@@ -478,3 +478,167 @@ fn document_color_with_malformed_params_answers_null() {
     };
     assert_eq!(response.result, Some(serde_json::Value::Null));
 }
+// ---------------------------------------------------------------------------
+// The documentDiagnostic pull (the fifth request, LSP 3.17's pull
+// model): the capability rides initialize, the request maps the
+// engine's analyze walk onto the protocol's Full report — the SAME
+// findings the push channel publishes, pulled on demand. The battery
+// was written FIRST; the RED capture is the quiet-drop on the
+// unadvertised method.
+// ---------------------------------------------------------------------------
+
+const PULL_DOC: &str = "fn card() {\n    let s = \"p-4 not-a-root\";\n}\n";
+
+fn pull_request(id: i32, uri: &str) -> Message {
+    request(
+        id,
+        "textDocument/documentDiagnostic",
+        json!({ "textDocument": { "uri": uri } }),
+    )
+}
+
+#[test]
+fn initialize_advertises_the_pull_diagnostics() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("initialize answers a response");
+    };
+    let result = response.result.expect("the capabilities carry a result");
+    let provider = &result["capabilities"]["diagnosticProvider"];
+    assert!(
+        !provider.is_null(),
+        "the pull-diagnostics capability rides: {result}"
+    );
+    assert_eq!(
+        provider["interFileDependencies"], false,
+        "the engine answers per document — no cross-file model"
+    );
+    assert_eq!(
+        provider["workspaceDiagnostics"], false,
+        "no workspace-wide pull: the document map is the answer's scope"
+    );
+}
+
+#[test]
+fn pull_diagnostics_answer_the_full_report() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    handle_message(&mut session, did_open(&uri(), 1, PULL_DOC));
+    let handled = handle_message(&mut session, pull_request(11, &uri()));
+    assert!(!handled.exit, "the pull does not end the session");
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the pull answers a response");
+    };
+    assert_eq!(response.id, RequestId::from(11));
+    let result = response.result.expect("the report carries a result");
+    assert_eq!(
+        result["kind"], "full",
+        "the engine always recomputes: {result}"
+    );
+    let items = result["items"].as_array().expect("the items ride");
+    assert_eq!(items.len(), 1, "the one miss rides: {result}");
+    let item = &items[0];
+    assert_eq!(item["source"], "aeolus");
+    assert_eq!(
+        item["severity"], 2,
+        "the miss rides the push channel's own WARNING tier (findings are non-fatal)"
+    );
+    assert!(
+        item["code"]
+            .as_str()
+            .expect("the stable machine code rides")
+            .starts_with("aeolus::compile::"),
+        "the code is the pipeline's own: {}",
+        item["code"]
+    );
+    assert!(
+        item["message"]
+            .as_str()
+            .expect("the message rides")
+            .contains("not-a-root"),
+        "the message names the token: {}",
+        item["message"]
+    );
+    assert_eq!(item["range"]["start"]["line"], 1, "the range is byte-true");
+}
+
+#[test]
+fn pull_diagnostics_answer_the_empty_report_on_a_clean_document() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    handle_message(&mut session, did_open(&uri(), 1, "fn clean() {}\n"));
+    let handled = handle_message(&mut session, pull_request(11, &uri()));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the pull answers a response");
+    };
+    let result = response.result.expect("the report carries a result");
+    assert_eq!(result["kind"], "full");
+    let items = result["items"].as_array().expect("the items ride");
+    assert!(
+        items.is_empty(),
+        "the clean document pulls an empty report: {result}"
+    );
+}
+
+#[test]
+fn pull_diagnostics_mirror_the_push_channel() {
+    // The pull model's honesty contract: the pulled report carries the
+    // SAME findings the push channel published for the same document —
+    // one walk, two transports.
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let opened = handle_message(&mut session, did_open(&uri(), 1, PULL_DOC));
+    let Some(Message::Notification(note)) = opened.outgoing.into_iter().find(
+        |m| matches!(m, Message::Notification(n) if n.method == "textDocument/publishDiagnostics"),
+    ) else {
+        panic!("didOpen publishes diagnostics");
+    };
+    let pushed = note.params["diagnostics"].as_array().expect("an array");
+    let handled = handle_message(&mut session, pull_request(12, &uri()));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the pull answers a response");
+    };
+    let result = response.result.expect("the report carries a result");
+    let pulled = result["items"].as_array().expect("the items ride");
+    assert_eq!(pushed.len(), pulled.len(), "same findings, both channels");
+    let pushed_codes: Vec<&str> = pushed
+        .iter()
+        .map(|d| d["code"].as_str().expect("the code rides"))
+        .collect();
+    let pulled_codes: Vec<&str> = pulled
+        .iter()
+        .map(|d| d["code"].as_str().expect("the code rides"))
+        .collect();
+    assert_eq!(
+        pushed_codes, pulled_codes,
+        "the codes agree channel to channel"
+    );
+}
+
+#[test]
+fn pull_diagnostics_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(&mut session, pull_request(11, &uri()));
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
+
+#[test]
+fn pull_diagnostics_with_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(11, "textDocument/documentDiagnostic", json!({"uri": 42})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request still answers (never a hang)");
+    };
+    assert_eq!(response.result, Some(serde_json::Value::Null));
+}
