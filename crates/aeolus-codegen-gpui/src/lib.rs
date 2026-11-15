@@ -68,7 +68,7 @@ impl Emit for GpuiEmit<'_> {
             .filter_map(|decl| {
                 let keyword = self.keywords.get(flat).copied().unwrap_or_default();
                 flat += 1;
-                unsupported_reason(decl.prop, keyword)
+                decl_unsupported_reason(decl.prop, decl.val, keyword)
                     .map(|reason| Unsupported::new(decl.prop, reason))
             })
             .collect();
@@ -137,7 +137,7 @@ pub fn lower_class(literal: &str, config: &Config) -> Result<TokenStream, Diagno
         for decl in layer.decls {
             let keyword = keywords.get(flat).copied().unwrap_or_default();
             flat += 1;
-            if let Some(reason) = unsupported_reason(decl.prop, keyword) {
+            if let Some(reason) = decl_unsupported_reason(decl.prop, decl.val, keyword) {
                 diagnostics
                     .unsupported
                     .push(Unsupported::new(decl.prop, reason));
@@ -309,6 +309,11 @@ fn val_tokens(val: Val, ir: &TokenStream) -> TokenStream {
         }
         Val::ModePair(id) => quote! { #ir::Val::ModePair(#id) },
         Val::Kw(slot) => quote! { #ir::Val::Kw(#slot) },
+        // The composite grammar's verbatim slot freezes as the string
+        // literal it is (the emit gate refuses the decl before this
+        // arm ever runs on the GPUI path — the arm is the total-form
+        // freeze the other targets share).
+        Val::Verbatim(text) => quote! { #ir::Val::Verbatim(#text) },
     }
 }
 
@@ -464,6 +469,22 @@ impl Capability for Caps {
             Tier::Refused
         }
     }
+}
+
+/// The composite grammar's per-decl refusal: a `Val::Verbatim` value has
+/// no GPUI builder slot — the reason names the consumer (the filter
+/// families' convention: the message points at the lane that works).
+const VERBATIM_UNSUPPORTED: &str = "GPUI's builder surface takes no composite value — the composite \
+     arbitrary forms (calc(), track lists, url()/image(), ratios) stay the CSS/interp \
+     arms' output (the value pass's verbatim slot)";
+
+/// The per-declaration verdict over one decl: the verbatim slot's own
+/// gate first, the per-prop tiers ([`unsupported_reason`]) otherwise.
+fn decl_unsupported_reason(prop: Prop, val: Val, keyword: &str) -> Option<&'static str> {
+    if matches!(val, Val::Verbatim(_)) {
+        return Some(VERBATIM_UNSUPPORTED);
+    }
+    unsupported_reason(prop, keyword)
 }
 
 /// The per-DECLARATION verdict: the per-prop tiers ([`expressible`])
