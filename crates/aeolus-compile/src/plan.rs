@@ -1571,6 +1571,13 @@ impl PlanWriter {
                 // grid-auto-rows precedent.
                 self.notes.push(PlanNoteKind::SlotUnsupported { prop });
             }
+            Prop::Content => {
+                // The pseudo-element content property (the wider hint
+                // table's string half): the v0.x plan carries no
+                // content slot — the same honest note, the
+                // grid-auto-flow precedent.
+                self.notes.push(PlanNoteKind::SlotUnsupported { prop });
+            }
             // ---- the filter family (the §3.7 backlog row's pipeline half)
             //
             // The v0.x oracle refuses the filter family outright (its own
