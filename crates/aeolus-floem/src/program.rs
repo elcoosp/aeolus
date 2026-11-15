@@ -737,6 +737,16 @@ fn apply_decl(
             );
             style
         }
+        Prop::Content => {
+            // The pseudo-element content property (the wider hint
+            // table's string half): the pinned-rev Style carries no
+            // content slot — the CSS emit arm carries the string.
+            report.drop(
+                format!("{prop:?}"),
+                "no content slot in the walk's surface — the CSS emit arm carries it",
+            );
+            style
+        }
     }
 }
 
