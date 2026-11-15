@@ -355,12 +355,19 @@ fn a_mismatched_hint_refuses_typed() {
 }
 
 #[test]
-fn a_non_lowering_hint_refuses_typed() {
-    // The v4 hint table is wider than the IR's value slots: angle/time/
-    // url/image values have no IR slot — typed, named boundary. (The
-    // function spellings — `w-[url(x.png)]` — carry no hint at all;
-    // they refuse through the unit/composite boundary instead.)
+fn a_hint_no_row_carries_refuses_through_the_catch_all() {
+    // The hint table landed (the wider v4 hints lower on the rows that
+    // carry the shape), so an angle on the width row is the SILENT
+    // sibling-row skip — no row of the root takes it, and the run's
+    // catch-all renders the unit boundary once. The hint GRAMMAR's own
+    // mismatch (a non-deg spelling on a degree row) stays the typed
+    // hint boundary.
     let compiled = compile("w-[angle:45deg]", &Config::default()).expect("compiles");
+    assert!(matches!(
+        one_diagnostic(&compiled),
+        DiagnosticKind::UnsupportedValue { reason, .. } if reason.contains("unit")
+    ));
+    let compiled = compile("rotate-[angle:0.5turn]", &Config::default()).expect("compiles");
     assert!(matches!(
         one_diagnostic(&compiled),
         DiagnosticKind::UnsupportedValue { reason, .. } if reason.contains("hint")
