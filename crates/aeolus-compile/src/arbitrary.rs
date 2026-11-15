@@ -27,16 +27,33 @@
 //!   parser the v0.x oracle and the `color_parse` fuzzer exercise; an
 //!   `/opacity` modifier bakes through the audited premultiplied
 //!   identity, exactly like the token path's literals.
+//! * **Composites** — the [`CompositeKind`] grammar: the sized functions
+//!   (`calc()`/`min()`/`max()`/`clamp()`) on the single-target scalar
+//!   rows, the underscore-joined track lists and track functions on the
+//!   grid-template/auto rows, the image functions (`url()`/`image()`/the
+//!   gradients) on the bg-image row and the bare `n/d` ratios on the
+//!   aspect row lower through the IR's [`Val::Verbatim`] slot — the
+//!   decoded text (the underscores ARE spaces, `\_` a literal
+//!   underscore), emitted as typed (v4's own arbitrary contract: the
+//!   author owns the CSS validity). The kind gate is the design's
+//!   centre: a composite refuses TYPED on every row whose slots cannot
+//!   carry its shape — the shorthand fans (one value per longhand), the
+//!   filter/backdrop handles, the shadow lists — and the negative flag
+//!   and the opacity modifier compose no composite. A truncated
+//!   function is the malformed boundary, never a broken-CSS passthrough.
 //! * **Type hints** — `length:`, `percentage:`, `number:`, `color:`
 //!   constrain the parse; a MISMATCHED hint is a typed refusal, never a
-//!   silent re-interpretation. The wider v4 hint table (`url`, `image`,
-//!   `angle`, `time`, `ratio`, `position`, …) has no IR slot and refuses
-//!   with the reason naming the covered set. The hint list IS the
-//!   lexer's ([`aeolus_syntax::HINTS`]) — one table, two consumers.
+//!   silent re-interpretation. The composite-aware hints lower through
+//!   the same slot (`length:` takes the sized functions, `url:` wraps
+//!   the bare path, `image:` and `ratio:` ride decoded); the hint list
+//!   IS the lexer's ([`aeolus_syntax::HINTS`]) — one table, two
+//!   consumers.
 //! * **`var()`/`(--var)` references** — the theme pass's business: the
 //!   name resolves through the supplied `TokenTable` (the same colour
 //!   token path `bg-primary` rides), and the theme-less default refuses
-//!   typed, exactly like the colour tokens' own boundary.
+//!   typed, exactly like the colour tokens' own boundary. The var branch
+//!   leads the free walk — an underscore inside a custom-property name
+//!   is the name's own byte, never a space to decode.
 //!
 //! The sibling-row disambiguation is DATA-DRIVEN, not guessed: a row
 //! accepts a value class only when its tw_merge conflict group says so
@@ -50,9 +67,7 @@
 //! never a silent drop, never a per-sibling diagnostic pile).
 //!
 //! What this slice deliberately is NOT (each documented where it
-//! belongs): the multi-token composite grammar (`calc()`, underscore
-//! joins, url/image values, shadow/filter lists — the codegen host's
-//! surface), the arbitrary-PROPERTY form (`[mask-type:luminance]` — the
+//! belongs): the arbitrary-PROPERTY form (`[mask-type:luminance]` — the
 //! row already names the property), keyword values on the row-relative
 //! `Val::Kw` slots (the codegen crate owns the names, plan §3.3), and
 //! the bare-number forms on rows without a `Number` arm (the v0.x
@@ -100,6 +115,14 @@ pub(crate) enum ArbVal {
     /// `TokenTable` by the caller.
     Token {
         name: String,
+    },
+    /// The composite grammar's verbatim value: the DECODED text (the
+    /// underscores ARE spaces, the `\_` escapes a literal underscore —
+    /// v4's own grammar), interned into the leak pool by the caller.
+    /// The kind gate has already answered eligibility when this variant
+    /// is built.
+    Verbatim {
+        text: String,
     },
 }
 
@@ -154,17 +177,28 @@ pub(crate) const REASON_ARBITRARY_UNIT: &str = "the arbitrary value does not fit
      carries a Number arm; keyword values have no slot to lower into (the row-relative keyword table is \
      the codegen crate's own surface)";
 
-pub(crate) const REASON_ARBITRARY_HINT: &str = "the type hint does not match the value (length: takes px/rem, \
-     percentage: a %, number: a unitless decimal, color: a colour), or names a type the IR has no slot \
-     for (url/image/angle/time/ratio/position and friends lower in the codegen pass)";
+pub(crate) const REASON_ARBITRARY_HINT: &str = "the type hint does not match the value (length: takes px/rem \
+     and the sized functions, percentage: a %, number: a unitless decimal, color: a colour, url:/image: \
+     an image value on the image rows, ratio: an n/d form on the aspect row), or names a type no row \
+     kind carries (angle/time/position/family-name and friends have no slot to lower into)";
 
 pub(crate) const REASON_ARBITRARY_PROPERTY: &str = "the bracket names a PROPERTY ([mask-type:luminance] form), not a \
      value: the registry row already names the property, and the arbitrary-property form is the codegen \
      pass's surface";
 
-pub(crate) const REASON_ARBITRARY_COMPOSITE: &str = "multi-token arbitrary values (underscore joins, calc(), \
-     url()/image() and other non-colour functions, shadow/filter lists) are the codegen host's composite \
-     grammar: the unit grammar lowers one typed value per row";
+pub(crate) const REASON_ARBITRARY_COMPOSITE: &str = "the row's slots take no composite value: the sized \
+     functions (calc()/min()/max()/clamp()) lower on the single-target scalar rows, the track lists \
+     (underscore joins, repeat()/minmax()/fit-content()) on the grid-template/auto rows, the image \
+     functions (url()/image()/the gradients) on the bg-image row and the bare n/d ratios on the aspect \
+     row; the shorthand fans, the filter/backdrop handles and the shadow lists take one value per slot";
+
+pub(crate) const REASON_ARBITRARY_MALFORMED: &str = "the composite function's parens do not balance \
+     (calc()/min()/max()/clamp(), url() and the track functions must close) — a truncated value is a \
+     boundary, never a broken-CSS passthrough";
+
+pub(crate) const REASON_ARBITRARY_COMPOSITE_NEGATIVE: &str = "the negative flag has no composite form: the \
+     scalar slots flip their number, the verbatim text carries its own signs (write the minus inside \
+     the value)";
 
 pub(crate) const REASON_ARBITRARY_TABLE: &str = "var() references resolve through the theme pass: \
      compile_theme() carries the TokenTable the variable name resolves from (the colour tokens' own \
@@ -180,6 +214,8 @@ pub(crate) fn is_boundary_reason(reason: &str) -> bool {
             | REASON_ARBITRARY_HINT
             | REASON_ARBITRARY_PROPERTY
             | REASON_ARBITRARY_COMPOSITE
+            | REASON_ARBITRARY_MALFORMED
+            | REASON_ARBITRARY_COMPOSITE_NEGATIVE
             | REASON_ARBITRARY_TABLE
     )
 }
@@ -317,6 +353,18 @@ fn classify_hinted(
                 ArbVal::Px(parse_num(n)?)
             } else if let Some(n) = value.strip_suffix("rem") {
                 ArbVal::Rem(parse_num(n)?)
+            } else if leading_composite_fn(value) == Some(CompositeKind::Sized) {
+                // The hint IS the type contract: the sized functions
+                // lower through the verbatim slot where the unit
+                // grammar's spellings stop — the composite gate decides
+                // the row's eligibility, never the scalar gate.
+                return composite_gate(
+                    CompositeKind::Sized,
+                    ArbVal::Verbatim {
+                        text: decode_underscores(value),
+                    },
+                    row,
+                );
             } else {
                 return Err(hint_mismatch());
             }
@@ -329,12 +377,50 @@ fn classify_hinted(
         // lowers even where the row has no `Number` arm (the hint IS
         // the contract; v4 emits the value verbatim).
         "number" => ArbVal::Num(parse_num(value)?),
+        // The integer hint's stricter shape: whole-number syntax only.
+        "integer" => match value.parse::<i64>() {
+            Ok(n) => ArbVal::Num(n as f32),
+            Err(_) => return Err(hint_mismatch()),
+        },
         "color" => match colour_of(value, alpha) {
             Some(rgba) => ArbVal::Colour { rgba },
             None => return Err(hint_mismatch()),
         },
-        // The wider v4 hint table: no IR slot (url/image/angle/time/
-        // ratio/position/integer/string/family names, …) — typed, named.
+        // The hinted image forms: `url:` wraps the bare path in the
+        // function (v4's own reading), `image:`'s value is already a
+        // function and rides decoded. Both gate to the image rows.
+        "url" => {
+            return composite_gate(
+                CompositeKind::Image,
+                ArbVal::Verbatim {
+                    text: format!("url({})", decode_underscores(value)),
+                },
+                row,
+            );
+        }
+        "image" => {
+            return composite_gate(
+                CompositeKind::Image,
+                ArbVal::Verbatim {
+                    text: decode_underscores(value),
+                },
+                row,
+            );
+        }
+        // The ratio hint: the aspect rows' own shape (`16/9`, or the
+        // decimal form `1.5`).
+        "ratio" => {
+            return composite_gate(
+                CompositeKind::Ratio,
+                ArbVal::Verbatim {
+                    text: decode_underscores(value),
+                },
+                row,
+            );
+        }
+        // The rest of the v4 hint table: no row kind carries them
+        // (angle/time/position/family-name/generic-name/absolute-size/
+        // relative-size/string) — typed, named.
         _ => {
             return Err(ArbRejection::Boundary {
                 reason: REASON_ARBITRARY_HINT,
@@ -344,8 +430,8 @@ fn classify_hinted(
     gate(val, row)
 }
 
-/// The free grammar (no hint): var references, colours, units, the
-/// row-gated bare numbers.
+/// The free grammar (no hint): the composite candidates, var references,
+/// colours, units, the row-gated bare numbers.
 fn classify_free(
     value: &str,
     paren: bool,
@@ -354,17 +440,11 @@ fn classify_free(
 ) -> Result<ArbVal, ArbRejection> {
     let value = value.trim();
 
-    // Multi-token composites: the underscore IS a space in v4's grammar,
-    // so any underscore marks a value the unit grammar does not lower.
-    if value.contains('_') {
-        return Err(ArbRejection::Boundary {
-            reason: REASON_ARBITRARY_COMPOSITE,
-        });
-    }
-
     // var() references and the v4.1 `(...)` shorthand: the theme pass's
     // token path, gated to the colour rows (the table is the colour
     // half — a length var has no resolver and refuses typed downstream).
+    // This branch leads: an underscore inside a custom-property name is
+    // the name's own byte, never a space to decode.
     if paren || value.starts_with("var(") {
         let name = value
             .trim_start_matches("var(")
@@ -380,6 +460,14 @@ fn classify_free(
             },
             row,
         );
+    }
+
+    // The composite grammar: the sized functions, the track lists, the
+    // image functions and the bare ratios — the verbatim slot's
+    // kind-gated forms. `None` = not a composite candidate; the unit
+    // grammar's own paths continue below.
+    if let Some(outcome) = classify_composite(value, row) {
+        return outcome;
     }
 
     // Colours: the audited parser answers (hex spellings and the CSS
@@ -438,13 +526,248 @@ fn classify_free(
     gate(val, row)
 }
 
+// ---------------------------------------------------------------------------
+// The composite grammar: the verbatim slot's kind-gated forms
+// ---------------------------------------------------------------------------
+
+/// The composite value kinds — which row families carry which shape. The
+/// kind IS the type gate: a composite lowers onto the rows whose slots
+/// can carry it and refuses TYPED everywhere else (never an
+/// invalid-CSS passthrough on a slot that cannot hold the value).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CompositeKind {
+    /// The sized functions (`calc()`/`min()`/`max()`/`clamp()`) — the
+    /// scalar slots' own computation forms.
+    Sized,
+    /// The track lists: the underscore-joined multi-token values and the
+    /// track functions (`repeat()`/`minmax()`/`fit-content()`) — the
+    /// grid-template/auto rows' shape.
+    Tracks,
+    /// The image functions (`url()`/`image()`/`image-set()`/the
+    /// gradients) — the bg-image row's shape.
+    Image,
+    /// The bare `n/d` slash ratios — the aspect row's shape.
+    Ratio,
+}
+
+/// The sized functions, in their CSS spellings.
+const SIZED_FUNCTIONS: &[&str] = &["calc", "min", "max", "clamp"];
+
+/// The track functions, in their CSS spellings.
+const TRACK_FUNCTIONS: &[&str] = &["repeat", "minmax", "fit-content"];
+
+/// The image functions, in their CSS spellings (the gradients included —
+/// the bg-image row carries them once the unit/colour paths step aside).
+const IMAGE_FUNCTIONS: &[&str] = &[
+    "url",
+    "image",
+    "image-set",
+    "linear-gradient",
+    "repeating-linear-gradient",
+    "radial-gradient",
+    "repeating-radial-gradient",
+    "conic-gradient",
+    "repeating-conic-gradient",
+];
+
+/// The tw_merge groups whose rows carry TRACK-shaped values (the grid
+/// template/auto families). The audit-surface pattern (`COLOUR_GROUPS`,
+/// `EXTRA_SCALAR_GROUPS`): the drift test fails when a track row grows
+/// without joining this table.
+const TRACK_GROUPS: &[&str] = &[
+    "grid-template-columns",
+    "grid-template-rows",
+    "grid-auto-columns",
+    "grid-auto-rows",
+];
+
+/// The tw_merge groups whose rows carry IMAGE-shaped values.
+const IMAGE_GROUPS: &[&str] = &["bg-image"];
+
+/// The tw_merge groups whose rows carry the bare ratio shape.
+const RATIO_GROUPS: &[&str] = &["aspect"];
+
+/// The roots whose arbitrary handles take ONE value — the filter/
+/// backdrop families (the §3.7 row's own boundary: the composite stays
+/// the codegen host's surface for these).
+const COMPOSITE_REFUSING_ROOTS: &[&str] = &[
+    "blur",
+    "brightness",
+    "contrast",
+    "grayscale",
+    "hue-rotate",
+    "invert",
+    "saturate",
+    "sepia",
+    "drop-shadow",
+    "filter",
+    "backdrop-blur",
+    "backdrop-brightness",
+    "backdrop-contrast",
+    "backdrop-grayscale",
+    "backdrop-hue-rotate",
+    "backdrop-invert",
+    "backdrop-opacity",
+    "backdrop-saturate",
+    "backdrop-sepia",
+    "backdrop-filter",
+];
+
+/// The composite candidate's kind: the function forms lead (the
+/// underscores decode INSIDE them — `calc(100%_-_2rem)` is the sized
+/// function's own authoring form), the underscore join is a track list,
+/// the bare `n/d` slash is a ratio.
+fn composite_kind(value: &str) -> Option<CompositeKind> {
+    if let Some(kind) = leading_composite_fn(value) {
+        return Some(kind);
+    }
+    if value.contains('_') {
+        return Some(CompositeKind::Tracks);
+    }
+    if !value.contains('(') && composite_ratio(value) {
+        return Some(CompositeKind::Ratio);
+    }
+    None
+}
+
+/// The leading function's composite kind, when the value STARTS with one
+/// of the grammar's own functions (`fn(`-spelled).
+fn leading_composite_fn(value: &str) -> Option<CompositeKind> {
+    let (name, _) = value.split_once('(')?;
+    if SIZED_FUNCTIONS.contains(&name) {
+        return Some(CompositeKind::Sized);
+    }
+    if TRACK_FUNCTIONS.contains(&name) {
+        return Some(CompositeKind::Tracks);
+    }
+    if IMAGE_FUNCTIONS.contains(&name) {
+        return Some(CompositeKind::Image);
+    }
+    None
+}
+
+/// The bare `n/d` slash shape: both sides parse as finite numbers (the
+/// aspect row's `16/9`; a decimal half `1.5` is a legal CSS ratio too).
+fn composite_ratio(value: &str) -> bool {
+    let Some((n, d)) = value.split_once('/') else {
+        return false;
+    };
+    let finite = |s: &str| {
+        s.trim()
+            .parse::<f32>()
+            .map(f32::is_finite)
+            .unwrap_or(false)
+    };
+    finite(n) && finite(d)
+}
+
+/// The paren balance: a composite function's value must close — a
+/// truncated value is a boundary, never a broken-CSS passthrough. Lists
+/// without parens balance trivially.
+fn balanced(value: &str) -> bool {
+    let mut depth = 0i32;
+    for c in value.chars() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0
+}
+
+/// The v4 underscore grammar: `_` is a space, `\_` a literal underscore.
+/// The custom-property names never reach here (the var branch leads the
+/// free walk), so the decode cannot corrupt a `--name`.
+fn decode_underscores(text: &str) -> String {
+    if !text.contains('_') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.next() == Some('_') {
+            out.push('_');
+        } else if c == '_' {
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Does the row's kind carry this composite shape? The gate is the
+/// design's centre: single-target rows only (the shorthand fans take ONE
+/// value per longhand — `p-[calc(...)]` cannot fan a list over four
+/// longhands honestly), the filter/backdrop handles out (one value per
+/// handle), then the kind's own group table.
+fn composite_eligible(kind: CompositeKind, row: &UtilityRow) -> bool {
+    if row.targets.len() != 1 || COMPOSITE_REFUSING_ROOTS.contains(&row.root) {
+        return false;
+    }
+    match kind {
+        CompositeKind::Sized => scalar_eligible(row),
+        CompositeKind::Tracks => TRACK_GROUPS.contains(&row.group),
+        CompositeKind::Image => IMAGE_GROUPS.contains(&row.group),
+        CompositeKind::Ratio => RATIO_GROUPS.contains(&row.group),
+    }
+}
+
+/// The composite gate's typed miss — the boundary the diagnostics render
+/// when the row's slots take no composite value.
+fn composite_boundary() -> ArbRejection {
+    ArbRejection::Boundary {
+        reason: REASON_ARBITRARY_COMPOSITE,
+    }
+}
+
+/// Gate a classified composite onto the row: a hit hands the value back,
+/// a miss is the TYPED composite boundary (never a silent skip — the
+/// composite grammar is new surface, its misses name the grammar).
+fn composite_gate(
+    kind: CompositeKind,
+    val: ArbVal,
+    row: &UtilityRow,
+) -> Result<ArbVal, ArbRejection> {
+    if composite_eligible(kind, row) {
+        Ok(val)
+    } else {
+        Err(composite_boundary())
+    }
+}
+
+/// The free walk's composite path: `None` = not a composite candidate
+/// (the colour/unit paths continue), the classified answer otherwise.
+fn classify_composite(value: &str, row: &UtilityRow) -> Option<Result<ArbVal, ArbRejection>> {
+    let kind = composite_kind(value)?;
+    // The function forms must balance — a truncated value is a boundary
+    // of its own, named (the lists without parens balance trivially).
+    if value.contains('(') && !balanced(value) {
+        return Some(Err(ArbRejection::Boundary {
+            reason: REASON_ARBITRARY_MALFORMED,
+        }));
+    }
+    let text = decode_underscores(value);
+    Some(composite_gate(kind, ArbVal::Verbatim { text }, row))
+}
+
 /// The row's class gate: a value the row's longhands cannot carry is the
 /// SILENT sibling-row skip, never a refusal (the pipeline's catch-all
-/// renders the boundary when NO row of the root took the class).
+/// renders the boundary when NO row of the root took the class). The
+/// composite values never ride this gate — they carry their own
+/// ([`composite_gate`], whose misses name the grammar instead of staying
+/// quiet); a [`ArbVal::Verbatim`] here is the drift arm.
 fn gate(val: ArbVal, row: &UtilityRow) -> Result<ArbVal, ArbRejection> {
     let fits = match &val {
         ArbVal::Colour { .. } | ArbVal::Token { .. } => colour_eligible(row),
         ArbVal::Px(_) | ArbVal::Rem(_) | ArbVal::Pct(_) | ArbVal::Num(_) => scalar_eligible(row),
+        ArbVal::Verbatim { .. } => false,
     };
     if fits {
         Ok(val)
