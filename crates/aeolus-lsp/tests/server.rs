@@ -267,3 +267,214 @@ fn requests_before_initialize_ride_silently() {
     );
     assert!(!handled.exit);
 }
+// ---------------------------------------------------------------------------
+// The completion wire (the third request the server answers): the
+// capability rides initialize, the request maps the engine's answer
+// onto the protocol's CompletionList, the gate and the malformed-params
+// contract match the hover path's own.
+// ---------------------------------------------------------------------------
+
+const COMPLETION_DOC: &str = "fn card() {\n    let s = \"bg-pri\";\n}\n";
+
+/// The completion position: right after `bg-pri` (the token's end).
+fn completion_request(id: i32, uri: &str) -> Message {
+    let offset = COMPLETION_DOC.find("bg-pri").expect("the fixture holds") + "bg-pri".len();
+    let line = COMPLETION_DOC[..offset].matches('\n').count() as u32;
+    let line_start = COMPLETION_DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = COMPLETION_DOC[line_start..offset]
+        .chars()
+        .map(|c| c.len_utf16() as u32)
+        .sum::<u32>();
+    request(
+        id,
+        "textDocument/completion",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }),
+    )
+}
+
+#[test]
+fn initialize_advertises_completion() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("initialize answers a response");
+    };
+    let result = response.result.expect("the capabilities carry a result");
+    let provider = &result["capabilities"]["completionProvider"];
+    assert!(
+        !provider.is_null(),
+        "the completion capability rides: {result}"
+    );
+    assert_eq!(
+        provider["resolveProvider"], false,
+        "the engine's answer is final — no resolve round-trip"
+    );
+    let triggers = provider["triggerCharacters"]
+        .as_array()
+        .expect("the trigger characters ride");
+    let triggers: Vec<&str> = triggers
+        .iter()
+        .map(|value| value.as_str().expect("a string trigger"))
+        .collect();
+    assert!(
+        triggers.contains(&"-") && triggers.contains(&":"),
+        "the class grammar's own separators trigger: {triggers:?}"
+    );
+}
+
+#[test]
+fn completion_answers_a_completion_list() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    handle_message(&mut session, did_open(&uri(), 1, COMPLETION_DOC));
+    let handled = handle_message(&mut session, completion_request(7, &uri()));
+    assert!(!handled.exit, "completion does not end the session");
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("completion answers a response");
+    };
+    assert_eq!(response.id, RequestId::from(7));
+    let result = response.result.expect("the completion carries a result");
+    assert_eq!(result["isIncomplete"], false, "the answer is final");
+    let items = result["items"].as_array().expect("the items ride");
+    assert!(
+        items.iter().any(|item| item["label"] == "bg-primary"),
+        "the theme token completes over the wire: {items:?}"
+    );
+    let item = items
+        .iter()
+        .find(|item| item["label"] == "bg-primary")
+        .expect("the item");
+    // CompletionItemKind::VALUE = 12 (the theme-token mapping), the
+    // detail names the token, the rank renders as the sort key.
+    assert_eq!(item["kind"], 12);
+    assert!(
+        item["detail"]
+            .as_str()
+            .expect("the detail rides")
+            .contains("primary"),
+        "the detail names the token: {}",
+        item["detail"]
+    );
+    assert!(
+        item["sortText"].is_string(),
+        "the rank renders as the sort key: {}",
+        item["sortText"]
+    );
+}
+
+#[test]
+fn completion_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(&mut session, completion_request(7, &uri()));
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
+
+#[test]
+fn completion_with_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(8, "textDocument/completion", json!({"uri": 42})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request still answers (never a hang)");
+    };
+    assert_eq!(response.result, Some(serde_json::Value::Null));
+}
+// ---------------------------------------------------------------------------
+// The documentColor wire (the fourth request): the capability rides
+// initialize, the request maps the engine's swatches onto the
+// protocol's ColorInformation (the HSL the protocol paints with).
+// ---------------------------------------------------------------------------
+
+const COLOUR_DOC: &str = "fn card() {\n    let s = \"bg-primary\";\n}\n";
+
+#[test]
+fn initialize_advertises_colour_swatches() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("initialize answers a response");
+    };
+    let result = response.result.expect("the capabilities carry a result");
+    assert_eq!(
+        result["capabilities"]["colorProvider"], true,
+        "the colour-provider capability rides: {result}"
+    );
+}
+
+#[test]
+fn document_color_answers_swatches() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    handle_message(&mut session, did_open(&uri(), 1, COLOUR_DOC));
+    let handled = handle_message(
+        &mut session,
+        request(
+            9,
+            "textDocument/documentColor",
+            json!({ "textDocument": { "uri": uri() } }),
+        ),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("documentColor answers a response");
+    };
+    let result = response.result.expect("the swatches carry a result");
+    let items = result.as_array().expect("the colour array rides");
+    assert_eq!(items.len(), 1, "{result}");
+    let item = &items[0];
+    let range = &item["range"];
+    assert_eq!(range["start"]["line"], 1);
+    let color = &item["color"];
+    assert_eq!(color["alpha"], 1.0, "the light tier's swatch is opaque");
+    for key in ["red", "green", "blue"] {
+        let value = color[key]
+            .as_f64()
+            .expect("the protocol's rgba channels ride");
+        assert!(
+            (0.0..=1.0).contains(&value),
+            "{key} is the protocol's 0..1 fraction: {value}"
+        );
+    }
+}
+
+#[test]
+fn document_color_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(
+            9,
+            "textDocument/documentColor",
+            json!({ "textDocument": { "uri": uri() } }),
+        ),
+    );
+    assert!(handled.outgoing.is_empty(), "the quiet-drop contract");
+}
+
+#[test]
+fn document_color_with_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(10, "textDocument/documentColor", json!({"uri": 42})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request still answers (never a hang)");
+    };
+    assert_eq!(response.result, Some(serde_json::Value::Null));
+}
