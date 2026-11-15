@@ -183,6 +183,7 @@ mod scan;
 mod sort;
 mod statics;
 mod style_walk;
+mod suggest;
 mod variant;
 
 use std::fmt;
@@ -232,6 +233,15 @@ pub use scan::{
 pub use sort::{SortKey, Sorted, SortedClass, sort, sort_with};
 pub use statics::emit_static;
 pub use style_walk::{StyleWalk, program_style, program_style_struct, program_style_with};
+// The "did you mean" seam (the P5 row's tooling-parity half): the
+// audited tables as suggestion sources — the trait the host folds its
+// own names through, the diagnostic-keyed composition the linter and
+// the editor render.
+pub use suggest::{
+    CustomSpellings, RegistrySpellings, SUGGESTION_DISTANCE_CAP, SUGGESTION_LIMIT, Suggestion,
+    SuggestionSource, SuggestionSurface, SurfaceSpelling, TokenSpellings, VariantSpellings,
+    suggest_for, suggest_over,
+};
 // The editor half's audited sources: the closed variant spelling set
 // the completion suggests and the colour-group gate that decides which
 // roots complete theme-token spellings — one source of truth with the
