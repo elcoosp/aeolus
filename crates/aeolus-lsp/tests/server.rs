@@ -1074,3 +1074,197 @@ fn inlay_hints_with_malformed_params_answers_null() {
     };
     assert_eq!(response.result, Some(serde_json::Value::Null));
 }
+
+// ---------------------------------------------------------------------------
+// The codeAction wire (the quick fixes: the finding, the edit, the
+// capability) — the P5 row's suggestion seam at the editor.
+// ---------------------------------------------------------------------------
+
+const ACTIONS_DOC: &str = "fn card() {\n    let a = \"flex-clo\";\n}\n";
+
+/// The initialize handshake's capability read (the answer JSON's
+/// serverCapabilities object).
+fn capabilities_of(session: &mut Session) -> serde_json::Value {
+    let handled = handle_message(
+        session,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("initialize answers");
+    };
+    response.result.expect("the initialize result")
+}
+
+#[test]
+fn initialize_advertises_the_code_action_provider() {
+    let mut session = Session::new(Default::default());
+    let capabilities = capabilities_of(&mut session);
+    assert_eq!(
+        capabilities["capabilities"]["codeActionProvider"],
+        json!(true),
+        "the quick-fix capability is advertised: {capabilities}"
+    );
+}
+
+#[test]
+fn initialize_advertises_the_document_highlight_provider() {
+    let mut session = Session::new(Default::default());
+    let capabilities = capabilities_of(&mut session);
+    assert_eq!(
+        capabilities["capabilities"]["documentHighlightProvider"],
+        json!(true),
+        "the highlight capability is advertised: {capabilities}"
+    );
+}
+
+/// The codeAction request the harness reuses (the range's start is the
+/// cursor the editor invokes the action on).
+fn code_action_request(id: i32, uri: &str, line: u32, character: u32) -> Message {
+    request(
+        id,
+        "textDocument/codeAction",
+        json!({
+            "textDocument": {"uri": uri},
+            "range": {
+                "start": {"line": line, "character": character},
+                "end": {"line": line, "character": character},
+            },
+            "context": {"diagnostics": []},
+        }),
+    )
+}
+
+#[test]
+fn code_action_answers_the_quick_fix_with_the_edit() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, ACTIONS_DOC));
+    // The cursor inside the miss: the offset the engine's own
+    // conversions resolve (line 1, the candidate's second character).
+    let handled = handle_message(&mut session, code_action_request(20, &uri(), 1, 15));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers");
+    };
+    let result = response.result.expect("the action list");
+    let actions = result.as_array().expect("an array of actions");
+    assert!(
+        !actions.is_empty(),
+        "the miss carries corrections: {result}"
+    );
+    let first = &actions[0];
+    assert_eq!(first["kind"], "quickfix", "the editors' filter kind");
+    assert!(
+        first["title"]
+            .as_str()
+            .expect("a title")
+            .contains("did you mean"),
+        "the CLI-shaped title: {first}"
+    );
+    let diagnostics = first["diagnostics"]
+        .as_array()
+        .expect("the repaired finding");
+    assert_eq!(diagnostics.len(), 1, "one finding per action");
+    let edit = &first["edit"]["changes"][&uri()][0];
+    assert_eq!(edit["newText"], "flex-col", "the corrected token: {edit}");
+    assert_eq!(edit["range"]["start"]["line"], 1, "the finding's own range");
+}
+
+#[test]
+fn code_action_outside_a_candidate_answers_empty() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, ACTIONS_DOC));
+    let handled = handle_message(&mut session, code_action_request(21, &uri(), 0, 2));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers");
+    };
+    assert_eq!(
+        response.result,
+        Some(serde_json::json!([])),
+        "outside any candidate: the honest empty menu"
+    );
+}
+
+#[test]
+fn code_action_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(&mut session, code_action_request(22, &uri(), 1, 15));
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
+
+#[test]
+fn code_action_with_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(23, "textDocument/codeAction", json!({"uri": 42})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request still answers (never a hang)");
+    };
+    assert_eq!(response.result, Some(serde_json::Value::Null));
+}
+
+// ---------------------------------------------------------------------------
+// The documentHighlight wire (the click-to-find occurrences).
+// ---------------------------------------------------------------------------
+
+/// The documentHighlight request the harness reuses.
+fn highlight_request(id: i32, uri: &str, line: u32, character: u32) -> Message {
+    request(
+        id,
+        "textDocument/documentHighlight",
+        json!({
+            "textDocument": {"uri": uri},
+            "position": {"line": line, "character": character},
+        }),
+    )
+}
+
+#[test]
+fn document_highlight_answers_the_occurrences() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, ACTIONS_DOC));
+    let handled = handle_message(&mut session, highlight_request(30, &uri(), 1, 15));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers");
+    };
+    let result = response.result.expect("the highlight list");
+    let highlights = result.as_array().expect("an array of highlights");
+    assert_eq!(
+        highlights.len(),
+        1,
+        "the fixture's single occurrence: {result}"
+    );
+    assert_eq!(highlights[0]["range"]["start"]["line"], 1);
+    // The occurrence's own start (the class's first character), not the
+    // cursor's column: the edit/highlight range is the finding's.
+    assert_eq!(highlights[0]["range"]["start"]["character"], 13);
+}
+
+#[test]
+fn document_highlight_outside_a_candidate_answers_empty() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, ACTIONS_DOC));
+    let handled = handle_message(&mut session, highlight_request(31, &uri(), 0, 2));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers");
+    };
+    assert_eq!(response.result, Some(serde_json::json!([])));
+}
+
+#[test]
+fn document_highlight_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(&mut session, highlight_request(32, &uri(), 1, 15));
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
