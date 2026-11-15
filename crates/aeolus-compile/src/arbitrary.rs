@@ -240,6 +240,11 @@ pub(crate) const COLOUR_GROUPS: &[&str] = &[
     "to-color",
     "fill",
     "stroke",
+    // The decoration family's colour longhand (the §3.7 typography
+    // surface's decoration half): `decoration-[#0f0f0f]` is the colour
+    // row's alone — the thickness sibling refuses the shape silently
+    // (the `text-[#0f0f0f]` sibling gate's own split).
+    "decoration-color",
 ];
 
 /// The manually-listed scalar groups: rows whose shape contract carries
@@ -321,7 +326,11 @@ pub(crate) fn scalar_eligible(row: &UtilityRow) -> bool {
     arms.iter().any(|arm| {
         matches!(
             arm,
-            ValueKind::Spacing | ValueKind::Fraction | ValueKind::Number | ValueKind::Percent
+            ValueKind::Spacing
+                | ValueKind::Fraction
+                | ValueKind::Number
+                | ValueKind::PositiveInt
+                | ValueKind::Percent
         )
     }) || EXTRA_SCALAR_GROUPS.contains(&row.group)
 }
