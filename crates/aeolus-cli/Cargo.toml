@@ -64,3 +64,10 @@ workspace = true
 [[bench]]
 name = "expand"
 harness = false
+
+# The plan command's benchmarks (the §7 migration seam's consumer face):
+# the themeless bridge, the themed bridge (the baked table's colour
+# conversion) and the diagnostics path.
+[[bench]]
+name = "plan"
+harness = false
