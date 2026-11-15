@@ -134,8 +134,8 @@ pub struct SituationReport {
     pub mismatches: Vec<MetamorphicMismatch>,
     /// The interp walk's own refusal, when the resolution failed (a
     /// themed interp refuses per longhand with the typed
-    /// [`InterpError`]; the report carries the text, the situation does
-    /// not agree).
+    /// [`InterpError`](crate::InterpError); the report carries the
+    /// text, the situation does not agree).
     pub interp_error: Option<String>,
 }
 
