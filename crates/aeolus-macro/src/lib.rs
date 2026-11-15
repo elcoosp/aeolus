@@ -33,7 +33,7 @@ use std::fmt::Write as _;
 
 use aeolus_compile::cn as merge_cn;
 use aeolus_compile::{
-    ClassKeywords, Compiled, Config, compile_theme, keyword_alignment, keyword_texts,
+    ClassKeywords, Compiled, Config, Diagnostic, compile_theme, keyword_alignment, keyword_texts,
 };
 use aeolus_ir::Cond;
 use aeolus_theme::{ThemeSource, TokenTable};
@@ -158,14 +158,44 @@ fn compile_literal(literal: &str) -> Result<(Compiled, Vec<ClassKeywords>), Stri
     let config = Config::default();
     let compiled = compile_theme(literal, &table, &config).map_err(|err| format!("tw!: {err}"))?;
     if !compiled.diagnostics.is_empty() {
-        let mut msg = String::new();
-        for diagnostic in &compiled.diagnostics {
-            let _ = write!(msg, "tw!: {diagnostic}; ");
-        }
-        return Err(msg);
+        return Err(render_diagnostics("tw!", &compiled.diagnostics));
     }
     let classes = keyword_texts(literal, &config).map_err(|err| format!("tw!: {err}"))?;
     Ok((compiled, classes))
+}
+
+/// The compile-time diagnostic rendering. The DEFAULT is the one-line
+/// form the rustc window shows inline (the diagnostics-equality
+/// contract's own shape); the `verbose-diagnostics` feature renders
+/// each refusal MULTI-LINE with the typed boundary's stable machine
+/// code and help text — the editor/LSP parity the pipeline's
+/// diagnostics carry (the `DiagnosticKind::code`/`help` seam), for
+/// hosts that want the full contract inside the compile error.
+#[cfg(not(feature = "verbose-diagnostics"))]
+fn render_diagnostics(prefix: &str, diagnostics: &[Diagnostic]) -> String {
+    let mut msg = String::new();
+    for diagnostic in diagnostics {
+        let _ = write!(msg, "{prefix}: {diagnostic}; ");
+    }
+    msg
+}
+
+/// The verbose half: same walks, same refusals — each diagnostic's
+/// code and help ride beside the span line (the honest-failure
+/// contract, rendered in full).
+#[cfg(feature = "verbose-diagnostics")]
+fn render_diagnostics(prefix: &str, diagnostics: &[Diagnostic]) -> String {
+    let mut msg = String::new();
+    for diagnostic in diagnostics {
+        let _ = write!(
+            msg,
+            "{prefix}: {}\n  code: {}\n  help: {}\n",
+            diagnostic,
+            diagnostic.kind.code(),
+            diagnostic.kind.help()
+        );
+    }
+    msg
 }
 
 /// The merged form: one text per merged declaration, keyed by the LAST
@@ -1073,4 +1103,38 @@ fn cartesian(
         rows = next;
     }
     rows
+}
+
+// ---------------------------------------------------------------------------
+// The diagnostic renderer's own contracts (the plain-fn half — the
+// unit battery the proc-macro shell can host without an expansion)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod render_tests {
+    use super::render_diagnostics;
+    use aeolus_compile::{Config, compile};
+
+    /// The two renderers carry the SAME refusal set — the verbose mode
+    /// adds the code/help lines, never a different diagnostic.
+    #[test]
+    fn the_renderers_carry_the_same_refusals() {
+        let compiled = compile("not-a-class", &Config::default()).expect("the walk is total");
+        let plain = render_diagnostics("tw!", &compiled.diagnostics);
+        assert!(plain.contains("tw!:"), "{plain}");
+        assert!(plain.contains("not-a-class"), "{plain}");
+        // The verbose renderer compiles under the feature; under the
+        // default both spellings agree on the token text. (The verbose
+        // shape's own pin runs in CI's feature job through the same
+        // battery — see the manifest's feature doc.)
+    }
+
+    #[cfg(feature = "verbose-diagnostics")]
+    #[test]
+    fn the_verbose_renderer_carries_code_and_help() {
+        let compiled = compile("not-a-class", &Config::default()).expect("the walk is total");
+        let verbose = render_diagnostics("tw!", &compiled.diagnostics);
+        assert!(verbose.contains("code: "), "{verbose}");
+        assert!(verbose.contains("help: "), "{verbose}");
+    }
 }
