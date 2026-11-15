@@ -384,3 +384,25 @@ fn the_composite_values_stay_the_reported_gpui_boundary() {
     let tokens = lower_class("w-32", &Config::default()).unwrap();
     assert!(!tokens.to_string().is_empty());
 }
+
+#[test]
+fn the_content_longhand_stays_the_reported_gpui_boundary() {
+    // The wider hint table's string half: `content-["…"]` lowers onto
+    // the pipeline's NEW `Prop::Content` longhand (the CSS arm renders
+    // the string, the interp answers) — and the GPUI lane refuses the
+    // longhand per prop (no native slot at the pinned surface, the
+    // default tier's reason), the honest boundary the diagnostics
+    // render.
+    let err = lower_class("content-[\"hello_world\"]", &Config::default()).unwrap_err();
+    assert!(
+        err.unsupported
+            .iter()
+            .any(|entry| entry.prop == Prop::Content),
+        "the content longhand in the refusal report: {err:?}"
+    );
+
+    // The conformance tiers read the same verdict: Content is neither
+    // native nor polyfilled — the partition still covers ALL exactly.
+    assert!(!supports(Prop::Content), "content is not a GPUI slot");
+    assert!(!polyfilled(Prop::Content), "content has no polyfill");
+}
