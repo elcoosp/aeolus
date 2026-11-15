@@ -973,3 +973,149 @@ fn inlay_hints_are_pure_and_empty_at_the_boundaries() {
         hints[0].label
     );
 }
+
+// ---------------------------------------------------------------------------
+// The code-action answer (the quick fixes, the suggestion seam's editor
+// face): every action repairs one finding with a replacement the
+// pipeline LOWERS — the audited tables are the sources, never a guessed
+// word.
+// ---------------------------------------------------------------------------
+
+/// The document the quick-fix battery rides: one unknown root, one
+/// keyword-table miss, one variant miss — the three folds the seam
+/// answers.
+const ACTIONS_DOC: &str = "fn card() {\n    let a = \"not-a-root\";\n    let b = \"flex-clo\";\n    let c = \"havor:p-4\";\n}\n";
+
+#[test]
+fn code_actions_answer_the_cursor_s_findings() {
+    let mut lsp = engine();
+    lsp.open("file:///actions.rs", ACTIONS_DOC, 1);
+    // The cursor inside the keyword miss: the fold's registry answer,
+    // the finding riding beside the edit.
+    let offset = ACTIONS_DOC.find("flex-clo").expect("the fixture holds") + 2;
+    let (line, character) = line_character_of(ACTIONS_DOC, offset);
+    let actions = lsp.code_actions("file:///actions.rs", line, character);
+    assert!(
+        actions
+            .iter()
+            .any(|action| action.replacement == "flex-col"
+                && action.title == "did you mean `flex-col`?"),
+        "the registry sibling answers: {actions:?}"
+    );
+    for action in &actions {
+        assert_eq!(
+            action.diagnostic.range.start.line, line,
+            "the finding rides the cursor's own line"
+        );
+        assert!(
+            action.diagnostic.message.contains("help:"),
+            "the finding carries the rendered help"
+        );
+    }
+}
+
+#[test]
+fn code_actions_compose_the_variant_prefix_back_on() {
+    let mut lsp = engine();
+    lsp.open("file:///actions.rs", ACTIONS_DOC, 1);
+    let offset = ACTIONS_DOC.find("havor:p-4").expect("the fixture holds") + 2;
+    let (line, character) = line_character_of(ACTIONS_DOC, offset);
+    let actions = lsp.code_actions("file:///actions.rs", line, character);
+    assert!(
+        actions
+            .iter()
+            .any(|action| action.replacement == "hover:p-4"),
+        "the closed variant set answers with the utility half intact: {actions:?}"
+    );
+}
+
+#[test]
+fn code_actions_outside_a_candidate_answer_empty() {
+    let mut lsp = engine();
+    lsp.open("file:///actions.rs", ACTIONS_DOC, 1);
+    // The cursor on the `fn` keyword (no string, no candidate).
+    let actions = lsp.code_actions("file:///actions.rs", 0, 2);
+    assert!(actions.is_empty(), "outside any candidate: {actions:?}");
+    // The unknown URI: the lifecycle's own empty answer.
+    assert!(lsp.code_actions("file:///never-opened.rs", 0, 0).is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// The document-highlight answer (the click-to-find occurrences): the
+// TEXTUAL equality the wire contract rides, document order, the
+// cursor's own occurrence included.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn document_highlights_answer_every_occurrence() {
+    // The same class twice as its own token (the second beside a
+    // refused neighbour), and once under a variant prefix — a DIFFERENT
+    // raw text, no highlight.
+    const DOC_HL: &str = "fn h() {\n    let a = \"flex-col\";\n    let b = \"hover:flex-col\";\n    let c = \"not-a-root flex-col\";\n}\n";
+    let mut lsp = engine();
+    lsp.open("file:///highlights.rs", DOC_HL, 1);
+    let offset = DOC_HL.find("flex-col").expect("the fixture holds") + 2;
+    let (line, character) = line_character_of(DOC_HL, offset);
+    let highlights = lsp.document_highlights("file:///highlights.rs", line, character);
+    assert_eq!(
+        highlights.len(),
+        2,
+        "the two exact occurrences (the hover:-prefixed one is a different token): {highlights:?}"
+    );
+    // Document order, first hit first.
+    assert!(
+        highlights[0].range.start.line < highlights[1].range.start.line,
+        "the answer rides the scan order: {highlights:?}"
+    );
+}
+
+#[test]
+fn document_highlights_are_textual_not_semantic() {
+    let mut lsp = engine();
+    lsp.open(
+        "file:///bad.rs",
+        "fn b() { let s = \"not-a-root not-a-root\"; }\n",
+        1,
+    );
+    let offset = 22; // inside the first occurrence
+    let (line, character) =
+        line_character_of("fn b() { let s = \"not-a-root not-a-root\"; }\n", offset);
+    let highlights = lsp.document_highlights("file:///bad.rs", line, character);
+    assert_eq!(
+        highlights.len(),
+        2,
+        "a refused class's occurrences highlight like a lowered one's: {highlights:?}"
+    );
+}
+
+#[test]
+fn document_highlights_outside_a_candidate_answer_empty() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    assert!(
+        lsp.document_highlights("file:///card.rs", 0, 2).is_empty(),
+        "the cursor on `fn` answers empty"
+    );
+    assert!(
+        lsp.document_highlights("file:///never-opened.rs", 0, 0)
+            .is_empty(),
+        "the unknown URI answers empty"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The helpers
+// ---------------------------------------------------------------------------
+
+/// A byte offset's `(line, character)` in the engine's own units (the
+/// harness-side twin of the conversions the engine owns — one call
+/// site per fixture).
+fn line_character_of(text: &str, offset: usize) -> (u32, u32) {
+    let line = text[..offset].matches('\n').count() as u32;
+    let line_start = text[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = text[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    (line, character)
+}
