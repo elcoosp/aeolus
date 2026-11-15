@@ -79,5 +79,8 @@ fn describe(val: &Val) -> String {
         Val::Tok { id, alpha } => format!("Tok(id {id}, alpha {alpha})"),
         Val::ModePair(slot) => format!("ModePair({slot})"),
         Val::Kw(slot) => format!("Kw({slot})"),
+        // The composite grammar's verbatim slot (the value pass's own
+        // demo carries it once the composite forms lower).
+        Val::Verbatim(text) => format!("Verbatim({text:?})"),
     }
 }
