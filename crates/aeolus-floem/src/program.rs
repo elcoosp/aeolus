@@ -550,6 +550,13 @@ fn apply_decl(
             report.drop("underline-offset", "no Floem underline-offset prop");
             style
         }
+        // The decoration family's colour/thickness/style longhands: the
+        // pinned Floem rev carries no slot for them (the underline-offset
+        // precedent) — the typed report, never a silent drop.
+        Prop::TextDecorationColor | Prop::TextDecorationThickness | Prop::TextDecorationStyle => {
+            report.drop(format!("{prop:?}"), "no Floem prop at the pinned rev");
+            style
+        }
         Prop::WhiteSpace => whitespace(style, keyword, report),
         Prop::WordBreak | Prop::VerticalAlign => {
             report.drop(format!("{prop:?}"), "no Floem prop at the pinned rev");
