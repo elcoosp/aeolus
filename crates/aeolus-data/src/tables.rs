@@ -791,6 +791,17 @@ pub const SHADOW_PRESETS: &[(&str, &str)] = &[
 /// number shape, arbitrary track lists the passthrough).
 pub const GRID_TEMPLATES: &[(&str, &str)] = &[("none", "none"), ("subgrid", "subgrid")];
 
+/// `grid-flow-*` keyword values (the v4.1 `grid-auto-flow` scale — the
+/// CSS values verbatim: `col` renders `column`, the dense pairs render
+/// the two-value form).
+pub const GRID_FLOW: &[(&str, &str)] = &[
+    ("row", "row"),
+    ("col", "column"),
+    ("dense", "dense"),
+    ("row-dense", "row dense"),
+    ("col-dense", "column dense"),
+];
+
 /// `columns` keyword values (numeric counts ride the number shape).
 pub const COLUMN_KEYWORDS: &[(&str, &str)] = &[
     ("auto", "auto"),
