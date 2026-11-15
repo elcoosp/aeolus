@@ -26,6 +26,12 @@ aeolus-codegen-gpui = { path = "../aeolus-codegen-gpui" }
 [features]
 verbose-diagnostics = []
 
+[dev-dependencies]
+# The frozen program the macros emit — the consumer example inspects
+# the `StaticProgram` the expansion evaluates to (the expansion's
+# `::aeolus_rt::…` absolute paths resolve through this dev-dep).
+aeolus-rt = { path = "../aeolus-rt" }
+
 # The macro grammar's pedantic exceptions ride the WORKSPACE table
 # (cargo forbids a local `[lints.clippy]` beside `workspace = true`,
 # and the source-level allow-attribute block it used to carry predates
