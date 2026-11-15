@@ -11,8 +11,10 @@
 //!   set-mask model that v0.8 shipped for padding/margin/border/radius
 //!   generalizes here to the whole surface: `p-4 ⊕ px-8` and
 //!   `hover:px-8` dominance are bit operations, not table walks.
-//! * [`Val`] — the 12-byte value: baked lengths/colours for the static
-//!   form, token references for the runtime form (theme tiers, plan §3.4).
+//! * [`Val`] — the value: baked lengths/colours for the static form,
+//!   token references for the runtime form (theme tiers, plan §3.4), the
+//!   composite grammar's interned verbatim text (the conds' own
+//!   `&'static str` payload discipline).
 //!
 //! [`Decl`]/[`Layer`]/[`Program`] (module [`program`]) assemble those into
 //! the compile output: layer 0 is the base rule, the rest are sorted by
@@ -54,7 +56,8 @@ mod tests {
     }
 
     /// The static form must never touch the heap: every IR type is `Copy`
-    /// and the value type fits the plan's 12-byte budget (§3.3).
+    /// and no variant owns memory (the value payloads are numbers, the
+    /// conds' interned slices).
     #[test]
     fn ir_types_are_copy_and_sized() {
         fn assert_copy<T: Copy>() {}
@@ -65,9 +68,13 @@ mod tests {
         assert_copy::<Bp>();
         assert_copy::<Decl>();
         assert_copy::<Layer>();
-        // The plan sketch budgets Val at 12 bytes (`Tok` dominates: u16 +
-        // padding + f32). A regression here is a design regression.
-        assert_eq!(std::mem::size_of::<Val>(), 12);
-        assert_eq!(std::mem::size_of::<Decl>(), 16);
+        // The composite grammar's verbatim slot grew the plan sketch's
+        // 12-byte `Val` budget (§3.3's sketch line): the payload is the
+        // conds' own `&'static str` discipline — interned slices, never
+        // owned memory, the static form still a `static` item end to end.
+        // A regression here is a design regression (an owned variant
+        // would break `Copy` before it broke this pin).
+        assert_eq!(std::mem::size_of::<Val>(), 24);
+        assert_eq!(std::mem::size_of::<Decl>(), 32);
     }
 }
