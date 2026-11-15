@@ -87,6 +87,9 @@ fn main() {
                 Val::Pct(pct) => format!("{pct}%"),
                 Val::Num(n) => format!("{n}"),
                 Val::Kw(slot) => format!("keyword #{slot}"),
+                // The composite grammar's verbatim slot: the text IS the
+                // value, effective under any env.
+                Val::Verbatim(text) => text.to_string(),
                 Val::Tok { .. } | Val::ModePair(_) => {
                     format!("theme form on {:?} — the interp resolves these", decl.prop)
                 }
