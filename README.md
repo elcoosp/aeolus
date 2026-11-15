@@ -35,7 +35,7 @@ it compiles it through the full V1 pipeline at macro-expansion time and emits a 
 | ------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `tw!("p-4 …")`     | validated, then the **input string emitted back** — re-parsed every process start | compiled at expansion → **frozen static program**; the string is never emitted          |
 | Static hot path    | parse → resolve → cache (**exclusive lock even on a hit**)                        | **zero parse, zero hash, zero locks** — static data applied under a `Copy` `Env`        |
-| IR                 | heap-shaped `StylePlan` (`Vec`/`BTreeMap`/`Box`), per-edge set-mask patches       | `Copy` longhands (**121 props**) + `PropMask` bitsets — `p-4 ⊕ px-8` is bit ops         |
+| IR                 | heap-shaped `StylePlan` (`Vec`/`BTreeMap`/`Box`), per-edge set-mask patches       | `Copy` longhands (**142 props**) + `PropMask` bitsets — `p-4 ⊕ px-8` is bit ops         |
 | Theme lookups      | `HashMap<String, Token>` by name                                                  | **tiered tables**: T0 literals · T1 dark pairs · T2 one load + one multiply             |
 | `cn()` / overrides | string-level tw_merge at runtime                                                  | **IR-level `cn()` + `overlay`** — rightmost-wins per longhand, computed at compile time |
 | Utility semantics  | 4,000-line `match` walls                                                          | **210 registry rows as data** → generated index, docs, sort order, conformance          |
@@ -194,7 +194,7 @@ Every backend consumes **both** the v0.x `StylePlan` (runtime lane) and the V1 f
 
 | Backend         | Crate          | Lowers to                                               | Highlights                                                                                                  |
 | --------------- | -------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **GPUI** ⭐     | `aeolus-gpui`  | `TwExt` / `TwStateExt` + frame `Env`, `AeolusRoot`      | macro/static flagship; `ring-*` → v4 `BoxShadow` bands; 2-stop linear gradients; `tw_probes` attribute bits |
+| **GPUI** ⭐     | `aeolus-gpui`  | `TwExt` / `TwStateExt` + frame `Env`, `AeolusRoot`      | macro/static flagship; `ring-*` → v4 `BoxShadow` bands; the filter chain's colour-matrix polyfill + `drop-shadow-*` bands; 2-stop linear gradients; `tw_probes` attribute bits |
 | Xilem / Masonry | `aeolus-xilem` | `PropertyStack` + per-state `ResolvedStyle`             | **native gradients** (linear exact, radial normalized; conic reported)                                      |
 | Floem           | `aeolus-floem` | programmatic `Style`, nested selector maps              | native transitions; full pinned-rev taffy surface (grid, overflow, dashes…)                                 |
 | Iced            | `aeolus-iced`  | `StyleBook` → Catalog closures per `Status`/`&Theme`    | linear gradients native; per-corner radius; opacity baked into painted alphas                               |
@@ -368,6 +368,10 @@ cargo run -p aeolus-compile --example dyn_store         # the DynStore storage s
 cargo run -p aeolus-core --example gamut                # the CSS Color 4 gamut mapping: clamp beside chroma reduction
 cargo run -p aeolus-gpui --example ring                 # ring-* → v4 BoxShadow bands
 cargo run -p aeolus-gpui --example shadow               # shadow-* → GPUI's own BoxShadow list (the native tier)
+cargo run -p aeolus-gpui --example filters              # the filter chain's colour-matrix polyfill + drop-shadow bands
+cargo run -p aeolus-compile --example filters           # the pipeline's filter layer: the v4 var-chain forms
+cargo run -p aeolus-compile --example backdrop_filters  # the backdrop layer: both properties, -webkit- beside the standard
+cargo run -p aeolus-compile --example grid_flow         # the grid-flow family: the auto-flow slot end to end
 cargo run -p aeolus-compile --example shadow_plan       # the plan bridge's shadow slot: presets + recolour, differential
 cargo run -p aeolus-gpui --example containers           # named @container queries through the bounds seam
 cargo run -p aeolus-gpui --example container_query      # the measuring wrapper: publish → walk → resize beat
@@ -380,6 +384,7 @@ cargo run -p aeolus-compile --example metamorphic       # compile ⇒ interpret 
 cargo run -p aeolus-lsp --example lsp_hover             # the LSP engine headless: diagnostics + hover renderings
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
+cargo run -p aeolus-macro --example frozen_program  # what a tw! expansion actually emits
 ```
 
 <details><summary><b>All examples, by crate</b></summary>
@@ -428,9 +433,11 @@ cargo run -p aeolus-codegen-gpui --example conformance
 cargo run -p aeolus-rt --example class_cell
 cargo run -p aeolus-rt --example static_walk
 cargo run -p aeolus-rt --example program_overlay
+cargo run -p aeolus-macro --example frozen_program  # the tw!/cn! surface: the frozen program, printed
 # GPUI
 cargo run -p aeolus-gpui --example ring
 cargo run -p aeolus-gpui --example grad
+cargo run -p aeolus-gpui --example filters
 cargo run -p aeolus-gpui --example variants
 cargo run -p aeolus-gpui --example slots
 cargo run -p aeolus-gpui --example attr_state
