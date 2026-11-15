@@ -35,7 +35,7 @@ it compiles it through the full V1 pipeline at macro-expansion time and emits a 
 | ------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `tw!("p-4 …")`     | validated, then the **input string emitted back** — re-parsed every process start | compiled at expansion → **frozen static program**; the string is never emitted          |
 | Static hot path    | parse → resolve → cache (**exclusive lock even on a hit**)                        | **zero parse, zero hash, zero locks** — static data applied under a `Copy` `Env`        |
-| IR                 | heap-shaped `StylePlan` (`Vec`/`BTreeMap`/`Box`), per-edge set-mask patches       | `Copy` longhands (**142 props**) + `PropMask` bitsets — `p-4 ⊕ px-8` is bit ops         |
+| IR                 | heap-shaped `StylePlan` (`Vec`/`BTreeMap`/`Box`), per-edge set-mask patches       | `Copy` longhands (**143 props**) + `PropMask` bitsets — `p-4 ⊕ px-8` is bit ops         |
 | Theme lookups      | `HashMap<String, Token>` by name                                                  | **tiered tables**: T0 literals · T1 dark pairs · T2 one load + one multiply             |
 | `cn()` / overrides | string-level tw_merge at runtime                                                  | **IR-level `cn()` + `overlay`** — rightmost-wins per longhand, computed at compile time |
 | Utility semantics  | 4,000-line `match` walls                                                          | **210 registry rows as data** → generated index, docs, sort order, conformance          |
@@ -305,7 +305,7 @@ differential oracle — no big-bang migration.
 | Phase                   | Scope                                                                                                                                             | Status                         |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | **P0** Prove it         | iai/criterion gates vs hand-written builders; replace §4 targets                                                                                  | 🎯 targets pending measurement |
-| **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (210 rows) · `aeolus-ir` (142 longhands)                                                                          | ✅ landed                      |
+| **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (210 rows) · `aeolus-ir` (143 longhands)                                                                          | ✅ landed                      |
 | **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all four emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
 | **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill; shadow tier (`shadow-*` → GPUI's own `Vec<BoxShadow>`) | ✅ landed                      |
 | **P4** Env & state      | frame `Env`, dark/breakpoints, state layers, `AttrProbe` host seam                                                                                | ✅ landed                      |
@@ -314,7 +314,7 @@ differential oracle — no big-bang migration.
 
 **Open boundaries — typed, test-pinned, never silent:**
 
-- composite arbitrary values landed (the IR's verbatim slot: `calc()`, track lists, `url()`, `aspect-[16/9]`); the arbitrary-property form and the wider v4 hint table (angle/time/position/family-name) → typed refusals
+- composite arbitrary values landed (the IR's verbatim slot: `calc()`, track lists, `url()`, `aspect-[16/9]`) and the wider v4 hint table landed (`angle:` on the degree rows, `time:` on the millisecond rows, `position:`, `family-name:`/`generic-name:`, `absolute-size:`/`relative-size:`, `string:` onto the new `content` longhand — the `content-["…"]` spelling now lowers); the arbitrary-property form (`[mask-type:luminance]`) → the remaining typed refusal
 - `has-*` descendant probes → diagnosed with reasons (element-side attribute probes are answered)
 - container **measurement** (who computes element widths) → the seam landed, the GPUI walk answers named queries through it (`tw_containers`), and the GPUI measuring wrapper landed beside it: `tw_container(name, &MeasuredContainers)` publishes the element box's width at the layout phase, the delta handshake asks for one re-render on a real change
 - GPUI motion's static emit keeps its per-longhand refusals (`with_animation` needs element id + animator — the stateful `TwAnimExt` lane applies them at runtime); >2-stop / radial / conic gradients refuse
@@ -372,6 +372,7 @@ cargo run -p aeolus-gpui --example filters              # the filter chain's col
 cargo run -p aeolus-compile --example filters           # the pipeline's filter layer: the v4 var-chain forms
 cargo run -p aeolus-compile --example backdrop_filters  # the backdrop layer: both properties, -webkit- beside the standard
 cargo run -p aeolus-compile --example grid_flow         # the grid-flow family: the auto-flow slot end to end
+cargo run -p aeolus-compile --example hints             # the wider v4 hint table: angle/time/position/family/string end to end
 cargo run -p aeolus-compile --example shadow_plan       # the plan bridge's shadow slot: presets + recolour, differential
 cargo run -p aeolus-gpui --example containers           # named @container queries through the bounds seam
 cargo run -p aeolus-gpui --example container_query      # the measuring wrapper: publish → walk → resize beat
