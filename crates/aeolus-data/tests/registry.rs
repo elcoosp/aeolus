@@ -75,6 +75,7 @@ fn kind_tables_ok(kind: ValueKind, root: &str) {
         ValueKind::Spacing
         | ValueKind::Fraction
         | ValueKind::Number
+        | ValueKind::PositiveInt
         | ValueKind::Percent
         | ValueKind::Arbitrary => {}
     }
@@ -353,6 +354,11 @@ fn row_groups_match_the_collision_oracle() {
         ("tracking-wide", "letter-spacing"),
         ("underline", "text-decoration"),
         ("underline-offset-2", "underline-offset"),
+        ("decoration-wavy", "decoration-style"),
+        ("decoration-solid", "decoration-style"),
+        ("decoration-2", "decoration-thickness"),
+        ("decoration-auto", "decoration-thickness"),
+        ("decoration-red-500", "decoration-color"),
         ("uppercase", "text-transform"),
         ("whitespace-nowrap", "whitespace"),
         ("align-baseline", "vertical-align"),
@@ -596,6 +602,7 @@ fn sort_index_matches_the_linear_oracle_over_the_registry() {
             ValueKind::Spacing => Some("4"),
             ValueKind::Fraction => Some("1/2"),
             ValueKind::Number => Some("10"),
+            ValueKind::PositiveInt => Some("10"),
             ValueKind::Percent => Some("20%"),
             ValueKind::Arbitrary => Some("[13px]"),
             ValueKind::AnyOf(inner) => match inner.first() {
@@ -603,6 +610,7 @@ fn sort_index_matches_the_linear_oracle_over_the_registry() {
                 Some(ValueKind::Spacing) => Some("4"),
                 Some(ValueKind::Fraction) => Some("1/2"),
                 Some(ValueKind::Number) => Some("10"),
+                Some(ValueKind::PositiveInt) => Some("10"),
                 Some(ValueKind::Percent) => Some("20%"),
                 Some(ValueKind::Arbitrary) => Some("[13px]"),
                 _ => None,
