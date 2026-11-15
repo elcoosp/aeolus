@@ -161,7 +161,7 @@ Every stage is total and fuzzed; the same compiler serves macros, the runtime la
 ```mermaid
 flowchart LR
     A["class string"] --> S["aeolus-syntax<br/>zero-copy lexer + spans"]
-    D["aeolus-data<br/>210 registry rows"] --> C
+    D["aeolus-data<br/>213 registry rows"] --> C
     T["aeolus-theme<br/>app.css → T0/T1/T2 tiers"] --> C
     S --> C["aeolus-compile<br/>lookup · longhand lowering<br/>variants → Cond · cn()/overlay"]
     C --> P["Program (aeolus-ir)<br/>Copy longhands + PropMask<br/>cascade-sorted layers"]
@@ -269,7 +269,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 | `aeolus build`                             | scan → global dedupe → registry-ordered rules + self-contained `:root`/`.dark` vars block; diagnostics at **every** occurrence                                                        |
 | `aeolus check`                             | unknown classes with suggestions, unsupported utilities with reasons, `cn()` conflicts with winner attribution; `--fail-on` exit codes                                                |
 | `cargo xtask gen-tables` / `verify-tables` | regenerate & drift-gate the committed artifacts: roots index, [docs/REGISTRY.md](docs/REGISTRY.md), [docs/CONFORMANCE.md](docs/CONFORMANCE.md) — a stale row fails plain `cargo test` |
-| `aeolus-lsp` (the LSP server)              | editor hover + diagnostics over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location; `bin/aeolus-lsp` speaks stdio JSON-RPC |
+| `aeolus-lsp` (the LSP server)              | editor hover, diagnostics, completion and colour swatches over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location, `completion` at the typing edge (registry spellings, theme tokens, the closed variant set — the compiler's own audited tables), `documentColor` swatches (the table's resolved light-tier rgba); `bin/aeolus-lsp` speaks stdio JSON-RPC |
 
 ## Correctness & performance
 
@@ -281,7 +281,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1389 tests (1399 with all features enabled).
+  **zero** allocations). Workspace battery: 1505 tests with all features enabled (2026-11).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -309,7 +309,7 @@ differential oracle — no big-bang migration.
 | **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all four emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
 | **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill; shadow tier (`shadow-*` → GPUI's own `Vec<BoxShadow>`) | ✅ landed                      |
 | **P4** Env & state      | frame `Env`, dark/breakpoints, state layers, `AttrProbe` host seam                                                                                | ✅ landed                      |
-| **P5** Ecosystem        | gpui-rsx integration PR (`lower_class` seam ready), **LSP landed 2026-11** (`aeolus-lsp`: hover + diagnostics over the same pipeline), gpui-component bridge, docs book, public benchmarks, **1.0-rc** | 🔜 next — the LSP row is in |
+| **P5** Ecosystem        | gpui-rsx integration PR (`lower_class` seam ready), **LSP landed 2026-11** (`aeolus-lsp`: hover, diagnostics, completion and colour swatches over the same pipeline), gpui-component bridge, docs book, public benchmarks, **1.0-rc** | 🔜 next — the LSP row is in |
 | **P6** Breadth          | 5-backend re-target ✅ · ring + gradient lanes ✅ · motion pipeline ✅ · named containers + bounds seam + measuring wrapper ✅ · pseudo targets ✅ · project build ✅ | ✅ mostly — see boundaries     |
 
 **Open boundaries — typed, test-pinned, never silent:**
@@ -350,7 +350,7 @@ differential oracle — no big-bang migration.
 | `aeolus-gpui` + five backend crates | see [Backends](#backends) — plan lane + V1 static-program lane each                             |
 | `aeolus-shadcn`                     | shadcn `new-york-v4` class tables verbatim + per-backend wrappers + the closed-world program tables (`ButtonPrograms`, the F6 fix) |
 | `aeolus-cli`                        | `resolve` `css` `diff` `cn` `check` `explain` `sort` `expand` `build` — zero external crates    |
-| `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges + hover signatures) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) |
+| `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges, hover signatures, completion from the audited tables, colour swatches) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) |
 | `xtask`                             | `gen-tables` / `verify-tables` drift gates for the committed artifacts                          |
 | `aeolus-core`                       | v0.x `Resolver` + `StylePlan`: the runtime lane and the differential oracle — **publish-ready** |
 
@@ -385,6 +385,8 @@ cargo run -p aeolus-shadcn --example program_tables     # the closed-world progr
 cargo run -p aeolus-codegen-gpui --example conformance  # the published score, from the emit gates themselves
 cargo run -p aeolus-compile --example metamorphic       # compile ⇒ interpret ⇒ equals emit: the per-situation agreement report
 cargo run -p aeolus-lsp --example lsp_hover             # the LSP engine headless: diagnostics + hover renderings
+cargo run -p aeolus-lsp --example lsp_completion        # the completion answer: variants, keywords, tokens
+cargo run -p aeolus-lsp --example lsp_colours           # the colour swatches: the table's resolved rgba
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
 cargo run -p aeolus-macro --example frozen_program  # what a tw! expansion actually emits
@@ -464,6 +466,8 @@ cargo run -p aeolus-cli --example theme_spec
 cargo run -p aeolus-cli --example explain
 # the P5 LSP row
 cargo run -p aeolus-lsp --example lsp_hover
+cargo run -p aeolus-lsp --example lsp_completion  # completion at the typing edge
+cargo run -p aeolus-lsp --example lsp_colours     # the documentColor swatches
 cargo run -p aeolus-lsp --bin aeolus-lsp  # the stdio server (an editor spawns this)
 ```
 
