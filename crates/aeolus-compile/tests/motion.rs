@@ -4,8 +4,9 @@
 //! families lower through the SAME typed pipeline as every other
 //! registry family — IR longhands, the value pass, the CSS arm's
 //! rendering, the interp arm, the rust-tokens arm's annotations, the
-//! static arm — and the honest boundaries stay typed (arbitrary
-//! timing values, negation, unknown easings/animation names).
+//! static arm — and the honest boundaries stay typed (arbitrary easing
+//! curves, negation, unknown easings/animation names; the time units
+//! lower on the millisecond rows — the wider v4 hint table's landing).
 //!
 //! The differential half (the plans agree with the v0.x oracle slot
 //! for slot, the oracle's own `Transition`/`Animation` extras) is
@@ -137,41 +138,45 @@ fn animate_presets_lower_onto_the_animation_longhand() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn arbitrary_timing_values_refuse_typed() {
-    // `duration-[2s]`/`ease-[cubic-bezier(...)]`: the time/curve values
-    // are the documented arbitrary-boundary (the wider v4 hint table) —
-    // the duration/delay/ease rows carry no arbitrary arm, so the read
-    // side's shape rejection names the root and the shapes it tried,
-    // never a silent drop.
-    for class in ["duration-[2s]", "ease-[cubic-bezier(0,0,0,1)]"] {
-        let compiled = compile(class, &config()).expect("compiles");
-        assert_eq!(
-            compiled.diagnostics.len(),
-            1,
-            "{class}: {:?}",
-            compiled.diagnostics
-        );
-        assert!(
-            matches!(
-                compiled.diagnostics[0].kind,
-                aeolus_compile::DiagnosticKind::ShapeRejected { .. }
-            ),
-            "{class}: {:?}",
-            compiled.diagnostics[0].kind
-        );
-        // The refusal left nothing lowered silently (an all-refused
-        // string compiles to the empty program).
-        assert_eq!(
-            compiled
-                .program
-                .layers
-                .iter()
-                .map(|l| l.decls.len())
-                .sum::<usize>(),
-            0,
-            "{class}: nothing lowers"
-        );
-    }
+fn arbitrary_timing_values_lower_on_the_time_rows() {
+    // `duration-[2s]`: the free time units lower on the millisecond
+    // rows now (the wider v4 hint table's landing — the `deg`
+    // precedent: the row's own number form IS the unit's oracle). The
+    // `s` spelling bakes ×1000; the curve values on the `ease` root
+    // (keyword rows, no arbitrary arm) keep the read side's shape
+    // rejection — never a silent drop.
+    let compiled = compile("duration-[2s]", &config()).expect("compiles");
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    let (prop, val) = base_decl_of("duration-[2s]");
+    assert_eq!(prop, Prop::TransitionDuration);
+    assert_eq!(val, Val::Num(2000.0));
+
+    let compiled = compile("ease-[cubic-bezier(0,0,0,1)]", &config()).expect("compiles");
+    assert_eq!(compiled.diagnostics.len(), 1, "{:?}", compiled.diagnostics);
+    assert!(
+        matches!(
+            compiled.diagnostics[0].kind,
+            aeolus_compile::DiagnosticKind::ShapeRejected { .. }
+        ),
+        "{:?}",
+        compiled.diagnostics[0].kind
+    );
+    // The refusal left nothing lowered silently (an all-refused
+    // string compiles to the empty program).
+    assert_eq!(
+        compiled
+            .program
+            .layers
+            .iter()
+            .map(|l| l.decls.len())
+            .sum::<usize>(),
+        0,
+        "nothing lowers"
+    );
 }
 
 #[test]
