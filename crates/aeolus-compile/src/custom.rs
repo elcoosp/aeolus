@@ -802,6 +802,10 @@ fn val_css(val: Val, tokens: Option<&aeolus_theme::TokenTable>) -> Result<lower:
                 reason: REASON_CUSTOM_KEYWORD,
             });
         }
+        // The composite grammar's verbatim slot: the text IS the CSS
+        // value (a custom body's applied classes compile through the
+        // same pipeline, so a composite renders its own text).
+        Val::Verbatim(text) => text.to_string(),
     };
     Ok(lower::CssValue { base, dark: None })
 }
