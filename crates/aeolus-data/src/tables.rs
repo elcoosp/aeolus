@@ -690,6 +690,22 @@ pub const TEXT_DECORATIONS: &[(&str, &str)] = &[
     ("no-underline", "none"),
 ];
 
+/// `decoration-{style}` keywords — the v4 static utilities' own order
+/// (`utilities.ts text-decoration-style`).
+pub const TEXT_DECORATION_STYLES: &[(&str, &str)] = &[
+    ("solid", "solid"),
+    ("double", "double"),
+    ("dotted", "dotted"),
+    ("dashed", "dashed"),
+    ("wavy", "wavy"),
+];
+
+/// `decoration-{thickness}` static keywords (the v4 thickness
+/// utilities' keyword forms; the bare NON-NEGATIVE integers ride the
+/// row's `PositiveInt` arm, the v4 `isPositiveInteger` grammar).
+pub const DECORATION_THICKNESS_KEYWORDS: &[(&str, &str)] =
+    &[("auto", "auto"), ("from-font", "from-font")];
+
 /// `whitespace-*` keywords.
 pub const WHITESPACE: &[(&str, &str)] = &[
     ("normal", "normal"),
