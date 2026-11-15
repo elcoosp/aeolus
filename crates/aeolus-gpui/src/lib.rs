@@ -76,11 +76,13 @@ use gpui::{
 };
 
 mod containers;
+mod filters;
 mod grad;
 mod motion;
 mod ring;
 mod shadow;
 pub use containers::{ContainerQuery, TwContainerExt, container_rem};
+pub use filters::FilterState;
 pub use grad::GradState;
 pub use motion::{
     AnimSpec, Easing, animation, animation_for, animation_keyword, parse_animation, pulse_animator,
@@ -106,8 +108,9 @@ pub use aeolus_rt::{ContainerBound, ContainerProbe, ContainerState, MeasuredCont
 /// extension traits.
 pub mod prelude {
     pub use crate::{
-        AeolusRoot, ContainerQuery, GradState, TwAnimExt, TwContainerExt, TwExt, TwStateExt,
-        begin_frame, cn, container_rem, set_env, theme, theme_from_css, tw, tw_cn, variants,
+        AeolusRoot, ContainerQuery, FilterState, GradState, TwAnimExt, TwContainerExt, TwExt,
+        TwStateExt, begin_frame, cn, container_rem, set_env, theme, theme_from_css, tw, tw_cn,
+        variants,
     };
     pub use aeolus_compile::Env;
     pub use aeolus_rt::{
@@ -438,18 +441,18 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
         let env = env();
         // The base+env walk stays sourceless: the interaction closures
         // are GPUI's own state, the element-own attribute bits ride the
-        // `tw_probes` walk instead. The base walk's ring, gradient, grid
-        // and shadow states seed every closure — `hover:ring-4`
+        // `tw_probes` walk instead. The base walk's ring, gradient, grid,
+        // shadow and filter states seed every closure — `hover:ring-4`
         // composes with the base's `ring-red-500` colour,
         // `hover:from-blue-500` with the base's `from-red-500` stop,
         // `hover:shadow-md` with the base's `shadow-lg` bands the way
-        // CSS's vars persist across state layers, and
-        // `hover:col-start-2` composes with the base's placement the
-        // way the cascade reads.
+        // CSS's vars persist across state layers, and `hover:grayscale-25`
+        // with the base's recorded matrix chain.
         let mut ring = RingState::default();
         let mut grad = GradState::default();
         let mut grid = GridState::default();
         let mut shadow = ShadowState::default();
+        let mut filter = FilterState::default();
         let mut this = apply_matching_polyfills(
             self,
             &program,
@@ -461,18 +464,28 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
             &mut grad,
             &mut grid,
             &mut shadow,
+            &mut filter,
         );
         this = this.hover(|style| {
-            apply_state_polyfills(style, &program, is_hover, ring, grad, grid, shadow)
+            apply_state_polyfills(style, &program, is_hover, ring, grad, grid, shadow, filter)
         });
         this = this.focus(|style| {
-            apply_state_polyfills(style, &program, is_focus, ring, grad, grid, shadow)
+            apply_state_polyfills(style, &program, is_focus, ring, grad, grid, shadow, filter)
         });
         this = this.focus_visible(|style| {
-            apply_state_polyfills(style, &program, is_focus_visible, ring, grad, grid, shadow)
+            apply_state_polyfills(
+                style,
+                &program,
+                is_focus_visible,
+                ring,
+                grad,
+                grid,
+                shadow,
+                filter,
+            )
         });
         this = this.active(|style| {
-            apply_state_polyfills(style, &program, is_active, ring, grad, grid, shadow)
+            apply_state_polyfills(style, &program, is_active, ring, grad, grid, shadow, filter)
         });
         this
     }
@@ -734,15 +747,17 @@ fn apply_matching<S: Styled>(
         &mut GradState::default(),
         &mut GridState::default(),
         &mut ShadowState::default(),
+        &mut FilterState::default(),
     )
 }
 
 /// [`apply_matching`] with the polyfill accumulators AND the grid
 /// placement state threaded through — the shared walk body, so the base
 /// walk ([`TwExt::tw`]) and the [`TwStateExt`] closures compose the
-/// SAME `--tw-ring-*`, `--tw-gradient-*`, grid-placement and
-/// `shadow-*` state and the interaction closures inherit the base's
-/// bands, stops, placement and shadow bands instead of resetting them.
+/// SAME `--tw-ring-*`, `--tw-gradient-*`, grid-placement, `shadow-*`
+/// and filter-chain state and the interaction closures inherit the
+/// base's bands, stops, placement, shadow bands and matrix chain
+/// instead of resetting them.
 fn apply_matching_polyfills<S: Styled>(
     mut style: S,
     program: &StaticProgram,
@@ -754,6 +769,7 @@ fn apply_matching_polyfills<S: Styled>(
     grad: &mut GradState,
     grid: &mut GridState,
     shadow: &mut ShadowState,
+    filter: &mut FilterState,
 ) -> S {
     for (layer_index, layer) in program.layers.iter().enumerate() {
         if !cond_matches(layer.cond, env, probes, containers, structs) {
@@ -791,14 +807,29 @@ fn apply_matching_polyfills<S: Styled>(
                 shadow.apply(decl.prop, decl.val, keyword);
                 continue;
             }
+            // The filter longhands ride THEIR accumulator (the §3.7
+            // row's polyfill half): the matrix chain records, the
+            // drop-shadow bands parse, the spatial/backdrop halves
+            // land in the state's documented no-op arms.
+            if is_filter_prop(decl.prop) {
+                filter.apply(decl.prop, decl.val, keyword);
+                continue;
+            }
+            // The colour slots the matrix chain recolours record
+            // beside the other states' reads (the chain re-applies
+            // them filtered after the walk).
+            if matches!(decl.prop, Prop::Background | Prop::BorderColor) {
+                filter.apply(decl.prop, decl.val, keyword);
+            }
             if decl.prop == Prop::Color {
                 ring.apply(decl.prop, decl.val, keyword);
                 shadow.apply(decl.prop, decl.val, keyword);
+                filter.apply(decl.prop, decl.val, keyword);
             }
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    apply_polyfills(style, ring, grad, grid, shadow)
+    apply_polyfills(style, ring, grad, grid, shadow, filter)
 }
 
 /// The four `--tw-ring-*` longhands the polyfill owns (the registry's
@@ -845,6 +876,38 @@ fn is_grid_prop(prop: Prop) -> bool {
     matches!(
         prop,
         Prop::GridColumnStart | Prop::GridColumnEnd | Prop::GridRowStart | Prop::GridRowEnd
+    )
+}
+
+/// The filter family's longhands (the §3.7 filter row): the nine
+/// polyfillable forms (the seven colour-matrix matrices, the
+/// `drop-shadow-*` presets, the composed `filter` root) ride the
+/// [`FilterState`] machinery; the spatial half (`blur-*`) and the
+/// `backdrop-*` mirrors land in the state's documented no-op arms (the
+/// walk's skip — the static gate refuses them typed).
+fn is_filter_prop(prop: Prop) -> bool {
+    matches!(
+        prop,
+        Prop::FilterBlur
+            | Prop::FilterBrightness
+            | Prop::FilterContrast
+            | Prop::FilterGrayscale
+            | Prop::FilterHueRotate
+            | Prop::FilterInvert
+            | Prop::FilterSaturate
+            | Prop::FilterSepia
+            | Prop::FilterDropShadow
+            | Prop::Filter
+            | Prop::BackdropBlur
+            | Prop::BackdropBrightness
+            | Prop::BackdropContrast
+            | Prop::BackdropGrayscale
+            | Prop::BackdropHueRotate
+            | Prop::BackdropInvert
+            | Prop::BackdropOpacity
+            | Prop::BackdropSaturate
+            | Prop::BackdropSepia
+            | Prop::BackdropFilter
     )
 }
 
@@ -908,21 +971,56 @@ impl GridState {
 /// shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow),
 /// var(--tw-shadow)`; the first layer paints on top, so the ring sits
 /// over the preset's inner edge exactly as the v4 list reads).
+///
+/// The filter tier's chain composes beside them (the §3.7 row's
+/// polyfill half): the recorded colour slots re-applied through the
+/// matrices (the walk applied them inline unfiltered — the chain's
+/// re-application is the cascade's last write, BEFORE the gradient
+/// overrides the solid slot GPUI keeps), the composed ring/shadow band
+/// colours recoloured the same way, and the parsed drop-shadow bands
+/// appended after the preset bands (v4's canonical order puts the
+/// drop-shadow var last — the matrices never recolour its colour).
+/// An empty state composes nothing, exactly the pre-filter walk.
 fn apply_polyfills<S: Styled>(
     style: S,
     ring: &RingState,
     grad: &GradState,
     grid: &GridState,
     shadow: &ShadowState,
+    filter: &FilterState,
 ) -> S {
+    // The matrix chain's recolour: identity until a live chain with a
+    // matrix amount lands (`has_matrix`), then the seven spec matrices
+    // in v4's var-canonical order — the drop-shadow-only chain
+    // recolours nothing.
+    let chain = filter.has_matrix();
+    let shade = |color: Hsla| filter.shade(color).unwrap_or(color);
+    let mut style = style;
+    if chain {
+        if let Some(background) = filter.background() {
+            style = style.bg(shade(Hsla::from(background)));
+        }
+        if let Some(text) = filter.text() {
+            style = style.text_color(shade(Hsla::from(text)));
+        }
+        if let Some(border) = filter.border() {
+            style = style.border_color(shade(Hsla::from(border)));
+        }
+    }
     let mut shadows = ring.shadows();
     shadows.extend(shadow.shadows());
+    if chain {
+        for band in &mut shadows {
+            band.color = shade(band.color);
+        }
+    }
+    shadows.extend(filter.drop_shadows().unwrap_or_default());
     let mut style = if shadows.is_empty() {
         style
     } else {
         style.shadow(shadows)
     };
-    if let Some(background) = grad.background() {
+    if let Some(background) = grad.background_with(shade) {
         style = style.bg(background);
     }
     apply_grid(style, grid)
@@ -982,7 +1080,7 @@ fn apply_dynamic<S: Styled>(
 
 /// The interaction-closure half of the walk: the layers the predicate
 /// selects (the closure's own state), composed over the base walk's
-/// ring, gradient, grid-placement and shadow states.
+/// ring, gradient, grid-placement, shadow and filter states.
 fn apply_state_polyfills<S: Styled>(
     style: S,
     program: &StaticProgram,
@@ -991,6 +1089,7 @@ fn apply_state_polyfills<S: Styled>(
     mut grad: GradState,
     mut grid: GridState,
     mut shadow: ShadowState,
+    mut filter: FilterState,
 ) -> S {
     let mut style = style;
     for (layer_index, layer) in program.layers.iter().enumerate() {
@@ -1015,14 +1114,22 @@ fn apply_state_polyfills<S: Styled>(
                 shadow.apply(decl.prop, decl.val, keyword);
                 continue;
             }
+            if is_filter_prop(decl.prop) {
+                filter.apply(decl.prop, decl.val, keyword);
+                continue;
+            }
+            if matches!(decl.prop, Prop::Background | Prop::BorderColor) {
+                filter.apply(decl.prop, decl.val, keyword);
+            }
             if decl.prop == Prop::Color {
                 ring.apply(decl.prop, decl.val, keyword);
                 shadow.apply(decl.prop, decl.val, keyword);
+                filter.apply(decl.prop, decl.val, keyword);
             }
             style = apply_decl(style, decl.prop, decl.val, keyword);
         }
     }
-    apply_polyfills(style, &ring, &grad, &grid, &shadow)
+    apply_polyfills(style, &ring, &grad, &grid, &shadow, &filter)
 }
 
 // ---------------------------------------------------------------------------
