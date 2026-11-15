@@ -2,7 +2,7 @@
 
 # Aeolus conformance — gpui
 
-**score: 52.48% expressible** (49.65% native + 2.84% polyfilled) over 141 longhands
+**score: 52.11% expressible** (49.30% native + 2.82% polyfilled) over 142 longhands
 
 The per-longhand tiers, in the IR's cascade order. The per-declaration refinements (the emit gates' text-dependent verdicts) live at the gates themselves — this is the per-longhand ceiling.
 
@@ -149,3 +149,4 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `--tw-backdrop-saturate` | refused |
 | `--tw-backdrop-sepia` | refused |
 | `backdrop-filter` | refused |
+| `grid-auto-flow` | refused |
