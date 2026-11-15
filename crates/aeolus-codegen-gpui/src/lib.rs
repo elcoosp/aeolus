@@ -399,6 +399,19 @@ pub const fn supports(prop: Prop) -> bool {
             | Prop::FontStyle
             | Prop::TextAlign
             | Prop::TextDecorationLine
+            // The decoration family's colour/thickness/style longhands
+            // (the §3.7 typography surface's decoration half): GPUI's
+            // pinned `Styled` surface carries `text_decoration_color`
+            // and the `text_decoration_0..8` thickness methods (the
+            // underline leg's own slots), and the wavy/solid forms ride
+            // the pinned `text_decoration_solid`/`text_decoration_wavy`
+            // methods — the per-decl refusals (the double/dotted/dashed
+            // style keywords, the auto/from-font and rem/percent
+            // thickness forms) stay at the gates, see
+            // [`unsupported_reason`].
+            | Prop::TextDecorationColor
+            | Prop::TextDecorationThickness
+            | Prop::TextDecorationStyle
             | Prop::WhiteSpace
             | Prop::OverflowX
             | Prop::OverflowY
@@ -503,11 +516,37 @@ const VERBATIM_UNSUPPORTED: &str = "GPUI's builder surface takes no composite va
      arbitrary forms (calc(), track lists, url()/image(), ratios) stay the CSS/interp \
      arms' output (the value pass's verbatim slot)";
 
+/// The decoration family's per-decl refusals, the VAL's half (the
+/// thickness longhand's absolute-pixel slot: the keyword and
+/// rem/percent forms have no GPUI answer). `None` = expressible.
+fn decoration_val_unsupported_reason(prop: Prop, val: Val) -> Option<&'static str> {
+    match prop {
+        Prop::TextDecorationThickness => match val {
+            Val::Kw(_) => Some(
+                "GPUI's thickness slot is absolute pixels — the auto/from-font \
+                 keywords have no slot (the CSS/interp arms carry the real \
+                 output)",
+            ),
+            Val::Rem(_) | Val::Pct(_) => Some(
+                "GPUI's thickness slot is absolute pixels — the rem/percent \
+                 thickness forms need a font-size context the frozen program \
+                 does not name (the CSS/interp arms carry the real output)",
+            ),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// The per-declaration verdict over one decl: the verbatim slot's own
-/// gate first, the per-prop tiers ([`unsupported_reason`]) otherwise.
+/// gate first, the decoration family's val-dependent gate, the per-prop
+/// tiers ([`unsupported_reason`]) otherwise.
 fn decl_unsupported_reason(prop: Prop, val: Val, keyword: &str) -> Option<&'static str> {
     if matches!(val, Val::Verbatim(_)) {
         return Some(VERBATIM_UNSUPPORTED);
+    }
+    if let Some(reason) = decoration_val_unsupported_reason(prop, val) {
+        return Some(reason);
     }
     unsupported_reason(prop, keyword)
 }
@@ -650,6 +689,20 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
             "GPUI linear gradients carry two stops — the via stop has no slot (v4's \
              three-stop form stays the documented boundary)",
         ),
+        // The decoration family's style longhand: GPUI renders a single
+        // line — solid and wavy express through the pinned
+        // `text_decoration_solid`/`text_decoration_wavy` methods, the
+        // other three keywords refuse (the row TEXT's verdict, the
+        // shadow preset gate's pattern: the registry's own table is the
+        // one source of truth).
+        Prop::TextDecorationStyle => match keyword {
+            "solid" | "wavy" => None,
+            _ => Some(
+                "GPUI renders a single solid decoration line — the \
+                 double/dotted/dashed styles have no slot (the CSS/interp \
+                 arms carry the real output)",
+            ),
+        },
         Prop::BoxShadow => {
             if keyword.is_empty() {
                 Some(
