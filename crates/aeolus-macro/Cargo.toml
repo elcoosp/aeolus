@@ -24,6 +24,12 @@ aeolus-theme = { workspace = true }
 aeolus-codegen-gpui = { path = "../aeolus-codegen-gpui" }
 
 [features]
+# The macro's compile-error rendering: verbose mode renders each typed
+# refusal MULTI-LINE with the stable machine code and help text (the
+# `DiagnosticKind::code`/`help` seam) beside the span line — the
+# editor/LSP parity inside the compile error. Default: the one-line
+# form. Both shapes carry the SAME refusal set (the unit battery pins
+# it in both modes).
 verbose-diagnostics = []
 
 [dev-dependencies]
