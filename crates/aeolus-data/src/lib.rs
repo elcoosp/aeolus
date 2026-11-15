@@ -67,6 +67,14 @@ pub enum ValueKind {
     /// per-root scale factor is the codegen's business; the row only
     /// classifies the shape).
     Number,
+    /// A NON-NEGATIVE INTEGER scale with the real compiler's round-trip
+    /// rule (`isPositiveInteger`: `Number.isInteger(n) && n >= 0 &&
+    /// String(n) === String(value)`): `decoration-2`, `decoration-0`,
+    /// `decoration-13` — but not `decoration-2.5` (not an integer) and
+    /// not `decoration-02` (the spelling does not round-trip). The
+    /// shape the v4 thickness scales ride; lowering is the pixel
+    /// `Number` form's.
+    PositiveInt,
     /// The arbitrary passthrough: `[...]` / `(...)` values with optional
     /// type hints ride the candidate's arbitrary group verbatim. Shape
     /// acceptance: the bare root (the value rode in the candidate's
@@ -109,6 +117,13 @@ impl ValueKind {
                     .is_some_and(|(n, d)| !n.is_empty() && !d.is_empty())
             }),
             ValueKind::Number => suffix.is_some_and(|s| s.parse::<f32>().is_ok()),
+            // The v4 isPositiveInteger round-trip rule: a non-negative
+            // integer whose spelling parses back to itself (`2` yes,
+            // `2.5` no, `02` no, `+2` no — `u64` parse rejects the sign
+            // and the round-trip check rejects the padding).
+            ValueKind::PositiveInt => {
+                suffix.is_some_and(|s| s.parse::<u64>().is_ok_and(|n| s == n.to_string()))
+            }
             ValueKind::Percent => {
                 suffix.is_some_and(|s| s.ends_with('%') && s[..s.len() - 1].parse::<f32>().is_ok())
             }
@@ -127,6 +142,7 @@ impl ValueKind {
             ValueKind::Spacing => "spacing",
             ValueKind::Fraction => "fraction",
             ValueKind::Number => "number",
+            ValueKind::PositiveInt => "positive-int",
             ValueKind::Percent => "percent",
             ValueKind::Arbitrary => "arbitrary",
             ValueKind::AnyOf(_) => "any-of",
