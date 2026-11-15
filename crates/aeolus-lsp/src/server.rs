@@ -10,7 +10,9 @@
 
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 use lsp_types::{
-    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, Hover,
+    Color, ColorInformation, ColorProviderCapability, CompletionItem, CompletionItemKind,
+    CompletionList, CompletionOptions, CompletionParams, DidChangeTextDocumentParams,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentColorParams, Hover,
     HoverContents, HoverProviderCapability, InitializeResult, MarkupContent, MarkupKind,
     NumberOrString, PublishDiagnosticsParams, ServerCapabilities, ServerInfo,
     TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
@@ -140,6 +142,93 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             });
             respond(request.id, result)
         }
+        "textDocument/documentColor" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            let answer = serde_json::from_value::<DocumentColorParams>(request.params)
+                .ok()
+                .map(|params| {
+                    session
+                        .engine
+                        .document_colours(params.text_document.uri.as_str())
+                        .iter()
+                        .map(|swatch| ColorInformation {
+                            range: lsp_types::Range {
+                                start: lsp_types::Position {
+                                    line: swatch.range.start.line,
+                                    character: swatch.range.start.character,
+                                },
+                                end: lsp_types::Position {
+                                    line: swatch.range.end.line,
+                                    character: swatch.range.end.character,
+                                },
+                            },
+                            // The protocol's colour model is rgba
+                            // itself (0..1 fractions) — the resolved
+                            // bytes map channel for channel.
+                            color: Color {
+                                red: f32::from(swatch.rgba[0]) / 255.0,
+                                green: f32::from(swatch.rgba[1]) / 255.0,
+                                blue: f32::from(swatch.rgba[2]) / 255.0,
+                                alpha: f32::from(swatch.rgba[3]) / 255.0,
+                            },
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |swatches| Some(serde_json::to_value(swatches).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
+        "textDocument/completion" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            let answer = serde_json::from_value::<CompletionParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let position = params.text_document_position.position;
+                    session.engine.complete(
+                        params.text_document_position.text_document.uri.as_str(),
+                        position.line,
+                        position.character,
+                    )
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |items| {
+                    let ranked = items
+                        .iter()
+                        .map(|item| CompletionItem {
+                            label: item.label.clone(),
+                            kind: Some(match item.kind {
+                                crate::EngineCompletionKind::Utility => {
+                                    CompletionItemKind::PROPERTY
+                                }
+                                crate::EngineCompletionKind::Token => CompletionItemKind::VALUE,
+                                crate::EngineCompletionKind::Variant => CompletionItemKind::KEYWORD,
+                            }),
+                            detail: Some(item.detail.clone()),
+                            // The registry's canonical order as the sort
+                            // key: the editor renders the answer's own
+                            // order, never its label-alphabetical one.
+                            sort_text: Some(format!("{:04}", item.rank)),
+                            ..CompletionItem::default()
+                        })
+                        .collect();
+                    Some(
+                        serde_json::to_value(CompletionList {
+                            is_incomplete: false,
+                            items: ranked,
+                        })
+                        .unwrap_or(Value::Null),
+                    )
+                },
+            );
+            respond(request.id, result)
+        }
         _ => Handled::default(),
     }
 }
@@ -256,12 +345,22 @@ fn respond(id: RequestId, result: Option<Value>) -> Handled {
     }
 }
 
-/// The advertised capabilities: hover on, full-text sync on. The
-/// engine never forks the pipeline, so the capability surface is the
-/// pipeline's own honesty contract at the editor.
+/// The advertised capabilities: hover, completion, colour swatches and
+/// full-text sync. The engine never forks the pipeline, so the
+/// capability surface is the pipeline's own honesty contract at the
+/// editor.
 fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
+        color_provider: Some(ColorProviderCapability::Simple(true)),
+        completion_provider: Some(CompletionOptions {
+            // The class grammar's own separators: `-` joins root and
+            // suffix, `:` ends a variant segment — the two keystrokes
+            // the completion answer re-fires on.
+            trigger_characters: Some(vec!["-".to_string(), ":".to_string()]),
+            resolve_provider: Some(false),
+            ..CompletionOptions::default()
+        }),
         text_document_sync: Some(TextDocumentSyncCapability::Options(
             TextDocumentSyncOptions {
                 open_close: Some(true),
