@@ -54,6 +54,7 @@ Generated from `aeolus-data`'s committed rows — do not edit.
 | `grid-cols` | any-of | grid-template-columns | `grid-template-columns` | no | utilities.ts grid-template-columns |
 | `grid-rows` | any-of | grid-template-rows | `grid-template-rows` | no | utilities.ts grid-template-rows |
 | `auto-cols` | any-of | grid-auto-columns | `grid-auto-columns` | no | utilities.ts grid-auto-columns |
+| `grid-flow` | keywords | grid-auto-flow | `grid-auto-flow` | no | utilities.ts grid-auto-flow |
 | `auto-rows` | any-of | grid-auto-rows | `grid-auto-rows` | no | utilities.ts grid-auto-rows |
 | `col-span` | any-of | grid-column-start, grid-column-end | `col-span` | no | utilities.ts grid-column |
 | `col-start` | any-of | grid-column-start | `col-start` | yes | utilities.ts grid-column |
