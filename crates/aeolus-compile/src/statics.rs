@@ -159,6 +159,11 @@ pub(crate) fn val_literal(val: Val) -> String {
         }
         Val::ModePair(slot) => format!("aeolus_ir::Val::ModePair({slot})"),
         Val::Kw(slot) => format!("aeolus_ir::Val::Kw({slot})"),
+        // The composite grammar's verbatim slot freezes as the string
+        // literal it is — `Debug`'s escaping is the deterministic
+        // Rust-literal form (quotes, backslashes, control bytes), so the
+        // emitted `static` compiles and two freezes agree byte for byte.
+        Val::Verbatim(text) => format!("aeolus_ir::Val::Verbatim({text:?})"),
     }
 }
 
