@@ -1,6 +1,6 @@
 [package]
 name = "aeolus-lsp"
-description = "Aeolus V1 language-server surface: hover and diagnostics over the same pipeline the CLI runs, over the P5 row's tooling-parity line (docs/AEOLUS_V1_ARCHITECTURE.md §5.5, the P5 row)"
+description = "Aeolus V1 language-server surface: hover, diagnostics and completion over the same pipeline the CLI runs, over the P5 row's tooling-parity line (docs/AEOLUS_V1_ARCHITECTURE.md §5.5, the P5 row)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,6 +14,10 @@ publish = false
 # the SAME compiler the CLI and the macros run, never a parallel matcher
 # (the plan §3.6 capability-split rule).
 aeolus-compile = { path = "../aeolus-compile" }
+# The registry rows the completion walks: the utility spellings and the
+# colour-group gate come from the SAME audited tables the compile stage
+# lowers against (the completion's sources are the compiler's sources).
+aeolus-data = { path = "../aeolus-data" }
 # The IR types the hover render names (`Prop::name`, the folded `Cond`).
 aeolus-ir = { workspace = true }
 # The candidate walk the hover resolution keys on (the same lexer walk
