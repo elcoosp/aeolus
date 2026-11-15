@@ -19,7 +19,16 @@
 //!     the candidate under the cursor: a lowered class renders its
 //!     folded condition and the CSS arm's own declaration texts; a
 //!     refused class renders the typed refusal (code + help); a cursor
-//!     outside any candidate string answers None ([`EngineHover`]).
+//!     outside any candidate string answers None ([`EngineHover`]);
+//!   * *what could go here?* — the completion for the fragment under
+//!     the cursor: registry spellings, theme-token classes and closed
+//!     variant spellings, each item drawn from one of the compiler's
+//!     OWN audited tables (never a guess), in the registry's canonical
+//!     order ([`EngineCompletion`]);
+//!   * *what does the editor paint here?* — the colour swatches: every
+//!     candidate whose program carries a colour declaration, its
+//!     byte-true range and the table's resolved light-tier rgba
+//!     ([`EngineColour`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -109,6 +118,57 @@ pub struct EngineHover {
     /// The hovered candidate's range, when the resolution came from one
     /// (the editor highlights the class).
     pub range: Option<EngineRange>,
+}
+
+/// Which audited surface a completion item comes from — the editor's
+/// rendering key (the server maps each onto its protocol kind) and the
+/// source's honesty tag: every item is a spelling one of the compiler's
+/// OWN tables names, never a guess.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EngineCompletionKind {
+    /// A registry spelling (a bare root, a keyword/composite suffix, an
+    /// audited default-step scale) — the row's longhands are the detail.
+    Utility,
+    /// A theme-token spelling on a colour root — the config's own
+    /// `TokenTable` names, the table's sorted order the rank.
+    Token,
+    /// A closed variant spelling from the compile crate's audited
+    /// [`KNOWN_VARIANTS`](aeolus_compile::KNOWN_VARIANTS) set.
+    Variant,
+}
+
+/// One completion item: the spelling to insert (no variant stack — the
+/// fragment's already-typed prefix rides in the editor's own word), the
+/// detail line (the longhands / the token / the source family), the
+/// kind, and the rank — the registry's canonical order as a stable sort
+/// key (strictly increasing along the answer, never repeated).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineCompletion {
+    /// The class or variant spelling (`"flex-col"`, `"bg-primary"`,
+    /// `"hover"`).
+    pub label: String,
+    /// The detail line: a utility's longhand names, a token's custom
+    /// property, a variant's source family.
+    pub detail: String,
+    /// The audited surface the spelling comes from.
+    pub kind: EngineCompletionKind,
+    /// The canonical rank (the registry's row order, the token table's
+    /// sorted names, the variant set's semantic order).
+    pub rank: usize,
+}
+
+/// One colour swatch the editor paints beside a class: the candidate's
+/// byte-true range and the RESOLVED rgba (the table's own light-tier
+/// bytes — the alpha modifier baked, the same premultiplied identity
+/// the token path lowers through). The keyword slots (`transparent`,
+/// `currentColor`) stay unnamed: a CSS keyword is not a swatch, the
+/// honest boundary the engine documents.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EngineColour {
+    /// The class's range (the editor paints beside the token).
+    pub range: EngineRange,
+    /// The resolved light-tier rgba (alpha 255 = opaque).
+    pub rgba: [u8; 4],
 }
 
 /// One open document the engine keeps: the current text and the LSP's
