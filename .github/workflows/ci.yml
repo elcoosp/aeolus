@@ -78,8 +78,8 @@ jobs:
       fail-fast: false
       matrix:
         # Linux is the gate; macOS/Windows run the same suite when available
-        # (the muda-stub patch only fires on Linux dev sandboxes; real muda
-        # builds on the other targets).
+        # (floem gates its muda dep to Linux, so the muda-stub patch is
+        # inert on the other targets — the patch itself is unconditional).
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
