@@ -599,3 +599,40 @@ fn colour_swatches_answer_empty_outside_the_pipeline() {
         "a document with no strings answers empty"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The pull-diagnostics answer (the documentDiagnostic wire's engine
+// half): `analyze` IS the pull report's source — the same walk the
+// push channel publishes. The battery pins the answer's SHAPE the wire
+// maps: one coded finding per miss, the range byte-true.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn analyze_is_the_pull_diagnostics_answer() {
+    let mut engine = AeolusEngine::new(EngineConfig::default());
+    engine.open(
+        "file:///pull.rs",
+        "fn card() {\n    let s = \"p-4 not-a-root\";\n}\n",
+        1,
+    );
+    let findings = engine.analyze("file:///pull.rs");
+    assert_eq!(findings.len(), 1, "the one miss answers: {findings:?}");
+    let finding = &findings[0];
+    assert!(
+        finding.code.starts_with("aeolus::compile::"),
+        "the stable machine code rides: {}",
+        finding.code
+    );
+    assert!(
+        finding.message.contains("not-a-root"),
+        "the message names the token: {}",
+        finding.message
+    );
+    assert_eq!(finding.range.start.line, 1, "the range is byte-true");
+    // The clean document answers empty — the pull's empty report.
+    engine.open("file:///clean.rs", "fn clean() {}\n", 1);
+    assert!(
+        engine.analyze("file:///clean.rs").is_empty(),
+        "a clean document pulls an empty report"
+    );
+}
