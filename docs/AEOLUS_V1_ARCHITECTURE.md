@@ -8,10 +8,10 @@
 **P1 status (2026-11).** Phase P1 — the data-driven core — has landed
 as the `aeolus-syntax` (zero-copy lexer, differentially pinned to the
 v0.x parser over the golden corpus), `aeolus-data` (registry-as-data,
-189 rows since the motion layer joined the tail, group names
+210 rows since the grid-flow family joined the tail, group names
 cross-checked against the tw_merge oracle, plus
 the typed `lookup_detailed`/`LookupError` read seam) and `aeolus-ir`
-(longhand `Prop`/`Val`/`Decl`/`Layer`/`Program` — 121 longhands — +
+(longhand `Prop`/`Val`/`Decl`/`Layer`/`Program` — 142 longhands — +
 `PropMask` bitset algebra) workspace crates, git-only while the
 pipeline assembles. The §8 row's "registry + generator" generator
 story (xtask-emitted phf/trie) landed in P2 2026-11: the committed tables ARE
@@ -130,12 +130,26 @@ parse (the lexer's own `HINTS` table — one source of truth, now
 exported), and the sibling-row class gate keyed on the rows' own
 tw_merge groups keeping the diagnostics quiet where another row of
 the root takes the class (`text-[13px]` is the font-size row's alone;
-`text-[#0f0f0f]` the colour row's). The honest boundaries stay
-typed, all test-pinned: multi-token composites (`calc()`, underscore
-joins, url/image values), the arbitrary-PROPERTY form, keyword values
-on the row-relative `Val::Kw` slots, and the wider v4 hint table
-(url/image/angle/time/ratio/position and friends) — the codegen
-host's surface. P3 (codegen/GPUI) landed 2026-11: `aeolus-codegen`
+`text-[#0f0f0f]` the colour row's). The COMPOSITE ARBITRARY-VALUE GRAMMAR
+landed 2026-11 (the value pass's verbatim slot): the sized functions
+(`calc()`/`min()`/`max()`/`clamp()`) lower on the single-target scalar
+rows, the underscore-joined track lists and track functions
+(`repeat()`/`minmax()`/`fit-content()`) on the grid-template/auto rows,
+the image functions (`url()`/`image()`/the gradients) on the bg-image
+row and the bare `n/d` ratios on the aspect row — the decoded text (the
+underscores ARE spaces, `\_` a literal underscore) riding the IR's
+`Val::Verbatim` slot (the conds' own interned-slices discipline, the
+static form staying a `static` item end to end), the kind gate refusing
+TYPED on every row whose slots cannot carry the shape (the shorthand
+fans, the filter/backdrop handles, the shadow lists) plus the malformed
+functions, the negative flag and the opacity modifier, the CSS arm
+rendering the text as typed, the interp and the `cn()` merge answering
+it, the plan bridge reporting it (the `CompositeValue` note, the
+`SlotUnsupported` precedent) and the metamorphic triangle agreeing on
+the text. The honest boundaries stay typed, all test-pinned: the
+arbitrary-PROPERTY form, keyword values on the row-relative `Val::Kw`
+slots, and the wider v4 hint table (angle/time/position/family-name and
+friends — no row kind carries them). P3 (codegen/GPUI) landed 2026-11: `aeolus-codegen`
 (the backend-neutral `Emit` seam and capability report),
 `aeolus-codegen-gpui` (the static-program token emitter, the GPUI
 capability table and the `lower_class` third-party seam),
@@ -534,7 +548,7 @@ Do **not** block on these: the design works today and simply gets cheaper if the
 | Phase                     | Deliverable                                                                                                                                                                                        | Exit criteria                                                                   | Est.    |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------- |
 | **P0 – Prove it**         | Bench harness; hand-write the ideal GPUI output for 5 representative strings; compare (a) current runtime, (b) gpui-rsx static, (c) builder chain, (d) cloned `static` refinement, (e) outlined fn | Real numbers replace §4 targets; pick emit strategy; confirm GPUI pin           | 1       |
-| **P1 – Data-driven core** | `aeolus-syntax`, `aeolus-data` registry + generator, `aeolus-ir`; port top ~150 utilities (LANDED 2026-11 as the three P1 git-only crates — joined since by the P2 git-only crates `aeolus-compile` and `aeolus-theme`; 189 registry rows since the P6 motion layer appended the transition quartet and the animation root at the cascade tail; the generator moved to P2)                                                                                                         | New compiler == old `Resolver` == golden corpus on those utilities              | 3–4     |
+| **P1 – Data-driven core** | `aeolus-syntax`, `aeolus-data` registry + generator, `aeolus-ir`; port top ~150 utilities (LANDED 2026-11 as the three P1 git-only crates — joined since by the P2 git-only crates `aeolus-compile` and `aeolus-theme`; 210 registry rows since the P6 motion layer appended the transition quartet and the animation root, the filter/backdrop layers the twenty longhands, and the grid-flow family the auto-flow slot; the generator moved to P2)                                                                                                         | New compiler == old `Resolver` == golden corpus on those utilities              | 3–4     |
 | **P2 – Full pipeline**    | `aeolus-compile`, `aeolus-theme` (T0–T2), IR-level `cn()`, `@utility`/`@custom-variant` — **the compile seam landed 2026-11** (`aeolus-compile`: lex → registry lookup → longhand lowering → cascade-sorted `Program`, typed spanned diagnostics, the spacing config knob), **the theme pass landed 2026-11** (`aeolus-theme`: CSS-first `ThemeSource` → tiered `TokenTable`s over the audited v0.x reader; `compile_theme` lowers colour tokens and `/opacity` modifiers, the §2 premultiplied identity), **the IR-level `cn()` merge landed 2026-11** (`aeolus_compile::cn(&[&Compiled])`: same-condition layers fold by `Cond` equality, last per longhand wins, conflict-free out — test-pinned against compiling the concatenation) and **the Target half's CSS arm landed 2026-11** (`emit_css`/`emit_css_theme`: the §3.1 emit (d) rendered in-pipeline — the row tables' keyword text, tiered token forms, baked dark-pair companions, v4 media/container queries, the typed lexer channel; the custom-authoring seam landed 2026-11 (`Customs`: registered custom utilities — fixed, functional numeric/spacing and the `--value(color)` theme-token form — plus custom variant aliases onto the typed `Cond` surface, through the `*_with` entry points; the dyn-cache seam landed 2026-11 (`DynCache`: the content-keyed, bounded, thread-safe cache over the compile surface — the leak-pool dedupe, hits hand back the same interned slices, the `DynStore` storage seam, built-in `TwoGenStore` two-generation rotation; the interp arm landed 2026-11 (`interp`/`interp_theme`: the emit (c) resolved-declaration form under a probe `Env` — the `TokenSource` token seam, the mode-aware `resolve_rgba` one-load-one-multiply primitive, typed exclusion notes); the static-data arm landed 2026-11 (`emit_static`: the emit (b) form — the program frozen into a byte-stable `static` item over `Layer::new` constructors); the ARBITRARY-VALUE UNIT GRAMMAR landed 2026-11 (the value pass's last named P2 slice: units/hints/colours/var-token references through the audited parser and bake, the sibling-row class gate on the rows' own groups, typed boundaries for the composites/property form/keyword slots); the RUST-TOKENS emit arm landed 2026-11 (`emit_rust`/`emit_rust_theme`: the emit (a) form — one embeddable `Layer::new` expression per lowered class, keyword slots resolved to their row text and token slots to their table names, the sheet Display assembling the static item, the backend method calls staying the P3 codegen's surface); the ATTRIBUTE-PROBE VARIANT FOLD landed 2026-11 (the has-/data-/aria- families onto the typed `Cond` surface: `Cond::Data`/`Cond::Aria`/`Cond::Has` with interned payload slots, `group-has-*`/`peer-has-*` on the parent tier, the v0.x oracle's `has_atom`/`parse_attr`/`attr_test` grammar as the differential source — the corpus's own rendered forms (`[data-state="open"]`, `[aria-busy="true"]`, `:has(*:focus)`, `:has(*[data-slot="card-action"])`) are the pins — and the interp's `AttributeUnqueried` note carrying the §3.5 state-bits story); the xtask GENERATOR STORY landed 2026-11 as the LAST named P2 slice (`codegen::GeneratedArtifact`: the roots-index phf the read side walks, the committed docs page, the xtask driver's gen/verify drift gate) | Full 193-entry corpus + property/fuzz suites green; `/N` identity property test | 3       |
 | **P3 – GPUI static**      | `aeolus-codegen-gpui`, `aeolus-macros` (`tw!`, `cn!`, `variants!` — with the cva compound-variant list landed 2026-11, `theme!`), `aeolus-gpui` (`TwExt`) — **landed 2026-11**; the §3.6 surface (3)'s dynamic lane (`aeolus_rt::ClassCell`, `TwExt::tw_dyn`, the `keyword_alignment` seam) landed 2026-11; the §3.7 ring polyfill (`RingState` → the v4 `BoxShadow` bands, the `polyfilled` capability tier) landed 2026-11; the §3.6 surface (2)'s shadcn const-tables half (`aeolus-shadcn::program`, the F6 fix) landed 2026-11                                                                         | `iai` parity with hand-written; 0-alloc/0-lock contract tests; demo app         | 3       |
 | **P4 – Env variants**     | `AeolusRoot`/`Env`, `dark:`, breakpoints, group/state bits, aria/data — **frame Env + state layers landed 2026-11; the attribute-bits host state seam (`tw_probes`, the `AttrProbe` trait) landed 2026-11**                                         | Conformance score published for GPUI; diagnostics for unsupported variants      | 2       |
