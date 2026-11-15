@@ -41,7 +41,14 @@
 //!   * *what does this class resolve to, inline?* — the inlay hints:
 //!     every lowered candidate's CSS-arm declarations rendered compactly
 //!     at the class's end, the refused candidates staying quiet (the
-//!     diagnostics' and the legend's story) ([`EngineInlayHint`]).
+//!     diagnostics' and the legend's story) ([`EngineInlayHint`]);
+//!   * *how would you spell it right?* — the quick fixes: every finding
+//!     the cursor rests on carries the "did you mean" corrections the
+//!     pipeline's suggestion seam folds from its own audited tables, each
+//!     riding the edit that repairs it ([`EngineCodeAction`]);
+//!   * *where else is this class?* — the document highlights: every
+//!     occurrence of the candidate under the cursor, document order, the
+//!     editor's click-to-find ([`EngineHighlight`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -246,6 +253,38 @@ pub struct EngineInlayHint {
     /// The markdown tooltip (the class, its folded condition and the
     /// CSS block — the hover rendering's own shape).
     pub tooltip: String,
+}
+
+/// One quick fix the editor offers beside a finding: the finding it
+/// repairs (the wire maps the diagnostic back so the editor can filter),
+/// the corrected token text (the edit's new content — the variant
+/// prefix and the `/modifier` tail composed back on by the pipeline's
+/// suggestion seam), and the finding's range (the edit's target). Every
+/// replacement is a spelling the pipeline LOWERS — the audited tables
+/// are the sources, never a guessed word (the completion's own
+/// one-source-of-truth rule, at the miss side).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineCodeAction {
+    /// The finding the action repairs (the editor's filter key).
+    pub diagnostic: EngineDiagnostic,
+    /// The action's menu title (`did you mean \`bg-primary\`?` — the
+    /// CLI's own phrasing, editor-shaped).
+    pub title: String,
+    /// The corrected token text — the `TextEdit`'s new content over
+    /// the finding's range.
+    pub replacement: String,
+}
+
+/// One occurrence the editor highlights: the byte-true range of a
+/// candidate class whose text equals the one under the cursor (the
+/// document's own occurrences, document order — the wire's
+/// documentHighlight answer). The highlight is TEXTUAL, not semantic: a
+/// refused class's occurrences highlight exactly like a lowered one's
+/// (the editor's own click-to-find, no compile verdict riding).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EngineHighlight {
+    /// The occurrence's range (the editor highlights the spelling).
+    pub range: EngineRange,
 }
 
 /// One open document the engine keeps: the current text and the LSP's
