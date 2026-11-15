@@ -11,7 +11,7 @@ v0.x parser over the golden corpus), `aeolus-data` (registry-as-data,
 210 rows since the grid-flow family joined the tail, group names
 cross-checked against the tw_merge oracle, plus
 the typed `lookup_detailed`/`LookupError` read seam) and `aeolus-ir`
-(longhand `Prop`/`Val`/`Decl`/`Layer`/`Program` — 142 longhands — +
+(longhand `Prop`/`Val`/`Decl`/`Layer`/`Program` — 143 longhands — +
 `PropMask` bitset algebra) workspace crates, git-only while the
 pipeline assembles. The §8 row's "registry + generator" generator
 story (xtask-emitted phf/trie) landed in P2 2026-11: the committed tables ARE
@@ -147,9 +147,16 @@ rendering the text as typed, the interp and the `cn()` merge answering
 it, the plan bridge reporting it (the `CompositeValue` note, the
 `SlotUnsupported` precedent) and the metamorphic triangle agreeing on
 the text. The honest boundaries stay typed, all test-pinned: the
-arbitrary-PROPERTY form, keyword values on the row-relative `Val::Kw`
-slots, and the wider v4 hint table (angle/time/position/family-name and
-friends — no row kind carries them). P3 (codegen/GPUI) landed 2026-11: `aeolus-codegen`
+arbitrary-PROPERTY form and the keyword values on the row-relative
+`Val::Kw` slots (the WIDER V4 HINT TABLE landed 2026-11: `angle:`/`time:`/
+`position:`/`family-name:`/`generic-name:`/`absolute-size:`/`relative-size:`/
+`string:` lower onto the rows whose slots carry the shape — the degree and
+millisecond number forms, the object-position/font-family/font-size rows and
+the content root's NEW `Prop::Content` longhand, the CSS `content` property
+the `content-["…"]` spelling writes — with the free `ms`/`s` time units
+riding the deg precedent and the CSS arm's arbitrary-Num path reconstructing
+the unit from the row's own number form; the keyword-value slots and the
+arbitrary-property form stay the typed refusals). P3 (codegen/GPUI) landed 2026-11: `aeolus-codegen`
 (the backend-neutral `Emit` seam and capability report),
 `aeolus-codegen-gpui` (the static-program token emitter, the GPUI
 capability table and the `lower_class` third-party seam),
