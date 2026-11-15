@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Aeolus V1 generator driver: walks aeolus-data's GeneratedArtifact seam to regenerate (gen-tables) and drift-verify (verify-tables) the committed artifacts (plan §3.2's generator story)"
+description = "Aeolus V1 generator driver: walks aeolus-data's GeneratedArtifact seam to regenerate (gen-tables) and drift-verify (verify-tables) the committed artifacts, plus the §3.7 capability table's gen-gpui-caps / verify-gpui-caps pair (plan §3.2's and §3.7's generator story)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -22,6 +22,9 @@ aeolus-data = { path = "../aeolus-data" }
 # emitter's verdicts, never a parallel claim.
 aeolus-codegen = { path = "../aeolus-codegen" }
 aeolus-codegen-gpui = { path = "../aeolus-codegen-gpui" }
+# The IR longhand list the `gpui-caps` artifact walks (the §3.7
+# generator slice's per-longhand rows ride `Prop::ALL`'s own order).
+aeolus-ir = { workspace = true }
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
