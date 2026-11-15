@@ -43,7 +43,7 @@ cargo xtask verify-tables [--root <dir>]\n\n\
 commands:\n    \
 list           print every committed artifact (name + workspace path)\n    \
 gen-tables     regenerate every artifact's committed bytes from the rows\n    \
-verify-tables  regenerate and compare; exit 1 on any drift (the CI gate)\n\n\
+verify-tables  regenerate and compare; exit 1 on any drift (the test battery pins it)\n\n\
 flags:\n    \
 --check        gen-tables: compare instead of write (the verify-tables behaviour)\n    \
 --root <dir>   resolve the artifacts' workspace-relative paths against <dir>\n    \
