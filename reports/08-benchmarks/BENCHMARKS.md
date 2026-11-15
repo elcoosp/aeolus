@@ -462,6 +462,8 @@ report serialization shape).
 | `document_diagnostics_pull` | **5.0 µs** | the client's on-demand recompute through the state machine (params parse, analyze, wire mapping, report serialization) |
 | `document_colours_walk` | **4.7 µs** | the didOpen swatch walk (the per-candidate compile resolving the IR's colour slots) |
 | `hover_resolved_class` | **4.3 µs** | the per-cursor-move hover resolution (baseline) |
+| `code_actions_walk` | **1.67 ms** | the quick-fix invocation (the cursor's candidate through the suggestion seam — the compile walk's diagnostics folded over the audited tables, the corrections composed onto the full token) |
+| `document_highlights_walk` | **1.4 µs** | the click-to-find occurrences (the shared locator plus the textual-equality walk — an order under the hover's own cost) |
 | `colour_presentations_walk` | **484.6 µs** | the picker's table walk (the resolves once per token × opacity step — the open picker's cost, not a per-keystroke one) |
 
 Verdict: the completion's ~19 µs is the row-walk cost (213 rows' tables
@@ -473,4 +475,24 @@ budget); the swatch and highlighter walks are the per-candidate
 compile's own cost (four classes, one compile each) and land at the
 hover baseline. Absolute numbers are environment-specific; the ratios
 are the point.
+
+## Suggestion-seam run (2026-11-15, release profile, divan 0.1.21)
+
+The "did you mean" fold's miss-path costs (`crates/aeolus-compile/benches/suggest.rs`):
+the audited-table walk the editor's quick fixes and the CLI's linter
+render pay ONCE per invoked squiggle — the COLD error path only (the
+v0.x oracle's own precedent: "suggestions run only on the cold error
+path"), never a hot-path tax.
+
+| benchmark | median | note |
+|---|---|---|
+| `registry_surface_sweep` | **1.66 ms** | the registry's audited spellings walked with the bounded distance's early abandon (the full sweep, one keyword miss) |
+| `composed_miss_fold` | **1.68 ms** | the diagnostic-keyed fold the CLI renders (the sweep plus the variant-prefix and modifier-tail composition) |
+| `raw_fold_two_surfaces` | **1.45 ms** | the host-composable fold (registry + the closed variant set, ranked, deduped, capped) |
+| `variant_surface_fold` | **5.1 µs** | the closed variant set (the small surface's own cost) |
+
+Verdict: the registry sweep dominates (the rows' audited spellings are
+the surface) and it runs when a squiggle is INVOKED, not per keystroke;
+the editor's own `code_actions_walk` (1.67 ms) is that same fold beside
+the per-candidate compile — the lightbulb's cost, not the caret's.
 
