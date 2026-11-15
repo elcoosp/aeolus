@@ -197,6 +197,17 @@ pub enum PlanNoteKind {
         /// The rendered `:has(...)` inner text, verbatim.
         inner: &'static str,
     },
+    /// The composite grammar's verbatim value (the `Val::Verbatim` slot):
+    /// the v0.x plan slots carry baked numerics and row keywords — a
+    /// composite text has no slot to land in. The note names the longhand
+    /// and carries the interned text; the plan slot stays unset (never a
+    /// silent zero).
+    CompositeValue {
+        /// The longhand the composite value belongs to.
+        prop: Prop,
+        /// The decoded composite text, verbatim.
+        text: &'static str,
+    },
 }
 
 impl PlanNoteKind {
@@ -209,6 +220,7 @@ impl PlanNoteKind {
             PlanNoteKind::GradientRow => "aeolus::compile::plan::gradient_row",
             PlanNoteKind::ShadowPreset => "aeolus::compile::plan::shadow_preset",
             PlanNoteKind::HasFragment { .. } => "aeolus::compile::plan::has_fragment",
+            PlanNoteKind::CompositeValue { .. } => "aeolus::compile::plan::composite_value",
         }
     }
 
@@ -236,6 +248,11 @@ impl PlanNoteKind {
             PlanNoteKind::HasFragment { .. } => {
                 "the has-* inner is selector text outside the v0.x Test surface's \
                  state/data/aria forms; the rule reports instead of misfiring"
+            }
+            PlanNoteKind::CompositeValue { .. } => {
+                "the composite arbitrary value (calc()/track lists/image functions) lowers \
+                 into the IR verbatim; the v0.x plan slots carry baked numerics and row \
+                 keywords — emit_css renders the real output"
             }
         }
     }
@@ -943,6 +960,16 @@ impl PlanWriter {
         text: Option<&'static str>,
         none_spelling: bool,
     ) {
+        // The composite grammar's verbatim slot has no v0.x slot by
+        // construction — the typed note (the filter families'
+        // SlotUnsupported precedent), the plan slot left unset.
+        if let Val::Verbatim(verbatim) = val {
+            self.notes.push(PlanNoteKind::CompositeValue {
+                prop,
+                text: verbatim,
+            });
+            return;
+        }
         // The keyword slot's effective text: the row table's annotation,
         // present exactly for the Kw forms.
         let kw = match val {
@@ -1535,6 +1562,13 @@ impl PlanWriter {
                 }
             }
             Prop::GridRowEnd | Prop::GridColumnEnd | Prop::GridAutoRows | Prop::GridAutoColumns => {
+                self.notes.push(PlanNoteKind::SlotUnsupported { prop });
+            }
+            Prop::GridAutoFlow => {
+                // The auto-flow family (the §3.7 grid row's second half):
+                // the v0.x plan carries grid templates/starts but no
+                // auto-flow slot — the same honest note, the
+                // grid-auto-rows precedent.
                 self.notes.push(PlanNoteKind::SlotUnsupported { prop });
             }
             // ---- the filter family (the §3.7 backlog row's pipeline half)
