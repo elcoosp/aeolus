@@ -915,6 +915,10 @@ fn value_text(val: Val, kw: Option<&'static str>) -> Option<String> {
         Val::Num(v) => Some(format!("{v}")),
         Val::Rgba(rgba) => Some(rgba_text(rgba)),
         Val::Kw(_) => kw.map(str::to_string),
+        // The composite grammar's verbatim slot: the text IS the value —
+        // both sides render it (the CSS arm emits the decoded text as
+        // typed), so the agreement is textual.
+        Val::Verbatim(text) => Some(text.to_string()),
         // The theme forms: the built-in tables resolve them BEFORE the
         // interp answers (concrete bytes); a host source returning one
         // is the honest mismatch.
