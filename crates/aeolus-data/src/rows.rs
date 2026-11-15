@@ -358,10 +358,11 @@ pub const BACKDROP_FILTER_RESETS: &[(&str, &str)] = &[("none", "none")];
 // -- The registry ---------------------------------------------------------
 
 /// Every registry row, in root order. The P1 port grew to **184 rows**
-/// in-tree (209 since the backdrop layer: the motion layer's transition
-/// quartet and the animation root, the ten filter roots, then the ten
-/// backdrop roots appended at the cascade tail) — the audit count
-/// `registry::generate_docs` renders from these rows. The plan's "top
+/// in-tree — 213 since the backdrop layer: the motion layer's transition
+/// quartet and the animation root, the ten filter roots, the ten
+/// backdrop roots and the decoration family's three longhand rows
+/// appended at the cascade tail — the audit count
+/// `registry::row_count()` renders from these rows. The plan's "top
 /// ~150" was the floor, not the ceiling.
 pub static ROWS: &[UtilityRow] = &[
     // ---- padding (tw_merge: padding family) -----------------------------
