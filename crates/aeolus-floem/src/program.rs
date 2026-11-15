@@ -340,6 +340,16 @@ fn apply_decl(
             );
             style
         }
+        Prop::GridAutoFlow => {
+            // The auto-flow family (the §3.7 grid row's second half): the
+            // pinned-rev Style carries no auto-placement slot — the CSS
+            // emit arm carries the value form.
+            report.drop(
+                format!("{prop:?}"),
+                "no auto-flow slot in the walk's surface — the CSS emit arm carries it",
+            );
+            style
+        }
         Prop::GridRowStart | Prop::GridRowEnd | Prop::GridColumnStart | Prop::GridColumnEnd => {
             report.drop(
                 format!("{prop:?}"),
