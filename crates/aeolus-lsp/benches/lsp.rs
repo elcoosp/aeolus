@@ -1,8 +1,10 @@
 //! The LSP engine's microbenchmarks (divan, stable — the workspace
 //! bench idiom): the analyze walk over a synthetic .rs document (the
 //! extraction seam through the compile pipeline, per-position range
-//! translation) and the hover resolution at a lowered class — the two
-//! paths the editor session runs per keystroke.
+//! translation), the hover resolution at a lowered class, the
+//! completion at a typing edge and the colour-swatch walk (the
+//! per-candidate compile resolving the IR's colour slots) — the paths
+//! the editor session runs per keystroke and per didOpen.
 //!
 //! The bench bodies `expect` on the engine: the fixture document is
 //! static, the answers deterministic. Numbers land in
@@ -45,4 +47,29 @@ fn hover_resolved_class(bencher: Bencher) {
         .map(|ch| ch.len_utf16() as u32)
         .sum::<u32>();
     bencher.bench(|| lsp.hover("file:///card.rs", line, character));
+}
+
+/// The typing-edge path: the completion at a fragment inside the second
+/// string's colour class (`bg-pri` typed, the token source answering).
+#[divan::bench]
+fn completion_fragment(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("bg-primary").expect("the fixture holds") + 4;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.complete("file:///card.rs", line, character));
+}
+
+/// The didOpen path: the colour swatches (the per-candidate compile
+/// walk resolving the table's light-tier bytes) over the SAME document.
+#[divan::bench]
+fn document_colours_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    bencher.bench(|| lsp.document_colours("file:///card.rs"));
 }
