@@ -226,8 +226,11 @@ pub(crate) fn is_boundary_reason(reason: &str) -> bool {
 /// The conflict groups whose longhands take a COLOUR value. The
 /// registry's own tw_merge group names are the oracle — the drift test
 /// below fails when a row grows a colour arm without joining this table
-/// (the `NUMBER_FORMS` audit pattern).
-pub(crate) const COLOUR_GROUPS: &[&str] = &[
+/// (the `NUMBER_FORMS` audit pattern). Public for the editor half: the
+/// LSP's completion consults the SAME gate when it decides which roots
+/// complete theme-token spellings — one source of truth, the suggested
+/// class and the lowered class cannot disagree.
+pub const COLOUR_GROUPS: &[&str] = &[
     "bg-color",
     "text-color",
     "border-color",
