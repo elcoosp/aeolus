@@ -215,6 +215,7 @@ dependencies = [
  "aeolus-codegen-gpui",
  "aeolus-compile",
  "aeolus-ir",
+ "aeolus-rt",
  "aeolus-theme",
 ]
 
