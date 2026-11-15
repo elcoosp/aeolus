@@ -644,6 +644,18 @@ pub(crate) const NUMBER_FORMS: &[(&str, NumForm, Option<&str>)] = &[
     ("row-end", NumForm::Line, None),
 ];
 
+/// The row's number form — the unit-suffix oracle the arbitrary Num
+/// path's CSS reconstruction reads (the keyword path's own
+/// [`number_css`] consults the same table). `None` = the root carries
+/// no number form (the arbitrary Num never reaches those rows: the
+/// scalar gate refuses first).
+pub(crate) fn number_form_of(root: &str) -> Option<NumForm> {
+    NUMBER_FORMS
+        .iter()
+        .find(|(r, _, _)| *r == root)
+        .map(|&(_, form, _)| form)
+}
+
 /// Lower ONE matched row for one candidate body into CSS-form values —
 /// the [`Target`](crate::Target)`::Css` arm's value pass. The arm walk
 /// is the SAME shape resolution [`row_to_decls`] runs (same negation
@@ -963,11 +975,26 @@ fn arbitrary_val_css(
             &filter_arbitrary_text(row.root, &format!("{}%", num_text(flip(v, negative)))),
             false,
         )),
-        ArbVal::Num(v) => Ok(fan_css(
-            targets,
-            &filter_arbitrary_text(row.root, &num_text(flip(v, negative))),
-            false,
-        )),
+        ArbVal::Num(v) => {
+            // The unit suffix reconstructs from the row's OWN number
+            // form (the keyword path's oracle): `rotate-[45deg]` rides
+            // the Num slot and renders `45deg` — the same text the
+            // keyword spelling emits, the two CSS channels agreeing.
+            // The other forms stay the v4 verbatim reading (bare
+            // numbers), the fn-wrapped filter families riding their own
+            // wrapper below.
+            let n = flip(v, negative);
+            let text = match number_form_of(row.root) {
+                Some(NumForm::Deg) => format!("{n}deg"),
+                Some(NumForm::Ms) => format!("{n}ms"),
+                _ => num_text(n),
+            };
+            Ok(fan_css(
+                targets,
+                &filter_arbitrary_text(row.root, &text),
+                false,
+            ))
+        }
         ArbVal::Verbatim { text } => {
             // The composite grammar's CSS half: the decoded text IS the
             // declaration value (v4's own arbitrary contract — the
