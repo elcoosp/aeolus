@@ -372,6 +372,14 @@ pub enum Prop {
     /// renders the `-webkit-` prefix beside the standard property
     /// (v4's own emission form).
     BackdropFilter,
+    // ---- grid auto-flow (cascade tail; the plan §3.7 grid row's
+    // auto-flow half) --------------------------------------------------
+    /// `grid-auto-flow` (`grid-flow-*`): the keyword slots carry the
+    /// v4.1 scale's own values (`row`, `column`, `dense`, the dense
+    /// pairs) — the track-folding keywords the auto-placement engine
+    /// obeys. The v0.x plan carries no auto-flow slot: the bridge
+    /// reports the longhand (the grid-auto-rows precedent).
+    GridAutoFlow,
 }
 
 impl Prop {
@@ -519,6 +527,7 @@ impl Prop {
         Self::BackdropSaturate,
         Self::BackdropSepia,
         Self::BackdropFilter,
+        Self::GridAutoFlow,
     ];
 
     /// The CSS longhand name (`padding-top`, `grid-template-columns`, ...).
@@ -555,6 +564,7 @@ impl Prop {
             Prop::PlaceItems => "place-items",
             Prop::PlaceSelf => "place-self",
             Prop::GridTemplateColumns => "grid-template-columns",
+            Prop::GridAutoFlow => "grid-auto-flow",
             Prop::GridTemplateRows => "grid-template-rows",
             Prop::GridAutoColumns => "grid-auto-columns",
             Prop::GridAutoRows => "grid-auto-rows",
