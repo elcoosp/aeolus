@@ -16,7 +16,7 @@ use std::fmt::Write as _;
 
 use aeolus_compile::{
     COLOUR_GROUPS, Config, CssSheet, Diagnostic, KNOWN_VARIANTS, ScanHit, compile, compile_theme,
-    emit_css, emit_css_theme, scan_rust_strings,
+    emit_css, emit_css_theme, scan_rust_strings, suggest_for,
 };
 use aeolus_data::ValueKind;
 use aeolus_data::rows::ROWS;
@@ -25,9 +25,9 @@ use aeolus_syntax::parse_class_string;
 use aeolus_theme::TokenTable;
 
 use crate::{
-    DocumentMap, EngineColour, EngineColourPresentation, EngineCompletion, EngineCompletionKind,
-    EngineDiagnostic, EngineHover, EngineInlayHint, EnginePosition, EngineRange,
-    EngineSemanticKind, EngineSemanticToken,
+    DocumentMap, EngineCodeAction, EngineColour, EngineColourPresentation, EngineCompletion,
+    EngineCompletionKind, EngineDiagnostic, EngineHighlight, EngineHover, EngineInlayHint,
+    EnginePosition, EngineRange, EngineSemanticKind, EngineSemanticToken,
 };
 
 // ---------------------------------------------------------------------------
@@ -187,17 +187,13 @@ impl AeolusEngine {
         let doc = self.documents.get(uri)?;
         let text = doc.text.as_str();
         let offset = offset_of(text, line, character)?;
-        let hit = scan_rust_strings(text)
-            .into_iter()
-            .find(|hit| offset >= hit.offset && offset < hit.offset + hit.text.len())?;
         // The candidate under the cursor: the same lexer walk the
-        // compile runs, the candidate's span keyed on the hit text.
-        let local = offset.saturating_sub(hit.offset);
-        let (candidates, _) = parse_class_string(&hit.text);
-        let candidate = candidates
-            .iter()
-            .find(|candidate| local >= candidate.span.0 && local < candidate.span.1)?;
-        let raw = candidate.raw;
+        // compile runs, the candidate's span keyed on the hit text —
+        // the ONE locator the cursor-keyed answers share (the hover,
+        // the highlights).
+        let (start, end) = candidate_span_at(text, offset)?;
+        let raw = &text[start..end];
+        let range = range_of(text, start, end);
 
         // The single-candidate pipeline answer: the themed walk when the
         // config carries a table, the theme-less boundary otherwise.
@@ -207,19 +203,6 @@ impl AeolusEngine {
         };
         let Ok(compiled) = compiled else {
             return None;
-        };
-
-        let (line, start_character) = position_of(text, hit.offset + candidate.span.0);
-        let (_, end_character) = position_of(text, hit.offset + candidate.span.1);
-        let range = EngineRange {
-            start: EnginePosition {
-                line,
-                character: start_character,
-            },
-            end: EnginePosition {
-                line,
-                character: end_character,
-            },
         };
 
         if !compiled.diagnostics.is_empty() {
@@ -577,11 +560,144 @@ impl AeolusEngine {
         }
         out
     }
+
+    // -----------------------------------------------------------------------
+    // The code-action answer
+    // -----------------------------------------------------------------------
+
+    /// The quick fixes the cursor's candidate carries: the candidate
+    /// under the position (the shared locator's walk — the hover's
+    /// own), its compile walk's diagnostics each folded through the
+    /// pipeline's suggestion seam — the corrections the compile crate's
+    /// audited tables answer (the registry's rows, the closed variant
+    /// set, the registered customs), the variant prefixes and modifier
+    /// tails composed back onto the replacement. The action rides the
+    /// finding it repairs (the editor's filter key), the CLI-shaped
+    /// title and the corrected token text over the candidate's range.
+    /// Deterministic and pure over the document map; an unknown URI, a
+    /// cursor outside any candidate and a finding with no honest
+    /// correction answer empty.
+    pub fn code_actions(&self, uri: &str, line: u32, character: u32) -> Vec<EngineCodeAction> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let Some(offset) = offset_of(text, line, character) else {
+            return Vec::new();
+        };
+        let Some((start, end)) = candidate_span_at(text, offset) else {
+            return Vec::new();
+        };
+        let raw = &text[start..end];
+        let range = range_of(text, start, end);
+        // The single-candidate pipeline answer: the themed walk when the
+        // config carries a table, the theme-less boundary otherwise.
+        let compiled = match &self.config.tokens {
+            Some(table) => compile_theme(raw, table, &self.config.compile),
+            None => compile(raw, &self.config.compile),
+        };
+        let Ok(compiled) = compiled else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for diagnostic in &compiled.diagnostics {
+            // The miss-path fold the CLI renders, the engine's own
+            // config table riding in (the customs stay the host's
+            // registration — the engine's config carries none).
+            for suggestion in suggest_for(diagnostic, self.config.tokens.as_ref(), None) {
+                // The finding the action repairs: the same rendering
+                // the diagnostics publish (the message with its help
+                // line, the stable code).
+                let mut message = String::new();
+                let _ = write!(message, "{diagnostic}");
+                let _ = write!(message, "\nhelp: {}", diagnostic.kind.help());
+                out.push(EngineCodeAction {
+                    diagnostic: EngineDiagnostic {
+                        range,
+                        message,
+                        code: diagnostic.kind.code().to_string(),
+                    },
+                    title: format!("did you mean `{}`?", suggestion.replacement),
+                    replacement: suggestion.replacement,
+                });
+            }
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
+    // The document-highlight answer
+    // -----------------------------------------------------------------------
+
+    /// The document's occurrences of the candidate under the cursor:
+    /// every class whose text equals the cursor's candidate, its
+    /// byte-true range, document order (the extraction seam's scan
+    /// order). The highlight is TEXTUAL — a refused class's occurrences
+    /// answer exactly like a lowered one's (the editor's own
+    /// click-to-find, no compile verdict riding) — and the cursor's own
+    /// occurrence rides the answer (the wire contract the editor
+    /// renders). Deterministic and pure over the document map; an
+    /// unknown URI and a cursor outside any candidate answer empty.
+    pub fn document_highlights(
+        &self,
+        uri: &str,
+        line: u32,
+        character: u32,
+    ) -> Vec<EngineHighlight> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let Some(offset) = offset_of(text, line, character) else {
+            return Vec::new();
+        };
+        // The candidate under the cursor: the shared locator's walk
+        // (the hover's own), the raw text the equality keys on.
+        let Some((start, end)) = candidate_span_at(text, offset) else {
+            return Vec::new();
+        };
+        let raw = &text[start..end];
+        let mut out = Vec::new();
+        for hit in scan_rust_strings(text) {
+            let (candidates, _) = parse_class_string(&hit.text);
+            for candidate in candidates {
+                if candidate.raw != raw {
+                    continue;
+                }
+                let range = range_of(
+                    text,
+                    hit.offset + candidate.span.0,
+                    hit.offset + candidate.span.1,
+                );
+                out.push(EngineHighlight { range });
+            }
+        }
+        out
+    }
 }
 
 // ---------------------------------------------------------------------------
 // The position conversions (the LSP's UTF-16 model, owned ONCE here)
 // ---------------------------------------------------------------------------
+
+/// The candidate under one byte offset — the cursor-keyed answers'
+/// shared locator (the hover, the quick fixes, the highlights): the
+/// extraction seam's strings, the hit whose content range contains the
+/// offset, the lexer's own candidate spans. Returns the candidate's
+/// ABSOLUTE byte span in the document text (the hit's content offset
+/// plus the candidate's span); `None` — the cursor rests outside any
+/// candidate.
+fn candidate_span_at(text: &str, offset: usize) -> Option<(usize, usize)> {
+    let hit = scan_rust_strings(text)
+        .into_iter()
+        .find(|hit| offset >= hit.offset && offset < hit.offset + hit.text.len())?;
+    let local = offset.saturating_sub(hit.offset);
+    let (candidates, _) = parse_class_string(&hit.text);
+    let candidate = candidates
+        .iter()
+        .find(|candidate| local >= candidate.span.0 && local < candidate.span.1)?;
+    Some((hit.offset + candidate.span.0, hit.offset + candidate.span.1))
+}
 
 /// Byte offset → `(line, character-UTF16)` for the offset's own
 /// position (any partial character clamps to its boundary).
