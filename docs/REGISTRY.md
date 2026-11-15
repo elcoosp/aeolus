@@ -153,7 +153,7 @@ Generated from `aeolus-data`'s committed rows — do not edit.
 | `text` | any-of | font-size, line-height | `font-size` | no | utilities.ts font-size |
 | `text` | any-of | color | `text-color` | no | utilities.ts color |
 | `text` | keywords | text-align | `text-align` | no | utilities.ts text-align |
-| `font` | keywords | font-family | `font-family` | no | utilities.ts font-family |
+| `font` | any-of | font-family | `font-family` | no | utilities.ts font-family |
 | `font` | any-of | font-weight | `font-weight` | no | utilities.ts font-weight |
 | `italic` | bare | font-style | `font-style` | no | utilities.ts font-style |
 | `not-italic` | bare | font-style | `font-style` | no | utilities.ts font-style |
@@ -190,8 +190,8 @@ Generated from `aeolus-data`'s committed rows — do not edit.
 | `fill` | any-of | fill | `fill` | no | utilities.ts fill (registry-local group; oracle None) |
 | `stroke` | any-of | stroke | `stroke` | no | utilities.ts stroke (registry-local group; oracle None) |
 | `transition` | any-of | transition-property | `transition` | no | utilities.ts transition (registry-local group; oracle None) |
-| `duration` | number | transition-duration | `duration` | no | utilities.ts transition-duration (registry-local group; oracle None) |
-| `delay` | number | transition-delay | `delay` | no | utilities.ts transition-delay (registry-local group; oracle None) |
+| `duration` | any-of | transition-duration | `duration` | no | utilities.ts transition-duration (registry-local group; oracle None) |
+| `delay` | any-of | transition-delay | `delay` | no | utilities.ts transition-delay (registry-local group; oracle None) |
 | `ease` | keywords | transition-timing-function | `ease` | no | utilities.ts transition-timing-function (registry-local group; oracle None) |
 | `animate` | keywords | animation | `animate` | no | utilities.ts animation (registry-local group; oracle None) |
 | `blur` | any-of | --tw-blur | `blur` | no | utilities.ts blur (registry-local group; oracle None) |
