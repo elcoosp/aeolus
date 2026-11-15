@@ -30,7 +30,10 @@
 //! every pin below.
 
 use aeolus_compile::Config;
-use aeolus_lsp::{AeolusEngine, EngineCompletion, EngineCompletionKind, EngineConfig};
+use aeolus_lsp::{
+    AeolusEngine, EngineCompletion, EngineCompletionKind, EngineConfig, EngineSemanticKind,
+};
+use aeolus_theme::{ThemeSource, TokenTable};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -124,20 +127,6 @@ fn ranges_translate_through_utf16() {
     let mut lsp = engine();
     lsp.open("file:///card.rs", DOC, 1);
     let findings = lsp.analyze("file:///card.rs");
-    // `héllo` is one UTF-16 unit for é — the string's line-1 character
-    // columns shift by exactly the identifier's UTF-16 width, never by
-    // its byte width.
-    let lowered_start = DOC.find("\"p-4 flex-col\"").expect("the fixture holds") + 1;
-    let line = DOC[..lowered_start].matches('\n').count() as u32;
-    let line_start = DOC[..lowered_start].rfind('\n').map_or(0, |i| i + 1);
-    let utf16_col = DOC[line_start..lowered_start]
-        .chars()
-        .take_while(|c| *c != '\n')
-        .map(|c| c.len_utf16() as u32)
-        .sum::<u32>();
-    let hit = findings
-        .iter()
-        .find(|d| d.range.start.line == line && d.range.start.character == utf16_col);
     // The LOWERED class carries no diagnostic — the pin is that any
     // diagnostic ON LINE 1 lands at UTF-16 columns, byte columns would
     // over-count é by one. The `not-a-root` finding proves it.
@@ -159,7 +148,6 @@ fn ranges_translate_through_utf16() {
         refused.range.start.character, col,
         "UTF-16 columns, not byte columns (héllo must not over-count)"
     );
-    let _ = (hit, lowered_start, line);
 }
 
 fn line_of(text: &str, offset: usize) -> u32 {
@@ -634,5 +622,213 @@ fn analyze_is_the_pull_diagnostics_answer() {
     assert!(
         engine.analyze("file:///clean.rs").is_empty(),
         "a clean document pulls an empty report"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The semantic-token answer (the engine's fifth question: what is this
+// text to the editor's highlighter? — textDocument/semanticTokens/full,
+// the per-candidate compile walk classifying every candidate's outcome
+// onto the wire's legend)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn semantic_tokens_classify_every_candidate() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let tokens = lsp.semantic_tokens("file:///card.rs");
+    // Three candidates, three tokens: `p-4` and `flex-col` lower, the
+    // unknown root refuses — the classification IS the compile walk's
+    // own outcome, never a guess.
+    assert_eq!(tokens.len(), 3, "one token per candidate: {tokens:?}");
+    let lowered = tokens
+        .iter()
+        .filter(|t| t.kind == EngineSemanticKind::Lowered)
+        .count();
+    let refused = tokens
+        .iter()
+        .filter(|t| t.kind == EngineSemanticKind::Refused)
+        .count();
+    assert_eq!(
+        (lowered, refused),
+        (2, 1),
+        "the lowered candidates highlight, the miss refuses: {tokens:?}"
+    );
+    // The refused token's range IS the miss's own span, byte-true (the
+    // diagnostics' own range shape, one conversion).
+    let start = DOC.find("not-a-root").expect("the fixture holds");
+    let (line, character) = position_of(DOC, start);
+    let (end_line, end_character) = position_of(DOC, start + "not-a-root".len());
+    let miss = tokens
+        .iter()
+        .find(|t| t.kind == EngineSemanticKind::Refused)
+        .expect("the miss rides");
+    assert_eq!(miss.range.start.line, line);
+    assert_eq!(miss.range.start.character, character);
+    assert_eq!(miss.range.end.line, end_line);
+    assert_eq!(miss.range.end.character, end_character);
+    // A lowered token spans its own candidate (`p-4`, line 1).
+    let p4 = DOC.find("p-4").expect("the fixture holds");
+    let (p4_line, p4_character) = position_of(DOC, p4);
+    let (_, p4_end) = position_of(DOC, p4 + "p-4".len());
+    let lowered_token = tokens
+        .iter()
+        .find(|t| t.kind == EngineSemanticKind::Lowered)
+        .expect("the lowered class rides");
+    assert_eq!(lowered_token.range.start.line, p4_line);
+    assert_eq!(lowered_token.range.start.character, p4_character);
+    assert_eq!(lowered_token.range.end.character, p4_end);
+}
+
+#[test]
+fn semantic_tokens_answer_in_document_order() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let tokens = lsp.semantic_tokens("file:///card.rs");
+    // The scan order IS the answer's order: ascending positions, the
+    // delta encoder's own precondition (the wire test pins the deltas).
+    let ascending = tokens.windows(2).all(|pair| {
+        (pair[0].range.start.line, pair[0].range.start.character)
+            < (pair[1].range.start.line, pair[1].range.start.character)
+    });
+    assert!(ascending, "the tokens answer in document order: {tokens:?}");
+}
+
+#[test]
+fn semantic_tokens_are_pure_and_empty_at_the_boundaries() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let first = lsp.semantic_tokens("file:///card.rs");
+    let second = lsp.semantic_tokens("file:///card.rs");
+    assert_eq!(first, second, "semantic_tokens is pure over its map");
+    assert!(
+        lsp.semantic_tokens("file:///never-opened.rs").is_empty(),
+        "an unknown URI answers empty"
+    );
+    lsp.open("file:///clean.rs", "fn clean() {}\n", 1);
+    assert!(
+        lsp.semantic_tokens("file:///clean.rs").is_empty(),
+        "a document with no strings answers empty"
+    );
+    // A candidate that is not a class at all (a plain prose string
+    // without a `-`/`:` token) never reaches the walk — the extraction
+    // seam's own pre-filter, the same rule the diagnostics keep.
+    lsp.open(
+        "file:///prose.rs",
+        "fn p() { let s = \"some prose\"; }\n",
+        1,
+    );
+    assert!(
+        lsp.semantic_tokens("file:///prose.rs").is_empty(),
+        "the prose string stays out of the highlighter"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The colour-presentation answer (the engine's sixth question: how would
+// the editor SPELL this colour? — textDocument/colorPresentation, the
+// request the colorProvider capability already advertises beside the
+// swatches, answered by the config's own table walked backwards)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn colour_presentations_spell_the_resolved_tokens() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", COLOUR_DOC, 1);
+    // The differential round trip: the swatch the walk answers is a
+    // colour the spellings answer back — one table, both directions.
+    let swatches = lsp.document_colours("file:///card.rs");
+    assert!(!swatches.is_empty(), "the fixture carries swatches");
+    let rgba = swatches[0].rgba;
+    let presentations = lsp.colour_presentations(rgba);
+    assert!(
+        presentations
+            .iter()
+            .any(|p| p.label == "bg-primary" && p.token == "primary" && p.alpha == 100),
+        "the opaque token spelling rides: {presentations:?}"
+    );
+    // The colour-group surface is the completion source's own (one
+    // walk, all roots): the same token spells on every colour root.
+    assert!(
+        presentations.iter().any(|p| p.label == "text-primary"),
+        "the text root rides the same token: {presentations:?}"
+    );
+    for presentation in &presentations {
+        assert_eq!(
+            presentation.alpha, 100,
+            "the opaque colour carries no modifier: {presentations:?}"
+        );
+        assert!(
+            !presentation.label.starts_with('-')
+                && !presentation.label.contains('/')
+                && presentation.label.contains(presentation.token.as_str()),
+            "the label spells a root over the token, no modifier: {}",
+            presentation.label
+        );
+    }
+}
+
+#[test]
+fn colour_presentations_spell_the_alpha_steps() {
+    // The differential round trip at an alpha step: the table's own
+    // resolve at /50 is a colour the spellings answer back — the same
+    // premultiplied identity both directions.
+    let source = ThemeSource::shadcn().expect("the built-in shadcn source parses");
+    let table = TokenTable::baked(&source).expect("the baked shadcn table builds");
+    let id = table
+        .id("primary")
+        .expect("the shadcn bake carries primary");
+    let rgba = table
+        .resolve_rgba(id, 0.5, false)
+        .expect("the tier resolves");
+    let lsp = AeolusEngine::new(EngineConfig::default());
+    let presentations = lsp.colour_presentations(rgba);
+    assert!(
+        presentations
+            .iter()
+            .any(|p| p.label == "bg-primary/50" && p.token == "primary" && p.alpha == 50),
+        "the /50 spelling rides: {presentations:?}"
+    );
+    assert!(
+        presentations.iter().all(|p| p.alpha != 100),
+        "an alpha'd colour never spells bare: {presentations:?}"
+    );
+}
+
+#[test]
+fn colour_presentations_answer_empty_at_the_boundaries() {
+    // The theme-less boundary: no table, no spellings (the same honest
+    // answer the completion keeps).
+    let themeless = AeolusEngine::new(EngineConfig::new(None));
+    assert!(
+        themeless
+            .colour_presentations([93, 90, 208, 255])
+            .is_empty(),
+        "no table, no presentations"
+    );
+    // A colour no token resolves: the honest empty answer, never a
+    // guessed spelling.
+    let lsp = AeolusEngine::new(EngineConfig::default());
+    assert!(
+        lsp.colour_presentations([1, 2, 3, 4]).is_empty(),
+        "an unmatched colour answers empty"
+    );
+}
+
+#[test]
+fn colour_presentations_are_pure_and_deduped() {
+    let lsp = AeolusEngine::new(EngineConfig::default());
+    let first = lsp.colour_presentations([93, 90, 208, 255]);
+    let second = lsp.colour_presentations([93, 90, 208, 255]);
+    assert_eq!(
+        first, second,
+        "colour_presentations is pure over its config"
+    );
+    let labels: std::collections::HashSet<&str> = first.iter().map(|p| p.label.as_str()).collect();
+    assert_eq!(
+        labels.len(),
+        first.len(),
+        "no duplicate spellings: {:?}",
+        first.iter().map(|p| &p.label).collect::<Vec<_>>()
     );
 }
