@@ -242,7 +242,7 @@ impl Color {
     /// contract: the bake runs this ONCE per token, the backends
     /// receive legal sRGBA.
     ///
-    /// Where [`to_srgba`] clamps channels independently (the hue moves,
+    /// Where [`Color::to_srgba`] clamps channels independently (the hue moves,
     /// the colour goes muddy), this walks the chroma down the colour's
     /// own hue ray until the linear-sRGB triple fits the gamut — the
     /// CSS rendering of an out-of-gamut `oklch()` token, not a repair
@@ -250,9 +250,9 @@ impl Color {
     ///
     /// **The identity contract:** a colour that never left the gamut
     /// returns unchanged, so the early-out runs the SAME matrix math
-    /// [`to_srgba`] runs and every in-gamut conversion produces the
+    /// [`Color::to_srgba`] runs and every in-gamut conversion produces the
     /// same bytes it always did (the golden corpus's ground truth).
-    /// The finiteness pre-clamps mirror [`to_srgba`]'s — L into [0, 1],
+    /// The finiteness pre-clamps mirror [`Color::to_srgba`]'s — L into [0, 1],
     /// the chroma magnitude into the ±0.5 axis clamp's radius — in
     /// POLAR form so the hue survives where the axis clamp would have
     /// broken it; any parsed value stays finite (the fuzz findings
