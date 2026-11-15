@@ -380,6 +380,16 @@ pub enum Prop {
     /// obeys. The v0.x plan carries no auto-flow slot: the bridge
     /// reports the longhand (the grid-auto-rows precedent).
     GridAutoFlow,
+    // ---- pseudo-element content (cascade tail; the wider v4 hint
+    // table's string half) -----------------------------------------------
+    /// `content` — the pseudo-element paint property the
+    /// `content-["…"]` arbitrary spelling writes (the `string:` hint's
+    /// own target). The root's keyword half stays `align-content` (the
+    /// tw_merge oracle's group name) — the string form routes here
+    /// through the value pass's hint targets. The v0.x plan carries no
+    /// content slot: the bridge reports the longhand (the
+    /// grid-auto-flow precedent).
+    Content,
 }
 
 impl Prop {
@@ -528,6 +538,7 @@ impl Prop {
         Self::BackdropSepia,
         Self::BackdropFilter,
         Self::GridAutoFlow,
+        Self::Content,
     ];
 
     /// The CSS longhand name (`padding-top`, `grid-template-columns`, ...).
@@ -684,6 +695,7 @@ impl Prop {
             Prop::BackdropSaturate => "--tw-backdrop-saturate",
             Prop::BackdropSepia => "--tw-backdrop-sepia",
             Prop::BackdropFilter => "backdrop-filter",
+            Prop::Content => "content",
         }
     }
 }
@@ -703,10 +715,10 @@ impl Prop {
 /// `size-4` vs `w-4`) is `union`/`contains` — no per-backend tables.
 ///
 /// The budget is asserted, not assumed: the two words hold 256 bits
-/// against the current 141-longhand surface (the filter + backdrop
-/// layers' twenty are the latest append-only blocks; append-only
-/// growth is the plan's own rule) — see `prop_mask_fits_two_words` in
-/// tests.
+/// against the current 143-longhand surface (the filter + backdrop
+/// layers' twenty and the content longhand are the latest append-only
+/// blocks; append-only growth is the plan's own rule) — see
+/// `prop_mask_fits_two_words` in tests.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct PropMask([u128; 2]);
