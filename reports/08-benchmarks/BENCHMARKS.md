@@ -394,13 +394,13 @@ against the pre-index linear scan kept verbatim as the documented
 `lookup_linear` oracle. The index answers WHICH root a body addresses —
 the longest dash-aligned prefix that is a root — and the shape filter is
 unchanged, so the delta below is the scan the index retired. One seed
-(0) placed all 154 distinct roots with a maximum displacement of 3 (the
+(0) placed all 182 distinct roots with a maximum displacement of 3 (the
 emitted probe bound is 4) over 512 slots.
 
 | benchmark | median | note |
 |---|---|---|
 | `lookup_hit` (indexed) | **44.9 ns** | `p-4` — one hash, one slot probe, the winning root's row shape-filtered |
-| `lookup_linear_hit` (oracle) | 541.8 ns | the same body through the pre-index scan (all 178 rows read) |
+| `lookup_linear_hit` (oracle) | 541.8 ns | the same body through the pre-index scan (the run's recorded row set; the registry has since grown to 213 rows) |
 | `lookup_multi_dash_hit` (indexed) | **54.3 ns** | `rounded-tl-lg` — three prefix probes longest-first |
 | `lookup_linear_multi_dash_hit` (oracle) | 798.8 ns | the same body through the scan |
 | `lookup_detailed_hit` | 70.9 ns | the typed seam over the index: identical rows + the Result shell |
