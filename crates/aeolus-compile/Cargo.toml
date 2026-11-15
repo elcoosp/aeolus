@@ -236,3 +236,7 @@ harness = false
 [[bench]]
 name = "backdrop_filters"
 harness = false
+
+[[bench]]
+name = "suggest"
+harness = false
