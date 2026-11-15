@@ -44,6 +44,37 @@ use aeolus_theme::{ThemeSource, TokenTable};
 use proc_macro2::TokenStream;
 use quote::quote;
 
+// The generated capability table (the §3.7 generator slice): the emit
+// gates' own verdicts over `Prop::ALL`, rendered by `cargo xtask
+// gen-gpui-caps`, committed beside this module, and pinned equal in
+// `tests/caps_generated.rs` (`cargo xtask verify-gpui-caps` is the same
+// check from the CLI side). A capability-table edit that forgets the
+// regeneration fails `cargo test` first.
+mod caps_generated;
+
+/// One per-longhand verdict row of the generated capability table (the
+/// §3.7 matrix's per-longhand form): the tier the emit gates run, plus
+/// — for a refused longhand only — the typed boundary reason the emit
+/// gate answers (the text-dependent verdicts say so honestly: the
+/// gradient direction row's reason names the annotation the verdict is
+/// the ROW TEXT's). An expressible longhand carries the empty reason.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PropCapability {
+    /// The longhand.
+    pub prop: Prop,
+    /// The tier ([`supports`]/[`polyfilled`]'s own verdict — the table
+    /// is pinned equal to them).
+    pub tier: Tier,
+    /// The refused longhand's documented boundary (the emit gate's own
+    /// per-prop text); empty for native and polyfilled longhands.
+    pub reason: &'static str,
+}
+
+/// The generated capability table: one [`PropCapability`] row per IR
+/// longhand, in `Prop::ALL`'s own (cascade) order — the committed bytes
+/// the conformance page and this crate's pins consume.
+pub use crate::caps_generated::PROP_CAPABILITIES;
+
 /// The GPUI target: one program plus its parallel keyword annotations.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GpuiEmit<'a> {
@@ -490,7 +521,11 @@ pub const fn expressible(prop: Prop) -> bool {
 /// published score is the emitter's own verdicts, never a parallel
 /// claim. The per-declaration refinements (the text-dependent verdicts
 /// `unsupported_reason` runs) stay at the gates; this is the
-/// per-longhand ceiling the docs page renders.
+/// per-longhand ceiling the docs page renders. The same verdicts ride
+/// the GENERATED table ([`PROP_CAPABILITIES`], the committed
+/// `caps_generated.rs` the §3.7 generator slice pins) — one partition,
+/// three renderings (this impl, the docs page, the committed table),
+/// all pinned equal.
 pub struct Caps;
 
 impl Capability for Caps {
