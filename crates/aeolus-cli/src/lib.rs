@@ -81,8 +81,6 @@ impl FindingKind {
 pub struct Finding {
     /// The offending token.
     pub token: String,
-    /// The class string it came from.
-    pub from: String,
     /// The precise reason (never empty).
     pub detail: String,
     /// The structured classification ([`FindingKind`]) — the fail-on
@@ -276,7 +274,6 @@ pub fn check_string(classes: &str, theme: &TailwindTheme) -> Vec<Finding> {
             for e in errors {
                 findings.push(Finding {
                     token: classes.to_string(),
-                    from: classes.to_string(),
                     detail: format!("color parse error: {e}"),
                     kind: FindingKind::Unsupported,
                 });
@@ -295,7 +292,6 @@ pub fn check_string(classes: &str, theme: &TailwindTheme) -> Vec<Finding> {
         };
         findings.push(Finding {
             token,
-            from: classes.to_string(),
             detail,
             kind,
         });
@@ -323,7 +319,6 @@ pub fn check_string(classes: &str, theme: &TailwindTheme) -> Vec<Finding> {
                 }
                 findings.push(Finding {
                     token: (*t).to_string(),
-                    from: classes.to_string(),
                     detail: match winner {
                         Some(w) => {
                             format!("cn() conflict: dropped by {w:?} (later in the string wins)")
