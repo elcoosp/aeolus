@@ -23,8 +23,9 @@ use aeolus_syntax::parse_class_string;
 use aeolus_theme::TokenTable;
 
 use crate::{
-    DocumentMap, EngineColour, EngineCompletion, EngineCompletionKind, EngineDiagnostic,
-    EngineHover, EnginePosition, EngineRange,
+    DocumentMap, EngineColour, EngineColourPresentation, EngineCompletion, EngineCompletionKind,
+    EngineDiagnostic, EngineHover, EnginePosition, EngineRange, EngineSemanticKind,
+    EngineSemanticToken,
 };
 
 // ---------------------------------------------------------------------------
@@ -390,6 +391,131 @@ impl AeolusEngine {
                     hit.offset + candidate.span.1,
                 );
                 out.push(EngineColour { range, rgba });
+            }
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
+    // The semantic-token answer
+    // -----------------------------------------------------------------------
+
+    /// The document's semantic tokens: every candidate class the
+    /// extraction seam's strings carry, its byte-true range and its
+    /// compile outcome — a clean lower is the legend's `Lowered` (the
+    /// wire's `class` type), a typed refusal is `Refused` (the wire's
+    /// custom `refused` type). The walk is the document-colour walk's
+    /// own shape: the per-candidate compile through the SAME entry
+    /// points the CLI and the macros run (one candidate per call, the
+    /// spans from the lexer), the classification the diagnostics list's
+    /// emptiness — no parallel matcher, no guessed shape. The theme-less
+    /// config answers the same (a refusal is a refusal either way: the
+    /// token classes refuse honestly, the highlighter shows it).
+    /// Deterministic and pure over the document map; an unknown URI
+    /// answers empty, and the answer rides in document order (the
+    /// delta encoder's own precondition).
+    pub fn semantic_tokens(&self, uri: &str) -> Vec<EngineSemanticToken> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let mut out = Vec::new();
+        for hit in scan_rust_strings(text) {
+            let (candidates, _) = parse_class_string(&hit.text);
+            for candidate in candidates {
+                // The single-candidate pipeline answer: the themed walk
+                // when the config carries a table, the theme-less
+                // boundary otherwise.
+                let compiled = match &self.config.tokens {
+                    Some(table) => compile_theme(candidate.raw, table, &self.config.compile),
+                    None => compile(candidate.raw, &self.config.compile),
+                };
+                let Ok(compiled) = compiled else {
+                    continue;
+                };
+                let kind = if compiled.diagnostics.is_empty() {
+                    EngineSemanticKind::Lowered
+                } else {
+                    EngineSemanticKind::Refused
+                };
+                let range = range_of(
+                    text,
+                    hit.offset + candidate.span.0,
+                    hit.offset + candidate.span.1,
+                );
+                out.push(EngineSemanticToken { range, kind });
+            }
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
+    // The colour-presentation answer
+    // -----------------------------------------------------------------------
+
+    /// The spellings one colour answers back: the config's own table
+    /// walked backwards — every (colour-group root, token, opacity step)
+    /// whose light-tier resolve is EXACTLY the requested bytes, the same
+    /// [`TokenTable::resolve_rgba`] the swatches resolve through (one
+    /// round trip, both directions share it). The surface is the
+    /// completion source's own: the registry's colour-group rows, one
+    /// spelling per root (the SAME gate that makes a suggested token
+    /// class a lowered token class). The answer carries no document
+    /// argument: the spellings ride the config's table, the open file
+    /// does not change them — the one engine question the document map
+    /// does not gate. The theme-less config answers empty (the honest
+    /// boundary the completion keeps), a colour no token resolves
+    /// answers empty (never a guessed spelling), and the answer is pure
+    /// and deduped over its config.
+    pub fn colour_presentations(&self, rgba: [u8; 4]) -> Vec<EngineColourPresentation> {
+        let Some(table) = self.config.tokens.as_ref() else {
+            return Vec::new();
+        };
+        // The resolves run ONCE per (token, step) — the row walk below
+        // only spells (the labels carry the root; the colour the picker
+        // picked does not depend on it).
+        let mut names: Vec<&str> = table.names().collect();
+        names.sort_unstable();
+        let mut matches = Vec::new();
+        for name in names {
+            let Some(id) = table.id(name) else {
+                continue;
+            };
+            for step in aeolus_data::tables::OPACITY_STEPS {
+                let alpha = f32::from(*step) / 100.0;
+                let Ok(resolved) = table.resolve_rgba(id, alpha, false) else {
+                    continue;
+                };
+                if resolved == rgba {
+                    matches.push((name, *step));
+                }
+            }
+        }
+        // The spellings ride the registry's colour-group rows (the
+        // completion source's own surface, one label per root) in the
+        // registry's own order.
+        let mut out = Vec::new();
+        let mut seen = HashSet::new();
+        for row in ROWS {
+            if !COLOUR_GROUPS.contains(&row.group) {
+                continue;
+            }
+            for (name, step) in &matches {
+                // The bare spelling IS the 100% step (the modifier rides
+                // only below it — the `/opacity` identity the theme pass
+                // lowers through).
+                let label = if *step == 100 {
+                    format!("{}-{name}", row.root)
+                } else {
+                    format!("{}-{name}/{}", row.root, step)
+                };
+                if seen.insert(label.clone()) {
+                    out.push(EngineColourPresentation {
+                        label,
+                        token: (*name).to_string(),
+                        alpha: *step,
+                    });
+                }
             }
         }
         out
