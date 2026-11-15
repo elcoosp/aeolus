@@ -366,3 +366,181 @@ fn intern(text: &str) -> &'static str {
 pub(crate) fn breakpoint(name: &str) -> Option<Bp> {
     Bp::ALL.iter().copied().find(|bp| bp.name() == name)
 }
+
+// ---------------------------------------------------------------------------
+// The completion surface (the editor half's audited spelling set)
+// ---------------------------------------------------------------------------
+
+/// The closed, CONCRETE variant spelling set the fold accepts as-is —
+/// the editor-completion surface (the LSP's completion consults it, so
+/// a suggested variant is always a spelling the fold's own
+/// `classify_builtin` answers). The audit is two-sided and test-pinned below: every entry
+/// folds (no stale suggestion), and every base spelling the match
+/// walls accept is present (no silent omission). The OPEN families
+/// (`data-<attr>`, `aria-<attr>`, `has-<fragment>`, `nth-<n>`, named
+/// group/peer/container labels) are represented by their documented
+/// demo spellings — the payload grammars are open-ended, not a closed
+/// list.
+pub const KNOWN_VARIANTS: &[&str] = &[
+    // The probe states (the state match wall's own order).
+    "hover",
+    "focus",
+    "focus-visible",
+    "focus-within",
+    "active",
+    "disabled",
+    "visited",
+    "checked",
+    "placeholder-shown",
+    "selection",
+    "placeholder",
+    // The mode.
+    "dark",
+    // The parent probes: the bare spellings, then the named-label form
+    // (the one `/label` demo spelling the fold documents).
+    "group-hover",
+    "group-focus",
+    "peer-hover",
+    "peer-focus",
+    "group-hover/menu",
+    // The structural family — the bare spellings only (the `nth-N`
+    // ordinals are every i32, not a closed spelling set).
+    "first",
+    "last",
+    "odd",
+    "even",
+    "only",
+    "empty",
+    // The breakpoints (Bp::ALL's names, ascending).
+    "sm",
+    "md",
+    "lg",
+    "xl",
+    "2xl",
+    // The min/max prefixes over one representative breakpoint each.
+    "min-sm",
+    "max-md",
+    // The container forms: ascending, the max form, and the named
+    // container demo (`@md/card`).
+    "@sm",
+    "@md",
+    "@lg",
+    "@xl",
+    "@2xl",
+    "@max-md",
+    "@md/card",
+    // The attribute-probe families: the demo spellings (a custom
+    // payload rides the same prefix grammar).
+    "data-open",
+    "aria-busy",
+    "has-focus",
+    "group-has-focus",
+    "peer-has-focus",
+];
+
+// ---------------------------------------------------------------------------
+// The completion surface's audit (the drift catch, test-pinned in place)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod completion_tests {
+    use super::*;
+
+    /// Every entry of [`KNOWN_VARIANTS`] must fold — the completion
+    /// surface only ever suggests spellings the pipeline's own oracle
+    /// accepts (the `COLOUR_GROUPS` audit pattern: a stale entry fails
+    /// here, never a suggested class the compiler refuses).
+    #[test]
+    fn every_known_variant_folds() {
+        for name in KNOWN_VARIANTS {
+            assert!(
+                classify_builtin(name).is_some(),
+                "the completion surface names {name:?}, which does not fold"
+            );
+        }
+    }
+
+    /// The closed set carries NO duplicates (a duplicate would render
+    /// twice in an editor's popup) and stays in its canonical,
+    /// semantically-grouped order — the deterministic answer the tests
+    /// and the editor popups pin.
+    #[test]
+    fn no_duplicates() {
+        let mut sorted = KNOWN_VARIANTS.to_vec();
+        sorted.sort_unstable();
+        let len = sorted.len();
+        sorted.dedup();
+        assert_eq!(sorted.len(), len, "KNOWN_VARIANTS carries a duplicate");
+    }
+
+    /// The hand-audit: every base spelling the fold's own match walls
+    /// accept is present — a name added to `classify_builtin` without
+    /// joining the completion surface is a test failure here (the
+    /// reverse direction of [`every_known_variant_folds`]). The
+    /// breakpoint spellings ride `Bp::ALL`'s names, the parameterized
+    /// families (`nth-`, `data-`, `aria-`, `has-` with custom payloads)
+    /// are represented by their documented demo spellings.
+    #[test]
+    fn the_closed_set_covers_every_base_spelling() {
+        let expected: &[&str] = &[
+            // The probe states (the state match wall).
+            "hover",
+            "focus",
+            "focus-visible",
+            "focus-within",
+            "active",
+            "disabled",
+            "visited",
+            "checked",
+            "placeholder-shown",
+            "selection",
+            "placeholder",
+            // The mode.
+            "dark",
+            // The parent probes (bare + the named-label demo spelling).
+            "group-hover",
+            "group-focus",
+            "peer-hover",
+            "peer-focus",
+            "group-hover/menu",
+            // The structural family (the bare spellings; `nth-N` is the
+            // parameterized arm the list represents with none — the
+            // ordinals are every i32, not a closed spelling set).
+            "first",
+            "last",
+            "odd",
+            "even",
+            "only",
+            "empty",
+            // The breakpoints (Bp::ALL's names).
+            "sm",
+            "md",
+            "lg",
+            "xl",
+            "2xl",
+            // The min/max prefixes over a representative breakpoint.
+            "min-sm",
+            "max-md",
+            // The container forms (bare + max + the named-label demo).
+            "@sm",
+            "@md",
+            "@lg",
+            "@xl",
+            "@2xl",
+            "@max-md",
+            "@md/card",
+            // The attribute-probe families (the demo spellings the fold
+            // documents; custom payloads are open-ended, not closed).
+            "data-open",
+            "aria-busy",
+            "has-focus",
+            "group-has-focus",
+            "peer-has-focus",
+        ];
+        let mut actual: Vec<&str> = KNOWN_VARIANTS.to_vec();
+        let mut expected: Vec<&str> = expected.to_vec();
+        actual.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(actual, expected, "the closed set drifted from the fold");
+    }
+}
