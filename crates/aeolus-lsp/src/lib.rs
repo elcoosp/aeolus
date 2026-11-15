@@ -10,7 +10,8 @@
 //!   document's text, walks the hits through the V1 compile walk (the
 //!   same [`compile`](aeolus_compile::compile)/`compile_theme` entry
 //!   points the CLI and the macros use — never a parallel matcher, the
-//!   plan §3.6 capability-split rule), and answers two questions:
+//!   plan §3.6 capability-split rule), and answers the editor's
+//!   questions:
 //!   * *what is wrong here?* — the per-location diagnostics, each
 //!     carrying its stable machine code and help text, its byte-true
 //!     range already translated into the LSP's UTF-16 line/character
@@ -36,7 +37,11 @@
 //!   * *how would the editor spell this colour?* — the colour
 //!     presentations: the config's own table walked backwards, every
 //!     (root, token, opacity step) spelling that re-resolves to the
-//!     requested bytes ([`EngineColourPresentation`]).
+//!     requested bytes ([`EngineColourPresentation`]);
+//!   * *what does this class resolve to, inline?* — the inlay hints:
+//!     every lowered candidate's CSS-arm declarations rendered compactly
+//!     at the class's end, the refused candidates staying quiet (the
+//!     diagnostics' and the legend's story) ([`EngineInlayHint`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -221,6 +226,26 @@ pub struct EngineColourPresentation {
     /// The opacity step the spelling carries (the audited
     /// `OPACITY_STEPS` scale; 100 is the bare spelling, no modifier).
     pub alpha: u16,
+}
+
+/// One inline hint the editor renders after a class: the lowered
+/// candidate's CSS-arm declarations, compacted to the wire's single-line
+/// label, at the class's END position (the hint rides where the class's
+/// spelling stops). The tooltip carries the hover's markdown (the class,
+/// its folded condition, the CSS block) — the inline label is the
+/// summary, the tooltip is the WHY. A refused candidate never hints: its
+/// story is the diagnostics' and the semantic legend's, the honest
+/// boundary the answer keeps.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineInlayHint {
+    /// The position the hint rides at (the class's end, UTF-16 pairs).
+    pub position: EnginePosition,
+    /// The compact CSS the class lowers to (the CSS arm's own
+    /// declarations, `"; "`-joined — one line, never a paraphrase).
+    pub label: String,
+    /// The markdown tooltip (the class, its folded condition and the
+    /// CSS block — the hover rendering's own shape).
+    pub tooltip: String,
 }
 
 /// One open document the engine keeps: the current text and the LSP's
