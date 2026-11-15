@@ -29,9 +29,10 @@
 //!   over the battery;
 //! * the boundaries stay typed, coded and helped: bare values without a
 //!   unit on non-`Number` rows, mismatched hints, the arbitrary-PROPERTY
-//!   form, multi-token composites (`calc()`, underscore joins), angle
-//!   units outside the `Deg` rows, keyword values on row-relative
-//!   keyword slots.
+//!   form, angle units outside the `Deg` rows, keyword values on
+//!   row-relative keyword slots. The composite forms lower through the
+//!   verbatim slot now (the `composites` battery pins that contract);
+//!   this battery pins the unit grammar's own shape against it.
 
 use aeolus_compile::{
     Config, DiagnosticKind, compile, compile_theme, emit_css, emit_static, interp,
@@ -511,19 +512,45 @@ fn an_unknown_var_name_refuses_typed() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn multi_token_composites_refuse_typed() {
-    // `calc()`, underscore joins and other multi-token values are the
-    // codegen host's composite grammar — typed, never truncated.
-    for class in ["w-[calc(100%-2rem)]", "grid-cols-[0_1fr]", "w-[3px_4px]"] {
+fn multi_token_composites_lower_through_the_verbatim_slot() {
+    // The composite grammar landed (the value pass's verbatim slot): the
+    // sized functions and the track lists lower on the rows whose slots
+    // carry them — the `composites` battery pins the full contract, this
+    // pin walks the unit battery's own strings through the landed walk.
+    for (class, prop) in [
+        ("w-[calc(100%-2rem)]", Prop::Width),
+        ("grid-cols-[0_1fr]", Prop::GridTemplateColumns),
+    ] {
         let compiled = compile(class, &Config::default()).expect("compiles");
         assert!(
-            matches!(
-                one_diagnostic(&compiled),
-                DiagnosticKind::UnsupportedValue { reason, .. } if reason.contains("composite") || reason.contains("unit")
-            ),
-            "{class}"
+            compiled.diagnostics.is_empty(),
+            "{class}: {:?}",
+            compiled.diagnostics
+        );
+        let decl = compiled
+            .program
+            .layers
+            .iter()
+            .flat_map(|layer| layer.decls.iter())
+            .find(|decl| decl.prop == prop)
+            .unwrap_or_else(|| panic!("{class}: the {prop:?} declaration"));
+        assert!(
+            matches!(decl.val, Val::Verbatim(_)),
+            "{class}: {:?}",
+            decl.val
         );
     }
+    // `w-[3px_4px]` stays a typed refusal: the width slot takes ONE
+    // length — the underscore list is a track-shape value the width row
+    // cannot carry (the kind gate, not the old blanket refusal).
+    let compiled = compile("w-[3px_4px]", &Config::default()).expect("compiles");
+    assert!(
+        matches!(
+            one_diagnostic(&compiled),
+            DiagnosticKind::UnsupportedValue { reason, .. } if reason.contains("composite")
+        ),
+        "the boundary names the composite grammar"
+    );
 }
 
 #[test]
