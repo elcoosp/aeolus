@@ -1154,7 +1154,7 @@ fn apply_decl<S: Styled>(style: S, prop: Prop, val: Val, keyword: &str) -> S {
         // (the §3.7 grid row's "native subset" finished for flex
         // sizing) — the spacing rem, the fraction percentage and the
         // arbitrary percentage all land on the one `Length` slot.
-        Prop::FlexBasis => with_length(style, val, Styled::flex_basis),
+        Prop::FlexBasis => with_length(style, val, keyword, Styled::flex_basis),
         Prop::GridTemplateColumns => match val {
             Val::Num(n) => style.grid_cols(n as u16),
             _ => style,
@@ -1163,41 +1163,41 @@ fn apply_decl<S: Styled>(style: S, prop: Prop, val: Val, keyword: &str) -> S {
             Val::Num(n) => style.grid_rows(n as u16),
             _ => style,
         },
-        Prop::GapRow => with_definite(style, val, Styled::gap_y),
-        Prop::GapCol => with_definite(style, val, Styled::gap_x),
-        Prop::Width => with_length(style, val, Styled::w),
-        Prop::Height => with_length(style, val, Styled::h),
-        Prop::MinWidth => with_length(style, val, Styled::min_w),
-        Prop::MinHeight => with_length(style, val, Styled::min_h),
-        Prop::MaxWidth => with_length(style, val, Styled::max_w),
-        Prop::MaxHeight => with_length(style, val, Styled::max_h),
+        Prop::GapRow => with_definite(style, val, keyword, Styled::gap_y),
+        Prop::GapCol => with_definite(style, val, keyword, Styled::gap_x),
+        Prop::Width => with_length(style, val, keyword, Styled::w),
+        Prop::Height => with_length(style, val, keyword, Styled::h),
+        Prop::MinWidth => with_length(style, val, keyword, Styled::min_w),
+        Prop::MinHeight => with_length(style, val, keyword, Styled::min_h),
+        Prop::MaxWidth => with_length(style, val, keyword, Styled::max_w),
+        Prop::MaxHeight => with_length(style, val, keyword, Styled::max_h),
         Prop::AspectRatio => with_num(style, val, Styled::aspect_ratio),
-        Prop::Top => with_length(style, val, Styled::top),
-        Prop::Right => with_length(style, val, Styled::right),
-        Prop::Bottom => with_length(style, val, Styled::bottom),
-        Prop::Left => with_length(style, val, Styled::left),
-        Prop::PaddingTop => with_definite(style, val, Styled::pt),
-        Prop::PaddingRight => with_definite(style, val, Styled::pr),
-        Prop::PaddingBottom => with_definite(style, val, Styled::pb),
-        Prop::PaddingLeft => with_definite(style, val, Styled::pl),
-        Prop::MarginTop => with_length(style, val, Styled::mt),
-        Prop::MarginRight => with_length(style, val, Styled::mr),
-        Prop::MarginBottom => with_length(style, val, Styled::mb),
-        Prop::MarginLeft => with_length(style, val, Styled::ml),
-        Prop::BorderTopWidth => with_absolute(style, val, Styled::border_t),
-        Prop::BorderRightWidth => with_absolute(style, val, Styled::border_r),
-        Prop::BorderBottomWidth => with_absolute(style, val, Styled::border_b),
-        Prop::BorderLeftWidth => with_absolute(style, val, Styled::border_l),
+        Prop::Top => with_length(style, val, keyword, Styled::top),
+        Prop::Right => with_length(style, val, keyword, Styled::right),
+        Prop::Bottom => with_length(style, val, keyword, Styled::bottom),
+        Prop::Left => with_length(style, val, keyword, Styled::left),
+        Prop::PaddingTop => with_definite(style, val, keyword, Styled::pt),
+        Prop::PaddingRight => with_definite(style, val, keyword, Styled::pr),
+        Prop::PaddingBottom => with_definite(style, val, keyword, Styled::pb),
+        Prop::PaddingLeft => with_definite(style, val, keyword, Styled::pl),
+        Prop::MarginTop => with_length(style, val, keyword, Styled::mt),
+        Prop::MarginRight => with_length(style, val, keyword, Styled::mr),
+        Prop::MarginBottom => with_length(style, val, keyword, Styled::mb),
+        Prop::MarginLeft => with_length(style, val, keyword, Styled::ml),
+        Prop::BorderTopWidth => with_absolute(style, val, keyword, Styled::border_t),
+        Prop::BorderRightWidth => with_absolute(style, val, keyword, Styled::border_r),
+        Prop::BorderBottomWidth => with_absolute(style, val, keyword, Styled::border_b),
+        Prop::BorderLeftWidth => with_absolute(style, val, keyword, Styled::border_l),
         Prop::BorderColor => with_color(style, val, Styled::border_color),
         Prop::BorderStyle => border_style(style, keyword),
-        Prop::BorderTopLeftRadius => with_absolute(style, val, Styled::rounded_tl),
-        Prop::BorderTopRightRadius => with_absolute(style, val, Styled::rounded_tr),
-        Prop::BorderBottomRightRadius => with_absolute(style, val, Styled::rounded_br),
-        Prop::BorderBottomLeftRadius => with_absolute(style, val, Styled::rounded_bl),
+        Prop::BorderTopLeftRadius => with_absolute(style, val, keyword, Styled::rounded_tl),
+        Prop::BorderTopRightRadius => with_absolute(style, val, keyword, Styled::rounded_tr),
+        Prop::BorderBottomRightRadius => with_absolute(style, val, keyword, Styled::rounded_br),
+        Prop::BorderBottomLeftRadius => with_absolute(style, val, keyword, Styled::rounded_bl),
         Prop::Background => with_color(style, val, Styled::bg),
         Prop::Color => with_color(style, val, Styled::text_color),
-        Prop::FontSize => with_absolute(style, val, Styled::text_size),
-        Prop::LineHeight => with_definite(style, val, Styled::line_height),
+        Prop::FontSize => with_absolute(style, val, keyword, Styled::text_size),
+        Prop::LineHeight => with_definite(style, val, keyword, Styled::line_height),
         Prop::FontWeight => match keyword.parse::<f32>() {
             Ok(weight) => style.font_weight(FontWeight::from(weight)),
             Err(_) => style,
@@ -1210,6 +1210,14 @@ fn apply_decl<S: Styled>(style: S, prop: Prop, val: Val, keyword: &str) -> S {
         },
         Prop::TextAlign => text_align(style, keyword),
         Prop::TextDecorationLine => text_decoration(style, keyword),
+        // The decoration family's colour/thickness/style longhands (the
+        // §3.7 typography surface's decoration half) — the helpers carry
+        // the per-leg semantics (the pinned methods' get-or-insert on the
+        // underline leg, the v4-true only-if-present patch on the
+        // strikethrough leg).
+        Prop::TextDecorationColor => decoration_color(style, val),
+        Prop::TextDecorationThickness => decoration_thickness(style, val),
+        Prop::TextDecorationStyle => decoration_style(style, keyword),
         Prop::WhiteSpace => match keyword {
             "nowrap" | "pre" | "pre-line" | "pre-wrap" | "break-spaces" => {
                 style.whitespace_nowrap()
@@ -1338,6 +1346,63 @@ fn text_decoration<S: Styled>(style: S, keyword: &str) -> S {
     }
 }
 
+/// `decoration-{color}` — `text-decoration-color`: the colour the
+/// composed decoration lines render. The underline leg rides the pinned
+/// `Styled::text_decoration_color` method (its own get-or-insert
+/// semantics — GPUI's reading of the class); the strikethrough leg has
+/// no pinned method, so the walk patches it V4-TRUE — only when a
+/// line-through already composes (the colour alone never creates one).
+fn decoration_color<S: Styled>(style: S, val: Val) -> S {
+    let Some(color) = color(val) else {
+        return style;
+    };
+    let style = style.text_decoration_color(color);
+    let mut style = style;
+    if let Some(strikethrough) = style.text_style().strikethrough.as_mut() {
+        strikethrough.color = Some(color);
+    }
+    style
+}
+
+/// `decoration-{thickness}` — `text-decoration-thickness`: the
+/// underline leg's absolute-pixel slot (the pinned
+/// `text_decoration_0..8` methods' own get-or-insert semantics,
+/// generalized to the whole integer scale — the bare integers are v4's
+/// own `isPositiveInteger` grammar); the strikethrough leg patches only
+/// when a line-through already composes. The keyword and rem/percent
+/// forms never reach the walk — the emit gates refuse them (the
+/// absolute-px slot's typed boundary).
+fn decoration_thickness<S: Styled>(style: S, val: Val) -> S {
+    let Some(thickness) = (match val {
+        Val::Px(n) | Val::Num(n) => Some(px(n)),
+        _ => None,
+    }) else {
+        return style;
+    };
+    let mut style = style;
+    let underline = style
+        .text_style()
+        .underline
+        .get_or_insert_with(Default::default);
+    underline.thickness = thickness;
+    if let Some(strikethrough) = style.text_style().strikethrough.as_mut() {
+        strikethrough.thickness = thickness;
+    }
+    style
+}
+
+/// `decoration-{style}` — `text-decoration-style`: the pinned
+/// `text_decoration_solid`/`text_decoration_wavy` methods (the two
+/// forms GPUI's single-line surface expresses); the double/dotted/dashed
+/// keywords never reach the walk — the emit gates refuse them.
+fn decoration_style<S: Styled>(style: S, keyword: &str) -> S {
+    match keyword {
+        "wavy" => style.text_decoration_wavy(),
+        "solid" => style.text_decoration_solid(),
+        _ => style,
+    }
+}
+
 fn overflow_x<S: Styled>(style: S, keyword: &str) -> S {
     match keyword {
         "hidden" | "clip" | "scroll" | "auto" => style.overflow_x_hidden(),
@@ -1384,22 +1449,32 @@ fn with_num<S: Styled>(style: S, val: Val, f: impl FnOnce(S, f32) -> S) -> S {
     }
 }
 
-fn with_definite<S: Styled>(style: S, val: Val, f: impl FnOnce(S, DefiniteLength) -> S) -> S {
-    match definite(val) {
+fn with_definite<S: Styled>(
+    style: S,
+    val: Val,
+    keyword: &str,
+    f: impl FnOnce(S, DefiniteLength) -> S,
+) -> S {
+    match definite(val, keyword) {
         Some(length) => f(style, length),
         None => style,
     }
 }
 
-fn with_length<S: Styled>(style: S, val: Val, f: impl FnOnce(S, Length) -> S) -> S {
-    match length(val) {
+fn with_length<S: Styled>(style: S, val: Val, keyword: &str, f: impl FnOnce(S, Length) -> S) -> S {
+    match length(val, keyword) {
         Some(length) => f(style, length),
         None => style,
     }
 }
 
-fn with_absolute<S: Styled>(style: S, val: Val, f: impl FnOnce(S, AbsoluteLength) -> S) -> S {
-    match absolute(val) {
+fn with_absolute<S: Styled>(
+    style: S,
+    val: Val,
+    keyword: &str,
+    f: impl FnOnce(S, AbsoluteLength) -> S,
+) -> S {
+    match absolute(val, keyword) {
         Some(length) => f(style, length),
         None => style,
     }
@@ -1412,28 +1487,69 @@ fn with_color<S: Styled>(style: S, val: Val, f: impl FnOnce(S, Hsla) -> S) -> S 
     }
 }
 
-fn definite(val: Val) -> Option<DefiniteLength> {
+/// The row text's own length form: the plain px/rem spellings the row
+/// tables carry beside the `Val::Kw` slots (`border`'s bare `1px`, the
+/// radius scale's `0.375rem`, the composite text sizes' `0.875rem`
+/// primary). The CALC texts (the composite line-height pair) are the
+/// CSS arm's own output — the walk does not evaluate expressions and
+/// returns `None` (never a guessed value).
+fn row_length(keyword: &str) -> Option<Val> {
+    if let Some(n) = keyword.strip_suffix("px") {
+        n.trim().parse::<f32>().ok().map(Val::Px)
+    } else if let Some(n) = keyword.strip_suffix("rem") {
+        n.trim().parse::<f32>().ok().map(Val::Rem)
+    } else if let Some(n) = keyword.strip_suffix('%') {
+        n.trim().parse::<f32>().ok().map(Val::Pct)
+    } else {
+        None
+    }
+}
+
+fn definite(val: Val, keyword: &str) -> Option<DefiniteLength> {
     match val {
         Val::Rem(n) => Some(rems(n).into()),
         Val::Px(n) => Some(px(n).into()),
         Val::Pct(n) => Some(relative(n / 100.0)),
+        // The keyword slot's row text (the seam the frozen program
+        // carries: the slot indexes the row's own table, the text rides
+        // beside it).
+        Val::Kw(_) => match row_length(keyword)? {
+            Val::Rem(n) => Some(rems(n).into()),
+            Val::Px(n) => Some(px(n).into()),
+            Val::Pct(n) => Some(relative(n / 100.0)),
+            _ => None,
+        },
         _ => None,
     }
 }
 
-fn length(val: Val) -> Option<Length> {
+fn length(val: Val, keyword: &str) -> Option<Length> {
     match val {
         Val::Rem(n) => Some(rems(n).into()),
         Val::Px(n) => Some(px(n).into()),
         Val::Pct(n) => Some(relative(n / 100.0).into()),
+        Val::Kw(_) => match row_length(keyword)? {
+            Val::Rem(n) => Some(rems(n).into()),
+            Val::Px(n) => Some(px(n).into()),
+            Val::Pct(n) => Some(relative(n / 100.0).into()),
+            _ => None,
+        },
         _ => None,
     }
 }
 
-fn absolute(val: Val) -> Option<AbsoluteLength> {
+fn absolute(val: Val, keyword: &str) -> Option<AbsoluteLength> {
     match val {
         Val::Rem(n) => Some(rems(n).into()),
         Val::Px(n) => Some(px(n).into()),
+        // The bare-integer px scales (v4's own reading: `border-2` is
+        // 2px) — the number form the row lowers.
+        Val::Num(n) => Some(px(n).into()),
+        Val::Kw(_) => match row_length(keyword)? {
+            Val::Rem(n) => Some(rems(n).into()),
+            Val::Px(n) => Some(px(n).into()),
+            _ => None,
+        },
         _ => None,
     }
 }
