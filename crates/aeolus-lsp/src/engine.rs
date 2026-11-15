@@ -9,17 +9,23 @@
 //! document map — the same input answers the same output, gate over
 //! gate.
 
+use std::collections::HashSet;
 use std::fmt::Write as _;
 
 use aeolus_compile::{
-    Config, Diagnostic, ScanHit, compile, compile_theme, emit_css, emit_css_theme,
-    scan_rust_strings,
+    COLOUR_GROUPS, Config, Diagnostic, KNOWN_VARIANTS, ScanHit, compile, compile_theme, emit_css,
+    emit_css_theme, scan_rust_strings,
 };
-use aeolus_ir::Cond;
+use aeolus_data::ValueKind;
+use aeolus_data::rows::ROWS;
+use aeolus_ir::{Cond, Val};
 use aeolus_syntax::parse_class_string;
 use aeolus_theme::TokenTable;
 
-use crate::{DocumentMap, EngineDiagnostic, EngineHover, EnginePosition, EngineRange};
+use crate::{
+    DocumentMap, EngineColour, EngineCompletion, EngineCompletionKind, EngineDiagnostic,
+    EngineHover, EnginePosition, EngineRange,
+};
 
 // ---------------------------------------------------------------------------
 // The engine config
@@ -93,12 +99,6 @@ impl AeolusEngine {
             config,
             documents: DocumentMap::new(),
         }
-    }
-
-    /// The engine's configuration (the server's capabilities render
-    /// from the same knobs).
-    pub fn config(&self) -> &EngineConfig {
-        &self.config
     }
 
     /// Open a document (the wire's didOpen): the text replaces any
@@ -267,6 +267,133 @@ impl AeolusEngine {
             range: Some(range),
         })
     }
+
+    // -----------------------------------------------------------------------
+    // The completion answer
+    // -----------------------------------------------------------------------
+
+    /// The completion for the fragment under the cursor: the candidate
+    /// string the extraction seam finds, the whitespace word the cursor
+    /// sits in (the word's END counts — completion fires at the typing
+    /// edge), the typed-so-far fragment completed from the compiler's
+    /// own audited sources. Deterministic and pure over the document
+    /// map; an unknown URI, a position outside any string and a cursor
+    /// outside any word answer empty.
+    ///
+    /// Two boundaries the editor half keeps honestly:
+    ///
+    /// * the extraction seam's prose pre-filter applies (a string with
+    ///   no `-`/`:` token is not a class string — the diagnostics' own
+    ///   rule), so a completion inside such a string answers empty: the
+    ///   popup fires where the pipeline looks, never wider;
+    /// * the WORD is not lex-validated — a half-typed `flex-` is not a
+    ///   legal candidate yet (the lexer's empty-element rule) and the
+    ///   popup must answer while typing; the lexical gate belongs to
+    ///   the compile walk, not the suggestion list.
+    ///
+    /// The fragment model: with no `:` typed, the variant stack AND the
+    /// utility root are both in play (both halves answer); after a `:`,
+    /// the utility half alone does. An empty utility half (the cursor
+    /// right after `hover:`) answers the BARE roots — the complete
+    /// classes that need no suffix — never the full thousand-item
+    /// class list. A dynamic scale shape (the spacing multiples, the
+    /// fractions — every number is a legal spelling, no closed audited
+    /// table exists) stays unnamed: the engine suggests only what the
+    /// registry's own tables can name exactly, the no-invented-data
+    /// rule the pipeline itself keeps.
+    pub fn complete(&self, uri: &str, line: u32, character: u32) -> Vec<EngineCompletion> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let Some(offset) = offset_of(text, line, character) else {
+            return Vec::new();
+        };
+        // The same extraction seam the hover and the diagnostics walk —
+        // the string under the cursor, the cursor's byte offset inside
+        // it (the END is inclusive: completion fires at the edge).
+        let Some(hit) = scan_rust_strings(text)
+            .into_iter()
+            .find(|hit| offset >= hit.offset && offset <= hit.offset + hit.text.len())
+        else {
+            return Vec::new();
+        };
+        let local = offset.saturating_sub(hit.offset);
+        // The word under the cursor: the whitespace-delimited slice the
+        // lexer's own segmentation splits on (parse_class_string's
+        // whitespace walk) — without its lex-validation (see above).
+        let words = hit.text.as_str();
+        let start = words[..local.min(words.len())]
+            .rfind(char::is_whitespace)
+            .map_or(0, |index| index + 1);
+        let end = words[local.min(words.len())..]
+            .find(char::is_whitespace)
+            .map_or(words.len(), |index| local + index);
+        let fragment = if local <= end {
+            &words[start..local.min(end)]
+        } else {
+            // The cursor rests in the whitespace AFTER the word: the
+            // empty fragment (the next word's first keystroke).
+            ""
+        };
+        completions_for(fragment, self.config.tokens.as_ref())
+    }
+
+    // -----------------------------------------------------------------------
+    // The colour-swatch answer
+    // -----------------------------------------------------------------------
+
+    /// The document's colour swatches: every candidate class whose
+    /// program carries a colour-valued declaration, its byte-true range
+    /// and the table's resolved light-tier rgba. The walk is the
+    /// per-candidate compile (the SAME entry points the CLI and the
+    /// macros run, one candidate per call — the program does not carry
+    /// per-candidate attribution, the spans come from the lexer), and
+    /// the swatch is the FIRST colour declaration in cascade order (the
+    /// class's primary colour — a class that writes two colour
+    /// longhands paints the one the base layer carries first). The
+    /// theme-less config answers empty for every token class (the
+    /// honest boundary [`compile`] itself keeps), and the keyword slots
+    /// (`transparent`, `currentColor`) stay unnamed — a CSS keyword is
+    /// not a swatch. Deterministic and pure over the document map; an
+    /// unknown URI answers empty.
+    pub fn document_colours(&self, uri: &str) -> Vec<EngineColour> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let mut out = Vec::new();
+        for hit in scan_rust_strings(text) {
+            let (candidates, _) = parse_class_string(&hit.text);
+            for candidate in candidates {
+                // The single-candidate pipeline answer: the themed walk
+                // when the config carries a table, the theme-less
+                // boundary otherwise.
+                let compiled = match &self.config.tokens {
+                    Some(table) => compile_theme(candidate.raw, table, &self.config.compile),
+                    None => compile(candidate.raw, &self.config.compile),
+                };
+                let Ok(compiled) = compiled else {
+                    continue;
+                };
+                let Some(rgba) = compiled.program.layers.iter().find_map(|layer| {
+                    layer
+                        .decls
+                        .iter()
+                        .find_map(|decl| colour_of(decl.val, self.config.tokens.as_ref()))
+                }) else {
+                    continue;
+                };
+                let range = range_of(
+                    text,
+                    hit.offset + candidate.span.0,
+                    hit.offset + candidate.span.1,
+                );
+                out.push(EngineColour { range, rgba });
+            }
+        }
+        out
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -349,6 +476,244 @@ fn engine_diagnostic(text: &str, hit: &ScanHit, diagnostic: &Diagnostic) -> Engi
         range,
         message,
         code: diagnostic.kind.code().to_string(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The colour-swatch resolution (the IR's three table-resolvable slots)
+// ---------------------------------------------------------------------------
+
+/// The swatch one declaration value resolves to — the light tier (the
+/// editor's default preview; the dark half rides the same table the
+/// hover renders). The IR's colour-carrying slots, one arm each:
+/// the baked literal ([`Val::Rgba`]), the runtime token ([`Val::Tok`],
+/// the alpha modifier riding the same premultiplied bake the token path
+/// lowers), the T1 pair slot ([`Val::ModePair`], the light half). The
+/// keyword slot ([`Val::Kw`]) stays unnamed — its row texts are CSS
+/// keywords (`transparent`, `currentColor`), not swatches; the numeric
+/// and verbatim slots are not colours at all.
+fn colour_of(val: Val, tokens: Option<&TokenTable>) -> Option<[u8; 4]> {
+    match val {
+        Val::Rgba(bytes) => Some(bytes),
+        Val::Tok { id, alpha } => {
+            let table = tokens?;
+            table.resolve_rgba(id, alpha, false).ok()
+        }
+        Val::ModePair(slot) => {
+            let table = tokens?;
+            table.pair_at(slot).map(|(light, _)| light)
+        }
+        Val::Kw(_) | Val::Px(_) | Val::Rem(_) | Val::Pct(_) | Val::Num(_) | Val::Verbatim(_) => {
+            None
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The completion sources (the compiler's own audited tables, one walk)
+// ---------------------------------------------------------------------------
+
+/// The completion for one typed fragment over the config's token table
+/// (the theme half; `None` — the theme-less boundary — completes no
+/// token). The fragment model is the method doc's: no `:` typed, the
+/// variant stack AND the utility root both answer; after a `:`, the
+/// utility half alone. The rank is assigned last — the sources emit in
+/// their canonical order, the numbering just names it.
+fn completions_for(fragment: &str, tokens: Option<&TokenTable>) -> Vec<EngineCompletion> {
+    let mut out: Vec<EngineCompletion> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    match fragment.rfind(':') {
+        // The stack is complete: the utility half answers alone.
+        Some(colon) => {
+            let util = &fragment[colon + 1..];
+            class_completions(util, tokens, &mut out, &mut seen);
+        }
+        // No `:` yet: both halves are in play (the fragment could be
+        // the stack's first segment or the root's first characters).
+        None => {
+            variant_completions(fragment, &mut out, &mut seen);
+            class_completions(fragment, tokens, &mut out, &mut seen);
+        }
+    }
+    for (rank, item) in out.iter_mut().enumerate() {
+        item.rank = rank;
+    }
+    out
+}
+
+/// The variant half: the compile crate's audited closed set, prefix-
+/// filtered. The label is the spelling alone (the editor appends the
+/// `:` it types next); the detail names the source family.
+fn variant_completions(
+    fragment: &str,
+    out: &mut Vec<EngineCompletion>,
+    seen: &mut HashSet<String>,
+) {
+    for name in KNOWN_VARIANTS {
+        if name.starts_with(fragment) && seen.insert((*name).to_string()) {
+            out.push(EngineCompletion {
+                label: (*name).to_string(),
+                detail: "variant — the folded condition's spelling".to_string(),
+                kind: EngineCompletionKind::Variant,
+                rank: 0,
+            });
+        }
+    }
+}
+
+/// The utility half: one walk over the registry rows in their canonical
+/// (sort-order) sequence, each source emitting in its own audited
+/// order. Sources, in walk order:
+///
+/// 1. the BARE roots (the root IS the class — prefix match);
+/// 2. the colour roots' theme tokens (the SAME gate the compile walk
+///    lowers colour values through — one source of truth; the source
+///    leads the keyword tables, so a name both carry renders as the
+///    theme-aware item);
+/// 3. the keyword/composite tables (root + `-` + suffix, the fragment's
+///    typed remainder filtering);
+/// 4. the audited default-step scales (the `opacity` root's own table —
+///    the one Number-scale shape the registry carries a closed table
+///    for).
+fn class_completions(
+    fragment: &str,
+    tokens: Option<&TokenTable>,
+    out: &mut Vec<EngineCompletion>,
+    seen: &mut HashSet<String>,
+) {
+    let token_names: Vec<&str> = tokens
+        .map(|table| {
+            let mut names: Vec<&str> = table.names().collect();
+            names.sort_unstable();
+            names
+        })
+        .unwrap_or_default();
+    for row in ROWS {
+        let mut arms = Vec::new();
+        flatten_kind(row.kind, &mut arms);
+        // 1. The bare roots: the fragment is the root's typed prefix.
+        if arms.iter().any(|arm| matches!(arm, ValueKind::Bare(_)))
+            && row.root.starts_with(fragment)
+            && seen.insert(row.root.to_string())
+        {
+            out.push(utility_item(row.root, row.targets));
+        }
+        // 2./3./4. The suffix spellings: the fragment already carries
+        // the root (`flex-`, `bg-pri`, `opacity-5`) — a shorter
+        // fragment keeps completing the bare roots it prefixes.
+        let Some(rest) = fragment.strip_prefix(row.root) else {
+            continue;
+        };
+        let Some(suffix) = rest.strip_prefix('-') else {
+            continue;
+        };
+        // 2. The theme tokens, through the compile walk's own colour
+        // gate: a suggested token class is a lowered token class. The
+        // source leads the row's keyword tables — a name both tables
+        // carry (`primary` rides COLOR_KEYWORDS too) renders as the
+        // theme-aware item.
+        if COLOUR_GROUPS.contains(&row.group) {
+            for name in &token_names {
+                if !name.starts_with(suffix) {
+                    continue;
+                }
+                let label = format!("{}-{}", row.root, name);
+                // The tier detail: a T1 pair names its dark half (the
+                // branch-free index the token path lowers to).
+                let dark = tokens
+                    .and_then(|table| table.id(name).map(|id| table.has_dark(id)))
+                    .unwrap_or(false);
+                if seen.insert(label.clone()) {
+                    out.push(EngineCompletion {
+                        label,
+                        detail: if dark {
+                            format!("theme token — --color-{name} · dark pair")
+                        } else {
+                            format!("theme token — --color-{name}")
+                        },
+                        kind: EngineCompletionKind::Token,
+                        rank: 0,
+                    });
+                }
+            }
+        }
+        // 3. The keyword/composite tables.
+        for arm in &arms {
+            match arm {
+                ValueKind::Keywords(table) => {
+                    for (spelling, _) in *table {
+                        if !spelling.starts_with(suffix) {
+                            continue;
+                        }
+                        let label = format!("{}-{}", row.root, spelling);
+                        if seen.insert(label.clone()) {
+                            out.push(utility_item(&label, row.targets));
+                        }
+                    }
+                }
+                ValueKind::Composite(table) => {
+                    for (spelling, _, _) in *table {
+                        if !spelling.starts_with(suffix) {
+                            continue;
+                        }
+                        let label = format!("{}-{}", row.root, spelling);
+                        if seen.insert(label.clone()) {
+                            out.push(utility_item(&label, row.targets));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        // 4. The audited default-step scale: the opacity root's own
+        // closed table (the Number scales are dynamic — every number a
+        // legal spelling — but this one the registry ships a table for,
+        // and the completion gives the audited surface its consumer).
+        if row.root == "opacity" && arms.iter().any(|arm| matches!(arm, ValueKind::Number)) {
+            for step in aeolus_data::tables::OPACITY_STEPS {
+                let spelling = step.to_string();
+                if !spelling.starts_with(suffix) {
+                    continue;
+                }
+                let label = format!("opacity-{spelling}");
+                if seen.insert(label.clone()) {
+                    out.push(utility_item(&label, row.targets));
+                }
+            }
+        }
+    }
+}
+
+/// One registry-sourced item: the detail is the row's own longhand
+/// names, the CSS surface the class lowers to.
+fn utility_item(label: &str, targets: &'static [aeolus_ir::Prop]) -> EngineCompletion {
+    let mut detail = String::from("utility — ");
+    for (index, prop) in targets.iter().enumerate() {
+        if index > 0 {
+            detail.push_str(", ");
+        }
+        detail.push_str(prop.name());
+    }
+    EngineCompletion {
+        label: label.to_string(),
+        detail,
+        kind: EngineCompletionKind::Utility,
+        rank: 0,
+    }
+}
+
+/// The `AnyOf` arms in declaration order — the value pass's own shape
+/// walk, mirrored for the completion's bare/keyword/composite reads
+/// (the compile crate's `flatten` is the original; this module's read
+/// needs the same shape).
+fn flatten_kind(kind: ValueKind, out: &mut Vec<ValueKind>) {
+    match kind {
+        ValueKind::AnyOf(inner) => {
+            for k in inner {
+                flatten_kind(*k, out);
+            }
+        }
+        k => out.push(k),
     }
 }
 
