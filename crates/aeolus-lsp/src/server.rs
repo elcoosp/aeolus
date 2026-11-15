@@ -16,12 +16,13 @@ use lsp_types::{
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentColorParams,
     DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
     FullDocumentDiagnosticReport, Hover, HoverContents, HoverProviderCapability, InitializeResult,
-    MarkupContent, MarkupKind, NumberOrString, PublishDiagnosticsParams,
-    RelatedFullDocumentDiagnosticReport, SemanticToken, SemanticTokenType, SemanticTokens,
-    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
-    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, TextDocumentPositionParams,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
-    WorkDoneProgressOptions,
+    InlayHint, InlayHintKind, InlayHintLabel, InlayHintOptions, InlayHintParams,
+    InlayHintServerCapabilities, InlayHintTooltip, MarkupContent, MarkupKind, NumberOrString,
+    PublishDiagnosticsParams, RelatedFullDocumentDiagnosticReport, SemanticToken,
+    SemanticTokenType, SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend,
+    SemanticTokensOptions, SemanticTokensParams, SemanticTokensServerCapabilities,
+    ServerCapabilities, ServerInfo, TextDocumentPositionParams, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkDoneProgressOptions,
 };
 use serde_json::Value;
 use std::str::FromStr;
@@ -339,6 +340,48 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/inlayHint" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The inline answers (LSP 3.17's inlayHint): the engine's
+            // hints are the whole document's — the params' visible range
+            // is accepted and answered document-wide (no incremental
+            // model, the pull diagnostics' own contract: the engine
+            // recomputes, the answer is always full).
+            let answer = serde_json::from_value::<InlayHintParams>(request.params)
+                .ok()
+                .map(|params| {
+                    session
+                        .engine
+                        .inlay_hints(params.text_document.uri.as_str())
+                        .iter()
+                        .map(|hint| InlayHint {
+                            position: lsp_types::Position {
+                                line: hint.position.line,
+                                character: hint.position.character,
+                            },
+                            label: InlayHintLabel::String(hint.label.clone()),
+                            // The type-annotation kind: the hint shows
+                            // what the class IS — the CSS it lowers to.
+                            kind: Some(InlayHintKind::TYPE),
+                            tooltip: Some(InlayHintTooltip::MarkupContent(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: hint.tooltip.clone(),
+                            })),
+                            text_edits: None,
+                            padding_left: None,
+                            padding_right: None,
+                            data: None,
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |hints| Some(serde_json::to_value(hints).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
         _ => Handled::default(),
     }
 }
@@ -502,13 +545,22 @@ fn respond(id: RequestId, result: Option<Value>) -> Handled {
 }
 
 /// The advertised capabilities: hover, completion, colour swatches, the
-/// semantic tokens and full-text sync. The engine never forks the
-/// pipeline, so the capability surface is the pipeline's own honesty
-/// contract at the editor.
+/// semantic tokens, the inlay hints and full-text sync. The engine never
+/// forks the pipeline, so the capability surface is the pipeline's own
+/// honesty contract at the editor.
 fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         color_provider: Some(ColorProviderCapability::Simple(true)),
+        // The inline answers (LSP 3.17): the engine's hints are final —
+        // no resolve round-trip (the completion's own contract), the
+        // label and tooltip ride the hint itself.
+        inlay_hint_provider: Some(lsp_types::OneOf::Right(
+            InlayHintServerCapabilities::Options(InlayHintOptions {
+                work_done_progress_options: WorkDoneProgressOptions::default(),
+                resolve_provider: Some(false),
+            }),
+        )),
         // The highlighter feed: the legend the delta encoding indexes —
         // a lowered candidate is the protocol's own `class`, a refused
         // one the server's custom `refused` type (an editor that does
