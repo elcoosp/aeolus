@@ -1,0 +1,7 @@
+@theme {
+  --color-primary: #0ea5e9;
+  --color-destructive: #ef4444;
+}
+:root {
+  --radius: 0.5rem;
+}
