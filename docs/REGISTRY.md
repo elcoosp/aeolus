@@ -164,6 +164,9 @@ Generated from `aeolus-data`'s committed rows — do not edit.
 | `line-through` | bare | text-decoration-line | `text-decoration` | no | utilities.ts text-decoration |
 | `no-underline` | bare | text-decoration-line | `text-decoration` | no | utilities.ts text-decoration |
 | `underline-offset` | any-of | text-underline-offset | `underline-offset` | no | utilities.ts text-underline-offset |
+| `decoration` | keywords | text-decoration-style | `decoration-style` | no | utilities.ts text-decoration-style |
+| `decoration` | any-of | text-decoration-thickness | `decoration-thickness` | no | utilities.ts text-decoration-thickness |
+| `decoration` | any-of | text-decoration-color | `decoration-color` | no | utilities.ts text-decoration-color |
 | `uppercase` | bare | text-transform | `text-transform` | no | utilities.ts text-transform |
 | `lowercase` | bare | text-transform | `text-transform` | no | utilities.ts text-transform |
 | `capitalize` | bare | text-transform | `text-transform` | no | utilities.ts text-transform |
