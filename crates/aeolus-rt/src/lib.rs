@@ -48,9 +48,8 @@ pub use aeolus_compile::{
     ContainerProbe, ContainerState, Customs, DEFAULT_DYN_CACHE_CAP, Diagnostic, DynCache, DynStore,
     Env, InterpError, InterpNote, Interped, PlanNoteKind, StructFacts, StructProbe, StyleWalk,
     TokenSource, TwoGenStore, interp, interp_containers, interp_probes, interp_probes_containers,
-    interp_struct, interp_theme, interp_theme_containers, interp_theme_probes,
-    interp_theme_probes_containers, interp_theme_struct, overlay, program_style,
-    program_style_struct, program_style_with,
+    interp_struct, interp_theme, interp_theme_containers, interp_theme_probes, interp_theme_struct,
+    overlay, program_style, program_style_with,
 };
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
