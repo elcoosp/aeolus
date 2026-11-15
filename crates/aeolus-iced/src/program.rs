@@ -134,6 +134,9 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             PlanNoteKind::GradientRow => ("background-image".to_string(), boundary.help()),
             PlanNoteKind::ShadowPreset => ("box-shadow".to_string(), boundary.help()),
             PlanNoteKind::HasFragment { inner } => (format!("has:{inner}"), boundary.help()),
+            PlanNoteKind::CompositeValue { prop, text } => {
+                (format!("{} {text}", prop.name()), boundary.help())
+            }
         };
         report.drop(what, reason);
     }
