@@ -445,3 +445,27 @@ fn descendant_and_pseudo_layers_stay_the_reported_boundary() {
         "the pseudo-element layer is reported: {report:?}"
     );
 }
+
+#[test]
+fn composite_values_are_reported_never_dropped() {
+    // The value pass's verbatim slot (the composite grammar): the sized
+    // functions and the track lists lower through the IR — and the walk
+    // carries no composite reader, so the value REPORTS (the unmapped
+    // values' own contract) instead of dropping silently.
+    let program = frozen("w-[calc(100%-2rem)] bg-primary");
+    let (style, report) = lower_program(&program, &Env::default());
+    assert!(
+        style.get(Background).is_some(),
+        "the mapped longhand beside the composite still lands"
+    );
+    let names = report
+        .dropped
+        .iter()
+        .map(|(what, _)| what)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        names.iter().any(|what| what.contains("Width")),
+        "the verbatim value is reported: {names:?}"
+    );
+}
