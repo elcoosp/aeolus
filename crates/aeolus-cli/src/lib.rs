@@ -28,10 +28,10 @@
 
 use aeolus_compile::{
     ClassKeywords, Config, ContainerBound, ContainerState, Env, RustSheet, RustStrings, SourceFile,
-    StructFacts, build as build_artifact, compile, compile_theme, emit_rust, emit_rust_theme,
-    interp_containers, interp_containers_struct, interp_struct, interp_theme,
-    interp_theme_containers, interp_theme_containers_struct, interp_theme_struct, keyword_texts,
-    scan, sort,
+    StructFacts, build as build_artifact, compile, compile_theme, emit_plan, emit_plan_theme,
+    emit_rust, emit_rust_theme, interp_containers, interp_containers_struct, interp_struct,
+    interp_theme, interp_theme_containers, interp_theme_containers_struct, interp_theme_struct,
+    keyword_texts, scan, sort,
 };
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
@@ -393,6 +393,7 @@ where
         "sort" => cmd_sort(rest, out, err),
         "expand" => cmd_expand(rest, out, err),
         "build" => cmd_build(rest, out, err),
+        "plan" => cmd_plan(rest, out, err),
         other => {
             let _ = writeln!(err, "unknown command {other:?}\n{USAGE}");
             2
@@ -423,6 +424,10 @@ struct Args {
     /// The `--empty` flag (`expand` only): the childless-element fact
     /// the `empty:` layer answers from.
     empty: bool,
+    /// The `--fail-on <mode>` finding gate (`plan`): which typed
+    /// diagnostic kinds turn the exit code 1. `None` rides the
+    /// command's own default (`plan` emits first: `none`).
+    fail_on: Option<String>,
     positional: Vec<String>,
 }
 
@@ -435,6 +440,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut containers: Vec<(String, f32)> = Vec::new();
     let mut child: Option<(usize, usize)> = None;
     let mut empty = false;
+    let mut fail_on: Option<String> = None;
     let mut positional = Vec::new();
     let mut i = 0usize;
     while i < rest.len() {
@@ -460,6 +466,28 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--json" if allow.contains(&"json") => json = true,
             "--dark" if allow.contains(&"dark") => dark = true,
             "--empty" if allow.contains(&"empty") => empty = true,
+            "--fail-on" if allow.contains(&"fail-on") => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) if matches!(v.as_str(), "unknown" | "unsupported" | "any" | "none") => {
+                        fail_on = Some(v.clone());
+                    }
+                    Some(v) => {
+                        let _ = writeln!(
+                            err,
+                            "--fail-on takes unknown|unsupported|any|none, got {v:?}"
+                        );
+                        return None;
+                    }
+                    None => {
+                        let _ = writeln!(
+                            err,
+                            "--fail-on needs a value (unknown|unsupported|any|none)"
+                        );
+                        return None;
+                    }
+                }
+            }
             "--child" if allow.contains(&"child") => {
                 i += 1;
                 let Some(value) = rest.get(i) else {
@@ -537,6 +565,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         containers,
         child,
         empty,
+        fail_on,
         positional,
     })
 }
@@ -566,7 +595,12 @@ fn report_warnings(warnings: &[Warning], err: &mut dyn Write) {
 /// as a usage error, never guessed). The source resolves into the
 /// runtime tier (the T2 table the plan's dynamic lane uses — the same
 /// construction the emit arms' own doctests build).
-fn token_table_or_report(spec: &str, err: &mut dyn Write) -> Option<TokenTable> {
+/// Resolve a `--theme` spec to the V1 theme pass's CSS-first source:
+/// the built-in `shadcn`/`shadcn-dark` sources or a theme CSS file.
+/// The `default` spec is the v0.x lane's own theme — the V1 pass has
+/// no source for it, and the typed refusal says so. Errors report to
+/// `err` and return `None` (the caller's exit-2 path).
+fn theme_source_or_report(spec: &str, err: &mut dyn Write) -> Option<ThemeSource> {
     let source = match spec {
         "shadcn" => ThemeSource::shadcn().expect("the built-in shadcn source parses"),
         "shadcn-dark" => {
@@ -575,7 +609,7 @@ fn token_table_or_report(spec: &str, err: &mut dyn Write) -> Option<TokenTable> 
         "default" => {
             let _ = writeln!(
                 err,
-                "error: explain's --theme accepts shadcn | shadcn-dark | <path> (default has no V1 source)"
+                "error: the V1 theme pass accepts shadcn | shadcn-dark | <path> (default has no V1 source)"
             );
             return None;
         }
@@ -593,7 +627,32 @@ fn token_table_or_report(spec: &str, err: &mut dyn Write) -> Option<TokenTable> 
             }
         },
     };
+    Some(source)
+}
+
+/// The V1 theme table `explain`/`build` lower through: the RUNTIME
+/// tiering, where the T2 token slots keep their var() references (the
+/// interp arm's runtime lane; the CSS arm's rules reference the vars
+/// block the artifact itself carries).
+fn token_table_or_report(spec: &str, err: &mut dyn Write) -> Option<TokenTable> {
+    let source = theme_source_or_report(spec, err)?;
     match TokenTable::runtime(&source) {
+        Ok(table) => Some(table),
+        Err(e) => {
+            let _ = writeln!(err, "error: token table: {e}");
+            None
+        }
+    }
+}
+
+/// The V1 theme table `plan` lowers through: the BAKED tiering, the
+/// bridge's own colour story — the baked sRGB values convert through
+/// the audited `aeolus_core::Color` parser into the v0.x plan's Oklab
+/// slots (the differential battery's half; a runtime table's var()
+/// references have no plan answer).
+fn token_table_baked_or_report(spec: &str, err: &mut dyn Write) -> Option<TokenTable> {
+    let source = theme_source_or_report(spec, err)?;
+    match TokenTable::baked(&source) {
         Ok(table) => Some(table),
         Err(e) => {
             let _ = writeln!(err, "error: token table: {e}");
@@ -1197,6 +1256,135 @@ fn cmd_build(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     i32::from(fails > 0)
 }
 
+/// `plan` (the plan bridge's consumer face — architecture §7's
+/// migration seam, the V1 pipeline's [`Target::Plan`](aeolus_compile)
+/// arm): lower a class string through the V1 pipeline into the v0.x
+/// [`StylePlan`] the five backend crates consume, and print the SAME
+/// canonical snapshot JSON `resolve` emits. The two generations share
+/// the artifact: `plan --theme shadcn` and `resolve --theme shadcn`
+/// answer the same string in the same portable shape, one lane per
+/// compiler.
+///
+/// The honest channels mirror `explain`/`build`: every per-class miss
+/// rides stderr as the typed, coded diagnostic the pipeline reports,
+/// and every longhand that lowered into the IR but has no v0.x slot
+/// rides as the plan arm's typed note (never a silent drop — the note
+/// is the boundary channel, it reports and never fails). `--fail-on`
+/// maps the diagnostics' kinds onto the check-style exit codes (the
+/// default stays `none`: the emit-first semantics `build` has, the
+/// artifact is still printed). `--summary` renders the slot summary,
+/// `--json` embeds the snapshot plus both report arrays in one object.
+/// Without `--theme` the colour tokens stay typed boundaries — the
+/// pipeline's honest default, the same one `explain` and `build` have.
+fn cmd_plan(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    #[cfg(feature = "tracing")]
+    let _plan_span = tracing::debug_span!("aeolus_plan").entered();
+    let Some(args) = parse_flags(rest, err, &["theme", "summary", "json", "fail-on"]) else {
+        return 2;
+    };
+    if args.positional.is_empty() {
+        let _ = writeln!(err, "plan needs a class string\n{USAGE}");
+        return 2;
+    }
+    let classes = args.positional.join(" ");
+    let config = Config::default();
+    let sheet = if args.theme_given {
+        let Some(table) = token_table_baked_or_report(&args.theme, err) else {
+            return 2;
+        };
+        emit_plan_theme(&classes, &table, &config)
+    } else {
+        emit_plan(&classes, &config)
+    };
+    let sheet = match sheet {
+        Ok(sheet) => sheet,
+        // The pipeline's only hard error: empty input (per-class misses
+        // ride the sheet as diagnostics, never this arm).
+        Err(e) => {
+            let _ = writeln!(err, "error: {e}");
+            return 2;
+        }
+    };
+
+    // The two honest channels on stderr: the per-class misses as the
+    // coded diagnostics (the `explain` shape), the boundary longhands
+    // as the typed notes (the plan arm's own Display carries the code).
+    for diagnostic in &sheet.diagnostics {
+        let _ = writeln!(err, "error: {diagnostic} [{}]", diagnostic.kind.code());
+    }
+    for note in &sheet.notes {
+        let _ = writeln!(err, "note: {note}");
+    }
+
+    // The artifact: the canonical snapshot JSON by default, the slot
+    // summary under --summary, or the full envelope under --json (the
+    // snapshot embedded verbatim — it IS the plan object — plus both
+    // report arrays).
+    if args.json {
+        let diagnostics: Vec<String> = sheet
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                format!(
+                    "{{\"raw\":\"{}\",\"code\":\"{}\",\"message\":\"{}\"}}",
+                    json_escape(&diagnostic.raw),
+                    diagnostic.kind.code(),
+                    json_escape(&diagnostic.to_string())
+                )
+            })
+            .collect();
+        let notes: Vec<String> = sheet
+            .notes
+            .iter()
+            .map(|note| {
+                format!(
+                    "{{\"raw\":\"{}\",\"code\":\"{}\",\"message\":\"{}\"}}",
+                    json_escape(&note.raw),
+                    note.kind.code(),
+                    json_escape(&note.to_string())
+                )
+            })
+            .collect();
+        let _ = writeln!(
+            out,
+            "{{\"plan\":{},\"diagnostics\":[{}],\"notes\":[{}]}}",
+            sheet.plan.to_snapshot_json(),
+            diagnostics.join(","),
+            notes.join(",")
+        );
+    } else if args.summary {
+        write_summary(out, &sheet.plan);
+    } else {
+        // The default artifact IS the snapshot: the same portable,
+        // canonical JSON document `resolve` prints.
+        let _ = writeln!(out, "{}", sheet.plan.to_snapshot_json());
+    }
+
+    // The fail-on gate keys on the DIAGNOSTICS' kinds (the same typed
+    // mapping `build` applies); notes are the boundary channel — they
+    // reported above, they never fail.
+    let fails = match args.fail_on.as_deref().unwrap_or("none") {
+        "none" => 0,
+        "any" => sheet.diagnostics.len(),
+        "unknown" => sheet
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                finding_kind_of_code(diagnostic.kind.code()) == FindingKind::Unknown
+            })
+            .count(),
+        "unsupported" => sheet
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                finding_kind_of_code(diagnostic.kind.code()) == FindingKind::Unsupported
+            })
+            .count(),
+        _ => 0,
+    };
+    i32::from(fails > 0)
+}
+
 fn cmd_resolve(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     let Some(args) = parse_flags(rest, err, &["theme", "summary", "json"]) else {
         return 2;
@@ -1592,22 +1780,30 @@ USAGE:
                                                              lint class strings in sources
   aeolus explain [--theme <spec>] <classes...>               per-class Rust tokens (the emit (a) arm)
   aeolus sort    [--json] <classes...>                       registry-order class sort (the §5.5 parity line)
-  aeolus expand  [--theme <spec>] [--dark] [--container name=rem] [--json] <classes...>
+  aeolus expand  [--theme <spec>] [--dark] [--container name=rem] [--child i/n] [--empty] [--json] <classes...>
                                                              effective declarations (the interp (c) arm);
                                                              --container names the bounds the named
-                                                             @container layers resolve from
+                                                             @container layers resolve from, --child/--empty
+                                                             carry the structural facts the first:/last:/odd:/
+                                                             even:/only:/nth-*:/empty: layers answer from
   aeolus build   [--theme <spec>] [--out <path>] [--fail-on <mode>] [--json] <files/dirs...>
                                                              one stylesheet for the whole project
                                                              (scan → dedupe → registry-ordered rules
                                                              + the :root/.dark vars block)
+  aeolus plan    [--theme <spec>] [--summary] [--json] [--fail-on <mode>] <classes...>
+                                                             the V1 lane's plan bridge (§7): the v0.x plan
+                                                             the backends consume, as the same snapshot
+                                                             JSON `resolve` prints; slot-boundary notes
+                                                             and per-class misses report on stderr
 
 THEME: shadcn (default) | shadcn-dark | default | <path-to-css>
-       (`explain`/`build` accept shadcn | shadcn-dark | <path> — the V1 theme pass;
-       without --theme, build keeps the colour tokens as typed boundaries)
+       (`explain`/`build`/`plan` accept shadcn | shadcn-dark | <path> — the V1 theme pass;
+       without --theme, build/plan keep the colour tokens as typed boundaries)
        (`check` reads a --theme CSS path's @source registrations (§5.4): inline
        candidates join the lint, walked paths join the scan set relative to the
        theme CSS's directory, `not` paths prune the registrations — a file the
        operator passed explicitly survives the prune)
-FAIL-ON: unknown (default) | unsupported | conflict | any | none
+FAIL-ON: unknown | unsupported | conflict (check only) | any | none
+         (default: check unknown; build/plan none)
 EXIT: 0 success · 1 findings · 2 usage/theme/IO error
 ";
