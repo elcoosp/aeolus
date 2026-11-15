@@ -214,7 +214,7 @@ fn arm_to_decls(
             let pct = if negative { -pct } else { pct };
             Ok(fan(targets, Val::Pct(pct)))
         }
-        ValueKind::Number => {
+        ValueKind::Number | ValueKind::PositiveInt => {
             let mut n = parse_num(suffix.unwrap_or_default())?;
             if negative {
                 n = -n;
@@ -601,6 +601,10 @@ pub(crate) const NUMBER_FORMS: &[(&str, NumForm, Option<&str>)] = &[
     ("ring", NumForm::Px, None),
     ("ring-offset", NumForm::Px, None),
     ("underline-offset", NumForm::Px, None),
+    // The decoration family's thickness scale (the §3.7 typography
+    // surface's decoration half): the bare non-negative integers are
+    // the v4 `isPositiveInteger` pixel form (`decoration-2` → `2px`).
+    ("decoration", NumForm::Px, None),
     ("rotate", NumForm::Deg, None),
     ("scale", NumForm::Pct, None),
     ("scale-x", NumForm::Pct, None),
@@ -887,7 +891,7 @@ fn arm_to_css(
             let pct = if negative { -pct } else { pct };
             Ok(fan_css(targets, &format!("{pct}%"), false))
         }
-        ValueKind::Number => {
+        ValueKind::Number | ValueKind::PositiveInt => {
             let mut n = parse_num(suffix.unwrap_or_default())?;
             if negative {
                 n = -n;
@@ -1302,12 +1306,14 @@ mod tests {
     fn has_number_arm(kind: ValueKind) -> bool {
         let mut arms = Vec::new();
         flatten(kind, &mut arms);
-        arms.iter().any(|k| matches!(k, ValueKind::Number))
+        arms.iter()
+            .any(|k| matches!(k, ValueKind::Number | ValueKind::PositiveInt))
     }
 
-    /// Every registry row that lowers `Number` values must have its root
-    /// in [`NUMBER_FORMS`] — a new Number row without a render form is a
-    /// test failure here, never a guessed unit at render time.
+    /// Every registry row that lowers `Number`/`PositiveInt` values must
+    /// have its root in [`NUMBER_FORMS`] — a new number row without a
+    /// render form is a test failure here, never a guessed unit at
+    /// render time.
     #[test]
     fn every_number_row_has_a_render_form() {
         for row in ROWS {
