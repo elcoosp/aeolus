@@ -282,6 +282,20 @@ fn arbitrary_val_decls(
         ArbVal::Rem(v) => Ok(fan(targets, Val::Rem(flip(v, negative)))),
         ArbVal::Pct(v) => Ok(fan(targets, Val::Pct(flip(v, negative)))),
         ArbVal::Num(v) => Ok(fan(targets, Val::Num(flip(v, negative)))),
+        ArbVal::Verbatim { text } => {
+            // The composite grammar's verbatim slot: the decoded text
+            // interns into the leak pool the IR documents (the
+            // conds' own storage discipline). The negative flag has no
+            // composite form — the scalars flip their number, the text
+            // carries its own signs.
+            if negative {
+                return Err(Reject::Value {
+                    reason: arbitrary::REASON_ARBITRARY_COMPOSITE_NEGATIVE,
+                });
+            }
+            let interned: &'static str = Box::leak(text.into_boxed_str());
+            Ok(fan(targets, Val::Verbatim(interned)))
+        }
     }
 }
 
@@ -954,6 +968,19 @@ fn arbitrary_val_css(
             &filter_arbitrary_text(row.root, &num_text(flip(v, negative))),
             false,
         )),
+        ArbVal::Verbatim { text } => {
+            // The composite grammar's CSS half: the decoded text IS the
+            // declaration value (v4's own arbitrary contract — the
+            // author owns the CSS validity). The negative flag refuses
+            // on the IR half; the CSS walk refuses identically so the
+            // two channels' diagnostics stay equal.
+            if negative {
+                return Err(Reject::Value {
+                    reason: arbitrary::REASON_ARBITRARY_COMPOSITE_NEGATIVE,
+                });
+            }
+            Ok(fan_css(targets, &text, false))
+        }
     }
 }
 
@@ -1161,9 +1188,12 @@ fn token_css(
                 dark: Some(rgba_text(dark)),
             }
         }
-        // The colour path only resolves colour-form values; a numeric
-        // or keyword escape is lowering drift, typed not rendered.
-        Ok(Val::Px(_) | Val::Rem(_) | Val::Pct(_) | Val::Num(_) | Val::Kw(_)) => {
+        // The colour path only resolves colour-form values; a numeric,
+        // keyword or verbatim escape is lowering drift, typed not
+        // rendered.
+        Ok(
+            Val::Px(_) | Val::Rem(_) | Val::Pct(_) | Val::Num(_) | Val::Kw(_) | Val::Verbatim(_),
+        ) => {
             return Err(Reject::Value {
                 reason: REASON_SHAPE_MISMATCH,
             });
