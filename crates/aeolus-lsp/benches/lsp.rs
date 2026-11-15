@@ -74,6 +74,27 @@ fn document_colours_walk(bencher: Bencher) {
     bencher.bench(|| lsp.document_colours("file:///card.rs"));
 }
 
+/// The highlighter path (LSP 3.16's semanticTokens/full): the
+/// per-candidate compile walk classifying every candidate's outcome —
+/// the same shape the colour walk rides, the classification the
+/// diagnostics list's emptiness.
+#[divan::bench]
+fn semantic_tokens_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    bencher.bench(|| lsp.semantic_tokens("file:///card.rs"));
+}
+
+/// The picker path (the colorProvider capability's paired
+/// colorPresentation request): the config's table walked backwards —
+/// the colour-group rows × the token names × the audited opacity steps,
+/// the exact resolve matching the requested bytes.
+#[divan::bench]
+fn colour_presentations_walk(bencher: Bencher) {
+    let lsp = AeolusEngine::new(EngineConfig::default());
+    bencher.bench(|| lsp.colour_presentations([93, 90, 208, 255]));
+}
+
 /// The pull path (LSP 3.17's documentDiagnostic): the client's
 /// on-demand recompute through the state machine — initialize and
 /// didOpen once, then the request per iteration (the params parse, the
