@@ -2866,14 +2866,23 @@ impl Resolver<'_> {
             | "columns" | "break" | "box" | "container" | "origin" | "perspective"
             | "transform" | "snap" | "forced" | "print" | "field-sizing" | "mask" | "filter"
             | "sr" | "not-sr" | "accent" | "appearance" | "resize" | "touch" | "will-change"
-            | "fill" | "stroke" | "decoration" | "align" | "vertical" | "list" | "hyphens"
-            | "antialiased" | "subpixel" | "ordinal-fake" | "isolate" | "outline-hidden"
-            | "has" | "group" | "peer" | "not" | "supports" | "min" | "max" | "clamp" | "fit" => {
+            | "fill" | "stroke" | "align" | "vertical" | "list" | "hyphens" | "antialiased"
+            | "subpixel" | "ordinal-fake" | "isolate" | "outline-hidden" | "has" | "group"
+            | "peer" | "not" | "supports" | "min" | "max" | "clamp" | "fit" => {
                 let _ = head;
                 Err(unsupported(
                     "utility family is outside the typed v0.2 table",
                 ))
             }
+            // The decoration family: the V1 pipeline lowers it (the
+            // registry's `decoration-{color,thickness,style}` rows) and
+            // the v0.x plan shape is the typed limit — the bridge's
+            // `SlotUnsupported` notes carry it (plan §7). The arm keeps
+            // its own message so the oracle's refusal names the lane
+            // that works instead of the generic catch-all.
+            "decoration" => Err(unsupported(
+                "decoration-{color,thickness,style} lower through the V1 pipeline (aeolus_compile::compile); the v0.x plan shape carries the line slot only — the plan bridge reports the rest (plan §7)",
+            )),
 
             _ => Err(unknown(suggest(head, self.theme))),
         }
