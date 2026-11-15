@@ -234,6 +234,18 @@ pub fn collision_group(t: &ClassToken<'_>) -> Option<&'static str> {
         ["italic" | "not-italic"] => "font-style",
         ["uppercase" | "lowercase" | "capitalize" | "normal-case"] => "text-transform",
         ["underline" | "overline" | "line-through" | "no-underline"] => "text-decoration",
+        // The decoration family (v4's own property split): the style
+        // keywords, the thickness keywords/numbers and the colours are
+        // THREE separate properties that COEXIST (`decoration-2
+        // decoration-red-500` keeps both — the per-longhand split), each
+        // group self-conflicting (`decoration-2 decoration-4` → 4).
+        [
+            "decoration",
+            "solid" | "double" | "dotted" | "dashed" | "wavy",
+        ] => "decoration-style",
+        ["decoration", "auto" | "from-font"] => "decoration-thickness",
+        ["decoration", v, ..] if v.parse::<f32>().is_ok() => "decoration-thickness",
+        ["decoration", ..] => "decoration-color",
         ["align", ..] => "vertical-align",
         _ => return None,
     })
