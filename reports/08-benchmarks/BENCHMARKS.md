@@ -442,24 +442,35 @@ probe table is a small linear scan.
 
 ## LSP engine run (2026-11-15, release profile, divan 0.1.21)
 
-The editor surface's three per-keystroke paths and the didOpen swatch
-walk (`crates/aeolus-lsp/benches/lsp.rs`), over the synthetic .rs
-fixture document (two lowered strings + one unknown root — the same
-fixture the completion's token fragment rides). The completion number
-is the fragment at the typing edge (`bg-pri` inside the second string):
-the registry walk over the rows' audited tables plus the theme tokens
-through the colour gate, the answer ranked and deduped.
+The editor surface's per-keystroke paths and the didOpen walks
+(`crates/aeolus-lsp/benches/lsp.rs`), over the synthetic .rs fixture
+document (two lowered strings + one unknown root — the same fixture the
+completion's token fragment rides). The completion number is the
+fragment at the typing edge (`bg-pri` inside the second string): the
+registry walk over the rows' audited tables plus the theme tokens
+through the colour gate, the answer ranked and deduped. The recorded
+run answers the whole state machine's request battery beside the engine
+walks (the pull path rides the params parse → analyze → wire mapping →
+report serialization shape).
 
 | benchmark | median | note |
 |---|---|---|
-| `analyze_document` | **213.9 µs** | the full diagnostics publish over the fixture (the extraction seam through the compile walk, per-position UTF-16 translation) |
-| `completion_fragment` | **17.9 µs** | the typing-edge completion (`bg-pri`): bare roots + keyword tables + theme tokens + the closed variant set, ranked |
-| `document_colours_walk` | **4.29 µs** | the didOpen swatch walk (the per-candidate compile resolving the IR's colour slots) |
-| `hover_resolved_class` | **4.13 µs** | the per-cursor-move hover resolution (baseline) |
+| `analyze_document` | **224.2 µs** | the full diagnostics publish over the fixture (the extraction seam through the compile walk, per-position UTF-16 translation) |
+| `completion_fragment` | **19.2 µs** | the typing-edge completion (`bg-pri`): bare roots + keyword tables + theme tokens + the closed variant set, ranked |
+| `inlay_hints_walk` | **11.6 µs** | the didOpen hint walk (the per-candidate compile rendering the CSS arm's declarations compactly — five candidates, two lowered hints + the refusal boundary) |
+| `semantic_tokens_walk` | **5.0 µs** | the highlighter feed (the per-candidate compile classifying the legend) |
+| `document_diagnostics_pull` | **5.0 µs** | the client's on-demand recompute through the state machine (params parse, analyze, wire mapping, report serialization) |
+| `document_colours_walk` | **4.7 µs** | the didOpen swatch walk (the per-candidate compile resolving the IR's colour slots) |
+| `hover_resolved_class` | **4.3 µs** | the per-cursor-move hover resolution (baseline) |
+| `colour_presentations_walk` | **484.6 µs** | the picker's table walk (the resolves once per token × opacity step — the open picker's cost, not a per-keystroke one) |
 
-Verdict: the completion's ~18 µs is the row-walk cost (213 rows' tables
+Verdict: the completion's ~19 µs is the row-walk cost (213 rows' tables
 + the token table's names, per keystroke, no cache) — an order under
 any editor's perceived latency, and the rank/dedupe rides the same
-walk; the swatch walk is the per-candidate compile's own cost (four
-classes, one compile each) and lands at the hover baseline. Absolute
-numbers are environment-specific; the ratios are the point.
+walk; the hint walk adds the CSS arm's render to the per-candidate
+compile (11.6 µs, still an order under the editor's own framing
+budget); the swatch and highlighter walks are the per-candidate
+compile's own cost (four classes, one compile each) and land at the
+hover baseline. Absolute numbers are environment-specific; the ratios
+are the point.
+
