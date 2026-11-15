@@ -61,6 +61,20 @@ divan = "0.1"
 name = "compile"
 harness = false
 
+# The composite grammar's benchmarks (the value pass's verbatim slot):
+# the kind-gated compile walk beside the floor, the verbatim CSS rule
+# text and the composite-mixed interp.
+[[bench]]
+name = "composites"
+harness = false
+
+# The grid auto-flow family's benchmarks (the §3.7 grid row's auto-flow
+# half): the keyword walk beside the floor, the value-form CSS emit and
+# the flow-mixed interp.
+[[bench]]
+name = "grid_flow"
+harness = false
+
 # The CSS emit arm's benchmarks (the Target half's first artifact form).
 [[bench]]
 name = "css"
