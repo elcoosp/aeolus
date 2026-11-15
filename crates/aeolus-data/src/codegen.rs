@@ -74,7 +74,7 @@ pub fn artifacts() -> &'static [&'static dyn GeneratedArtifact] {
 
 /// The generated roots index — the registry read side's fast path.
 ///
-/// The rows' distinct roots (154 of them over 178 rows) become a
+/// The rows' distinct roots (182 of them over 213 rows) become a
 /// seeded-FNV open-addressed hash table: generation searches seeds
 /// from 0 upward for the first whose maximum displacement stays within
 /// the emitted probe bound (the lowest such seed — deterministic), and
