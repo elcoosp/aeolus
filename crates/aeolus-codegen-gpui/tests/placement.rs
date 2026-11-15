@@ -104,9 +104,14 @@ fn the_conformance_report_reads_the_same_tables() {
             "{prop:?} left the refused tier"
         );
     }
-    // The ring family is still the whole polyfill tier (the report's
-    // own documented pin).
-    assert_eq!(report.polyfill().len(), 4, "the ring family's four slots");
+    // The polyfill tier is the ring family's four slots plus the
+    // filter row's landed polyfill half (the report's own documented
+    // pin — see `emit.rs`'s tier split).
+    assert_eq!(
+        report.polyfill().len(),
+        13,
+        "ring's four + the filter tier's nine"
+    );
 }
 
 #[test]
