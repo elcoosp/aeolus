@@ -9,7 +9,7 @@ manifest), nightly used only for the sanitizers.
 | # | step | result |
 |---|---|---|
 | 1 | `cargo test --workspace` | **87 passed / 0 failed** (was 62 at baseline) |
-| 2 | `cargo test --workspace --all-features` | green (workspace declares no feature flags beyond macro `verbose-diagnostics`, which is additive) |
+| 2 | `cargo test --workspace --all-features` | green (the feature flags are all additive: macro `verbose-diagnostics`, and the optional `tracing` / `miette` deps on cli/compile/data/theme — no default-off behaviour hides behind them) |
 | 3 | `cargo clippy --workspace --all-targets -- -D warnings` | green, zero warnings |
 | 4 | `cargo fmt --check` | clean |
 | 5 | `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` | green |
