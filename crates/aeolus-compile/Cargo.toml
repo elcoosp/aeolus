@@ -75,6 +75,13 @@ harness = false
 name = "grid_flow"
 harness = false
 
+# The wider v4 hint table's benchmarks (the value pass's hint line):
+# the hinted battery beside the floor, the unit-form CSS emit and the
+# hint-mixed interp.
+[[bench]]
+name = "hints"
+harness = false
+
 # The CSS emit arm's benchmarks (the Target half's first artifact form).
 [[bench]]
 name = "css"
