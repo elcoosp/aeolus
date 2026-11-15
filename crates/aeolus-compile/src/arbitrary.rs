@@ -179,8 +179,11 @@ pub(crate) const REASON_ARBITRARY_UNIT: &str = "the arbitrary value does not fit
 
 pub(crate) const REASON_ARBITRARY_HINT: &str = "the type hint does not match the value (length: takes px/rem \
      and the sized functions, percentage: a %, number: a unitless decimal, color: a colour, url:/image: \
-     an image value on the image rows, ratio: an n/d form on the aspect row), or names a type no row \
-     kind carries (angle/time/position/family-name and friends have no slot to lower into)";
+     an image value on the image rows, ratio: an n/d form on the aspect row, angle: a deg spelling on \
+     the degree rows, time: an ms/s spelling on the millisecond rows, position: a position form on the \
+     object-position row, family-name:/generic-name: a family on the font-family row, \
+     absolute-size:/relative-size: a size keyword on the font-size row, string: a quoted string on the \
+     content root)";
 
 pub(crate) const REASON_ARBITRARY_PROPERTY: &str = "the bracket names a PROPERTY ([mask-type:luminance] form), not a \
      value: the registry row already names the property, and the arbitrary-property form is the codegen \
@@ -257,11 +260,52 @@ pub(crate) const EXTRA_SCALAR_GROUPS: &[&str] =
 /// [`EXTRA_SCALAR_GROUPS`] for the why).
 pub(crate) const FONT_SIZE_ONLY: &[Prop] = &[Prop::FontSize];
 
+/// The content root's arbitrary fan: the `string:` hint's value is the
+/// CSS `content` property (the pseudo-element paint), NOT the root's
+/// keyword half — `content-center` stays `AlignContent` (the group the
+/// tw_merge oracle names), the string form routes to the new longhand.
+pub(crate) const CONTENT_ONLY: &[Prop] = &[Prop::Content];
+
+/// The hint-eligible conflict groups, per hint — the registry's own
+/// tw_merge group names are the oracle (the [`COLOUR_GROUPS`] audit
+/// pattern). A hint lowers onto the rows whose group carries the
+/// shape; everywhere else it is the silent sibling-row skip.
+///
+/// `position:` — the object-position row (the one position-shape
+/// longhand; background-position has no registry row, its classes
+/// refuse through the catch-all).
+pub(crate) const POSITION_GROUPS: &[&str] = &["object-position"];
+
+/// `family-name:`/`generic-name:` — the font-family row (the weight
+/// sibling shares the root and refuses silently: a family is not a
+/// weight).
+pub(crate) const FAMILY_GROUPS: &[&str] = &["font-family"];
+
+/// `absolute-size:`/`relative-size:` — the font-size row's arbitrary
+/// fan (the v4.1 size keywords are font-size values).
+pub(crate) const SIZE_KEYWORD_GROUPS: &[&str] = &["font-size"];
+
+/// `string:` — the content root (the row's own group name stays the
+/// oracle's `align-content`; the STRING value routes to the CSS
+/// `content` property through [`CONTENT_ONLY`], v4's own reading).
+pub(crate) const STRING_ROOTS: &[&str] = &["content"];
+
+/// Does the row's number form render milliseconds? The emitter's
+/// `NUMBER_FORMS` table is the oracle (`duration`, `delay`) — the
+/// `time:` hint's own gate (the [`deg_row`] pattern).
+pub(crate) fn time_row(root: &str) -> bool {
+    crate::lower::NUMBER_FORMS
+        .iter()
+        .any(|&(r, form, _)| r == root && form == crate::lower::NumForm::Ms)
+}
+
 /// The arbitrary fan-out for one row: the override for the font-size
 /// row, the row's own targets otherwise.
 pub(crate) fn targets_of(row: &UtilityRow) -> &'static [Prop] {
     if EXTRA_SCALAR_GROUPS.contains(&row.group) && row.group == "font-size" {
         FONT_SIZE_ONLY
+    } else if STRING_ROOTS.contains(&row.root) {
+        CONTENT_ONLY
     } else {
         row.targets
     }
@@ -418,9 +462,61 @@ fn classify_hinted(
                 row,
             );
         }
-        // The rest of the v4 hint table: no row kind carries them
-        // (angle/time/position/family-name/generic-name/absolute-size/
-        // relative-size/string) — typed, named.
+        // The angle hint: a `deg` spelling on the degree rows — the
+        // free grammar's own gate (the `deg_row` oracle; the Num slot
+        // IS the degree form). rad/grad/turn have no IR slot: the
+        // typed hint mismatch, never a conversion the bytes cannot
+        // name.
+        "angle" => {
+            let Some(n) = value.strip_suffix("deg") else {
+                return Err(hint_mismatch());
+            };
+            if !deg_row(row.root) {
+                return Err(ArbRejection::NotThisRow);
+            }
+            ArbVal::Num(parse_num(n)?)
+        }
+        // The time hint: an ms/s spelling on the millisecond rows —
+        // the slots ARE milliseconds (the motion layer's number form),
+        // so `s` bakes ×1000 (one exact multiply).
+        "time" => {
+            let ms = if let Some(n) = value.strip_suffix("ms") {
+                parse_num(n)?
+            } else if let Some(n) = value.strip_suffix('s') {
+                parse_num(n)? * 1000.0
+            } else {
+                return Err(hint_mismatch());
+            };
+            if !time_row(row.root) {
+                return Err(ArbRejection::NotThisRow);
+            }
+            ArbVal::Num(ms)
+        }
+        // The verbatim hints: the decoded text IS the value (the
+        // composite slot's own contract — the underscores are spaces,
+        // the author owns the CSS validity), gated to the rows whose
+        // slots carry the shape (the group tables above). A miss is
+        // the silent sibling-row skip — another row of the root may
+        // take the class; the run's catch-all renders one boundary
+        // when none did.
+        "position" | "family-name" | "generic-name" | "absolute-size" | "relative-size"
+        | "string" => {
+            let eligible = match hint {
+                "position" => POSITION_GROUPS.contains(&row.group),
+                "family-name" | "generic-name" => FAMILY_GROUPS.contains(&row.group),
+                "absolute-size" | "relative-size" => SIZE_KEYWORD_GROUPS.contains(&row.group),
+                _ => STRING_ROOTS.contains(&row.root),
+            };
+            if !eligible {
+                return Err(ArbRejection::NotThisRow);
+            }
+            return Ok(ArbVal::Verbatim {
+                text: decode_underscores(value),
+            });
+        }
+        // The drift arm: the lexer's HINTS table is the one source of
+        // truth — a hint added there but not here lands on this typed
+        // refusal until the value pass learns it.
         _ => {
             return Err(ArbRejection::Boundary {
                 reason: REASON_ARBITRARY_HINT,
@@ -462,6 +558,28 @@ fn classify_free(
         );
     }
 
+    // The quoted-string form: v4's own content spelling
+    // (`content-["hello_world"]`) — the CSS `content` property takes a
+    // string, the quotes riding the value as typed (the underscores
+    // decode inside the quotes). The branch leads the composite walk:
+    // an underscore join inside a string is the string's own space,
+    // never a track list. Other roots keep the unit grammar's boundary
+    // (the family names ride the `family-name:` hint, the explicit
+    // contract).
+    if value.len() >= 2
+        && ((value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\'')))
+    {
+        if STRING_ROOTS.contains(&row.root) {
+            return Ok(ArbVal::Verbatim {
+                text: decode_underscores(value),
+            });
+        }
+        // Not a string row: the walk continues — the quoted text hits
+        // the same typed boundaries it always did (never a guessed
+        // slot).
+    }
+
     // The composite grammar: the sized functions, the track lists, the
     // image functions and the bare ratios — the verbatim slot's
     // kind-gated forms. `None` = not a composite candidate; the unit
@@ -495,6 +613,27 @@ fn classify_free(
     } else if let Some(n) = value.strip_suffix("deg") {
         if deg_row(row.root) {
             ArbVal::Num(parse_num(n)?)
+        } else {
+            return Err(ArbRejection::Boundary {
+                reason: REASON_ARBITRARY_UNIT,
+            });
+        }
+    } else if let Some(n) = value.strip_suffix("ms") {
+        // ms on the millisecond rows — the `deg_row` pattern: the
+        // row's number form IS the unit's oracle (the motion layer's
+        // slots are milliseconds).
+        if time_row(row.root) {
+            ArbVal::Num(parse_num(n)?)
+        } else {
+            return Err(ArbRejection::Boundary {
+                reason: REASON_ARBITRARY_UNIT,
+            });
+        }
+    } else if let Some(n) = value.strip_suffix('s') {
+        // s on the millisecond rows: ×1000 (one exact multiply — the
+        // slots are ms, the `time:` hint's own bake).
+        if time_row(row.root) {
+            ArbVal::Num(parse_num(n)? * 1000.0)
         } else {
             return Err(ArbRejection::Boundary {
                 reason: REASON_ARBITRARY_UNIT,
@@ -679,7 +818,7 @@ fn balanced(value: &str) -> bool {
 /// The v4 underscore grammar: `_` is a space, `\_` a literal underscore.
 /// The custom-property names never reach here (the var branch leads the
 /// free walk), so the decode cannot corrupt a `--name`.
-fn decode_underscores(text: &str) -> String {
+pub(crate) fn decode_underscores(text: &str) -> String {
     if !text.contains('_') {
         return text.to_string();
     }
