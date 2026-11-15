@@ -293,3 +293,46 @@ fn the_conformance_seam_reads_the_capability_tables() {
         ]
     );
 }
+
+#[test]
+fn the_composite_values_stay_the_reported_gpui_boundary() {
+    // The value pass's verbatim slot (the composite grammar): the sized
+    // functions, the track lists and the image functions lower through
+    // the pipeline's typed IR — and the GPUI lane refuses the decl per
+    // value, the honest boundary the diagnostics render (the CSS arm
+    // carries the verbatim rule text, the interp answers under any env).
+    let err = lower_class("w-[calc(100%-2rem)]", &Config::default()).unwrap_err();
+    assert!(
+        err.unsupported
+            .iter()
+            .any(|entry| entry.prop == Prop::Width),
+        "the verbatim width in the refusal report: {err:?}"
+    );
+    let err = lower_class("grid-cols-[auto_1fr_auto]", &Config::default()).unwrap_err();
+    assert!(
+        err.unsupported
+            .iter()
+            .any(|entry| entry.prop == Prop::GridTemplateColumns),
+        "the verbatim track list in the refusal report: {err:?}"
+    );
+
+    // The per-decl gate refuses the program the same way (the val-keyed
+    // verdict, the per-prop tiers beside it):
+    let compiled = compile_theme("w-[calc(100%-2rem)]", &table(), &Config::default()).unwrap();
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    let err = GpuiEmit::default().emit(&compiled.program).unwrap_err();
+    assert!(
+        err.iter().any(|entry| entry.prop == Prop::Width),
+        "the verbatim value in the emit refusal: {err:?}"
+    );
+
+    // The eligible shapes never turned the PROPS themselves off: a
+    // baked width still emits (the conformance ceiling is per-longhand,
+    // the composite verdict is per-VALUE).
+    let tokens = lower_class("w-32", &Config::default()).unwrap();
+    assert!(!tokens.to_string().is_empty());
+}
