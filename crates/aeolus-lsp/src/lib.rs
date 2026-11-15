@@ -28,7 +28,15 @@
 //!   * *what does the editor paint here?* — the colour swatches: every
 //!     candidate whose program carries a colour declaration, its
 //!     byte-true range and the table's resolved light-tier rgba
-//!     ([`EngineColour`]).
+//!     ([`EngineColour`]);
+//!   * *what does the editor highlight here?* — the semantic tokens:
+//!     every candidate's compile outcome onto the wire's legend, a
+//!     lowered class as `class`, a refused one as the custom `refused`
+//!     type ([`EngineSemanticToken`]);
+//!   * *how would the editor spell this colour?* — the colour
+//!     presentations: the config's own table walked backwards, every
+//!     (root, token, opacity step) spelling that re-resolves to the
+//!     requested bytes ([`EngineColourPresentation`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -169,6 +177,50 @@ pub struct EngineColour {
     pub range: EngineRange,
     /// The resolved light-tier rgba (alpha 255 = opaque).
     pub rgba: [u8; 4],
+}
+
+/// Which compile outcome a semantic token highlights — the wire
+/// legend's own two entries, the classification the compile walk
+/// answers and nothing else (no guessed shape, no parallel matcher).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EngineSemanticKind {
+    /// A candidate that lowers cleanly — the protocol's own `class`
+    /// token type (the legend's index 0).
+    Lowered,
+    /// A candidate the compile walk refused (a typed refusal, code +
+    /// help) — the server's custom `refused` token type (the legend's
+    /// index 1; an editor that does not know it renders neutral, the
+    /// honest degradation).
+    Refused,
+}
+
+/// One semantic token: the candidate's byte-true range and its compile
+/// outcome. The answer rides in document order (the extraction seam's
+/// scan order, candidates within a string left to right) — the delta
+/// encoding's own precondition, the wire half keeps it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EngineSemanticToken {
+    /// The candidate's range (the editor highlights the spelling).
+    pub range: EngineRange,
+    /// The compile outcome the legend indexes.
+    pub kind: EngineSemanticKind,
+}
+
+/// One colour presentation: the spelling the config's own table
+/// resolves to the requested bytes, the token it names and the opacity
+/// step the spelling carries — the picker's swap writes the class, the
+/// table's own round trip guarantees the colour the editor picked is
+/// the colour the pipeline lowers. The surface is the completion
+/// source's own: every colour-group root the registry names, one walk.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineColourPresentation {
+    /// The class spelling (`"bg-primary"`, `"text-primary/50"`).
+    pub label: String,
+    /// The table token the spelling rides (`"primary"`).
+    pub token: String,
+    /// The opacity step the spelling carries (the audited
+    /// `OPACITY_STEPS` scale; 100 is the bare spelling, no modifier).
+    pub alpha: u16,
 }
 
 /// One open document the engine keeps: the current text and the LSP's
