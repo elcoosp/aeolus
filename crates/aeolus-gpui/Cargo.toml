@@ -86,5 +86,13 @@ harness = false
 name = "shadow"
 harness = false
 
+# The filter tier's polyfill-half microbenchmark (the §3.7 filter row's
+# landed half): the walk applying a cell-compiled matrix-chain program,
+# the drop-shadow band parse beside the shadow tier's, the empty-chain
+# identity, and the accumulator's own shade.
+[[bench]]
+name = "filters"
+harness = false
+
 [lints]
 workspace = true
