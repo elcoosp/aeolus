@@ -83,8 +83,9 @@ struct Band {
 /// Parse one colour token in the audited band grammar: the slash form
 /// (`rgb(0 0 0 / 0.1)`), a hex spelling (`#0000`, `#fb2c36`) or
 /// `currentColor` (the marker the composition resolves against the
-/// text colour). Everything else is the honest `None`.
-fn band_color(token: &str) -> Option<(Hsla, bool)> {
+/// text colour). Everything else is the honest `None`. `pub(crate)`:
+/// the filter tier's drop-shadow bands ride the same colour parser.
+pub(crate) fn band_color(token: &str) -> Option<(Hsla, bool)> {
     if token == "currentColor" {
         return Some((CURRENT_COLOR_FALLBACK, true));
     }
@@ -161,8 +162,9 @@ fn band_color(token: &str) -> Option<(Hsla, bool)> {
 
 /// The band's tokens, whitespace-split OUTSIDE the function parens —
 /// the audited texts' `rgb(0 0 0 / 0.1)` spelling carries internal
-/// spaces the naive split would tear apart.
-fn split_band_tokens(text: &str) -> Vec<&str> {
+/// spaces the naive split would tear apart. `pub(crate)`: the filter
+/// tier's drop-shadow bands ride the same token split.
+pub(crate) fn split_band_tokens(text: &str) -> Vec<&str> {
     let mut tokens = Vec::new();
     let mut depth = 0usize;
     let mut start: Option<usize> = None;
