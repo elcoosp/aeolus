@@ -832,3 +832,144 @@ fn colour_presentations_are_pure_and_deduped() {
         first.iter().map(|p| &p.label).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// The inlay-hint answer (the engine's seventh question: what does this
+// class RESOLVE to, inline? — textDocument/inlayHint, the per-candidate
+// compile walk rendering the CSS arm's own declarations compactly at the
+// class's end, the refused candidates staying quiet — the diagnostics'
+// and semantic tokens' story)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn inlay_hints_render_the_lowered_css() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let hints = lsp.inlay_hints("file:///card.rs");
+    // Two hints for two lowered classes; the refused candidate never
+    // hints (its story is the diagnostics' and the legend's).
+    assert_eq!(hints.len(), 2, "{hints:?}");
+    // `p-4`: the hint rides at the class's END (byte-true, UTF-16), the
+    // label is the CSS arm's own declaration, single-line, and the
+    // tooltip carries the hover's markdown (the class, the CSS block).
+    let p4_start = DOC.find("\"p-4 flex-col\"").expect("the fixture holds") + 1;
+    let (p4_line, _) = position_of(DOC, p4_start);
+    let (_, p4_end_character) = position_of(DOC, p4_start + "p-4".len());
+    let p4 = hints
+        .iter()
+        .find(|hint| hint.position.line == p4_line)
+        .expect("the p-4 hint rides");
+    assert_eq!(
+        p4.position.character, p4_end_character,
+        "the hint rides at the class's end"
+    );
+    assert!(
+        p4.label.contains("padding"),
+        "the CSS arm's own declaration renders: {}",
+        p4.label
+    );
+    assert!(
+        !p4.label.contains('\n'),
+        "the label is the wire's single-line form: {}",
+        p4.label
+    );
+    assert!(
+        p4.tooltip.contains("p-4") && p4.tooltip.contains("```css"),
+        "the tooltip is the hover's markdown: {}",
+        p4.tooltip
+    );
+    // `flex-col`: the sibling class hints its own longhand.
+    let flex_start = DOC.find("flex-col").expect("the fixture holds");
+    let (_, flex_end_character) = position_of(DOC, flex_start + "flex-col".len());
+    let flex = hints
+        .iter()
+        .find(|hint| hint.position != p4.position)
+        .expect("the flex-col hint rides");
+    assert_eq!(flex.position.character, flex_end_character);
+    assert!(
+        flex.label.contains("flex-direction"),
+        "the longhand renders: {}",
+        flex.label
+    );
+    // The p-4 hint's own position is the first hint's (not the flex
+    // one's) — the find above keys on the line, the pairs stay distinct.
+    assert_ne!(
+        p4.position, flex.position,
+        "one hint per class, at its own end"
+    );
+}
+
+#[test]
+fn inlay_hints_resolve_the_theme_tokens() {
+    // The themed walk (the default shadcn bake): a token class's hint
+    // renders the baked tier's resolved bytes, the CSS arm's own form.
+    let mut lsp = engine();
+    let doc = "fn ui() {\n    let s = \"bg-primary\";\n}\n";
+    lsp.open("file:///ui.rs", doc, 1);
+    let hints = lsp.inlay_hints("file:///ui.rs");
+    assert_eq!(hints.len(), 1, "{hints:?}");
+    let hint = &hints[0];
+    assert!(
+        hint.label.contains("background-color"),
+        "the longhand renders: {}",
+        hint.label
+    );
+    assert!(
+        hint.label.contains("rgb("),
+        "the baked tier's resolved bytes render: {}",
+        hint.label
+    );
+    let start = doc.find("bg-primary").expect("the fixture holds");
+    let (_, end_character) = position_of(doc, start + "bg-primary".len());
+    assert_eq!(
+        hint.position.character, end_character,
+        "the hint rides at the class's end"
+    );
+}
+
+#[test]
+fn inlay_hints_are_pure_and_empty_at_the_boundaries() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let first = lsp.inlay_hints("file:///card.rs");
+    let second = lsp.inlay_hints("file:///card.rs");
+    assert_eq!(first, second, "inlay_hints is pure over its map");
+    assert!(
+        lsp.inlay_hints("file:///never-opened.rs").is_empty(),
+        "an unknown URI answers empty"
+    );
+    lsp.open("file:///clean.rs", "fn clean() {}\n", 1);
+    assert!(
+        lsp.inlay_hints("file:///clean.rs").is_empty(),
+        "a document with no strings answers empty"
+    );
+    // A prose string never reaches the walk (the extraction seam's own
+    // pre-filter), and a refused-only document answers empty — the
+    // refusal's story is the diagnostics', never a guessed hint.
+    lsp.open(
+        "file:///prose.rs",
+        "fn p() { let s = \"some prose\"; }\n",
+        1,
+    );
+    assert!(
+        lsp.inlay_hints("file:///prose.rs").is_empty(),
+        "the prose string stays out of the hints"
+    );
+    lsp.open("file:///bad.rs", "fn b() { let s = \"not-a-root\"; }\n", 1);
+    assert!(
+        lsp.inlay_hints("file:///bad.rs").is_empty(),
+        "a refused class never hints"
+    );
+    // The theme-less boundary: the lowered class's CSS arm rendering
+    // rides either way — the hint is the pipeline's own answer, not the
+    // theme tier's alone.
+    let mut themeless = AeolusEngine::new(EngineConfig::new(None));
+    themeless.open("file:///t.rs", "fn t() { let s = \"p-4\"; }\n", 1);
+    let hints = themeless.inlay_hints("file:///t.rs");
+    assert_eq!(hints.len(), 1, "{hints:?}");
+    assert!(
+        hints[0].label.contains("padding"),
+        "the theme-less walk still renders the declaration: {}",
+        hints[0].label
+    );
+}
