@@ -773,6 +773,14 @@ pub static ROWS: &[UtilityRow] = &[
         "utilities.ts grid-auto-columns",
     ),
     row(
+        "grid-flow",
+        kw(tables::GRID_FLOW),
+        &[Prop::GridAutoFlow],
+        "grid-auto-flow",
+        false,
+        "utilities.ts grid-auto-flow",
+    ),
+    row(
         "auto-rows",
         any(&[kw(tables::AUTO_TRACKS), arb()]),
         &[Prop::GridAutoRows],
