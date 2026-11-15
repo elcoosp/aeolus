@@ -279,8 +279,8 @@ fn bands_to_shadows(bands: &[Band]) -> Vec<BoxShadow> {
 }
 
 /// Parse the composed band text into GPUI's own box-shadow list — the
-/// lane's public parse, the [`parse_bands`] forms composed at the
-/// documented stand-in colour.
+/// lane's public parse, the module's own `parse_bands` forms composed
+/// at the documented stand-in colour.
 pub fn parse_shadow_bands(text: &str) -> Option<Vec<BoxShadow>> {
     parse_bands(text).map(|bands| bands_to_shadows(&bands))
 }
