@@ -956,3 +956,121 @@ fn colour_presentation_with_malformed_params_answers_null() {
     };
     assert_eq!(response.result, Some(serde_json::Value::Null));
 }
+// ---------------------------------------------------------------------------
+// The inlayHint wire (the eighth request, LSP 3.17's inline answers): the
+// capability rides initialize (no resolve round-trip — the answer is
+// final, the completion's own contract), the request maps the engine's
+// hints onto the protocol's InlayHint (the class's end position, the CSS
+// label, the markdown tooltip, the type kind). The params' visible range
+// is accepted and answered document-wide — the engine has no incremental
+// model, the pull diagnostics' own contract.
+// ---------------------------------------------------------------------------
+
+fn inlay_hints_request(id: i32, uri: &str) -> Message {
+    request(
+        id,
+        "textDocument/inlayHint",
+        json!({
+            "textDocument": { "uri": uri },
+            "range": {
+                "start": {"line": 0, "character": 0},
+                "end": {"line": 9, "character": 0},
+            },
+        }),
+    )
+}
+
+#[test]
+fn initialize_advertises_inlay_hints() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("initialize answers a response");
+    };
+    let result = response.result.expect("the capabilities carry a result");
+    let provider = &result["capabilities"]["inlayHintProvider"];
+    assert!(
+        !provider.is_null(),
+        "the inlay-hint capability rides: {result}"
+    );
+    assert_eq!(
+        provider["resolveProvider"], false,
+        "the engine's answer is final — no resolve round-trip"
+    );
+}
+
+#[test]
+fn inlay_hints_answer_the_wire_shape() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    handle_message(&mut session, did_open(&uri(), 1, PULL_DOC));
+    let handled = handle_message(&mut session, inlay_hints_request(15, &uri()));
+    assert!(!handled.exit, "the hint request does not end the session");
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("inlayHint answers a response");
+    };
+    assert_eq!(response.id, RequestId::from(15));
+    let result = response.result.expect("the hints carry a result");
+    let hints = result.as_array().expect("the hint array rides");
+    // The fixture `p-4 not-a-root`: one hint — the refused candidate
+    // never rides (its story is the diagnostics' and the legend's).
+    assert_eq!(hints.len(), 1, "{result}");
+    let hint = &hints[0];
+    // The hint rides at the class's END: `p-4` starts at column 13 on
+    // line 1 (ASCII — bytes are UTF-16 columns), so the end is 16.
+    let position = &hint["position"];
+    assert_eq!(position["line"], 1);
+    assert_eq!(position["character"], 16);
+    // The label is the CSS arm's own declaration; the kind is the
+    // protocol's type annotation (1); the tooltip is the markdown the
+    // hover renders.
+    assert!(
+        hint["label"]
+            .as_str()
+            .expect("the label rides as a string")
+            .contains("padding"),
+        "the CSS label renders: {}",
+        hint["label"]
+    );
+    assert_eq!(hint["kind"], 1, "the type-annotation kind");
+    let tooltip = &hint["tooltip"];
+    assert_eq!(
+        tooltip["kind"], "markdown",
+        "the tooltip is the hover's markdown"
+    );
+    assert!(
+        tooltip["value"]
+            .as_str()
+            .expect("the tooltip carries a value")
+            .contains("```css"),
+        "the tooltip carries the CSS block: {}",
+        tooltip["value"]
+    );
+}
+
+#[test]
+fn inlay_hints_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(&mut session, inlay_hints_request(15, &uri()));
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
+
+#[test]
+fn inlay_hints_with_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(15, "textDocument/inlayHint", json!({"uri": 42})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request still answers (never a hang)");
+    };
+    assert_eq!(response.result, Some(serde_json::Value::Null));
+}
