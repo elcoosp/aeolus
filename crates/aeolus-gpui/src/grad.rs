@@ -103,6 +103,15 @@ impl GradState {
     /// transparent from/to stop at the 0%/100% defaults, so a lone
     /// `from-*` (or `to-*`) still paints the fade.
     pub fn background(&self) -> Option<Background> {
+        self.background_with(|color| color)
+    }
+
+    /// [`GradState::background`] with the stops' colours mapped through
+    /// `map` at composition — the filter tier's matrix chain recolours
+    /// the stops beside the element's other colour slots (the same
+    /// paint CSS filters cover), the angle, positions and colour
+    /// space riding unchanged.
+    pub fn background_with(&self, map: impl Fn(Hsla) -> Hsla) -> Option<Background> {
         let Shape::Linear(angle_deg) = self.shape? else {
             return None;
         };
@@ -115,10 +124,13 @@ impl GradState {
         Some(gpui::linear_gradient(
             angle_deg,
             gpui::linear_color_stop(
-                self.from.unwrap_or(TRANSPARENT),
+                map(self.from.unwrap_or(TRANSPARENT)),
                 self.from_pos.unwrap_or(0.0),
             ),
-            gpui::linear_color_stop(self.to.unwrap_or(TRANSPARENT), self.to_pos.unwrap_or(1.0)),
+            gpui::linear_color_stop(
+                map(self.to.unwrap_or(TRANSPARENT)),
+                self.to_pos.unwrap_or(1.0),
+            ),
         ))
     }
 
