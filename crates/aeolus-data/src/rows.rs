@@ -1587,7 +1587,7 @@ pub static ROWS: &[UtilityRow] = &[
     ),
     row(
         "font",
-        kw(tables::FONT_FAMILIES),
+        any(&[kw(tables::FONT_FAMILIES), arb()]),
         &[Prop::FontFamily],
         "font-family",
         false,
@@ -1887,7 +1887,7 @@ pub static ROWS: &[UtilityRow] = &[
     ),
     row(
         "duration",
-        num(),
+        any(&[num(), arb()]),
         &[Prop::TransitionDuration],
         "duration",
         false,
@@ -1895,7 +1895,7 @@ pub static ROWS: &[UtilityRow] = &[
     ),
     row(
         "delay",
-        num(),
+        any(&[num(), arb()]),
         &[Prop::TransitionDelay],
         "delay",
         false,
