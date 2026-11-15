@@ -128,9 +128,11 @@ fn write_mode_populates_a_temp_root_and_verify_stays_clean() {
         0
     );
     let text = String::from_utf8(out).expect("utf8");
-    // Three artifacts: the data crate's two registry-derived pages plus
-    // the conformance score the driver renders from the codegen crates.
-    assert_eq!(text.matches("clean").count(), 3, "{text}");
+    // Four artifacts: the data crate's two registry-derived pages, the
+    // conformance score the driver renders from the codegen crates,
+    // and the §3.7 capability table the same impls render into the
+    // codegen-gpui crate's own src.
+    assert_eq!(text.matches("clean").count(), 4, "{text}");
 }
 
 #[test]
@@ -182,9 +184,9 @@ fn verify_reports_missing_files_as_drift() {
         1
     );
     let text = String::from_utf8(out).expect("utf8");
-    // Three artifacts, all missing in the empty root (see the clean
+    // Four artifacts, all missing in the empty root (see the clean
     // count's note).
-    assert_eq!(text.matches("MISSING").count(), 3, "{text}");
+    assert_eq!(text.matches("MISSING").count(), 4, "{text}");
 }
 
 #[test]
@@ -246,5 +248,114 @@ fn the_conformance_page_joins_the_artifact_list() {
         ),
         0,
         "the fresh page verifies clean"
+    );
+}
+
+#[test]
+fn the_gpui_caps_table_joins_the_artifact_list_and_answers_its_own_commands() {
+    // The §3.7 generator slice: the capability table renders into the
+    // codegen-gpui crate's OWN src (`caps_generated.rs`, the module the
+    // crate consumes) and rides the same GeneratedArtifact seam —
+    // listed, written by gen-tables, drift-verified like the rest —
+    // with its own focused spellings (`gen-gpui-caps` /
+    // `verify-gpui-caps`) beside the global walk.
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(run(argv(&["list"]), &mut out, &mut err), 0);
+    let listed = String::from_utf8(out).expect("utf8");
+    assert!(
+        listed.contains("gpui-caps  crates/aeolus-codegen-gpui/src/caps_generated.rs"),
+        "the capability table is not listed: {listed}"
+    );
+
+    // Write mode lands the committed module in the temp root's src
+    // tree; the focused verify answers one artifact, clean.
+    let root = TempRoot::new("gpui-caps");
+    let root_str = root.0.to_string_lossy().into_owned();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        run(
+            argv(&["gen-gpui-caps", "--root", &root_str]),
+            &mut out,
+            &mut err
+        ),
+        0
+    );
+    let table = std::fs::read_to_string(
+        root.0
+            .join("crates/aeolus-codegen-gpui/src/caps_generated.rs"),
+    )
+    .expect("the table writes");
+    assert!(table.contains("GENERATED"), "{table}");
+    assert!(table.contains("PROP_CAPABILITIES"), "{table}");
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        run(
+            argv(&["verify-gpui-caps", "--root", &root_str]),
+            &mut out,
+            &mut err
+        ),
+        0
+    );
+    let text = String::from_utf8(out).expect("utf8");
+    assert_eq!(text.matches("clean").count(), 1, "the focused walk: {text}");
+    assert!(text.contains("gpui-caps"), "{text}");
+}
+
+#[test]
+fn verify_gpui_caps_reports_drift_with_the_drift_exit_code() {
+    // The focused gate's drift path: corrupt one committed byte, the
+    // focused verify catches exactly that file with exit 1.
+    let root = TempRoot::new("gpui-caps-drift");
+    let root_str = root.0.to_string_lossy().into_owned();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        run(
+            argv(&["gen-gpui-caps", "--root", &root_str]),
+            &mut out,
+            &mut err
+        ),
+        0
+    );
+    let table_path = root
+        .0
+        .join("crates/aeolus-codegen-gpui/src/caps_generated.rs");
+    let table = std::fs::read_to_string(&table_path).expect("table written");
+    std::fs::write(
+        &table_path,
+        table.replacen("PropCapability", "PropCapabilitX", 1),
+    )
+    .expect("corruption writes");
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        run(
+            argv(&["verify-gpui-caps", "--root", &root_str]),
+            &mut out,
+            &mut err
+        ),
+        1
+    );
+    let text = String::from_utf8(out).expect("utf8");
+    assert!(text.contains("DRIFTED"), "{text}");
+}
+
+#[test]
+fn the_committed_caps_table_verifies_clean() {
+    // The real tree, read-only: the focused drift gate over the
+    // committed `caps_generated.rs` (the same check `cargo xtask
+    // verify-gpui-caps` runs as the pre-commit drift gate).
+    let bin = std::env!("CARGO_BIN_EXE_xtask");
+    let output = Command::new(bin)
+        .arg("verify-gpui-caps")
+        .output()
+        .expect("driver runs");
+    assert!(
+        output.status.success(),
+        "the committed capability table drifted — run `cargo xtask gen-gpui-caps` (stdout: {})",
+        String::from_utf8_lossy(&output.stdout)
     );
 }
