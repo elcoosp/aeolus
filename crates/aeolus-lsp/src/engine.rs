@@ -1,20 +1,22 @@
 //! The headless engine (the LSP crate's core): the document map, the
-//! extraction seam through the V1 compile walk, and the two answers —
-//! per-location diagnostics with UTF-16 ranges, and the hover
-//! resolution keyed by the candidate under the cursor.
+//! extraction seam through the V1 compile walk, and the editor's
+//! answers — per-location diagnostics with UTF-16 ranges, the hover
+//! resolution keyed by the candidate under the cursor, the completion
+//! at the typing edge, the colour swatches, the semantic legend, the
+//! colour presentations and the inline hints.
 //!
-//! The engine carries NONE of the wire types: [`EngineDiagnostic`] and
-//! [`EngineHover`] are the crate's own shapes, and the server module
-//! maps them onto the protocol's JSON. The engine is pure over its
-//! document map — the same input answers the same output, gate over
-//! gate.
+//! The engine carries NONE of the wire types: [`EngineDiagnostic`],
+//! [`EngineHover`] and the other answer shapes are the crate's own, and
+//! the server module maps them onto the protocol's JSON. The engine is
+//! pure over its document map — the same input answers the same output,
+//! gate over gate.
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
 
 use aeolus_compile::{
-    COLOUR_GROUPS, Config, Diagnostic, KNOWN_VARIANTS, ScanHit, compile, compile_theme, emit_css,
-    emit_css_theme, scan_rust_strings,
+    COLOUR_GROUPS, Config, CssSheet, Diagnostic, KNOWN_VARIANTS, ScanHit, compile, compile_theme,
+    emit_css, emit_css_theme, scan_rust_strings,
 };
 use aeolus_data::ValueKind;
 use aeolus_data::rows::ROWS;
@@ -24,8 +26,8 @@ use aeolus_theme::TokenTable;
 
 use crate::{
     DocumentMap, EngineColour, EngineColourPresentation, EngineCompletion, EngineCompletionKind,
-    EngineDiagnostic, EngineHover, EnginePosition, EngineRange, EngineSemanticKind,
-    EngineSemanticToken,
+    EngineDiagnostic, EngineHover, EngineInlayHint, EnginePosition, EngineRange,
+    EngineSemanticKind, EngineSemanticToken,
 };
 
 // ---------------------------------------------------------------------------
@@ -251,20 +253,8 @@ impl AeolusEngine {
         let Ok(sheet) = sheet else {
             return None;
         };
-        let mut contents = String::new();
-        let _ = writeln!(contents, "`{raw}` ({})", cond_label(cond));
-        if let Some(rule) = sheet.rules.first() {
-            let _ = writeln!(contents, "\n```css");
-            for body_line in rule.body.lines() {
-                let _ = writeln!(contents, "{body_line}");
-            }
-            let _ = writeln!(contents, "```");
-        }
-        for diagnostic in &sheet.diagnostics {
-            let _ = writeln!(contents, "\n- {diagnostic}");
-        }
         Some(EngineHover {
-            contents,
+            contents: lowered_markdown(raw, cond, &sheet),
             range: Some(range),
         })
     }
@@ -520,6 +510,73 @@ impl AeolusEngine {
         }
         out
     }
+
+    // -----------------------------------------------------------------------
+    // The inlay-hint answer
+    // -----------------------------------------------------------------------
+
+    /// The document's inline hints: every candidate class that lowers
+    /// cleanly rides one hint at its END position — the CSS arm's own
+    /// declarations compacted to the single-line label, the hover's
+    /// markdown riding as the tooltip. The walk is the colour-swatch
+    /// walk's own shape (the per-candidate compile through the SAME
+    /// entry points the CLI and the macros run, the spans from the
+    /// lexer), and the rendering is the HOVER's own — the shared
+    /// [`lowered_markdown`], one answer shape at two surfaces. The
+    /// refused candidates never hint (their story is the diagnostics'
+    /// and the semantic legend's — a refused class has no CSS to show,
+    /// the honest boundary), and the theme-less config answers the same
+    /// (the CSS arm renders the lowered class either way). Deterministic
+    /// and pure over the document map; an unknown URI answers empty.
+    pub fn inlay_hints(&self, uri: &str) -> Vec<EngineInlayHint> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let mut out = Vec::new();
+        for hit in scan_rust_strings(text) {
+            let (candidates, _) = parse_class_string(&hit.text);
+            for candidate in candidates {
+                // The single-candidate pipeline answer: the themed walk
+                // when the config carries a table, the theme-less
+                // boundary otherwise.
+                let compiled = match &self.config.tokens {
+                    Some(table) => compile_theme(candidate.raw, table, &self.config.compile),
+                    None => compile(candidate.raw, &self.config.compile),
+                };
+                let Ok(compiled) = compiled else {
+                    continue;
+                };
+                // The refusal boundary: a class the walk refused has no
+                // CSS to show — the diagnostics publish it, the legend
+                // highlights it, the hint stays quiet.
+                if !compiled.diagnostics.is_empty() {
+                    continue;
+                }
+                let sheet = match &self.config.tokens {
+                    Some(table) => emit_css_theme(candidate.raw, table, &self.config.compile),
+                    None => emit_css(candidate.raw, &self.config.compile),
+                };
+                let Ok(sheet) = sheet else {
+                    continue;
+                };
+                let cond = compiled
+                    .program
+                    .layers
+                    .last()
+                    .map_or(Cond::Base, |layer| layer.cond);
+                // The hint rides where the class's spelling stops: the
+                // candidate's END, already in the LSP's UTF-16 pairs.
+                let (line, character) = position_of(text, hit.offset + candidate.span.1);
+                out.push(EngineInlayHint {
+                    position: EnginePosition { line, character },
+                    label: compact_css(&sheet),
+                    tooltip: lowered_markdown(candidate.raw, cond, &sheet),
+                });
+            }
+        }
+        out
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -603,6 +660,46 @@ fn engine_diagnostic(text: &str, hit: &ScanHit, diagnostic: &Diagnostic) -> Engi
         message,
         code: diagnostic.kind.code().to_string(),
     }
+}
+
+/// The lowered class's markdown — the ONE rendering the hover and the
+/// inlay hint share (the wire-diagnostic mapping's own single-source
+/// rule): the class, its folded condition, the CSS arm's own
+/// declaration texts in a fenced block, the sheet's own diagnostics
+/// riding after (they never silence, the honesty contract).
+fn lowered_markdown(raw: &str, cond: Cond, sheet: &CssSheet) -> String {
+    let mut contents = String::new();
+    let _ = writeln!(contents, "`{raw}` ({})", cond_label(cond));
+    if let Some(rule) = sheet.rules.first() {
+        let _ = writeln!(contents, "\n```css");
+        for body_line in rule.body.lines() {
+            let _ = writeln!(contents, "{body_line}");
+        }
+        let _ = writeln!(contents, "```");
+    }
+    for diagnostic in &sheet.diagnostics {
+        let _ = writeln!(contents, "\n- {diagnostic}");
+    }
+    contents
+}
+
+/// The compact single-line label the inlay hint rides: the sheet's
+/// first rule body — the CSS arm's own declarations, trimmed, each
+/// declaration's trailing `;` folded into the `"; "` join. A paraphrase
+/// never enters the label: the text is the pipeline's own output, one
+/// declaration per join on the wire.
+fn compact_css(sheet: &CssSheet) -> String {
+    sheet
+        .rules
+        .first()
+        .map(|rule| {
+            rule.body
+                .lines()
+                .map(|line| line.trim().trim_end_matches(';').trim_end())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
