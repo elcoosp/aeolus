@@ -10,15 +10,18 @@
 
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 use lsp_types::{
-    Color, ColorInformation, ColorProviderCapability, CompletionItem, CompletionItemKind,
-    CompletionList, CompletionOptions, CompletionParams, DiagnosticOptions,
-    DiagnosticServerCapabilities, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentColorParams, DocumentDiagnosticParams,
-    DocumentDiagnosticReport, DocumentDiagnosticReportResult, FullDocumentDiagnosticReport, Hover,
-    HoverContents, HoverProviderCapability, InitializeResult, MarkupContent, MarkupKind,
-    NumberOrString, PublishDiagnosticsParams, RelatedFullDocumentDiagnosticReport,
-    ServerCapabilities, ServerInfo, TextDocumentPositionParams, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
+    Color, ColorInformation, ColorPresentation, ColorPresentationParams, ColorProviderCapability,
+    CompletionItem, CompletionItemKind, CompletionList, CompletionOptions, CompletionParams,
+    DiagnosticOptions, DiagnosticServerCapabilities, DidChangeTextDocumentParams,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentColorParams,
+    DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
+    FullDocumentDiagnosticReport, Hover, HoverContents, HoverProviderCapability, InitializeResult,
+    MarkupContent, MarkupKind, NumberOrString, PublishDiagnosticsParams,
+    RelatedFullDocumentDiagnosticReport, SemanticToken, SemanticTokenType, SemanticTokens,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
+    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, TextDocumentPositionParams,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
+    WorkDoneProgressOptions,
 };
 use serde_json::Value;
 use std::str::FromStr;
@@ -91,8 +94,14 @@ pub fn handle_message(session: &mut Session, message: Message) -> Handled {
 }
 
 /// One request: initialize, hover, shutdown. An unknown method answers
-/// nothing (the capabilities never advertised it).
+/// nothing (the capabilities never advertised it), and a session the
+/// client has shut down rides the same quiet-drop — the protocol's own
+/// contract (the one exception is a repeated `shutdown`, which still
+/// answers: a client waiting on it must not hang).
 fn handle_request(session: &mut Session, request: Request) -> Handled {
+    if session.shutdown && request.method != "shutdown" {
+        return Handled::default();
+    }
     match request.method.as_str() {
         "initialize" => {
             session.initialized = true;
@@ -265,6 +274,71 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/semanticTokens/full" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The highlighter feed (LSP 3.16's semantic tokens): the
+            // engine's absolute tokens, in document order, onto the
+            // protocol's delta encoding (one legend, the wire's own).
+            let answer = serde_json::from_value::<SemanticTokensParams>(request.params)
+                .ok()
+                .map(|params| {
+                    wire_semantic_tokens(
+                        &session
+                            .engine
+                            .semantic_tokens(params.text_document.uri.as_str()),
+                    )
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |tokens| Some(serde_json::to_value(tokens).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
+        "textDocument/colorPresentation" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The colour provider's paired half (the picker's spellings):
+            // the protocol's 0..1 fractions map back onto the byte rgba
+            // the swatches came from (the same channel-for-channel
+            // mapping, inverted), the table walk answers the spellings,
+            // each riding as an edit over the range the picker names.
+            let answer = serde_json::from_value::<ColorPresentationParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let byte = |fraction: f32| -> u8 {
+                        (fraction * 255.0).round().clamp(0.0, 255.0) as u8
+                    };
+                    let rgba = [
+                        byte(params.color.red),
+                        byte(params.color.green),
+                        byte(params.color.blue),
+                        byte(params.color.alpha),
+                    ];
+                    session
+                        .engine
+                        .colour_presentations(rgba)
+                        .iter()
+                        .map(|presentation| ColorPresentation {
+                            label: presentation.label.clone(),
+                            // The swap writes the class over the
+                            // requested range (the colour's own).
+                            text_edit: Some(TextEdit {
+                                range: params.range,
+                                new_text: presentation.label.clone(),
+                            }),
+                            ..ColorPresentation::default()
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |items| Some(serde_json::to_value(items).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
         _ => Handled::default(),
     }
 }
@@ -350,6 +424,47 @@ fn wire_diagnostic(finding: &crate::EngineDiagnostic) -> lsp_types::Diagnostic {
     }
 }
 
+/// The engine's absolute tokens onto the protocol's delta encoding: the
+/// first token's deltas are absolute, each later one rides relative to
+/// the previous token's START (same line: the character delta; a new
+/// line: the absolute column). The engine answers in document order —
+/// the encoding's own precondition, the engine battery pins it — and a
+/// candidate never spans a line (the lexer splits on the whitespace,
+/// newlines included), so the length is the column arithmetic. The
+/// legend indexes mirror [`server_capabilities`]' own legend, the wire
+/// contract the tests pin beside the deltas.
+fn wire_semantic_tokens(tokens: &[crate::EngineSemanticToken]) -> SemanticTokens {
+    let mut data = Vec::with_capacity(tokens.len());
+    let mut prev_line = 0u32;
+    let mut prev_character = 0u32;
+    for token in tokens {
+        let delta_line = token.range.start.line - prev_line;
+        let delta_start = if delta_line == 0 {
+            token.range.start.character - prev_character
+        } else {
+            token.range.start.character
+        };
+        let length = token.range.end.character - token.range.start.character;
+        let token_type = match token.kind {
+            crate::EngineSemanticKind::Lowered => 0, // the legend's "class"
+            crate::EngineSemanticKind::Refused => 1, // the legend's "refused"
+        };
+        data.push(SemanticToken {
+            delta_line,
+            delta_start,
+            length,
+            token_type,
+            token_modifiers_bitset: 0,
+        });
+        prev_line = token.range.start.line;
+        prev_character = token.range.start.character;
+    }
+    SemanticTokens {
+        result_id: None, // the engine never caches: every pull recomputes
+        data,
+    }
+}
+
 /// Publish the engine's findings for one URI (the didOpen/didChange/
 /// didClose half). A URI the `Url` parser rejects skips the publish —
 /// the wire gave it, and no editor can have named it either.
@@ -386,14 +501,30 @@ fn respond(id: RequestId, result: Option<Value>) -> Handled {
     }
 }
 
-/// The advertised capabilities: hover, completion, colour swatches and
-/// full-text sync. The engine never forks the pipeline, so the
-/// capability surface is the pipeline's own honesty contract at the
-/// editor.
+/// The advertised capabilities: hover, completion, colour swatches, the
+/// semantic tokens and full-text sync. The engine never forks the
+/// pipeline, so the capability surface is the pipeline's own honesty
+/// contract at the editor.
 fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         color_provider: Some(ColorProviderCapability::Simple(true)),
+        // The highlighter feed: the legend the delta encoding indexes —
+        // a lowered candidate is the protocol's own `class`, a refused
+        // one the server's custom `refused` type (an editor that does
+        // not know it renders neutral, the honest degradation). The
+        // ORDER is the wire contract the encoder's indexes mirror.
+        semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
+            SemanticTokensOptions {
+                work_done_progress_options: WorkDoneProgressOptions::default(),
+                legend: SemanticTokensLegend {
+                    token_types: vec![SemanticTokenType::CLASS, SemanticTokenType::new("refused")],
+                    token_modifiers: Vec::new(),
+                },
+                range: None,
+                full: Some(SemanticTokensFullOptions::Bool(true)),
+            },
+        )),
         // The pull model rides beside the push channel: the client can
         // ask any time (the refresh path, a newly focused file) and the
         // engine recomputes — per document, no cross-file model, no
