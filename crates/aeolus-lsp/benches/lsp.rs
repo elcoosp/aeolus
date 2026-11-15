@@ -95,6 +95,18 @@ fn colour_presentations_walk(bencher: Bencher) {
     bencher.bench(|| lsp.colour_presentations([93, 90, 208, 255]));
 }
 
+/// The inline-answers path (LSP 3.17's inlayHint): the per-candidate
+/// compile walk rendering the CSS arm's own declarations compactly at
+/// each lowered class's end — the hints the editor session answers per
+/// didOpen (and per edit's re-hinting), the refused candidates staying
+/// quiet.
+#[divan::bench]
+fn inlay_hints_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    bencher.bench(|| lsp.inlay_hints("file:///card.rs"));
+}
+
 /// The pull path (LSP 3.17's documentDiagnostic): the client's
 /// on-demand recompute through the state machine — initialize and
 /// didOpen once, then the request per iteration (the params parse, the
