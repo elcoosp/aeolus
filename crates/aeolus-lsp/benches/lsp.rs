@@ -153,3 +153,45 @@ fn document_diagnostics_pull(bencher: Bencher) {
         )
     });
 }
+
+/// The quick-fix document: one keyword-table miss, one theme-token
+/// miss under a variant prefix — the two folds the seam answers.
+const ACTIONS_DOC: &str = "fn card() {\n    let bad = \"justify-betwen hover:bg-priamry\";\n}\n";
+
+/// The quick-fix path (LSP 3.16's codeAction): the cursor's candidate
+/// through the suggestion seam — the compile walk's diagnostics folded
+/// over the audited tables, the corrections composed onto the full
+/// token — the cost a squiggle's lightbulb pays per invocation.
+#[divan::bench]
+fn code_actions_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", ACTIONS_DOC, 1);
+    let offset = ACTIONS_DOC
+        .find("justify-betwen")
+        .expect("the fixture holds")
+        + 2;
+    let line = ACTIONS_DOC[..offset].matches('\n').count() as u32;
+    let line_start = ACTIONS_DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = ACTIONS_DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.code_actions("file:///card.rs", line, character));
+}
+
+/// The click-to-find path (LSP 3.16's documentHighlight): the
+/// document's occurrences of the cursor's candidate — the shared
+/// locator's walk over the extraction seam's strings.
+#[divan::bench]
+fn document_highlights_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("flex-col").expect("the fixture holds") + 2;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.document_highlights("file:///card.rs", line, character));
+}
