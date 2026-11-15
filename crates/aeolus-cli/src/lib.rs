@@ -740,6 +740,9 @@ fn value_text(val: Val, kw: Option<&str>) -> String {
         Val::Tok { .. } | Val::ModePair(_) => {
             "token slot (the theme pass resolves the id)".to_string()
         }
+        // The composite grammar's verbatim slot: the text IS the value
+        // (the effective render prints it as typed).
+        Val::Verbatim(text) => text.to_string(),
     }
 }
 
