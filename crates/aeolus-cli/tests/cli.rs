@@ -880,3 +880,190 @@ fn build_explicit_files_ignore_the_extension_filter() {
     assert!(out.contains(".font-bold {"), "{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------------
+// `plan` — the plan bridge's CLI form (the Target::Plan arm, the §7
+// migration seam's consumer face). The battery was written FIRST; the
+// RED capture is the "unknown command" dispatch failure.
+// ---------------------------------------------------------------------------
+
+fn plan_snapshot(args: &[&str]) -> StylePlan {
+    let (code, out, err) = run_cmd(args);
+    assert_eq!(code, 0, "stderr: {err}");
+    StylePlan::from_snapshot_json(out.trim()).expect("the plan artifact parses as a snapshot")
+}
+
+#[test]
+fn plan_emits_the_plan_bridge_snapshot() {
+    let plan = plan_snapshot(&[
+        "plan",
+        "--theme",
+        "shadcn",
+        "p-4",
+        "bg-primary",
+        "hover:bg-primary/90",
+    ]);
+    // The same shape `resolve` emits: base slots, one state layer.
+    assert!(plan.base.padding.is_some(), "p-4 lowers through the bridge");
+    assert!(
+        plan.base.background.is_some(),
+        "bg-primary lowers through the bridge"
+    );
+    assert_eq!(plan.layers.len(), 1, "hover lands in the layers bucket");
+    assert!(plan.layers[0].style.background.is_some());
+}
+
+#[test]
+fn plan_artifact_is_canonical_across_class_order() {
+    // The snapshot is the canonical artifact: class order cannot change it.
+    let (code, out, err) = run_cmd(&["plan", "--theme", "shadcn", "p-4", "bg-primary"]);
+    assert_eq!(code, 0, "{err}");
+    let (code2, out2, _) = run_cmd(&["plan", "--theme", "shadcn", "bg-primary", "p-4"]);
+    assert_eq!(code2, 0);
+    assert_eq!(out2, out, "class order does not change the plan artifact");
+}
+
+#[test]
+fn plan_themed_agrees_with_the_v0_resolver_slot_for_slot() {
+    // The differential contract the plan arm's own battery pins: for a
+    // themed string both generations lower the SAME plan shape.
+    let v1 = plan_snapshot(&["plan", "--theme", "shadcn", "p-4", "hover:px-8"]);
+    let v0 = {
+        let (code, out, err) = run_cmd(&["resolve", "--theme", "shadcn", "p-4", "hover:px-8"]);
+        assert_eq!(code, 0, "{err}");
+        StylePlan::from_snapshot_json(out.trim()).expect("the resolve snapshot parses")
+    };
+    assert_eq!(v1.base.padding, v0.base.padding);
+    assert_eq!(v1.layers.len(), v0.layers.len(), "one hover layer each");
+    assert_eq!(
+        v1.layers[0].style.padding, v0.layers[0].style.padding,
+        "the hover px-8 slot agrees across the two generations"
+    );
+}
+
+#[test]
+fn plan_summary_lists_slots_layers_and_notes() {
+    // place-content lowers into the IR but has no v0.x slot: the note
+    // rides stderr, never the plan, and never silences.
+    let (code, out, err) = run_cmd(&[
+        "plan",
+        "--theme",
+        "shadcn",
+        "--summary",
+        "p-4",
+        "md:p-8",
+        "dark:bg-red-900",
+        "place-content-center",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("base:"), "{out}");
+    assert!(out.contains("Padding"), "{out}");
+    assert!(out.contains("responsive: md"), "{out}");
+    assert!(out.contains("dark: yes"), "{out}");
+    assert!(
+        err.contains("place-content-center"),
+        "the note names the class: {err}"
+    );
+    assert!(
+        err.contains("aeolus::compile::plan::"),
+        "the note carries its stable code: {err}"
+    );
+}
+
+#[test]
+fn plan_reports_diagnostics_and_keeps_the_artifact_honest() {
+    // Themeless: bg-primary's colour token is a typed boundary — it
+    // reports, the snapshot stays without the background slot, and the
+    // artifact still rides stdout (p-4 lowers).
+    let (code, out, err) = run_cmd(&["plan", "p-4", "bg-primary"]);
+    assert_eq!(code, 0, "findings are non-fatal without --fail-on: {err}");
+    assert!(err.contains("bg-primary"), "{err}");
+    let plan = StylePlan::from_snapshot_json(out.trim()).expect("snapshot parses");
+    assert!(plan.base.padding.is_some());
+    assert!(
+        plan.base.background.is_none(),
+        "the token boundary is honest"
+    );
+    // The unknown root reports too (`bg` is a registered root — the
+    // suffix refuses, so the typed kind is the shape rejection, the
+    // `FindingKind::Unknown` half of the gate).
+    let (code, _, err) = run_cmd(&["plan", "p-4", "bg-notacolor"]);
+    assert_eq!(code, 0);
+    assert!(err.contains("bg-notacolor"), "{err}");
+    assert!(err.contains("aeolus::compile::shape_rejected"), "{err}");
+}
+
+#[test]
+fn plan_json_embeds_the_plan_and_the_reports() {
+    let (code, out, err) = run_cmd(&["plan", "--theme", "shadcn", "--json", "p-4", "bg-primary"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        out.starts_with("{\"plan\":{\"format\":\"aeolus-plan\""),
+        "{out}"
+    );
+    assert!(out.contains("\"diagnostics\":[]"), "{out}");
+    assert!(out.contains("\"notes\":[]"), "{out}");
+    // The note channel rides the JSON envelope too.
+    let (code, out, _) = run_cmd(&[
+        "plan",
+        "--theme",
+        "shadcn",
+        "--json",
+        "place-content-center",
+    ]);
+    assert_eq!(code, 0);
+    assert!(out.contains("slot_unsupported"), "{out}");
+    assert!(
+        !out.contains("\"diagnostics\":[{"),
+        "a note is not a diagnostic: {out}"
+    );
+}
+
+#[test]
+fn plan_fail_on_maps_the_typed_codes() {
+    let (code, _, _) = run_cmd(&["plan", "--fail-on", "unknown", "bg-notacolor"]);
+    assert_eq!(
+        code, 1,
+        "an unknown root is a finding under --fail-on unknown"
+    );
+    let (code, _, _) = run_cmd(&["plan", "--fail-on", "none", "bg-notacolor"]);
+    assert_eq!(code, 0, "default-off: the artifact still emitted");
+    let (code, _, _) = run_cmd(&["plan", "--fail-on", "any", "!p-4"]);
+    assert_eq!(
+        code, 1,
+        "the important-flag refusal is a finding under --fail-on any"
+    );
+}
+
+#[test]
+fn plan_usage_errors_are_precise() {
+    // No classes: the usage error names the command.
+    let (code, _, err) = run_cmd(&["plan"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("plan needs a class string"), "{err}");
+    // The V1 theme pass takes shadcn | shadcn-dark | <path>: the v0.x
+    // `default` spec is a typed refusal.
+    let (code, _, err) = run_cmd(&["plan", "--theme", "default", "p-4"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("shadcn | shadcn-dark | <path>"), "{err}");
+    let (code, _, err) = run_cmd(&["plan", "--bogus", "p-4"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("unknown flag"), "{err}");
+    let (code, _, err) = run_cmd(&["plan", "--theme", "/nonexistent/theme.css", "p-4"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("cannot read theme CSS"), "{err}");
+}
+
+#[test]
+fn plan_is_a_documented_command() {
+    let (code, out, _) = run_cmd(&["--help"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("aeolus plan"), "{out}");
+    assert!(out.contains("plan bridge"), "{out}");
+    // The FAIL-ON line now names the per-command defaults (the usage
+    // drift fix: build/plan default `none`, check `unknown`).
+    assert!(
+        out.contains("default: check unknown; build/plan none"),
+        "{out}"
+    );
+}
