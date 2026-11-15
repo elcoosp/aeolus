@@ -652,12 +652,7 @@ fn composite_ratio(value: &str) -> bool {
     let Some((n, d)) = value.split_once('/') else {
         return false;
     };
-    let finite = |s: &str| {
-        s.trim()
-            .parse::<f32>()
-            .map(f32::is_finite)
-            .unwrap_or(false)
-    };
+    let finite = |s: &str| s.trim().parse::<f32>().map(f32::is_finite).unwrap_or(false);
     finite(n) && finite(d)
 }
 
