@@ -6,12 +6,15 @@
 //! class-sort-order surface the plan §5.5 wants from the registry falls
 //! out of the same table.
 //!
-//! [`PropMask`] is one `u128` bitset over the list. The v0.8 per-edge
+//! [`PropMask`] is a two-word `u128` bitset over the list (the mask
+//! outgrew one word when the filter/backdrop layers pushed the longhand
+//! count past 128). The v0.8 per-edge
 //! set-mask model (padding/margin/border/radius four-bool masks)
 //! generalizes to the whole longhand surface: dominance (`p-4 ⊕ px-8`),
 //! layer overlap (`hover:px-8` vs `p-4`) and conflict eviction are bit
-//! operations, not table walks. 128 bits cover the full v4 longhand set
-//! this pipeline ports; the type asserts the budget in the crate's test module.
+//! operations, not table walks. The two words cover the full v4 longhand
+//! set this pipeline ports; the type asserts the budget in the crate's
+//! test module.
 
 /// Every CSS **longhand** the V1 pipeline lowers to. Shorthands (`padding`,
 /// `border-width`, `inset`, `gap`, `place-*`) never appear: a utility that
