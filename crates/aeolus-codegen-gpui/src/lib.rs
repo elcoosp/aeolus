@@ -12,20 +12,27 @@
 //! The capability table ([`supports`]) is the §3.7 matrix in code:
 //! every longhand GPUI's `StyleRefinement` expresses natively. The
 //! reported longhands are the documented boundaries (outline,
-//! transforms, filters), not silent drops — a host renders the returns
-//! of [`Emit::emit`] as diagnostics. The ring family rides the §3.7
-//! POLYFILL tier ([`polyfilled`]): no native slot, but the runtime
-//! composes the v4 box-shadow list from GPUI's own `Vec<BoxShadow>`
+//! transforms, the filter tier's spatial/backdrop halves), not silent
+//! drops — a host renders the returns of [`Emit::emit`] as
+//! diagnostics. The ring family rides the §3.7 POLYFILL tier
+//! ([`polyfilled`]): no native slot, but the runtime composes the v4
+//! box-shadow list from GPUI's own `Vec<BoxShadow>`
 //! (`aeolus_gpui::RingState`), so a program whose only refusals are
-//! ring longhands emits. The shadow family rides the §3.7 NATIVE tier
-//! beside it — GPUI's `Vec<BoxShadow>` carries the v4 band shape (the
-//! pinned `BoxShadow` even carries the `inset` flag), so the
-//! `shadow-*` presets and the `shadow-{color}` recolour land on the
-//! one slot (`aeolus_gpui::ShadowState`, the band list beside the
+//! ring longhands emits. The filter row's POLYFILL HALF rides beside
+//! it — the seven colour-matrix longhands recolour the element's own
+//! colour slots through the CSS shorthand's sRGB matrices, the
+//! `drop-shadow-*` presets and the reset arm ride the same chain
+//! (`aeolus_gpui::FilterState`), while `blur-*` and the `backdrop-*`
+//! mirrors keep the typed refusal. The shadow family rides the §3.7
+//! NATIVE tier beside them — GPUI's `Vec<BoxShadow>` carries the v4
+//! band shape (the pinned `BoxShadow` even carries the `inset` flag),
+//! so the `shadow-*` presets and the `shadow-{color}` recolour land on
+//! the one slot (`aeolus_gpui::ShadowState`, the band list beside the
 //! ring's).
 
 use aeolus_codegen::conformance::{Capability, Tier};
 use aeolus_codegen::{Emit, ir_path};
+use aeolus_data::rows::{DROP_SHADOW_DEFAULT, DROP_SHADOW_PRESETS, FILTER_CHAIN};
 use aeolus_data::tables::SHADOW_PRESETS;
 
 /// The emit gate's refusal type, re-exported for the macro surface's
@@ -428,14 +435,32 @@ pub const fn supports(prop: Prop) -> bool {
 /// but the runtime composes from native surfaces. Today that is the
 /// ring family — no ring primitive, but the v4 ring machinery IS a
 /// box-shadow list, and GPUI's `Vec<BoxShadow>` carries it
-/// (`aeolus_gpui::RingState`, the spread-only bands). The emit gates
-/// accept a program whose only non-native longhands are these: the
-/// frozen program carries the same `Val`s the runtime's walk
+/// (`aeolus_gpui::RingState`, the spread-only bands) — and the filter
+/// row's POLYFILL HALF: the seven colour-matrix longhands recolour the
+/// element's own colour slots through the CSS shorthand's sRGB
+/// matrices (`aeolus_gpui::FilterState`), the `drop-shadow-*` presets
+/// map onto the same band list (the pinned `BoxShadow` carries the
+/// blur radius the function's third token names), and the bare
+/// `filter`/`filter-none` reset arm rides the same chain. The emit
+/// gates accept a program whose only non-native longhands are these:
+/// the frozen program carries the same `Val`s the runtime's walk
 /// polyfills, so nothing is lost in the static form.
 pub const fn polyfilled(prop: Prop) -> bool {
     matches!(
         prop,
-        Prop::RingWidth | Prop::RingColor | Prop::RingOffsetWidth | Prop::RingOffsetColor
+        Prop::RingWidth
+            | Prop::RingColor
+            | Prop::RingOffsetWidth
+            | Prop::RingOffsetColor
+            | Prop::FilterBrightness
+            | Prop::FilterContrast
+            | Prop::FilterGrayscale
+            | Prop::FilterHueRotate
+            | Prop::FilterInvert
+            | Prop::FilterSaturate
+            | Prop::FilterSepia
+            | Prop::FilterDropShadow
+            | Prop::Filter
     )
 }
 
@@ -527,23 +552,70 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
              (aeolus_gpui's TwAnimExt) applies animation at runtime (plan \
              §3.7's motion row)",
         ),
-        // ---- the filter family (the §3.7 backlog row) -----------------
+        // ---- the filter family (the §3.7 row, the landed polyfill half)
         //
-        // GPUI's style surface carries no filter/backdrop-filter slot —
-        // the static emit's refusal stands (the motion families'
-        // precedent), while the CSS arm renders the v4 var-chain form
-        // the browser cascade composes. The reason names the consumer
-        // so the macro gate's message points at the lane that works.
-        Prop::FilterBlur
-        | Prop::FilterBrightness
+        // The seven colour-matrix longhands, the `drop-shadow-*`
+        // presets and the composed `filter` root ride the POLYFILL tier
+        // — the walk composes them into the element's own colour slots
+        // and GPUI's `Vec<BoxShadow>` (aeolus_gpui::FilterState), so
+        // the closed-world forms pass. The SPATIAL half (`blur-*`)
+        // and the backdrop mirrors keep the typed refusal: no GPUI
+        // slot blurs the element's rendered output or paints behind
+        // it — the reason names the consumer so the macro gate's
+        // message points at the lane that works.
+        Prop::FilterBrightness
         | Prop::FilterContrast
         | Prop::FilterGrayscale
         | Prop::FilterHueRotate
         | Prop::FilterInvert
         | Prop::FilterSaturate
-        | Prop::FilterSepia
-        | Prop::FilterDropShadow
-        | Prop::Filter
+        | Prop::FilterSepia => None,
+        Prop::FilterDropShadow => {
+            if keyword.is_empty() {
+                Some(
+                    "the drop-shadow preset's composed text is the annotation the bare IR \
+                     cannot recover — pass the keyword slice the pipeline freezes beside \
+                     the layers",
+                )
+            } else if keyword == DROP_SHADOW_DEFAULT
+                || DROP_SHADOW_PRESETS.iter().any(|(_, text)| *text == keyword)
+            {
+                // The closed-world forms the registry's drop-shadow
+                // row lowers — the preset functions and the bare
+                // root's two-band `--drop-shadow` token — all compose
+                // into GPUI's band list (`aeolus_gpui::FilterState`).
+                // The registry's table is the one source of truth: a
+                // row-text edit that forgets this gate fails the pin.
+                None
+            } else {
+                Some(
+                    "the drop-shadow text is outside the audited preset forms (the \
+                     drop-shadow() functions the registry table freezes) — the \
+                     multi-token arbitrary lists are the compile seam's own refusal",
+                )
+            }
+        }
+        Prop::Filter => {
+            if keyword.is_empty() {
+                Some(
+                    "the composed root's text is the annotation the bare IR cannot \
+                     recover — pass the keyword slice the pipeline freezes beside the \
+                     layers",
+                )
+            } else if keyword == "none" || keyword == FILTER_CHAIN {
+                // The reset arm (`filter-none`) and the bare root's
+                // all-empty var chain — both closed-world forms the
+                // registry's filter row lowers.
+                None
+            } else {
+                Some(
+                    "the composed filter root's text is outside the audited forms (the \
+                     all-empty chain, the `none` reset) — the arbitrary forms are the \
+                     compile seam's own refusal",
+                )
+            }
+        }
+        Prop::FilterBlur
         | Prop::BackdropBlur
         | Prop::BackdropBrightness
         | Prop::BackdropContrast
@@ -554,9 +626,9 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
         | Prop::BackdropSaturate
         | Prop::BackdropSepia
         | Prop::BackdropFilter => Some(
-            "GPUI's style surface carries no filter slot — the filter \
-             families stay the CSS/interp arms' output (the §3.7 \
-             backlog row's pipeline half)",
+            "GPUI has no blur/backdrop-filter slot — the spatial and backdrop \
+             halves stay the CSS/interp arms' output (the §3.7 filter row's \
+             documented boundary)",
         ),
         Prop::BackgroundImage => {
             if keyword.is_empty() {
