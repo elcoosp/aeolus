@@ -390,6 +390,28 @@ pub enum Prop {
     /// content slot: the bridge reports the longhand (the
     /// grid-auto-flow precedent).
     Content,
+    // ---- text decoration (cascade tail; the §3.7 typography surface's
+    // decoration half) -----------------------------------------------------
+    /// `text-decoration-color` (`decoration-{color}`): the colour the
+    /// composed decoration lines render (the underline AND line-through
+    /// legs, v4's own property). Theme tokens lower through the theme
+    /// pass's tiered table (the `bg-{color}` grammar); GPUI's pinned
+    /// surface carries the `text_decoration_color` method.
+    TextDecorationColor,
+    /// `text-decoration-thickness` (`decoration-{thickness}`): the
+    /// static keywords (`auto`, `from-font`) ride the row's keyword
+    /// table, the bare NON-NEGATIVE integers (the v4
+    /// `isPositiveInteger` round-trip rule) lower as pixel `Num`s.
+    /// GPUI's pinned surface carries the `text_decoration_0..8`
+    /// thickness methods.
+    TextDecorationThickness,
+    /// `text-decoration-style` (`decoration-solid`/`double`/`dotted`/
+    /// `dashed`/`wavy`): the v4 static utilities' keyword slots. GPUI
+    /// renders a single line: solid and wavy express (the pinned
+    /// `text_decoration_solid`/`text_decoration_wavy` methods), the
+    /// other three are the per-decl typed refusal (the emit gate's
+    /// row-text verdict, the box-shadow preset gate's pattern).
+    TextDecorationStyle,
 }
 
 impl Prop {
@@ -539,6 +561,9 @@ impl Prop {
         Self::BackdropFilter,
         Self::GridAutoFlow,
         Self::Content,
+        Self::TextDecorationColor,
+        Self::TextDecorationThickness,
+        Self::TextDecorationStyle,
     ];
 
     /// The CSS longhand name (`padding-top`, `grid-template-columns`, ...).
@@ -696,6 +721,9 @@ impl Prop {
             Prop::BackdropSepia => "--tw-backdrop-sepia",
             Prop::BackdropFilter => "backdrop-filter",
             Prop::Content => "content",
+            Prop::TextDecorationColor => "text-decoration-color",
+            Prop::TextDecorationThickness => "text-decoration-thickness",
+            Prop::TextDecorationStyle => "text-decoration-style",
         }
     }
 }
@@ -715,9 +743,10 @@ impl Prop {
 /// `size-4` vs `w-4`) is `union`/`contains` — no per-backend tables.
 ///
 /// The budget is asserted, not assumed: the two words hold 256 bits
-/// against the current 143-longhand surface (the filter + backdrop
-/// layers' twenty and the content longhand are the latest append-only
-/// blocks; append-only growth is the plan's own rule) — see
+/// against the current 146-longhand surface (the filter + backdrop
+/// layers' twenty, the content longhand, and the decoration half's
+/// three are the latest append-only blocks; append-only growth is the
+/// plan's own rule) — see
 /// `prop_mask_fits_two_words` in tests.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(C)]
