@@ -232,6 +232,12 @@ pub use scan::{
 pub use sort::{SortKey, Sorted, SortedClass, sort, sort_with};
 pub use statics::emit_static;
 pub use style_walk::{StyleWalk, program_style, program_style_struct, program_style_with};
+// The editor half's audited sources: the closed variant spelling set
+// the completion suggests and the colour-group gate that decides which
+// roots complete theme-token spellings — one source of truth with the
+// compile walk, so a suggested class is always a lowered class.
+pub use arbitrary::COLOUR_GROUPS;
+pub use variant::KNOWN_VARIANTS;
 
 // The lowering audits the rows' meaning; a registry semantics bump must
 // re-audit it. Byte-wise const compare — `&str` equality is not a const
