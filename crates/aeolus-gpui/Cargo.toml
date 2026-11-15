@@ -20,6 +20,10 @@ aeolus-macro = { workspace = true }
 # The attribute-bits seam's microbenchmarks (divan, stable — the
 # workspace bench idiom).
 divan = "0.1"
+# The P0 perf-contract harness measures the v0.x lane BESIDE the static
+# walk (the §4 table's two lanes on one harness): the plan cache's
+# static/dynamic paths are the lane the static-program seam replaced.
+aeolus-core = { workspace = true }
 
 [[bench]]
 name = "attrs"
@@ -92,6 +96,23 @@ harness = false
 # identity, and the accumulator's own shade.
 [[bench]]
 name = "filters"
+harness = false
+
+# The decoration tier's microbenchmark (the §3.7 typography surface's
+# decoration half): the walk applying a `tw!`-compiled decoration
+# program (the colour/thickness/style longhands), the integer-thickness
+# two-leg patch, and the line-only floor.
+[[bench]]
+name = "decoration"
+harness = false
+
+# The P0 performance-contract harness (the §4 row's "real numbers
+# replace §4 targets"): the static walk beside the hand-written chains,
+# the clone pattern, the v0.x lane's static/dynamic paths and the
+# ClassCell's warm/cold shapes — five representative strings, the
+# parity pins at setup.
+[[bench]]
+name = "perf_contract"
 harness = false
 
 [lints]
