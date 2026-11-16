@@ -1739,3 +1739,114 @@ fn expand_widget_state_flags_mix_with_the_facts() {
     assert!(out.contains("padding-top = 2rem"), "{out}");
     assert!(out.contains("margin-top = 0.5rem"), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// The form-state battery: the family's headless facts (M2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_form_associated_flag_answers_the_enabled_layer() {
+    // The form-membership fact gates the matches-neither halves: the
+    // flag sets the Env bit, the enabled layer fires on the membership
+    // beside the unset disabled bit (the --target precedent; one flag
+    // per FACT).
+    let (code, out, _) = run_cmd(&["expand", "--form-associated", "enabled:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_required_flags_answer_the_layer() {
+    // The required half rides BOTH facts — the membership beside the
+    // required attribute: the flags together fire the layer, the
+    // attribute flag ALONE never fires it (a non-form element matches
+    // neither half, the matches-neither boundary the family closes).
+    let (code, out, _) = run_cmd(&[
+        "expand",
+        "--form-associated",
+        "--required",
+        "required:hidden",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--required", "required:hidden"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("display = none"), "{out}");
+}
+
+#[test]
+fn expand_optional_flag_answers_the_unmarked_field() {
+    // The optional half is the required attribute's complement WITHIN
+    // the form universe: the membership flag alone fires it, the
+    // attribute beside it keeps it quiet (the `validation_invalid`
+    // precedent — within the membership the pair shares one state
+    // fact).
+    let (code, out, _) = run_cmd(&["expand", "--form-associated", "optional:mt-2"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("margin-top = 0.5rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--form-associated", "--required", "optional:mt-2"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("margin-top = 0.5rem"), "{out}");
+}
+
+#[test]
+fn expand_range_flags_answer_the_layers() {
+    // The range pair rides the bounded universe's membership beside
+    // the value's position: bounded + within fires `in-range:`,
+    // bounded alone fires its `out-of-range:` complement.
+    let (code, out, _) = run_cmd(&["expand", "--range-bounded", "--range-in", "in-range:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--range-bounded", "out-of-range:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+}
+
+#[test]
+fn expand_without_form_state_flags_is_a_quiet_miss() {
+    // The default Env asserts no form-state fact — every family
+    // question gates on the membership, so the layers miss QUIETLY
+    // (never a reported exclusion; the widget-state battery's own
+    // shape).
+    for class in [
+        "enabled:p-8",
+        "required:hidden",
+        "optional:mt-2",
+        "in-range:p-8",
+        "out-of-range:hidden",
+    ] {
+        let (code, out, _) = run_cmd(&["expand", class]);
+        assert_eq!(code, 0, "{out}");
+        assert!(
+            !out.contains("never matched"),
+            "a quiet miss reports nothing: {out}"
+        );
+    }
+
+    let (code, out, _) = run_cmd(&["expand", "enabled:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_form_state_flags_mix_with_the_facts() {
+    // The family rides the same Env the other fact flags build: the
+    // form-state flags compose with the base layer and with each
+    // other (the facts' cascade; the bounded value's in-bounds bit
+    // keeps the out-of-range layer quiet while the in-range layer
+    // fires).
+    let (code, out, _) = run_cmd(&[
+        "expand",
+        "--form-associated",
+        "--range-bounded",
+        "--range-in",
+        "p-4 enabled:p-8 in-range:mt-2 out-of-range:hidden",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+    assert!(out.contains("margin-top = 0.5rem"), "{out}");
+    assert!(!out.contains("display = none"), "{out}");
+}
