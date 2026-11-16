@@ -548,7 +548,7 @@ impl AeolusEngine {
             // The miss-path fold the CLI renders, the engine's own
             // config table riding in (the customs stay the host's
             // registration — the engine's config carries none).
-            for suggestion in suggest_for(diagnostic, self.config.tokens.as_ref(), None) {
+            for suggestion in suggest_for(diagnostic, None) {
                 // The finding the action repairs: the same rendering
                 // the diagnostics publish (the message with its help
                 // line, the stable code).
@@ -1123,6 +1123,10 @@ fn cond_label(cond: Cond) -> &'static str {
         Cond::Visited => "visited",
         Cond::Checked => "checked",
         Cond::PlaceholderShown => "placeholder-shown",
+        Cond::Valid => "valid",
+        Cond::Invalid => "invalid",
+        Cond::UserValid => "user-valid",
+        Cond::UserInvalid => "user-invalid",
         Cond::Selection => "selection",
         Cond::Placeholder => "placeholder",
         Cond::GroupHover => "group-hover",
