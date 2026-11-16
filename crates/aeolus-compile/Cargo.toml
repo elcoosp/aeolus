@@ -153,6 +153,13 @@ harness = false
 name = "validation"
 harness = false
 
+# The element-state family's benchmarks (the tier beside the validation
+# states): the env-answer walk over an element-state-mixed program, the
+# fire path and the resting-env complement path beside it.
+[[bench]]
+name = "element_states"
+harness = false
+
 # The named-container seam's benchmarks (plan §3.5's container row, the
 # resolution half): the per-frame walk over a container-mixed program
 # with the bounds table hit and quietly missed, themeless and themed.
