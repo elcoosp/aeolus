@@ -1067,3 +1067,161 @@ fn plan_is_a_documented_command() {
         "{out}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// fmt: the class-sort seam's file face — one file's class strings into
+// the registry's canonical order, --check as the CI drift gate
+// ---------------------------------------------------------------------------
+
+/// A unique temp dir per test: the caller's own label keys the path
+/// (the check battery's pid+line pattern, label-spelled — the helper's
+/// own `line!()` would name every caller alike, and parallel tests
+/// would share a directory).
+fn temp_dir(label: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("aeolus-cli-fmt-{}-{label}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn fmt_rewrites_the_out_of_order_string_in_place() {
+    let dir = temp_dir("fmt_rewrites");
+    let file = dir.join("widget.rs");
+    std::fs::write(
+        &file,
+        "fn view() {\n    let a = \"hover:flex-col p-4 flex-col\";\n    let b = \"p-4 flex-col\";\n}\n",
+    )
+    .unwrap();
+    let path = file.to_string_lossy().to_string();
+    let (code, out, err) = run_cmd(&["fmt", &path]);
+    assert_eq!(code, 0, "a clean sort formats and passes: {err}");
+    assert_eq!(
+        out,
+        "fn view() {\n    let a = \"p-4 flex-col hover:flex-col\";\n    let b = \"p-4 flex-col\";\n}\n",
+        "the out-of-order string rewrites in place; the canonical string stays byte-identical"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn fmt_preserves_the_rest_of_the_file_byte_for_byte() {
+    let dir = temp_dir("fmt_preserves");
+    let file = dir.join("widget.rs");
+    let source = "// a comment, untouched\nfn view() {\n    let prose = \"the quick brown fox\";\n    let a = \"md:p-4 dark:bg-primary/90 bg-primary p-1 hover:bg-primary\";\n}\n";
+    std::fs::write(&file, source).unwrap();
+    let path = file.to_string_lossy().to_string();
+    let (code, out, _) = run_cmd(&["fmt", &path]);
+    assert_eq!(code, 0);
+    // The multi-byte-safe expectation: only the string CONTENT's span
+    // moves — the comment, the prose string and the structure ride
+    // byte-for-byte.
+    let expected = "// a comment, untouched\nfn view() {\n    let prose = \"the quick brown fox\";\n    let a = \"p-1 bg-primary dark:bg-primary/90 hover:bg-primary md:p-4\";\n}\n";
+    assert_eq!(out, expected);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn fmt_noops_a_clean_file() {
+    let dir = temp_dir("fmt_noops");
+    let file = dir.join("clean.rs");
+    let source = "fn view() {\n    let a = \"p-4 flex-col\";\n}\n";
+    std::fs::write(&file, source).unwrap();
+    let path = file.to_string_lossy().to_string();
+    let (code, out, err) = run_cmd(&["fmt", &path]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(out, source, "a clean file prints byte-identical");
+    assert!(err.is_empty(), "a clean file keeps stderr quiet: {err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn fmt_check_reports_the_lines_and_exits_1() {
+    let dir = temp_dir("fmt_check_reports");
+    let file = dir.join("widget.rs");
+    std::fs::write(
+        &file,
+        "fn view() {\n    let a = \"hover:flex-col p-4 flex-col\";\n}\n",
+    )
+    .unwrap();
+    let path = file.to_string_lossy().to_string();
+    let (code, out, _) = run_cmd(&["fmt", "--check", &path]);
+    assert_eq!(code, 1, "an out-of-order string is the drift exit");
+    // The report names the file, the ONE-BASED line (the lint
+    // convention's caret form), the UTF-16 column of the string
+    // content's start, and the before → after pair.
+    assert!(
+        out.contains(&format!("{path}:2:13")),
+        "the content span's own position: {out}"
+    );
+    assert!(out.contains("hover:flex-col p-4 flex-col"), "{out}");
+    assert!(out.contains("p-4 flex-col hover:flex-col"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn fmt_check_passes_a_clean_file() {
+    let dir = temp_dir("fmt_check_passes");
+    let file = dir.join("clean.rs");
+    std::fs::write(&file, "fn view() {\n    let a = \"p-4 flex-col\";\n}\n").unwrap();
+    let path = file.to_string_lossy().to_string();
+    let (code, out, err) = run_cmd(&["fmt", "--check", &path]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.is_empty(), "a clean check prints nothing: {out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn fmt_reports_misses_on_stderr_without_failing() {
+    let dir = temp_dir("fmt_reports_misses");
+    let file = dir.join("tail.rs");
+    std::fs::write(&file, "let s = \"justify-betwen p-4 not-a-class\";\n").unwrap();
+    let path = file.to_string_lossy().to_string();
+    let (code, out, err) = run_cmd(&["fmt", &path]);
+    // The formatter's job is formatting: the honest tail rides source
+    // order, the miss reports on stderr, the exit stays 0 (the lint
+    // gate is `check`).
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(out, "let s = \"p-4 justify-betwen not-a-class\";\n");
+    assert!(err.contains("aeolus::compile::shape_rejected"), "{err}");
+    assert!(err.contains("aeolus::compile::unknown_root"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn fmt_needs_exactly_one_file() {
+    let (code, _, err) = run_cmd(&["fmt"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("fmt takes exactly one file"), "{err}");
+    let dir = temp_dir("fmt_needs_exactly_one");
+    let a = dir.join("a.rs");
+    let b = dir.join("b.rs");
+    std::fs::write(&a, "let s = \"p-4\";\n").unwrap();
+    std::fs::write(&b, "let s = \"p-4\";\n").unwrap();
+    let (code, _, err) = run_cmd(&["fmt", &a.to_string_lossy(), &b.to_string_lossy()]);
+    assert_eq!(code, 2);
+    assert!(err.contains("fmt takes exactly one file"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn fmt_rejects_unknown_flags() {
+    let (code, _, err) = run_cmd(&["fmt", "--wat", "x.rs"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("unknown flag"), "{err}");
+}
+
+#[test]
+fn fmt_reports_an_unreadable_file() {
+    let (code, _, err) = run_cmd(&["fmt", "/nonexistent/path/widget.rs"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("cannot read"), "{err}");
+    assert!(err.contains("/nonexistent/path/widget.rs"), "{err}");
+}
+
+#[test]
+fn fmt_is_a_documented_command() {
+    let (code, out, _) = run_cmd(&["--help"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("aeolus fmt"), "{out}");
+    assert!(out.contains("canonical order"), "{out}");
+}
