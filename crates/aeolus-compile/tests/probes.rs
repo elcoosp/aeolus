@@ -75,7 +75,8 @@ fn resolved(interp: &Interped, prop: Prop) -> Val {
 fn note_for<'i>(interp: &'i Interped, cond: &Cond) -> Option<&'i InterpNote> {
     interp.notes.iter().find(|note| match note {
         InterpNote::AttributeUnqueried { cond: c, .. }
-        | InterpNote::StructuralUnqueried { cond: c, .. } => c == cond,
+        | InterpNote::StructuralUnqueried { cond: c, .. }
+        | InterpNote::DescendantUnqueried { cond: c, .. } => c == cond,
         _ => false,
     })
 }
