@@ -207,6 +207,27 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
             "the descendant has-* shape is not an attribute bit — the plan §3.5 boundary (the \
              interp reports AttributeUnqueried)",
         ),
+        // The media-feature preferences are frame state — the Env
+        // answers (the interp's `decide` semantics shared verbatim: the
+        // unset bit is the quiet miss a media query that does not hold
+        // is, `motion-safe:` the complement of `motion-reduce:`).
+        Cond::Media(pref) => fires(match pref {
+            aeolus_ir::Pref::MotionSafe => !env.reduced_motion,
+            aeolus_ir::Pref::MotionReduce => env.reduced_motion,
+            aeolus_ir::Pref::ContrastMore => env.more_contrast,
+            aeolus_ir::Pref::ContrastLess => env.less_contrast,
+            aeolus_ir::Pref::ForcedColors => env.forced_colors,
+            aeolus_ir::Pref::Print => env.print_media,
+        }),
+        // The supports conditions answer through the interp arm's
+        // SupportsProbe seam — the render target's capability set is not
+        // frame state (the Env cannot answer it), and this walk consults
+        // no supports source: the layer is excluded and reported (the
+        // interp's `SupportsUnqueried` note on the walk's report channel).
+        Cond::Supports(_) => Fire::Excluded(
+            "no SupportsProbe source — the render target's @supports facts are not frame \
+             state (the interp reports SupportsUnqueried)",
+        ),
         // The structural layers ask the interp arm's StructProbe seam —
         // the element's DOM-position facts are not frame state (the Env
         // cannot answer them), and this walk consults no structural
