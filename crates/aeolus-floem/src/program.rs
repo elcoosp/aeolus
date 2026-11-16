@@ -162,6 +162,14 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
         Cond::Indeterminate => fires(env.indeterminate),
         Cond::Autofill => fires(env.autofilled),
         Cond::ReadOnly => fires(!env.read_write),
+        // The widget-state family is element state — the Env answers
+        // (the interp's `decide` semantics shared verbatim: the
+        // open/inert/default layers on their ONE affirmative fact
+        // each, the `target:` arm's own reading; the unset bits are
+        // the quiet misses a selector that does not match is).
+        Cond::Open => fires(env.opened),
+        Cond::Inert => fires(env.inert),
+        Cond::Default => fires(env.form_default),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
         Cond::PeerHover => fires(env.peer_hover),
