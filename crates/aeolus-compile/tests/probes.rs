@@ -229,14 +229,19 @@ fn the_themed_entry_point_resolves_tokens_and_probes_together() {
 
 #[test]
 fn a_custom_variant_alias_onto_a_probe_cond_fires() {
+    // The alias spelling stays OFF the built-in table (the fold's
+    // documented contract: built-ins win name collisions, the registry
+    // is the oracle — `open` joined the built-in state walls with the
+    // widget-state family, so the demo alias takes a spelling the
+    // built-ins do not carry).
     let customs = Customs::new().variant(CustomVariant::new(
-        "open",
+        "revealed",
         Cond::Data {
             name: "state",
             value: Some("open"),
         },
     ));
-    let compiled = compile_with("open:p-8", &customs, &Config::default()).unwrap();
+    let compiled = compile_with("revealed:p-8", &customs, &Config::default()).unwrap();
     let interp = interp_probes(&compiled.program, &Env::default(), &card_state()).unwrap();
     assert!(interp.notes.is_empty(), "{:?}", interp.notes);
     assert_eq!(resolved(&interp, Prop::PaddingTop), Val::Rem(2.0));
