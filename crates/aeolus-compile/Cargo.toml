@@ -109,6 +109,14 @@ harness = false
 name = "interp"
 harness = false
 
+# The descendant-probe seam's benchmarks (plan §3.5's has- row, the
+# resolution half): the per-frame walk over the Button string's
+# descendant layers with the fact table hit, and the sourceless walk's
+# note path beside it.
+[[bench]]
+name = "descendants"
+harness = false
+
 # The named-container seam's benchmarks (plan §3.5's container row, the
 # resolution half): the per-frame walk over a container-mixed program
 # with the bounds table hit and quietly missed, themeless and themed.
