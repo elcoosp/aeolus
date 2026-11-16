@@ -269,6 +269,21 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "invalid" => Some(Cond::Invalid),
         "user-valid" => Some(Cond::UserValid),
         "user-invalid" => Some(Cond::UserInvalid),
+        // The element-state family (the v4.1.17 state/forms blocks'
+        // static variants, the selector-side tier beside the
+        // validation states): the target/indeterminate/autofill facts
+        // answer their ONE question each, `read-only:` the
+        // editability fact's COMPLEMENT (the `valid:` precedent —
+        // CSS's own reading for a non-editable element IS
+        // `:read-only`). The matches-neither spellings stay out (the
+        // `enabled:`/`required:`/`optional:`/`in-range:`/
+        // `out-of-range:` boundary evidence 27 documented: a
+        // non-form element matches NEITHER half, so one Env bit
+        // cannot answer them honestly).
+        "target" => Some(Cond::Target),
+        "indeterminate" => Some(Cond::Indeterminate),
+        "autofill" => Some(Cond::Autofill),
+        "read-only" => Some(Cond::ReadOnly),
         "placeholder-shown" => Some(Cond::PlaceholderShown),
         "selection" => Some(Cond::Selection),
         "placeholder" => Some(Cond::Placeholder),
@@ -400,6 +415,14 @@ fn state_pseudo(name: &str) -> Option<&'static str> {
         "invalid" => Some(":invalid"),
         "user-valid" => Some(":user-valid"),
         "user-invalid" => Some(":user-invalid"),
+        // The element-state family: the element-own probe states
+        // beside the validation states (the same tier, the same
+        // `:pseudo` shape — the has- inner grammar answers them like
+        // any state spelling).
+        "target" => Some(":target"),
+        "indeterminate" => Some(":indeterminate"),
+        "autofill" => Some(":autofill"),
+        "read-only" => Some(":read-only"),
         _ => None,
     }
 }
@@ -607,6 +630,12 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "invalid",
     "user-valid",
     "user-invalid",
+    // The element-state family (the closed state/forms-block
+    // spellings beside the validation quartet).
+    "target",
+    "indeterminate",
+    "autofill",
+    "read-only",
     "placeholder-shown",
     "selection",
     "placeholder",
@@ -737,6 +766,12 @@ mod completion_tests {
             "invalid",
             "user-valid",
             "user-invalid",
+            // The element-state family (the closed state/forms-block
+            // spellings beside the validation quartet).
+            "target",
+            "indeterminate",
+            "autofill",
+            "read-only",
             "selection",
             "placeholder",
             // The mode.
