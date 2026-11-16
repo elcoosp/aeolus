@@ -1137,6 +1137,7 @@ fn cond_label(cond: Cond) -> &'static str {
         Cond::Has(_) | Cond::GroupHas(_) | Cond::PeerHas(_) => "descendant probe",
         Cond::Supports(_) => "supports condition",
         Cond::Media(_) => "media preference",
+        Cond::Dir(_) => "direction",
         Cond::Structural(_) => "structural",
     }
 }
