@@ -2588,6 +2588,26 @@ fn bucket(
             let when = V0Cond(vec![Atom::On(Test::State(State::Checked))]);
             bucket_rule(plan, when, write);
         }
+        // The validation states: the v0.x `State` surface ALREADY
+        // carries the four forms (the forms block v0.9 landed) — every
+        // layer lands its `Test::State(...)` rule slot, no note rides
+        // (the `checked:` precedent, not the direction boundary).
+        Cond::Valid => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Valid))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::Invalid => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Invalid))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::UserValid => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::UserValid))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::UserInvalid => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::UserInvalid))]);
+            bucket_rule(plan, when, write);
+        }
         Cond::PlaceholderShown => {
             let when = V0Cond(vec![Atom::On(Test::State(State::PlaceholderShown))]);
             bucket_rule(plan, when, write);
