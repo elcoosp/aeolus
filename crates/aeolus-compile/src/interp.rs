@@ -211,6 +211,30 @@ pub struct Env {
     /// honest reading; past the gate the pair answers from the SAME
     /// constraint fact [`Env::validation_invalid`] carries).
     pub user_validated: bool,
+    /// The element is the document's fragment target
+    /// ([`Cond::Target`]'s `target:`; the URL fragment's own answer,
+    /// the element-own probe tier the `checked:` bit rides — the
+    /// resting env's quiet miss a `:target` selector that does not
+    /// match is).
+    pub url_target: bool,
+    /// The element is indeterminate ([`Cond::Indeterminate`]'s
+    /// `indeterminate:`; the checkbox/radio answer the host sets
+    /// beside [`Env::checked`] — one fact per question, an element
+    /// either is or is not indeterminate, the resting env's quiet
+    /// miss).
+    pub indeterminate: bool,
+    /// The element was autofilled ([`Cond::Autofill`]'s `autofill:`;
+    /// the browser's filled-form answer, the resting env's quiet
+    /// miss).
+    pub autofilled: bool,
+    /// The element is user-editable ([`Cond::ReadOnly`]'s
+    /// `read-only:` fires on the COMPLEMENT — the pair's two CSS
+    /// values share one fact, the `validation_invalid` precedent:
+    /// CSS's own reading for a non-editable element IS `:read-only`,
+    /// so the resting env answers the `read-only:` query;
+    /// `read-write:` has no v4.1.17 registration, the spelling stays
+    /// out).
+    pub read_write: bool,
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
@@ -1160,6 +1184,18 @@ pub(crate) fn decide(
         Cond::Invalid => fires(env.validation_invalid),
         Cond::UserValid => fires(env.user_validated && !env.validation_invalid),
         Cond::UserInvalid => fires(env.user_validated && env.validation_invalid),
+        // The element-state family is ELEMENT STATE (the tier
+        // `checked:`/`valid:` ride): the Env answers — the
+        // target/indeterminate/autofill layers on their ONE fact each,
+        // `read-only:` the editability fact's COMPLEMENT (the
+        // `valid:` arm's own reading: CSS's reading for a
+        // non-editable element IS :read-only, so the resting env
+        // answers the read-only query). An unset bit is a QUIET miss
+        // (a selector that does not match, never an exclusion note).
+        Cond::Target => fires(env.url_target),
+        Cond::Indeterminate => fires(env.indeterminate),
+        Cond::Autofill => fires(env.autofilled),
+        Cond::ReadOnly => fires(!env.read_write),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
         Cond::PeerHover => fires(env.peer_hover),
