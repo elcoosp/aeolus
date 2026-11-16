@@ -490,6 +490,25 @@ struct Args {
     opened: bool,
     inert: bool,
     form_default: bool,
+    /// The form-state flags (`expand` only): the TWO-FACT answers the
+    /// interp's [`Env`] carries the `enabled:`/`required:`/`optional:`
+    /// /`in-range:`/`out-of-range:` layers from — element state like
+    /// the state bits, the matches-neither pairs the
+    /// matches-neither-boundary evidence 27 documented. `--form-associated`
+    /// asserts the form-membership fact (a non-form element matches
+    /// NEITHER half, so every form pair gates on it),
+    /// `--required` the required-attribute fact the required/optional
+    /// pair splits on, `--range-bounded` the bounded-universe
+    /// membership fact and `--range-in` the value's position fact the
+    /// in-range/out-of-range pair reads. One flag per FACT (the
+    /// `--target` precedent — no complement flag rides: `optional:`
+    /// answers within the membership, `out-of-range:` within the
+    /// bounds); unset is the quiet miss a selector that does not match
+    /// is.
+    form_associated: bool,
+    required_field: bool,
+    range_bounded: bool,
+    range_in: bool,
     /// The `--container name=rem` bounds (`expand` only, repeatable):
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
@@ -552,6 +571,10 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut opened = false;
     let mut inert = false;
     let mut form_default = false;
+    let mut form_associated = false;
+    let mut required_field = false;
+    let mut range_bounded = false;
+    let mut range_in = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut supports: Vec<String> = Vec::new();
@@ -662,6 +685,27 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             }
             "--default" if allow.contains(&"default") => {
                 form_default = true;
+            }
+            // The form-state flags assert the TWO-FACT questions the
+            // family answers from: `--form-associated` the
+            // form-membership fact (the gate every form pair needs — a
+            // non-form element matches NEITHER half, the boundary
+            // evidence 27 documented), `--required` the
+            // required-attribute fact, `--range-bounded` the
+            // bounded-universe membership fact, `--range-in` the
+            // value's position fact. One flag per FACT (the
+            // `--invalid` precedent — no complement flag rides).
+            "--form-associated" if allow.contains(&"form-associated") => {
+                form_associated = true;
+            }
+            "--required" if allow.contains(&"required") => {
+                required_field = true;
+            }
+            "--range-bounded" if allow.contains(&"range-bounded") => {
+                range_bounded = true;
+            }
+            "--range-in" if allow.contains(&"range-in") => {
+                range_in = true;
             }
             "--more-contrast" if allow.contains(&"more-contrast") => {
                 more_contrast = true;
@@ -854,6 +898,10 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         opened,
         inert,
         form_default,
+        form_associated,
+        required_field,
+        range_bounded,
+        range_in,
         containers,
         has,
         supports,
@@ -1267,6 +1315,10 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "open",
             "inert",
             "default",
+            "form-associated",
+            "required",
+            "range-bounded",
+            "range-in",
         ],
     ) else {
         return 2;
@@ -1319,6 +1371,10 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         opened: args.opened,
         inert: args.inert,
         form_default: args.form_default,
+        form_associated: args.form_associated,
+        required_field: args.required_field,
+        range_bounded: args.range_bounded,
+        range_in: args.range_in,
         ..Env::default()
     };
     // The NAMED containers' widths ride the `--container name=rem`
@@ -1541,8 +1597,17 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
     };
     // The annotations ride the same walk the compile ran (the contract:
     // only the empty input errors it, and `compiled` proves non-empty).
-    let last =
-        last_keyword_texts(&keyword_texts(&classes, &config).expect("non-empty input annotates"));
+    // The contract renders through the error's own channel instead of
+    // an expect: the typed failure writes to stderr and takes the exit
+    // code, the sibling walk's shape — an honest-failure path, never a
+    // panic the contract's wording had to argue cannot happen.
+    let last = match keyword_texts(&classes, &config) {
+        Ok(texts) => last_keyword_texts(&texts),
+        Err(e) => {
+            let _ = writeln!(err, "error: {e}");
+            return 2;
+        }
+    };
     let kw_text = |index: usize, decl: &Decl| -> Option<&'static str> {
         let cond = *interped.conds.get(index)?;
         last.get(&(cond, decl.prop)).copied()
