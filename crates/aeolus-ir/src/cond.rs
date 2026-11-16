@@ -254,6 +254,29 @@ pub enum Cond {
     Checked,
     /// `placeholder-shown:`.
     PlaceholderShown,
+    /// `valid:` — the element's constraints hold (the tailwindcss
+    /// v4.1.17 forms block's static variant,
+    /// `packages/tailwindcss/src/variants.ts`
+    /// `staticVariant('valid', ['&:valid'])`). The COMPLEMENT of
+    /// [`Cond::Invalid`] — the pair's two v4 values share one fact,
+    /// the `ltr:`/`rtl:` precedent (CSS's own reading for a pristine
+    /// field is `:valid`, so the resting env answers the `valid:`
+    /// query).
+    Valid,
+    /// `invalid:` — the element's constraints fail (the same forms
+    /// block's `staticVariant('invalid', ['&:invalid'])`).
+    Invalid,
+    /// `user-valid:` — the element's constraints hold AND the user has
+    /// interacted with it (the forms block's
+    /// `staticVariant('user-valid', ['&:user-valid'])`; the HTML
+    /// spec's `:user-*` pseudo-classes match only after user
+    /// interaction, so the spelling gates on BOTH facts).
+    UserValid,
+    /// `user-invalid:` — the element's constraints fail AND the user
+    /// has interacted with it (the forms block's
+    /// `staticVariant('user-invalid', ['&:user-invalid'])`; the same
+    /// interaction gate).
+    UserInvalid,
     /// `selection:` — the element's own `::selection` rendering (v0.9 §1).
     Selection,
     /// `placeholder:` — the `::placeholder` rendering.
@@ -407,6 +430,13 @@ impl Cond {
             | Cond::Visited
             | Cond::Checked
             | Cond::PlaceholderShown
+            // The validation states ride the element-own probe tier
+            // beside them: the constraint test is a selector conjunct
+            // (`:invalid`, `:user-valid`), not an at-rule.
+            | Cond::Valid
+            | Cond::Invalid
+            | Cond::UserValid
+            | Cond::UserInvalid
             | Cond::Selection
             | Cond::Placeholder
             // The attribute probes compound on the element itself, the
@@ -458,6 +488,12 @@ impl Cond {
             Cond::Visited => Some("visited"),
             Cond::Checked => Some("checked"),
             Cond::PlaceholderShown => Some("placeholder-shown"),
+            // The validation spellings are bare variants: the condition
+            // names its own closed text (the hover arm's shape).
+            Cond::Valid => Some("valid"),
+            Cond::Invalid => Some("invalid"),
+            Cond::UserValid => Some("user-valid"),
+            Cond::UserInvalid => Some("user-invalid"),
             Cond::Selection => Some("selection"),
             Cond::Placeholder => Some("placeholder"),
             // The direction spellings are CLOSED (the Direction enum's
