@@ -258,6 +258,7 @@ Pay only for the dynamism you use:
 ```sh
 aeolus check src/ --theme app.css --fail-on unknown   # lint class strings in CI (@source-aware)
 aeolus sort "block p-4 mx-2 hover:block"              # canonical registry order
+aeolus fmt src/widget.rs                              # one file's class strings into the canonical order (--check = the CI drift gate)
 aeolus explain "p-4 flex-col" --theme shadcn          # class → the Rust tokens it emits
 aeolus expand "hidden dark:block" --dark              # effective declarations under a probe Env
 aeolus build src/ --theme shadcn-dark --out app.css   # whole project → ONE stylesheet
@@ -270,8 +271,9 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 | `aeolus build`                             | scan → global dedupe → registry-ordered rules + self-contained `:root`/`.dark` vars block; diagnostics at **every** occurrence                                                        |
 | `aeolus plan`                              | the V1 lane's plan bridge (`Target::Plan`): the v0.x `StylePlan` the backends consume, as the same canonical snapshot JSON `resolve` prints; slot-boundary notes + per-class misses ride stderr, `--fail-on` keys on the typed codes                        |
 | `aeolus check`                             | unknown classes with suggestions, unsupported utilities with reasons, `cn()` conflicts with winner attribution; `--fail-on` exit codes                                                |
+| `aeolus fmt`                               | the class-sort seam's file face: one file's class strings into the canonical order (`sort`'s batch form — stdout rewrite, the file untouched); `--check` prints `path:line:col "before" -> "after"` per out-of-order string and exits 1 — the CI drift gate |
 | `cargo xtask gen-tables` / `verify-tables` | regenerate & drift-gate the committed artifacts: roots index, [docs/REGISTRY.md](docs/REGISTRY.md), [docs/CONFORMANCE.md](docs/CONFORMANCE.md), the GPUI capability table — a stale row fails plain `cargo test` |
-| `aeolus-lsp` (the LSP server)              | editor hover, diagnostics, completion and colour swatches over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location, `completion` at the typing edge (registry spellings, theme tokens, the closed variant set — the compiler's own audited tables), `documentColor` swatches (the table's resolved light-tier rgba), `documentDiagnostic` pull (LSP 3.17 — the SAME findings the push channel publishes, recomputed on demand), `semanticTokens` (LSP 3.16 — every candidate's compile outcome onto the legend: lowered `class`, refused the custom `refused` type), `colorPresentation` (the picker's spellings — the table walked backwards, every root/token/opacity-step that re-resolves to the picked colour), `inlayHint` (LSP 3.17 — every lowered class rides one hint at its end: the CSS arm's own declarations compacted, the hover's markdown as the tooltip; a refused class never hints), `codeAction` quick fixes (the "did you mean" seam — every correction a spelling the pipeline lowers, the variant prefix and `/modifier` tail composed back on) and `documentHighlight` (the cursor's class, every occurrence in the file); `bin/aeolus-lsp` speaks stdio JSON-RPC |
+| `aeolus-lsp` (the LSP server)              | editor hover, diagnostics, completion and colour swatches over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location, `completion` at the typing edge (registry spellings, theme tokens, the closed variant set — the compiler's own audited tables), `documentColor` swatches (the table's resolved light-tier rgba), `documentDiagnostic` pull (LSP 3.17 — the SAME findings the push channel publishes, recomputed on demand), `semanticTokens` (LSP 3.16 — every candidate's compile outcome onto the legend: lowered `class`, refused the custom `refused` type), `colorPresentation` (the picker's spellings — the table walked backwards, every root/token/opacity-step that re-resolves to the picked colour), `inlayHint` (LSP 3.17 — every lowered class rides one hint at its end: the CSS arm's own declarations compacted, the hover's markdown as the tooltip; a refused class never hints), `codeAction` quick fixes (the "did you mean" seam — every correction a spelling the pipeline lowers, the variant prefix and `/modifier` tail composed back on), `documentHighlight` (the cursor's class, every occurrence in the file) and `formatting` (the class-sort seam's editor face — one edit per out-of-order class string, the canonical order as the new text, an already-canonical string answering nothing: the format-on-save no-op); `bin/aeolus-lsp` speaks stdio JSON-RPC |
 
 ## Correctness & performance
 
@@ -283,7 +285,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1589 tests with all features enabled (2026-11).
+  **zero** allocations). Workspace battery: 1610 tests with all features enabled (2026-11).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -351,7 +353,7 @@ differential oracle — no big-bang migration.
 | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `aeolus-gpui` + five backend crates | see [Backends](#backends) — plan lane + V1 static-program lane each                             |
 | `aeolus-shadcn`                     | shadcn `new-york-v4` class tables verbatim + per-backend wrappers + the closed-world program tables (`ButtonPrograms`, the F6 fix) |
-| `aeolus-cli`                        | `resolve` `css` `diff` `cn` `check` `explain` `sort` `expand` `build` `plan` — zero external crates    |
+| `aeolus-cli`                        | `resolve` `css` `diff` `cn` `check` `explain` `sort` `fmt` `expand` `build` `plan` — zero external crates    |
 | `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges, hover signatures, completion from the audited tables, colour swatches, `documentDiagnostic` pull) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) |
 | `xtask`                             | `gen-tables` / `verify-tables` drift gates for the committed artifacts (+ the §3.7 `gen-gpui-caps` / `verify-gpui-caps` pair)                          |
 | `aeolus-core`                       | v0.x `Resolver` + `StylePlan`: the runtime lane and the differential oracle — **publish-ready** |
@@ -394,6 +396,8 @@ cargo run -p aeolus-lsp --example lsp_semantic_tokens   # the semantic tokens: t
 cargo run -p aeolus-lsp --example lsp_colour_presentations  # the picker's spellings: the table walked backwards
 cargo run -p aeolus-lsp --example lsp_inlay_hints       # the inline hints: the class's CSS at its end
 cargo run -p aeolus-lsp --example lsp_code_actions      # the quick fixes + the click-to-find highlights
+cargo run -p aeolus-lsp --example lsp_format            # the canonical-order formatting: one edit per out-of-order string
+cargo run -p aeolus-cli --example fmt                   # the fmt command's file face: the drift report + the rewrite
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
 cargo run -p aeolus-macro --example frozen_program  # what a tw! expansion actually emits
@@ -481,6 +485,7 @@ cargo run -p aeolus-cli --example theme_spec
 cargo run -p aeolus-cli --example explain
 cargo run -p aeolus-cli --example plan            # the plan bridge: snapshot + notes + the two lanes' answer
 cargo run -p aeolus-cli --example check            # the CI lint face: candidates, typed findings, the fail-on gate
+cargo run -p aeolus-cli --example fmt              # the fmt file face: the drift report beside the rewrite
 # the P5 LSP row
 cargo run -p aeolus-lsp --example lsp_hover
 cargo run -p aeolus-lsp --example lsp_completion  # completion at the typing edge
@@ -490,6 +495,7 @@ cargo run -p aeolus-lsp --example lsp_semantic_tokens  # the semanticTokens lege
 cargo run -p aeolus-lsp --example lsp_colour_presentations  # the picker's spellings, the table walked backwards
 cargo run -p aeolus-lsp --example lsp_inlay_hints  # the inlayHint answers: the CSS at the class's end
 cargo run -p aeolus-lsp --example lsp_code_actions  # the codeAction quick fixes + the documentHighlight occurrences
+cargo run -p aeolus-lsp --example lsp_format  # the formatting answer: the canonical-order edits, applied
 cargo run -p aeolus-lsp --bin aeolus-lsp  # the stdio server (an editor spawns this)
 ```
 
