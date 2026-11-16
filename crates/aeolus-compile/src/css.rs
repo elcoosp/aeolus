@@ -90,7 +90,9 @@ pub enum CssAt {
     /// attribute probes keep).
     Supports(&'static str),
     /// `@media <feature>` — the `motion-*`/`contrast-*`/
-    /// `forced-colors:`/`print:` families. The payload is the typed
+    /// `forced-colors:`/`print:` families beside the input-capability
+    /// tier (`pointer-*`/`any-pointer-*`) and the orientation forms
+    /// (`portrait:`/`landscape:`). The payload is the typed
     /// [`aeolus_ir::Pref`] bit; the head renders the real tailwindcss v4.1.17
     /// text (the static variants' own pinned spellings).
     MediaPref(aeolus_ir::Pref),
@@ -128,6 +130,14 @@ impl CssAt {
                     Pref::ContrastLess => "@media (prefers-contrast: less)".into(),
                     Pref::ForcedColors => "@media (forced-colors: active)".into(),
                     Pref::Print => "@media print".into(),
+                    Pref::PointerFine => "@media (pointer: fine)".into(),
+                    Pref::PointerCoarse => "@media (pointer: coarse)".into(),
+                    Pref::PointerNone => "@media (pointer: none)".into(),
+                    Pref::AnyPointerFine => "@media (any-pointer: fine)".into(),
+                    Pref::AnyPointerCoarse => "@media (any-pointer: coarse)".into(),
+                    Pref::AnyPointerNone => "@media (any-pointer: none)".into(),
+                    Pref::Portrait => "@media (orientation: portrait)".into(),
+                    Pref::Landscape => "@media (orientation: landscape)".into(),
                 }
             }
         }
