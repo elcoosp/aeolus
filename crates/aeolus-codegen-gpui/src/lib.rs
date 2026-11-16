@@ -217,7 +217,7 @@ pub fn emit_static_program(program: &Program, keywords: &[&str]) -> TokenStream 
     for (layer_index, layer) in program.layers.iter().enumerate() {
         let cond = cond_tokens(layer.cond, &ir);
         let decls = layer.decls.iter().map(|decl| {
-            let prop: TokenStream = format!("{:?}", decl.prop).parse().expect("variant name");
+            let prop = ident_tokens(decl.prop, "prop");
             let val = val_tokens(decl.val, &ir);
             quote! {
                 #ir::Decl { prop: #ir::Prop::#prop, val: #val }
@@ -246,11 +246,21 @@ pub fn emit_static_program(program: &Program, keywords: &[&str]) -> TokenStream 
     }}
 }
 
+/// One IR enum unit's Debug name → the identifier tokens it freezes
+/// into. The IR's Debug spellings ARE the Rust identifiers (`Md`,
+/// `PointerFine`, the `Structural` variant names) — a parse failure
+/// there is the codegen host's own bug, named by `what`.
+fn ident_tokens(value: impl std::fmt::Debug, what: &str) -> TokenStream {
+    format!("{value:?}")
+        .parse()
+        .unwrap_or_else(|_| panic!("{what}: the Debug name is not valid Rust token syntax"))
+}
+
 /// Flatten per-class annotations into the declaration-parallel slice the
 /// static program stores. Duplicate `(cond, prop)` pairs consume in
 /// source order (the compile assembly's stable order).
 fn bp_tokens(bp: Bp, ir: &TokenStream) -> TokenStream {
-    let name: TokenStream = format!("{bp:?}").parse().expect("breakpoint name");
+    let name = ident_tokens(bp, "breakpoint");
     quote! { #ir::Bp::#name }
 }
 
@@ -309,7 +319,7 @@ fn cond_tokens(cond: Cond, ir: &TokenStream) -> TokenStream {
         // it verbatim, the interp walk's `StructProbe` seam answering
         // at runtime.
         Cond::Structural(test) => {
-            let name: TokenStream = format!("{test:?}").parse().expect("structural test name");
+            let name = ident_tokens(test, "structural test");
             quote! { #ir::Cond::Structural(#ir::Structural::#name) }
         }
         // The supports condition: the payload is the rendered condition
@@ -321,11 +331,11 @@ fn cond_tokens(cond: Cond, ir: &TokenStream) -> TokenStream {
         // the frozen static item names it, the interp walk's env facts
         // answering at runtime.
         Cond::Media(pref) => {
-            let name: TokenStream = format!("{pref:?}").parse().expect("preference name");
+            let name = ident_tokens(pref, "preference");
             quote! { #ir::Cond::Media(#ir::Pref::#name) }
         }
         other => {
-            let name: TokenStream = format!("{other:?}").parse().expect("condition name");
+            let name = ident_tokens(other, "condition");
             quote! { #ir::Cond::#name }
         }
     }
