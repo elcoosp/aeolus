@@ -218,6 +218,14 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
             aeolus_ir::Pref::ContrastLess => env.less_contrast,
             aeolus_ir::Pref::ForcedColors => env.forced_colors,
             aeolus_ir::Pref::Print => env.print_media,
+            aeolus_ir::Pref::PointerFine => env.pointer_fine,
+            aeolus_ir::Pref::PointerCoarse => env.pointer_coarse,
+            aeolus_ir::Pref::PointerNone => env.pointer_none,
+            aeolus_ir::Pref::AnyPointerFine => env.any_pointer_fine,
+            aeolus_ir::Pref::AnyPointerCoarse => env.any_pointer_coarse,
+            aeolus_ir::Pref::AnyPointerNone => env.any_pointer_none,
+            aeolus_ir::Pref::Portrait => env.portrait,
+            aeolus_ir::Pref::Landscape => !env.portrait,
         }),
         // The supports conditions answer through the interp arm's
         // SupportsProbe seam — the render target's capability set is not
