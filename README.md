@@ -248,6 +248,8 @@ Pay only for the dynamism you use:
 | `sm:` … `2xl:`                                             | `Env.bp` compare                                                      | ✅ 1 compare                                                  |
 | `data-*:` `aria-*:`                                        | typed `AttrProbe` bits (`tw_probes`), CSS selector semantics          | ✅                                                            |
 | `has-*:` `group-has-*:` `peer-has-*:`                      | typed `Cond::Has` + `DescendantProbe` subtree facts (`tw`-side `*_descendants` walks), CSS `:has()` semantics | ✅                                                            |
+| `supports-*:` `supports-[…]:`                              | typed `Cond::Supports` + `SupportsProbe` capability facts (`tw`-side `*_supports` walks), CSS `@supports` semantics | ✅                                                            |
+| `motion-*:` `contrast-*:` `forced-colors:` `print:`        | typed `Cond::Media` bits, `Env` preference facts (frame state — no probe seam), CSS media-query semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
 | `selection:` `placeholder:`                                | `PseudoTarget` scoped cascades                                        | ✅                                                            |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
@@ -412,7 +414,11 @@ cargo run -p aeolus-lsp --example lsp_format            # the canonical-order fo
 cargo run -p aeolus-cli --example fmt                   # the fmt command's file face: the drift report + the rewrite
 cargo run -p aeolus-compile --example descendants       # the descendant-probe seam: the has-* family answers
 cargo run -p aeolus-cli --example expand_descendants    # expand --has: the subtree facts the has-* layers answer from
+cargo run -p aeolus-compile --example supports          # the supports seam: the @supports family answers
+cargo run -p aeolus-cli --example expand_supports       # expand --supports: the capability facts the supports layers answer from
+cargo run -p aeolus-compile --example preferences       # the preference families: the media-feature tier answers
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
+cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
 cargo run -p aeolus-macro --example frozen_program  # what a tw! expansion actually emits
 cargo run -p aeolus-macro --example variants        # variants!/tw_cn!/theme!: the cva tables + the baked theme
