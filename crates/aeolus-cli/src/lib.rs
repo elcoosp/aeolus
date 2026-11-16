@@ -31,7 +31,7 @@ use aeolus_compile::{
     StructFacts, build as build_artifact, compile, compile_theme, emit_plan, emit_plan_theme,
     emit_rust, emit_rust_theme, interp_containers, interp_containers_struct, interp_struct,
     interp_theme, interp_theme_containers, interp_theme_containers_struct, interp_theme_struct,
-    keyword_texts, scan, sort,
+    keyword_texts, scan, scan_rust_strings, sort,
 };
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
@@ -386,6 +386,7 @@ where
         "check" => cmd_check(rest, out, err),
         "explain" => cmd_explain(rest, out, err),
         "sort" => cmd_sort(rest, out, err),
+        "fmt" => cmd_fmt(rest, out, err),
         "expand" => cmd_expand(rest, out, err),
         "build" => cmd_build(rest, out, err),
         "plan" => cmd_plan(rest, out, err),
@@ -770,6 +771,108 @@ fn cmd_sort(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             2
         }
     }
+}
+
+/// `fmt` (the class-sort seam's FILE face — the §5.5 "class sorting"
+/// line's batch form, beside `sort`'s literal-string form and the LSP's
+/// `textDocument/formatting` editor face): read ONE file, walk its
+/// class strings through the extraction seam, and rewrite every string
+/// whose order is not yet the registry's canonical one — the sort
+/// seam's own canonical join as the new text, the rest of the file
+/// byte-for-byte.
+///
+/// Default: print the rewritten file to stdout (a shell redirects; the
+/// file itself is never touched). `--check`: print NO rewrite — one
+/// `path:line:col "before" -> "after"` line per out-of-order string —
+/// and exit 1 when any string needs an edit: the CI drift gate a
+/// format-on-save pre-commit rides.
+///
+/// The misses NEVER block (the formatter's job is formatting): a class
+/// the seam cannot order rides the tail in source order and reports
+/// the SAME typed, coded diagnostic `sort` reports, on stderr, exit 0 —
+/// the lint gate is `check` (the two channels' own split).
+fn cmd_fmt(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    #[cfg(feature = "tracing")]
+    let _fmt_span = tracing::debug_span!("aeolus_fmt").entered();
+    let mut check = false;
+    let mut files: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--check" => check = true,
+            other if other.starts_with("--") => {
+                let _ = writeln!(err, "unknown flag {other:?}\n{USAGE}");
+                return 2;
+            }
+            other => files.push(other.to_string()),
+        }
+        i += 1;
+    }
+    let [path] = files.as_slice() else {
+        let _ = writeln!(err, "fmt takes exactly one file\n{USAGE}");
+        return 2;
+    };
+    let Ok(source) = std::fs::read_to_string(path) else {
+        let _ = writeln!(err, "error: cannot read {path}");
+        return 2;
+    };
+    // The rewrite: every out-of-order string's content span, applied
+    // back to front (the hits ride in source order, so later edits
+    // never shift earlier spans).
+    let mut rewritten = source.clone();
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    for hit in scan_rust_strings(&source) {
+        let Ok(sorted) = sort(&hit.text) else {
+            // Only the empty input errors; the extractor's prose
+            // pre-filter keeps those out anyway.
+            continue;
+        };
+        let canonical = sorted.to_class_string();
+        if canonical == hit.text {
+            continue;
+        }
+        // The miss channel: the SAME typed, coded lines `sort` reports
+        // (stderr, never blocking — the lint gate is `check`).
+        for diagnostic in &sorted.diagnostics {
+            let _ = writeln!(err, "error: {diagnostic} [{}]", diagnostic.kind.code());
+        }
+        edits.push((hit.offset, hit.offset + hit.text.len(), canonical));
+    }
+    for (start, end, text) in edits.iter().rev() {
+        rewritten.replace_range(start..end, text);
+    }
+    if check {
+        if edits.is_empty() {
+            return 0;
+        }
+        // The drift report: one `path:line:col "before" -> "after"`
+        // line per edit, the positions the string content's own start
+        // (the UTF-16 column an editor's caret model rides).
+        let mut report_edits = edits.clone();
+        report_edits.sort_by_key(|(start, _, _)| *start);
+        for (start, end, text) in &report_edits {
+            let before = &source[*start..*end];
+            let (line, col) = line_character(&source, *start);
+            let _ = writeln!(out, "{path}:{line}:{col} {before:?} -> {text:?}");
+        }
+        return 1;
+    }
+    let _ = write!(out, "{rewritten}");
+    0
+}
+
+/// A byte offset's `(line, column-UTF16)` — the fmt report's position
+/// form (one-based line, the editor's caret column), the engine's own
+/// conversion shape at the CLI's face.
+fn line_character(text: &str, offset: usize) -> (usize, usize) {
+    let head = &text[..offset];
+    let line = head.matches('\n').count() + 1;
+    let line_start = head.rfind('\n').map_or(0, |i| i + 1);
+    let character = head[line_start..]
+        .chars()
+        .map(char::len_utf16)
+        .sum::<usize>();
+    (line, character)
 }
 
 /// The text form of one effective declaration's value (the `expand`
@@ -1775,6 +1878,8 @@ USAGE:
                                                              lint class strings in sources
   aeolus explain [--theme <spec>] <classes...>               per-class Rust tokens (the emit (a) arm)
   aeolus sort    [--json] <classes...>                       registry-order class sort (the §5.5 parity line)
+  aeolus fmt     [--check] <file>                            one file's class strings into the canonical order;
+                                                             --check prints the drift report and exits 1 (CI gate)
   aeolus expand  [--theme <spec>] [--dark] [--container name=rem] [--child i/n] [--empty] [--json] <classes...>
                                                              effective declarations (the interp (c) arm);
                                                              --container names the bounds the named
