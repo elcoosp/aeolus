@@ -76,7 +76,8 @@ fn note_for<'i>(interp: &'i Interped, cond: &Cond) -> Option<&'i InterpNote> {
     interp.notes.iter().find(|note| match note {
         InterpNote::AttributeUnqueried { cond: c, .. }
         | InterpNote::StructuralUnqueried { cond: c, .. }
-        | InterpNote::DescendantUnqueried { cond: c, .. } => c == cond,
+        | InterpNote::DescendantUnqueried { cond: c, .. }
+        | InterpNote::SupportsUnqueried { cond: c, .. } => c == cond,
         _ => false,
     })
 }
