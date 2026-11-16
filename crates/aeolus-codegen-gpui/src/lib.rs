@@ -312,6 +312,18 @@ fn cond_tokens(cond: Cond, ir: &TokenStream) -> TokenStream {
             let name: TokenStream = format!("{test:?}").parse().expect("structural test name");
             quote! { #ir::Cond::Structural(#ir::Structural::#name) }
         }
+        // The supports condition: the payload is the rendered condition
+        // text (the `&'static str` the fold interned) — the frozen
+        // static item carries it verbatim, the interp walk's
+        // `SupportsProbe` seam answering at runtime.
+        Cond::Supports(condition) => quote! { #ir::Cond::Supports(#condition) },
+        // The media-feature preferences: the payload is the typed bit —
+        // the frozen static item names it, the interp walk's env facts
+        // answering at runtime.
+        Cond::Media(pref) => {
+            let name: TokenStream = format!("{pref:?}").parse().expect("preference name");
+            quote! { #ir::Cond::Media(#ir::Pref::#name) }
+        }
         other => {
             let name: TokenStream = format!("{other:?}").parse().expect("condition name");
             quote! { #ir::Cond::#name }
