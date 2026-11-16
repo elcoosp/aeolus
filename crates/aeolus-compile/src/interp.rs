@@ -169,6 +169,28 @@ pub struct Env {
     /// The render target is the print media ([`Cond::Media`]'s
     /// `print:`).
     pub print_media: bool,
+    /// The primary pointer is precise ([`Cond::Media`]'s
+    /// `pointer-fine:`).
+    pub pointer_fine: bool,
+    /// The primary pointer is coarse ([`Cond::Media`]'s
+    /// `pointer-coarse:`).
+    pub pointer_coarse: bool,
+    /// There is no primary pointer ([`Cond::Media`]'s
+    /// `pointer-none:`).
+    pub pointer_none: bool,
+    /// ANY pointer is precise ([`Cond::Media`]'s
+    /// `any-pointer-fine:`).
+    pub any_pointer_fine: bool,
+    /// ANY pointer is coarse ([`Cond::Media`]'s
+    /// `any-pointer-coarse:`).
+    pub any_pointer_coarse: bool,
+    /// NO pointer exists ([`Cond::Media`]'s `any-pointer-none:`).
+    pub any_pointer_none: bool,
+    /// The viewport is taller than wide ([`Cond::Media`]'s
+    /// `portrait:`; `landscape:` is the COMPLEMENT — the feature's two
+    /// v4 values share one fact, the orientation query always holding
+    /// an answer the way the reduced-motion one does).
+    pub portrait: bool,
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
@@ -1190,6 +1212,14 @@ pub(crate) fn decide(
             aeolus_ir::Pref::ContrastLess => env.less_contrast,
             aeolus_ir::Pref::ForcedColors => env.forced_colors,
             aeolus_ir::Pref::Print => env.print_media,
+            aeolus_ir::Pref::PointerFine => env.pointer_fine,
+            aeolus_ir::Pref::PointerCoarse => env.pointer_coarse,
+            aeolus_ir::Pref::PointerNone => env.pointer_none,
+            aeolus_ir::Pref::AnyPointerFine => env.any_pointer_fine,
+            aeolus_ir::Pref::AnyPointerCoarse => env.any_pointer_coarse,
+            aeolus_ir::Pref::AnyPointerNone => env.any_pointer_none,
+            aeolus_ir::Pref::Portrait => env.portrait,
+            aeolus_ir::Pref::Landscape => !env.portrait,
         }),
         // The supports conditions answer through their own seam (the
         // `@supports` family, the at-rule tier beside the media forms):
