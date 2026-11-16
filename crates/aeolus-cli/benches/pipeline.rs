@@ -1,6 +1,7 @@
 //! Pipeline benchmarks (v0.7 §4): the headless consumption path —
 //! extraction + linting + snapshot emission on realistic inputs.
-//! Run with `cargo bench -p aeolus-cli`.
+//! Divan, stable — the workspace bench idiom. Run with
+//! `cargo bench -p aeolus-cli`.
 
 use aeolus_cli::{check_string, extract_candidate_strings, load_theme};
 use aeolus_core::{Resolver, StylePlan, TailwindTheme, shadcn_css};
