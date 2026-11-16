@@ -329,6 +329,51 @@ pub enum Cond {
     /// misses `:indeterminate`, so the resting env's quiet miss
     /// answers.
     Default,
+    /// `enabled:` — the element is a form-associated control that is
+    /// not disabled (the forms block's
+    /// `staticVariant('enabled', ['&:enabled'])`). The matches-neither
+    /// pair evidence 27 documented: a non-form element matches NEITHER
+    /// `:enabled` NOR the `:disabled` arms, so the condition answers
+    /// from TWO facts — the form-membership fact the Env carries
+    /// beside the disabled bit (the two-fact shape the form-state
+    /// family closes the boundary with).
+    Enabled,
+    /// `required:` — the element is a form-associated control that
+    /// carries the `required` attribute (the forms block's
+    /// `staticVariant('required', ['&:required'])`). The
+    /// matches-neither pair the membership fact answers: the attribute
+    /// bit alone never fires — a non-form element matches NEITHER
+    /// `:required` NOR `:optional`, so BOTH halves gate on the
+    /// form-membership fact (the [`Cond::Enabled`] shape, evidence
+    /// 27's own boundary).
+    Required,
+    /// `optional:` — the element is a form-associated control that
+    /// carries NO `required` attribute (the forms block's
+    /// `staticVariant('optional', ['&:optional'])`). The required
+    /// attribute's COMPLEMENT within the form universe (the
+    /// `validation_invalid` precedent — within the membership the
+    /// pair shares one state fact), gated on the same membership fact:
+    /// the complement is NOT a resting answer, a non-form element
+    /// matches neither half.
+    Optional,
+    /// `in-range:` — the element is a bounded field whose value sits
+    /// within the declared min/max bounds (the forms block's
+    /// `staticVariant('in-range', ['&:in-range'])`). The matches-neither
+    /// pair the range-membership fact answers: a non-range element (or
+    /// a field with no position answer yet — the pristine empty
+    /// reading) matches NEITHER `:in-range` NOR `:out-of-range`, so
+    /// both halves gate on the bounded fact the Env carries beside the
+    /// value's position bit (the [`Cond::Enabled`] shape).
+    InRange,
+    /// `out-of-range:` — the element is a bounded field whose value
+    /// sits OUTSIDE the declared min/max bounds (the forms block's
+    /// `staticVariant('out-of-range', ['&:out-of-range'])`). The value
+    /// position's COMPLEMENT within the bounded universe (the
+    /// `validation_invalid` precedent — within the membership the
+    /// pair shares one position fact), gated on the same membership
+    /// fact: the complement is NOT a resting answer, a non-range
+    /// element matches neither half.
+    OutOfRange,
     /// `selection:` — the element's own `::selection` rendering (v0.9 §1).
     Selection,
     /// `placeholder:` — the `::placeholder` rendering.
@@ -503,6 +548,15 @@ impl Cond {
             | Cond::Open
             | Cond::Inert
             | Cond::Default
+            // The form-state family rides the same element-own probe
+            // tier: the enabled, required, optional and range tests are
+            // selector conjuncts (`:enabled`, `:in-range`), not
+            // at-rules.
+            | Cond::Enabled
+            | Cond::Required
+            | Cond::Optional
+            | Cond::InRange
+            | Cond::OutOfRange
             | Cond::Selection
             | Cond::Placeholder
             // The attribute probes compound on the element itself, the
@@ -573,6 +627,13 @@ impl Cond {
             Cond::Open => Some("open"),
             Cond::Inert => Some("inert"),
             Cond::Default => Some("default"),
+            // The form-state spellings are bare variants: the condition
+            // names its own closed text (the widget-state arm's shape).
+            Cond::Enabled => Some("enabled"),
+            Cond::Required => Some("required"),
+            Cond::Optional => Some("optional"),
+            Cond::InRange => Some("in-range"),
+            Cond::OutOfRange => Some("out-of-range"),
             Cond::Selection => Some("selection"),
             Cond::Placeholder => Some("placeholder"),
             // The direction spellings are CLOSED (the Direction enum's
