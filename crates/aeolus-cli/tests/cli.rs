@@ -1476,3 +1476,49 @@ fn expand_portrait_asks_the_complement_pair() {
     assert_eq!(code, 0);
     assert!(!out.contains("padding-top = 2rem"), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// expand --rtl: the direction family's CLI face
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_rtl_flag_answers_the_layers() {
+    // The direction fact is frame state like the capability bits: the
+    // flag sets the Env bit, the rtl layers fire (the --portrait
+    // precedent; one flag per FACT — `ltr:` answers from the same bit).
+    let (code, out, _) = run_cmd(&["expand", "--rtl", "rtl:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--rtl", "rtl:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+}
+
+#[test]
+fn expand_without_rtl_flag_is_a_quiet_miss() {
+    // The default Env asserts no rtl fact — the direction is not rtl,
+    // the rtl layers miss QUIETLY (never a reported exclusion).
+    let (code, out, _) = run_cmd(&["expand", "rtl:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "a quiet miss reports nothing: {out}"
+    );
+}
+
+#[test]
+fn expand_ltr_answers_the_complement() {
+    // The direction query always holds an answer: ltr fires while the
+    // rtl bit is off (the resting env's own answer — CSS's initial
+    // `direction` is ltr, the landscape precedent), misses when --rtl
+    // sets it.
+    let (code, out, _) = run_cmd(&["expand", "ltr:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--rtl", "ltr:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
