@@ -118,6 +118,12 @@ pub fn env_for_probe(probe: &IcedProbe) -> Env {
         any_pointer_coarse: false,
         any_pointer_none: false,
         portrait: false,
+        // The direction fact rides no probe surface either (the
+        // resolved direction answers from the host's DOM, not the
+        // element state): the probe path honestly keeps it off — the
+        // rtl/ltr layers stay the quiet miss a selector that does not
+        // match is.
+        direction_rtl: false,
         viewport_rem: probe.width.unwrap_or(0.0) / REM_PX,
         container_rem: probe.container_width.map(|width| width / REM_PX),
     }
@@ -158,6 +164,9 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             }
             PlanNoteKind::MediaFeature { pref } => {
                 (format!("media:{}", pref.source()), boundary.help())
+            }
+            PlanNoteKind::Direction { cond } => {
+                (format!("direction:{}", cond.source()), boundary.help())
             }
             PlanNoteKind::CompositeValue { prop, text } => {
                 (format!("{} {text}", prop.name()), boundary.help())
