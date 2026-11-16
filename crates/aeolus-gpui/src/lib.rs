@@ -653,6 +653,14 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
             aeolus_ir::Pref::Portrait => env.portrait,
             aeolus_ir::Pref::Landscape => !env.portrait,
         },
+        // The direction variants are frame state: the env answers (the
+        // interp's `decide` semantics shared verbatim — `rtl:` on the
+        // fact, `ltr:` its complement; the unset bit is the quiet miss
+        // a selector that does not match is).
+        Cond::Dir(dir) => match dir {
+            aeolus_ir::Direction::Ltr => !env.direction_rtl,
+            aeolus_ir::Direction::Rtl => env.direction_rtl,
+        },
         // The supports shape routes through `cond_matches`'s seam arm
         // the same way (the render target's capability set is not frame
         // state — the env alone has no answer for it).
