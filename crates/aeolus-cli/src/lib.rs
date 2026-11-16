@@ -463,6 +463,21 @@ struct Args {
     /// quiet miss a selector that does not match is.
     validation_invalid: bool,
     user_validated: bool,
+    /// The element-state flags (`expand` only): the one-fact answers the
+    /// interp's [`Env`] carries the `target:`/`indeterminate:`/
+    /// `autofill:`/`read-only:` layers from — element state like the
+    /// state bits. `--target` asserts the fragment-target fact,
+    /// `--indeterminate` the checkbox/radio answer, `--autofill` the
+    /// filled-form answer; `read-only:` takes NO flag — the resting
+    /// env's complement answer (CSS's own reading for a non-editable
+    /// element is :read-only, the `valid:` precedent), and
+    /// `--read-write` asserts the editability fact the complement
+    /// reads. Unset is the quiet miss a selector that does not match
+    /// is.
+    url_target: bool,
+    indeterminate: bool,
+    autofilled: bool,
+    read_write: bool,
     /// The `--container name=rem` bounds (`expand` only, repeatable):
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
@@ -518,6 +533,10 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut direction_rtl = false;
     let mut validation_invalid = false;
     let mut user_validated = false;
+    let mut url_target = false;
+    let mut indeterminate = false;
+    let mut autofilled = false;
+    let mut read_write = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut supports: Vec<String> = Vec::new();
@@ -590,6 +609,27 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--user-invalid" if allow.contains(&"user-invalid") => {
                 user_validated = true;
                 validation_invalid = true;
+            }
+            // The element-state flags assert the one-fact questions the
+            // family answers from: `--target` the fragment-target fact,
+            // `--indeterminate` the checkbox/radio answer, `--autofill`
+            // the filled-form answer. `read-only:` takes NO flag — the
+            // resting env's complement answer (CSS's own reading for a
+            // non-editable element is :read-only, the `valid:`
+            // precedent); `--read-write` asserts the editability fact
+            // the complement reads (one flag per FACT, the `--invalid`
+            // precedent).
+            "--target" if allow.contains(&"target") => {
+                url_target = true;
+            }
+            "--indeterminate" if allow.contains(&"indeterminate") => {
+                indeterminate = true;
+            }
+            "--autofill" if allow.contains(&"autofill") => {
+                autofilled = true;
+            }
+            "--read-write" if allow.contains(&"read-write") => {
+                read_write = true;
             }
             "--more-contrast" if allow.contains(&"more-contrast") => {
                 more_contrast = true;
@@ -775,6 +815,10 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         direction_rtl,
         validation_invalid,
         user_validated,
+        url_target,
+        indeterminate,
+        autofilled,
+        read_write,
         containers,
         has,
         supports,
@@ -1181,6 +1225,10 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "invalid",
             "user-valid",
             "user-invalid",
+            "target",
+            "indeterminate",
+            "autofill",
+            "read-write",
         ],
     ) else {
         return 2;
@@ -1226,6 +1274,10 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         direction_rtl: args.direction_rtl,
         validation_invalid: args.validation_invalid,
         user_validated: args.user_validated,
+        url_target: args.url_target,
+        indeterminate: args.indeterminate,
+        autofilled: args.autofilled,
+        read_write: args.read_write,
         ..Env::default()
     };
     // The NAMED containers' widths ride the `--container name=rem`
