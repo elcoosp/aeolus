@@ -539,6 +539,16 @@ pub enum NamedVariant<'a> {
     InRange,
     /// `out-of-range`.
     OutOfRange,
+    /// `open` — the disclosure/popover state (the v4.1.17 state
+    /// block's static variant; the widget-state family's spelling).
+    Open,
+    /// `inert` — the frozen-subtree state (the v4.1.17 state block's
+    /// static variant; the widget-state family's spelling).
+    Inert,
+    /// `default` — the form group's default-control state (the
+    /// v4.1.17 forms block's static variant; the widget-state
+    /// family's spelling).
+    Default,
 
     // ---- media -----------------------------------------------------------
     /// `dark` (class/OS dark mode).
@@ -621,6 +631,11 @@ impl NamedVariant<'_> {
             NamedVariant::ReadOnly => "read-only".into(),
             NamedVariant::InRange => "in-range".into(),
             NamedVariant::OutOfRange => "out-of-range".into(),
+            // The widget-state family's spellings (the state/forms
+            // blocks' static variants, the closed bare forms).
+            NamedVariant::Open => "open".into(),
+            NamedVariant::Inert => "inert".into(),
+            NamedVariant::Default => "default".into(),
             NamedVariant::Dark => "dark".into(),
             NamedVariant::Print => "print".into(),
             NamedVariant::MotionSafe => "motion-safe".into(),
@@ -672,6 +687,12 @@ impl NamedVariant<'_> {
             NamedVariant::ReadOnly => State::ReadOnly,
             NamedVariant::InRange => State::InRange,
             NamedVariant::OutOfRange => State::OutOfRange,
+            // The widget-state family's states (the v4.1.17 state/forms
+            // blocks' static variants — the closed probe-testable set
+            // extends with the family).
+            NamedVariant::Open => State::Open,
+            NamedVariant::Inert => State::Inert,
+            NamedVariant::Default => State::Default,
             _ => return None,
         })
     }
@@ -748,6 +769,20 @@ pub enum State {
     InRange,
     /// `:out-of-range`.
     OutOfRange,
+    /// `:is([open], :popover-open, :open)` — the element is open (the
+    /// v4.1.17 state block's `staticVariant('open', …)`; the
+    /// disclosure/popover answer the host widget tracks — the slot the
+    /// widget-state family's V1 `Cond::Open` bridges onto).
+    Open,
+    /// `:is([inert], [inert] *)` — the element is inside (or itself
+    /// carries) an `[inert]` frozen subtree (the v4.1.17 state block's
+    /// `staticVariant('inert', …)`; the slot the widget-state family's
+    /// V1 `Cond::Inert` bridges onto).
+    Inert,
+    /// `:default` — the element is its form group's default control
+    /// (the v4.1.17 forms block's `staticVariant('default', …)`; the
+    /// slot the widget-state family's V1 `Cond::Default` bridges onto).
+    Default,
 }
 
 impl State {
