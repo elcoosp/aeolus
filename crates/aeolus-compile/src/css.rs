@@ -688,6 +688,14 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
             "indeterminate" => set.pseudos.push(":indeterminate"),
             "autofill" => set.pseudos.push(":autofill"),
             "read-only" => set.pseudos.push(":read-only"),
+            // The widget-state family: the v4.1.17 state/forms blocks'
+            // selector texts (the compound `:is(...)` heads are the
+            // upstream `staticVariant` selectors' own shape, the
+            // selector-side tier beside the element-state family — no
+            // at-rule head).
+            "open" => set.pseudos.push(":is([open], :popover-open, :open)"),
+            "inert" => set.pseudos.push(":is([inert], [inert] *)"),
+            "default" => set.pseudos.push(":default"),
             "placeholder-shown" => set.pseudos.push(":placeholder-shown"),
             "selection" => set.pseudos.push("::selection"),
             "placeholder" => set.pseudos.push("::placeholder"),
@@ -755,6 +763,13 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         Cond::Indeterminate => set.pseudos.push(":indeterminate"),
         Cond::Autofill => set.pseudos.push(":autofill"),
         Cond::ReadOnly => set.pseudos.push(":read-only"),
+        // The widget-state family: the upstream selector texts derived
+        // from the typed conditions (the v4.1.17 `staticVariant` texts
+        // of the state/forms blocks — the render cannot drift the
+        // fold, the element-state arm's own shape).
+        Cond::Open => set.pseudos.push(":is([open], :popover-open, :open)"),
+        Cond::Inert => set.pseudos.push(":is([inert], [inert] *)"),
+        Cond::Default => set.pseudos.push(":default"),
         Cond::PlaceholderShown => set.pseudos.push(":placeholder-shown"),
         Cond::Selection => set.pseudos.push("::selection"),
         Cond::Placeholder => set.pseudos.push("::placeholder"),
