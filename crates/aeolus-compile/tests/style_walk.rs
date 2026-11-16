@@ -481,10 +481,13 @@ fn pseudo_and_descendant_layers_stay_the_reported_boundary() {
 
     let (layers, keywords) = frozen("has-focus:bg-red-500");
     let (_, walk) = program_style(layers, keywords, &Env::default());
+    // The descendant shapes carry their OWN note since the
+    // descendant-probe seam landed (the blanket attribute spelling
+    // retired for the family).
     assert!(
         walk.notes
             .iter()
-            .any(|n| matches!(n, InterpNote::AttributeUnqueried { .. })),
+            .any(|n| matches!(n, InterpNote::DescendantUnqueried { .. })),
         "the descendant shape is reported: {walk:?}"
     );
 }
