@@ -88,21 +88,72 @@ pub enum Structural {
     NthLast(i32),
 }
 
+/// The user-agent preference/media-type facts the media-feature
+/// variants ask about — the closed spelling set the variant fold
+/// accepts (`motion-safe:`, `motion-reduce:`, `contrast-more:`,
+/// `contrast-less:`, `forced-colors:`, `print:`). `Copy`,
+/// `const`-constructible, no heap: the static form stays a `static`
+/// item end to end.
+///
+/// The bits are FRAME STATE (the user agent's own media-query answers,
+/// the tier `dark:` rides): the `Env` carries one fact per
+/// question and the interp answers from it — `motion-safe:` is the
+/// COMPLEMENT of `motion-reduce:` (the feature's two v4 values, no
+/// other spelling exists in v4), the rest fire on their own bit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Pref {
+    /// `motion-safe:` — the user has NO reduced-motion preference
+    /// (`@media (prefers-reduced-motion: no-preference)`).
+    MotionSafe,
+    /// `motion-reduce:` — the user prefers reduced motion
+    /// (`@media (prefers-reduced-motion: reduce)`).
+    MotionReduce,
+    /// `contrast-more:` — the user requests more contrast
+    /// (`@media (prefers-contrast: more)`).
+    ContrastMore,
+    /// `contrast-less:` — the user requests less contrast
+    /// (`@media (prefers-contrast: less)`).
+    ContrastLess,
+    /// `forced-colors:` — the user agent forces a color palette
+    /// (`@media (forced-colors: active)`).
+    ForcedColors,
+    /// `print:` — the print media type (`@media print`).
+    Print,
+}
+
+impl Pref {
+    /// The canonical v4 spelling (the variant segment the fold
+    /// accepted, the diagnostics' and the metamorphic labels' text).
+    pub const fn source(self) -> &'static str {
+        match self {
+            Pref::MotionSafe => "motion-safe",
+            Pref::MotionReduce => "motion-reduce",
+            Pref::ContrastMore => "contrast-more",
+            Pref::ContrastLess => "contrast-less",
+            Pref::ForcedColors => "forced-colors",
+            Pref::Print => "print",
+        }
+    }
+}
+
 /// The condition a layer fires under. `Copy`, `const`-constructible, no
 /// heap: the static program is a `static` item end to end.
 ///
 /// Specificity (the [`Cond::specificity`] rank) mirrors the v4 cascade:
 /// base < mode < probe states < parent-relative < media < container.
 ///
-/// The three attribute-probe variants ([`Cond::Data`], [`Cond::Aria`],
-/// [`Cond::Has`]) carry their payload as `&'static str`: a spelling the
+/// The payload-carrying variants ([`Cond::Data`], [`Cond::Aria`],
+/// [`Cond::Has`], [`Cond::Supports`]) carry their payload as
+/// `&'static str`: a spelling the
 /// compile stage folds interns the payload into the same leak pool the
 /// program's slices use (the IR's documented dynamic-form storage —
 /// "one interned `Box<[Decl]>` shared by reference"), and a literal
 /// spelling is `&'static` outright, so the static form stays a `static`
 /// item end to end. Equality and hashing compare the PAYLOAD TEXT, not
 /// the pointer: two spellings that name the same probe (`data-open:` and
-/// `data-[open]:`) are one condition and one layer.
+/// `data-[open]:`, `supports-[display:grid]` and
+/// `supports-[(display:grid)]`) are one condition and one layer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Cond {
@@ -229,6 +280,31 @@ pub enum Cond {
         /// The named container (`@max-lg/sidebar:` → `Some("sidebar")`).
         name: Option<&'static str>,
     },
+    /// `supports-[<condition>]:` — the `@supports` at-rule condition
+    /// (tailwindcss v4.1.17's arbitrary `supports-[…]` family; no named
+    /// spelling exists in v4, so the bracketed form is the family's
+    /// whole grammar). The payload is the RENDERED condition text —
+    /// everything after the `@supports ` head (`(display:grid)`,
+    /// `selector(:hover)`, `(display: var(--tw))`) — because the fold's
+    /// normalization IS the render (the tailwindcss v4.1.17 source's own
+    /// rule, pinned as the differential evidence: function-prefixed
+    /// inners pass through verbatim with `and`/`or`/`not` connectives
+    /// spaced, colon-bearing declarations wrap in parens, bare features
+    /// expand to the `(feature: var(--tw))` declaration probe). There is
+    /// no row table for a supports condition to be relative to — the
+    /// row-text boundary that keeps `Val::Kw` row-relative does not
+    /// apply here, the [`Cond::Has`] payload precedent.
+    Supports(&'static str),
+    /// `motion-safe:` / `motion-reduce:` / `contrast-more:` /
+    /// `contrast-less:` / `forced-colors:` / `print:` — the
+    /// media-feature tier (tailwindcss v4.1.17's static variants; the
+    /// at-rule texts the corpus renders are the [`Pref`] enum's own
+    /// doc pins). The payload is the TYPED bit (plan §3.5's "typed
+    /// state bits, not string probes" row): the user agent's
+    /// preference facts are frame state, the `Env` carries
+    /// one fact per question, and a renderer derives its own
+    /// media-query form from the bit.
+    Media(Pref),
 }
 
 impl Cond {
@@ -261,7 +337,20 @@ impl Cond {
             | Cond::Structural(_) => 2,
             Cond::GroupHas(_) | Cond::PeerHas(_) => 3,
             Cond::GroupHover | Cond::GroupFocus | Cond::PeerHover | Cond::PeerFocus => 3,
-            Cond::Bp(_) | Cond::Min(_) | Cond::Max(_) => 4,
+            // The at-rule tier: the supports condition sorts BESIDE the
+            // media forms — tailwindcss v4.1.17's own conditional-rule
+            // order (`@media`, `@supports`, `@container`) maps onto the
+            // flat tier model as 4 < 5.
+            // The at-rule tier: the supports condition and the
+            // media-feature preferences sort BESIDE the media forms —
+            // tailwindcss v4.1.17's own conditional-rule order
+            // (`@media`, `@supports`, `@container`) maps onto the flat
+            // tier model as 4 < 5.
+            Cond::Bp(_)
+            | Cond::Min(_)
+            | Cond::Max(_)
+            | Cond::Supports(_)
+            | Cond::Media(_) => 4,
             Cond::Container { .. } | Cond::MaxContainer { .. } => 5,
         }
     }
@@ -272,6 +361,9 @@ impl Cond {
         match self {
             Cond::Base => None,
             Cond::Dark => Some("dark"),
+            // The media-feature spellings are CLOSED (the Pref enum's
+            // own table) — the condition reconstructs its text.
+            Cond::Media(pref) => Some(pref.source()),
             Cond::Hover => Some("hover"),
             Cond::Focus => Some("focus"),
             Cond::FocusVisible => Some("focus-visible"),
@@ -291,12 +383,15 @@ impl Cond {
             // the segment text itself (`data-[state=open]`, `has-focus`),
             // which no const table reconstructs. `source_text` returns
             // None for them: the diagnostic surfaces carry the payload
-            // when a reader needs the probe text.
+            // when a reader needs the probe text. The supports condition
+            // rides the same precedent (its payload IS the condition
+            // text; the spelling it came from is the segment's own).
             Cond::Data { .. }
             | Cond::Aria { .. }
             | Cond::Has(_)
             | Cond::GroupHas(_)
             | Cond::PeerHas(_)
+            | Cond::Supports(_)
             | Cond::Structural(_) => None,
             // Breakpoint names need the u8 formatting — not const. The
             // non-const wrapper covers them (see `source_text`), and a
