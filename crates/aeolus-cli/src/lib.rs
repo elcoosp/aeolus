@@ -27,11 +27,15 @@
 //!   ([`ThemeSpecError`]), never bare strings.
 
 use aeolus_compile::{
-    ClassKeywords, Config, ContainerBound, ContainerState, Env, RustSheet, RustStrings, SourceFile,
-    StructFacts, build as build_artifact, compile, compile_theme, emit_plan, emit_plan_theme,
-    emit_rust, emit_rust_theme, interp_containers, interp_containers_struct, interp_struct,
-    interp_theme, interp_theme_containers, interp_theme_containers_struct, interp_theme_struct,
-    keyword_texts, scan, scan_rust_strings, sort,
+    ClassKeywords, Config, ContainerBound, ContainerState, DescendantFact, DescendantKind,
+    DescendantState, Env, RustSheet, RustStrings, SourceFile, StructFacts, build as build_artifact,
+    compile, compile_theme, emit_plan, emit_plan_theme, emit_rust, emit_rust_theme,
+    interp_containers, interp_containers_descendants, interp_containers_struct,
+    interp_containers_struct_descendants, interp_descendants, interp_struct,
+    interp_struct_descendants, interp_theme, interp_theme_containers,
+    interp_theme_containers_descendants, interp_theme_containers_struct,
+    interp_theme_containers_struct_descendants, interp_theme_descendants, interp_theme_struct,
+    interp_theme_struct_descendants, keyword_texts, scan, scan_rust_strings, sort,
 };
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
@@ -412,6 +416,13 @@ struct Args {
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
     containers: Vec<(String, f32)>,
+    /// The `--has kind=fragment` facts (`expand` only, repeatable): the
+    /// subtree facts the interp's descendant seam answers the
+    /// `has-*`/`group-has-*`/`peer-has-*` layers from — the kind names
+    /// the `:has()` scope (the element's own subtree, the `.group`
+    /// ancestor's, the `.peer` sibling's), the fragment the rendered
+    /// `:has()` inner ([`DescendantFact`]'s own payload shape).
+    has: Vec<(DescendantKind, String)>,
     /// The `--child i/n` facts (`expand` only): the element's 0-based
     /// child index and the parent's element-child count — the
     /// [`StructFacts`] the interp's structural seam answers the
@@ -434,6 +445,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut json = false;
     let mut dark = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
+    let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut child: Option<(usize, usize)> = None;
     let mut empty = false;
     let mut fail_on: Option<String> = None;
@@ -511,6 +523,44 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
                     }
                 }
             }
+            "--has" if allow.contains(&"has") => {
+                i += 1;
+                let Some(value) = rest.get(i) else {
+                    let _ = writeln!(
+                        err,
+                        "--has needs kind=fragment (e.g. --has element='*:focus')"
+                    );
+                    return None;
+                };
+                let Some((kind, fragment)) = value.split_once('=') else {
+                    let _ = writeln!(err, "--has needs kind=fragment, got {value:?}");
+                    return None;
+                };
+                let Some(kind) = (match kind {
+                    // The kind names the scope the `Cond` fold carries:
+                    // the element's own subtree, the group ancestor's,
+                    // the peer sibling's (the label forms ride the CSS
+                    // head only, so one scope answers per family).
+                    "element" => Some(DescendantKind::Element),
+                    "group" => Some(DescendantKind::Group),
+                    "peer" => Some(DescendantKind::Peer),
+                    _ => None,
+                }) else {
+                    let _ = writeln!(
+                        err,
+                        "--has kind must be element|group|peer (the DescendantKind scopes), got {kind:?}"
+                    );
+                    return None;
+                };
+                if fragment.is_empty() {
+                    let _ = writeln!(
+                        err,
+                        "--has fragment must be non-empty (the rendered :has() inner), got {value:?}"
+                    );
+                    return None;
+                }
+                has.push((kind, fragment.to_string()));
+            }
             "--container" if allow.contains(&"container") => {
                 i += 1;
                 let Some(value) = rest.get(i) else {
@@ -559,6 +609,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         json,
         dark,
         containers,
+        has,
         child,
         empty,
         fail_on,
@@ -937,7 +988,15 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
     let Some(args) = parse_flags(
         rest,
         err,
-        &["theme", "json", "dark", "container", "child", "empty"],
+        &[
+            "theme",
+            "json",
+            "dark",
+            "container",
+            "has",
+            "child",
+            "empty",
+        ],
     ) else {
         return 2;
     };
@@ -996,19 +1055,78 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         })
     };
     let structs_used = args.empty || args.child.is_some();
-    let interped = match (&table, bounds.is_empty(), structs_used) {
-        (Some(table), false, true) => {
-            interp_theme_containers_struct(&compiled.program, table, &env, &state, &facts)
+    // The subtree facts ride the `--has kind=fragment` flags: the same
+    // facts value the `DescendantProbe` seam documents, borrowed from
+    // the parsed args (the strings outlive the walk). Without any,
+    // `expand` keeps the sourceless shape — descendant layers report
+    // instead of answering.
+    let tree: Vec<DescendantFact<'_>> = args
+        .has
+        .iter()
+        .map(|(kind, fragment)| DescendantFact {
+            kind: *kind,
+            fragment,
+        })
+        .collect();
+    let tree_state = DescendantState::new(&tree);
+    let descendants_used = !args.has.is_empty();
+    let interped = if descendants_used {
+        match (&table, bounds.is_empty(), structs_used) {
+            (Some(table), false, true) => interp_theme_containers_struct_descendants(
+                &compiled.program,
+                table,
+                &env,
+                &state,
+                &facts,
+                &tree_state,
+            ),
+            (Some(table), false, false) => interp_theme_containers_descendants(
+                &compiled.program,
+                table,
+                &env,
+                &state,
+                &tree_state,
+            ),
+            (Some(table), true, true) => {
+                interp_theme_struct_descendants(&compiled.program, table, &env, &facts, &tree_state)
+            }
+            (Some(table), true, false) => {
+                interp_theme_descendants(&compiled.program, table, &env, &tree_state)
+            }
+            (None, false, true) => interp_containers_struct_descendants(
+                &compiled.program,
+                &env,
+                &state,
+                &facts,
+                &tree_state,
+            ),
+            (None, false, false) => {
+                interp_containers_descendants(&compiled.program, &env, &state, &tree_state)
+            }
+            (None, true, true) => {
+                interp_struct_descendants(&compiled.program, &env, &facts, &tree_state)
+            }
+            (None, true, false) => interp_descendants(&compiled.program, &env, &tree_state),
         }
-        (Some(table), false, false) => {
-            interp_theme_containers(&compiled.program, table, &env, &state)
+    } else {
+        match (&table, bounds.is_empty(), structs_used) {
+            (Some(table), false, true) => {
+                interp_theme_containers_struct(&compiled.program, table, &env, &state, &facts)
+            }
+            (Some(table), false, false) => {
+                interp_theme_containers(&compiled.program, table, &env, &state)
+            }
+            (Some(table), true, true) => {
+                interp_theme_struct(&compiled.program, table, &env, &facts)
+            }
+            (Some(table), true, false) => interp_theme(&compiled.program, table, &env),
+            (None, false, true) => {
+                interp_containers_struct(&compiled.program, &env, &state, &facts)
+            }
+            (None, false, false) => interp_containers(&compiled.program, &env, &state),
+            (None, true, true) => interp_struct(&compiled.program, &env, &facts),
+            (None, true, false) => compiled.interp(&env),
         }
-        (Some(table), true, true) => interp_theme_struct(&compiled.program, table, &env, &facts),
-        (Some(table), true, false) => interp_theme(&compiled.program, table, &env),
-        (None, false, true) => interp_containers_struct(&compiled.program, &env, &state, &facts),
-        (None, false, false) => interp_containers(&compiled.program, &env, &state),
-        (None, true, true) => interp_struct(&compiled.program, &env, &facts),
-        (None, true, false) => compiled.interp(&env),
     };
     let interped = match interped {
         Ok(interped) => interped,
@@ -1880,10 +1998,13 @@ USAGE:
   aeolus sort    [--json] <classes...>                       registry-order class sort (the §5.5 parity line)
   aeolus fmt     [--check] <file>                            one file's class strings into the canonical order;
                                                              --check prints the drift report and exits 1 (CI gate)
-  aeolus expand  [--theme <spec>] [--dark] [--container name=rem] [--child i/n] [--empty] [--json] <classes...>
+  aeolus expand  [--theme <spec>] [--dark] [--container name=rem] [--has kind=fragment] [--child i/n] [--empty] [--json] <classes...>
                                                              effective declarations (the interp (c) arm);
                                                              --container names the bounds the named
-                                                             @container layers resolve from, --child/--empty
+                                                             @container layers resolve from, --has carries
+                                                             the subtree facts the has-*:/group-has-*:/
+                                                             peer-has-*: layers answer from (kind is
+                                                             element|group|peer), --child/--empty
                                                              carry the structural facts the first:/last:/odd:/
                                                              even:/only:/nth-*:/empty: layers answer from
   aeolus build   [--theme <spec>] [--out <path>] [--fail-on <mode>] [--json] <files/dirs...>
