@@ -768,6 +768,11 @@ fn state_suffix(s: State) -> &'static str {
         State::ReadOnly => "read-only",
         State::InRange => "in-range",
         State::OutOfRange => "out-of-range",
+        // The widget-state family's spellings (the v4.1.17 state/forms
+        // blocks' static variants).
+        State::Open => "open",
+        State::Inert => "inert",
+        State::Default => "default",
     }
 }
 
@@ -797,6 +802,13 @@ pub(crate) fn state_name(name: &str) -> Option<State> {
         "read-only" => State::ReadOnly,
         "in-range" => State::InRange,
         "out-of-range" => State::OutOfRange,
+        // The widget-state family's spellings (the v4.1.17 state/forms
+        // blocks' static variants — `state_suffix`'s own set, the bare
+        // name → State map the has- inners and arbitrary selectors
+        // read through).
+        "open" => State::Open,
+        "inert" => State::Inert,
+        "default" => State::Default,
         _ => return None,
     })
 }
