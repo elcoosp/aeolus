@@ -595,3 +595,12 @@ Run: `cargo bench -p aeolus-compile --bench element_states` (divan 0.1.21), rele
 |---|---|---|
 | `interp_element_state_button` | **138.7 ns** | the fire path (the target layer holds on `url_target`, `read-only:` on the resting editability complement) |
 | `interp_element_state_default_env` | **50.11 ns** | the resting path beside the complement (`read-only:` fires on the resting `read_write: false` answer — CSS's non-editable-element reading; the target/indeterminate/autofill layers stay quiet) |
+
+## The widget-state family (2026-11-16, 2-core sandbox)
+
+Run: `cargo bench -p aeolus-compile --bench widget_states` (divan 0.1.21), release profile, shared sandbox. The program is the widget-state half of the Button shape (`open:p-8 inert:hidden default:ring-2`, three layers). No probe seam rides — the `Env` answers (the one-affirmative-fact tier beside the element-state family), so the cost is the env-field read the whole state tier shares.
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_widget_state_button` | **156.9 ns** | the fire path (the three layers hold on `opened`/`inert`/`form_default`) |
+| `interp_widget_state_default_env` | **26.06 ns** | the resting path (every family question is AFFIRMATIVE — the `target:` shape — so all three layers stay the quiet miss a selector that does not match is) |
