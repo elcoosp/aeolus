@@ -207,14 +207,24 @@ pub use dyn_cache::{
     CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity, DynStore, TwoGenStore,
 };
 pub use interp::{
-    AttrBit, AttrKind, AttrProbe, AttrState, ContainerBound, ContainerProbe, ContainerState, Env,
-    InterpError, InterpNote, Interped, PseudoTarget, StructFacts, StructProbe, TokenSource, interp,
-    interp_containers, interp_containers_struct, interp_probes, interp_probes_containers,
-    interp_probes_containers_struct, interp_probes_struct, interp_pseudo, interp_pseudo_theme,
-    interp_struct, interp_theme, interp_theme_containers, interp_theme_containers_struct,
-    interp_theme_probes, interp_theme_probes_containers, interp_theme_probes_containers_struct,
-    interp_theme_probes_struct, interp_theme_struct, structural_fires,
+    AttrBit, AttrKind, AttrProbe, AttrState, ContainerBound, ContainerProbe, ContainerState,
+    DescendantFact, DescendantKind, DescendantProbe, DescendantState, Env, InterpError, InterpNote,
+    Interped, PseudoTarget, StructFacts, StructProbe, TokenSource, interp, interp_containers,
+    interp_containers_descendants, interp_containers_struct, interp_containers_struct_descendants,
+    interp_descendants, interp_probes, interp_probes_containers,
+    interp_probes_containers_descendants, interp_probes_containers_struct,
+    interp_probes_containers_struct_descendants, interp_probes_descendants, interp_probes_struct,
+    interp_probes_struct_descendants, interp_pseudo, interp_pseudo_theme, interp_struct,
+    interp_struct_descendants, interp_theme, interp_theme_containers,
+    interp_theme_containers_descendants, interp_theme_containers_struct,
+    interp_theme_containers_struct_descendants, interp_theme_descendants, interp_theme_probes,
+    interp_theme_probes_containers, interp_theme_probes_containers_descendants,
+    interp_theme_probes_containers_struct, interp_theme_probes_containers_struct_descendants,
+    interp_theme_probes_descendants, interp_theme_probes_struct,
+    interp_theme_probes_struct_descendants, interp_theme_struct, interp_theme_struct_descendants,
+    structural_fires,
 };
+
 pub use metamorphic::{
     MetamorphicMismatch, MetamorphicNote, MetamorphicReport, SituationReport, metamorphic_check,
     metamorphic_check_theme, metamorphic_check_theme_with, metamorphic_check_with,
@@ -386,8 +396,10 @@ impl Compiled {
     /// [`Compiled::program`]): the element-own `data-*`/`aria-*`
     /// layers ask the source (the built-in [`AttrState`] carries the
     /// element's typed attribute bits, plan §3.5); a source-answered
-    /// miss is CSS-quiet, and the descendant probes stay the reported
-    /// diagnosed boundary.
+    /// miss is CSS-quiet, and the descendant probes are NOT this
+    /// method's questions — they ask the descendant half
+    /// ([`Compiled::interp_descendants`]) under their own
+    /// [`InterpNote::DescendantUnqueried`] note.
     ///
     /// # Errors
     /// [`InterpError::ThemeRequired`] when a declaration's value is a
@@ -621,6 +633,328 @@ impl Compiled {
             probes,
             containers,
             structs,
+        )
+    }
+
+    /// Resolve this compile's program to its effective declarations
+    /// under one probe situation and one [`DescendantProbe`] — the
+    /// descendant half ([`interp_descendants`] on [`Compiled::program`]):
+    /// the `has-*`/`group-has-*`/`peer-has-*` layers ask the source
+    /// (the built-in [`DescendantState`] carries the subtree facts; a
+    /// host wires its own). A source-answered NO is CSS-quiet; the
+    /// sourceless forms report
+    /// [`InterpNote::DescendantUnqueried`].
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_descendants(
+        &self,
+        env: &Env,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_descendants(&self.program, env, descendants)
+    }
+
+    /// The themed form of [`Compiled::interp_descendants`]: one
+    /// [`TokenSource`] for the theme forms, one [`DescendantProbe`]
+    /// for the `has-*` family — both seams ride one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_descendants`]).
+    pub fn interp_theme_descendants(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_descendants(&self.program, tokens, env, descendants)
+    }
+
+    /// The probe-composed descendant form: one [`AttrProbe`] for the
+    /// element-own attribute probes, one [`DescendantProbe`] for the
+    /// `has-*` family ([`interp_probes_descendants`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_descendants(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_descendants(&self.program, env, probes, descendants)
+    }
+
+    /// The themed form of [`Compiled::interp_probes_descendants`]: one
+    /// [`TokenSource`], one [`AttrProbe`], one [`DescendantProbe`].
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_probes_descendants`]).
+    pub fn interp_theme_probes_descendants(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_descendants(&self.program, tokens, env, probes, descendants)
+    }
+
+    /// The container-composed descendant form: one [`ContainerProbe`]
+    /// for the named container queries, one [`DescendantProbe`] for
+    /// the `has-*` family ([`interp_containers_descendants`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_containers_descendants(
+        &self,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_containers_descendants(&self.program, env, containers, descendants)
+    }
+
+    /// The themed form of [`Compiled::interp_containers_descendants`]:
+    /// one [`TokenSource`], one [`ContainerProbe`], one
+    /// [`DescendantProbe`].
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_containers_descendants`]).
+    pub fn interp_theme_containers_descendants(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_containers_descendants(&self.program, tokens, env, containers, descendants)
+    }
+
+    /// The structural-composed descendant form: one [`StructProbe`]
+    /// for the DOM-position layers, one [`DescendantProbe`] for the
+    /// `has-*` family ([`interp_struct_descendants`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_struct_descendants(
+        &self,
+        env: &Env,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_struct_descendants(&self.program, env, structs, descendants)
+    }
+
+    /// The themed form of [`Compiled::interp_struct_descendants`]: one
+    /// [`TokenSource`], one [`StructProbe`], one [`DescendantProbe`].
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_struct_descendants`]).
+    pub fn interp_theme_struct_descendants(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_struct_descendants(&self.program, tokens, env, structs, descendants)
+    }
+
+    /// The triple-composed descendant form: one [`AttrProbe`], one
+    /// [`ContainerProbe`], one [`DescendantProbe`]
+    /// ([`interp_probes_containers_descendants`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_containers_descendants(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_containers_descendants(&self.program, env, probes, containers, descendants)
+    }
+
+    /// The themed form of
+    /// [`Compiled::interp_probes_containers_descendants`]: one
+    /// [`TokenSource`], one [`AttrProbe`], one [`ContainerProbe`], one
+    /// [`DescendantProbe`].
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_probes_containers_descendants`]).
+    pub fn interp_theme_probes_containers_descendants(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_containers_descendants(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            containers,
+            descendants,
+        )
+    }
+
+    /// The triple-composed descendant form: one [`AttrProbe`], one
+    /// [`StructProbe`], one [`DescendantProbe`]
+    /// ([`interp_probes_struct_descendants`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_struct_descendants(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_struct_descendants(&self.program, env, probes, structs, descendants)
+    }
+
+    /// The themed form of
+    /// [`Compiled::interp_probes_struct_descendants`]: one
+    /// [`TokenSource`], one [`AttrProbe`], one [`StructProbe`], one
+    /// [`DescendantProbe`].
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_probes_struct_descendants`]).
+    pub fn interp_theme_probes_struct_descendants(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_struct_descendants(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            structs,
+            descendants,
+        )
+    }
+
+    /// The triple-composed descendant form: one [`ContainerProbe`],
+    /// one [`StructProbe`], one [`DescendantProbe`]
+    /// ([`interp_containers_struct_descendants`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_containers_struct_descendants(
+        &self,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_containers_struct_descendants(&self.program, env, containers, structs, descendants)
+    }
+
+    /// The themed form of
+    /// [`Compiled::interp_containers_struct_descendants`]: one
+    /// [`TokenSource`], one [`ContainerProbe`], one [`StructProbe`],
+    /// one [`DescendantProbe`].
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_containers_struct_descendants`]).
+    pub fn interp_theme_containers_struct_descendants(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_containers_struct_descendants(
+            &self.program,
+            tokens,
+            env,
+            containers,
+            structs,
+            descendants,
+        )
+    }
+
+    /// The FULL descendant walk: one [`AttrProbe`], one
+    /// [`ContainerProbe`], one [`StructProbe`], one [`DescendantProbe`]
+    /// — every themeless seam the walk consults rides one call
+    /// ([`interp_probes_containers_struct_descendants`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_containers_struct_descendants(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_containers_struct_descendants(
+            &self.program,
+            env,
+            probes,
+            containers,
+            structs,
+            descendants,
+        )
+    }
+
+    /// The FULL themed walk: one [`TokenSource`], one [`AttrProbe`],
+    /// one [`ContainerProbe`], one [`StructProbe`], one
+    /// [`DescendantProbe`] — every seam the walk consults rides one
+    /// call ([`interp_theme_probes_containers_struct_descendants`] on
+    /// [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// The source's own typed failures (see
+    /// [`interp_theme_probes_containers_struct_descendants`]).
+    pub fn interp_theme_probes_containers_struct_descendants(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_containers_struct_descendants(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            containers,
+            structs,
+            descendants,
         )
     }
 
