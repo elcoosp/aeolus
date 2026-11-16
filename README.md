@@ -251,6 +251,7 @@ Pay only for the dynamism you use:
 | `supports-*:` `supports-[…]:`                              | typed `Cond::Supports` + `SupportsProbe` capability facts (`tw`-side `*_supports` walks), CSS `@supports` semantics | ✅                                                            |
 | `motion-*:` `contrast-*:` `forced-colors:` `print:`        | typed `Cond::Media` bits, `Env` preference facts (frame state — no probe seam), CSS media-query semantics | ✅                                                            |
 | `pointer-*:` `any-pointer-*:` `portrait:` `landscape:`     | typed `Cond::Media` bits, `Env` capability facts (the same frame-state tier; `landscape:` the `portrait:` complement), CSS media-query semantics | ✅                                                            |
+| `ltr:` `rtl:`                                              | typed `Cond::Dir` bit, one `Env` direction fact (`ltr:` the `rtl:` complement), CSS `:where(:dir(…))` selector semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
 | `selection:` `placeholder:`                                | `PseudoTarget` scoped cascades                                        | ✅                                                            |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
@@ -289,7 +290,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1687 tests with all features enabled (2026-11).
+  **zero** allocations). Workspace battery: 1700 tests with all features enabled (2026-11).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -411,6 +412,7 @@ cargo run -p aeolus-lsp --example lsp_semantic_tokens   # the semantic tokens: t
 cargo run -p aeolus-lsp --example lsp_colour_presentations  # the picker's spellings: the table walked backwards
 cargo run -p aeolus-lsp --example lsp_inlay_hints       # the inline hints: the class's CSS at its end
 cargo run -p aeolus-lsp --example lsp_code_actions      # the quick fixes + the click-to-find highlights
+cargo run -p aeolus-lsp --example lsp_document_highlights  # the click-to-find highlights: every occurrence whose text equals the cursor's
 cargo run -p aeolus-lsp --example lsp_format            # the canonical-order formatting: one edit per out-of-order string
 cargo run -p aeolus-cli --example fmt                   # the fmt command's file face: the drift report + the rewrite
 cargo run -p aeolus-compile --example descendants       # the descendant-probe seam: the has-* family answers
@@ -420,6 +422,8 @@ cargo run -p aeolus-cli --example expand_supports       # expand --supports: the
 cargo run -p aeolus-compile --example preferences       # the preference families: the media-feature tier answers
 cargo run -p aeolus-compile --example capabilities      # the capability tier: pointer/orientation media-feature answers
 cargo run -p aeolus-cli --example expand_capabilities   # expand --pointer-fine/--portrait: the facts the capability layers answer from
+cargo run -p aeolus-compile --example direction         # the direction family: ltr/rtl selector-side answers
+cargo run -p aeolus-cli --example expand_direction      # expand --rtl: the direction fact the rtl/ltr layers answer from
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
@@ -471,6 +475,7 @@ cargo run -p aeolus-compile --example filters           # the pipeline's filter 
 cargo run -p aeolus-compile --example backdrop_filters  # the backdrop layer: both properties, -webkit- beside the standard
 cargo run -p aeolus-compile --example grid_flow         # the grid-flow family: the auto-flow slot end to end
 cargo run -p aeolus-compile --example hints             # the wider v4 hint table: angle/time/position/family/string end to end
+cargo run -p aeolus-compile --example direction         # the direction family: ltr/rtl selector-side answers
 # codegen & runtime
 cargo run -p aeolus-codegen --example text_emit
 cargo run -p aeolus-codegen-gpui --example conformance
@@ -512,6 +517,10 @@ cargo run -p aeolus-cli --example fmt              # the fmt file face: the drif
 cargo run -p aeolus-cli --example expand_descendants  # expand --has: the has-* layers answer from the subtree facts
 cargo run -p aeolus-cli --example expand_supports  # expand --supports: the @supports layers answer from the capability facts
 cargo run -p aeolus-cli --example expand_capabilities  # expand --pointer-fine/--portrait: the capability layers answer from the frame facts
+cargo run -p aeolus-cli --example expand_direction  # expand --rtl: the rtl/ltr layers answer from the one direction fact
+# the shadcn program tables
+cargo run -p aeolus-shadcn --example program_tables  # the Button programs headless (the variants! output)
+cargo run -p aeolus-shadcn --example program_components  # the non-button program tables: Badge/Alert/Base beside the input/card shapes
 # the P5 LSP row
 cargo run -p aeolus-lsp --example lsp_hover
 cargo run -p aeolus-lsp --example lsp_completion  # completion at the typing edge
@@ -521,6 +530,7 @@ cargo run -p aeolus-lsp --example lsp_semantic_tokens  # the semanticTokens lege
 cargo run -p aeolus-lsp --example lsp_colour_presentations  # the picker's spellings, the table walked backwards
 cargo run -p aeolus-lsp --example lsp_inlay_hints  # the inlayHint answers: the CSS at the class's end
 cargo run -p aeolus-lsp --example lsp_code_actions  # the codeAction quick fixes + the documentHighlight occurrences
+cargo run -p aeolus-lsp --example lsp_document_highlights  # the click-to-find highlights: every occurrence whose text equals the cursor's
 cargo run -p aeolus-lsp --example lsp_format  # the formatting answer: the canonical-order edits, applied
 cargo run -p aeolus-lsp --bin aeolus-lsp  # the stdio server (an editor spawns this)
 ```
@@ -533,7 +543,7 @@ cargo run -p aeolus-lsp --bin aeolus-lsp  # the stdio server (an editor spawns t
 
 - [V1 architecture](docs/AEOLUS_V1_ARCHITECTURE.md) — the zero-runtime plan of record: pipeline, IR, theme tiers, performance contract
 - [docs/REGISTRY.md](docs/REGISTRY.md) — the utility registry audit page (generated from the rows)
-- [docs/CONFORMANCE.md](docs/CONFORMANCE.md) — per-backend conformance, from the emitter's own gates
+- [docs/CONFORMANCE.md](docs/CONFORMANCE.md) — the GPUI conformance page, from the emitter's own gates
 - [Core design](reports/03-aeolus-core-design/DESIGN.md) — the `Probe` parity model and the honesty contract
 - [Capability matrix](reports/02-capability-matrix/CAPABILITY_MATRIX.md) — per-slot support, every backend
 - [Benchmarks](reports/08-benchmarks/BENCHMARKS.md) — method, numbers, allocation contract
