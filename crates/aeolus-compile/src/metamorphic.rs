@@ -795,6 +795,15 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
                 env.user_validated = true;
                 env.validation_invalid = true;
             }
+            // The element-state family is element state: the
+            // conjunctive env carries the facts (the one-fact states
+            // bake their bit true, `read-only:` the complement — the
+            // editability bit bakes FALSE, the `valid:` arm's own
+            // reading).
+            Cond::Target => env.url_target = true,
+            Cond::Indeterminate => env.indeterminate = true,
+            Cond::Autofill => env.autofilled = true,
+            Cond::ReadOnly => env.read_write = false,
             Cond::GroupHover => env.group_hover = true,
             Cond::GroupFocus => env.group_focus = true,
             Cond::PeerHover => env.peer_hover = true,
@@ -893,6 +902,12 @@ fn cond_label(cond: &Cond) -> String {
         Cond::Invalid => "invalid".to_string(),
         Cond::UserValid => "user-valid".to_string(),
         Cond::UserInvalid => "user-invalid".to_string(),
+        // The element-state family: the bare spellings (the validation
+        // arm's shape).
+        Cond::Target => "target".to_string(),
+        Cond::Indeterminate => "indeterminate".to_string(),
+        Cond::Autofill => "autofill".to_string(),
+        Cond::ReadOnly => "read-only".to_string(),
         Cond::Selection => "selection".to_string(),
         Cond::Placeholder => "placeholder".to_string(),
         Cond::GroupHover => "group-hover".to_string(),
