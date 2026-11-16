@@ -559,3 +559,12 @@ Run: `cargo bench -p aeolus-compile --bench preferences` (divan 0.1.21), release
 |---|---|---|
 | `interp_preferences_button` | **109.1 ns** | the fire path (two of five layers hold) |
 | `interp_preferences_default_env` | **56.8 ns** | the quiet-miss path (no layer holds — a media query that does not hold reports nothing) |
+
+## The media-feature capability tier (2026-11, this handoff)
+
+Run: `cargo bench -p aeolus-compile --bench capabilities` (divan 0.1.21), release profile, shared sandbox. The program is the capability half of the Button shape (`pointer-fine:p-8 pointer-coarse:mt-2 any-pointer-none:hidden portrait:px-3 landscape:flex`, five layers). No probe seam rides — the `Env` answers (frame state, the preference families' own tier), so the cost is the env-field read the whole media tier shares.
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_capabilities_button` | **111.1 ns** | the fire path (two of five layers hold) |
+| `interp_capabilities_default_env` | **54.1 ns** | the quiet-miss path beside the complement (`landscape:` fires on the resting `portrait: false` answer — the orientation query always holding one) |
