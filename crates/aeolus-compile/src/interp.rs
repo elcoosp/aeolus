@@ -191,6 +191,13 @@ pub struct Env {
     /// v4 values share one fact, the orientation query always holding
     /// an answer the way the reduced-motion one does).
     pub portrait: bool,
+    /// The element's resolved text direction is right-to-left
+    /// ([`Cond::Dir`]'s `rtl:`; `ltr:` is the COMPLEMENT — the
+    /// feature's two v4 values share one fact, the orientation
+    /// precedent; CSS's own initial `direction` value is `ltr`, so the
+    /// resting env answers the `ltr:` query the way it answers
+    /// `landscape:`).
+    pub direction_rtl: bool,
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
@@ -1220,6 +1227,16 @@ pub(crate) fn decide(
             aeolus_ir::Pref::AnyPointerNone => env.any_pointer_none,
             aeolus_ir::Pref::Portrait => env.portrait,
             aeolus_ir::Pref::Landscape => !env.portrait,
+        }),
+        // The direction variants are FRAME STATE (the element's
+        // resolved `direction`, the tier the preference and capability
+        // bits ride): the Env answers — `rtl:` on the fact, `ltr:` its
+        // COMPLEMENT (the two v4 values share one fact, the
+        // `landscape:` precedent) — and an unset bit is a QUIET miss
+        // (a selector that does not match, never an exclusion note).
+        Cond::Dir(dir) => fires(match dir {
+            aeolus_ir::Direction::Ltr => !env.direction_rtl,
+            aeolus_ir::Direction::Rtl => env.direction_rtl,
         }),
         // The supports conditions answer through their own seam (the
         // `@supports` family, the at-rule tier beside the media forms):
