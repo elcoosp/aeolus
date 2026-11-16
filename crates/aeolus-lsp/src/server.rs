@@ -16,8 +16,8 @@ use lsp_types::{
     CompletionList, CompletionOptions, CompletionParams, DiagnosticOptions,
     DiagnosticServerCapabilities, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentColorParams, DocumentDiagnosticParams,
-    DocumentDiagnosticReport, DocumentDiagnosticReportResult, DocumentHighlight,
-    DocumentHighlightParams, FullDocumentDiagnosticReport, Hover, HoverContents,
+    DocumentDiagnosticReport, DocumentDiagnosticReportResult, DocumentFormattingParams,
+    DocumentHighlight, DocumentHighlightParams, FullDocumentDiagnosticReport, Hover, HoverContents,
     HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind, InlayHintLabel,
     InlayHintOptions, InlayHintParams, InlayHintServerCapabilities, InlayHintTooltip,
     MarkupContent, MarkupKind, NumberOrString, OneOf, PublishDiagnosticsParams,
@@ -497,6 +497,46 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/formatting" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The class-sort seam's editor face (the tooling-parity
+            // line's "class sorting" half at the editor): the engine's
+            // canonical-order edits — one TextEdit per out-of-order
+            // class string, the string content's byte-true range plus
+            // the sort seam's canonical join. The params' formatting
+            // options (tab size, spaces) are accepted and left to the
+            // engine's shape-level walk: the canonical order is a
+            // registry fact, not an indentation choice.
+            let answer = serde_json::from_value::<DocumentFormattingParams>(request.params)
+                .ok()
+                .map(|params| {
+                    session
+                        .engine
+                        .format(params.text_document.uri.as_str())
+                        .iter()
+                        .map(|edit| TextEdit {
+                            range: lsp_types::Range {
+                                start: lsp_types::Position {
+                                    line: edit.range.start.line,
+                                    character: edit.range.start.character,
+                                },
+                                end: lsp_types::Position {
+                                    line: edit.range.end.line,
+                                    character: edit.range.end.character,
+                                },
+                            },
+                            new_text: edit.new_text.clone(),
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |edits| Some(serde_json::to_value(edits).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
         _ => Handled::default(),
     }
 }
@@ -661,7 +701,8 @@ fn respond(id: RequestId, result: Option<Value>) -> Handled {
 
 /// The advertised capabilities: hover, completion, colour swatches, the
 /// semantic tokens, the inlay hints, the quick fixes, the document
-/// highlights and full-text sync. The engine never
+/// highlights, the canonical-order formatting and full-text sync. The
+/// engine never
 /// forks the pipeline, so the capability surface is the pipeline's own
 /// honesty contract at the editor.
 fn server_capabilities() -> ServerCapabilities {
@@ -677,6 +718,13 @@ fn server_capabilities() -> ServerCapabilities {
         // cursor's candidate, document order, no compile verdict
         // riding.
         document_highlight_provider: Some(OneOf::Left(true)),
+        // The class-sort seam's editor face: one edit per out-of-order
+        // class string, the sort seam's canonical join as the new text
+        // (an already-canonical string answers no edit — the no-op
+        // contract a format-on-save rides). The plain `true` form: the
+        // answer is the engine's whole-document walk, no options
+        // object.
+        document_formatting_provider: Some(OneOf::Left(true)),
         // The inline answers (LSP 3.17): the engine's hints are final —
         // no resolve round-trip (the completion's own contract), the
         // label and tooltip ride the hint itself.
