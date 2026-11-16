@@ -1133,6 +1133,11 @@ fn cond_label(cond: Cond) -> &'static str {
         Cond::Indeterminate => "indeterminate",
         Cond::Autofill => "autofill",
         Cond::ReadOnly => "read-only",
+        // The widget-state family: the bare spellings (the
+        // element-state arm's shape — the hover renders the tier).
+        Cond::Open => "open",
+        Cond::Inert => "inert",
+        Cond::Default => "default",
         Cond::Selection => "selection",
         Cond::Placeholder => "placeholder",
         Cond::GroupHover => "group-hover",
