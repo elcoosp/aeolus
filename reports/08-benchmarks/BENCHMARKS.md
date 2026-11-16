@@ -465,6 +465,7 @@ report serialization shape).
 | `code_actions_walk` | **1.67 ms** | the quick-fix invocation (the cursor's candidate through the suggestion seam — the compile walk's diagnostics folded over the audited tables, the corrections composed onto the full token) |
 | `document_highlights_walk` | **1.4 µs** | the click-to-find occurrences (the shared locator plus the textual-equality walk — an order under the hover's own cost) |
 | `colour_presentations_walk` | **484.6 µs** | the picker's table walk (the resolves once per token × opacity step — the open picker's cost, not a per-keystroke one) |
+| `format_walk` | **1.86 µs** | the format-on-save pass (the class-sort seam's editor face — every class string through the themeless sort walk, one edit per out-of-order string; re-run 2026-11-16, 100 samples, beside the format face's landing) |
 
 Verdict: the completion's ~19 µs is the row-walk cost (213 rows' tables
 + the token table's names, per keystroke, no cache) — an order under
@@ -496,3 +497,22 @@ the surface) and it runs when a squiggle is INVOKED, not per keystroke;
 the editor's own `code_actions_walk` (1.67 ms) is that same fold beside
 the per-candidate compile — the lightbulb's cost, not the caret's.
 
+
+## Class-sort file-face run (2026-11-16, 2-core sandbox, release profile, divan 0.1.21)
+
+The `fmt` command's walk costs (`crates/aeolus-cli/benches/fmt.rs`):
+the class-sort seam's FILE face — one file's class strings through the
+extraction seam and the themeless sort walk (the registry's read side
+and the variant fold per string, the canonical join compared against
+the hit text).
+
+| benchmark | median | note |
+|---|---|---|
+| `fmt_file_walk` | **2.65 µs** | the whole-file walk (three class strings: the variant-heavy one reorders, the clean one no-ops, the whitespace run normalizes) |
+| `fmt_button_string` | **4.24 µs** | the single-string sort at the file-face's real input shape (the 17-class shadcn Button slice the CLI benches key on) |
+
+Verdict: the walk is the sort seam's own cost — the same shape `sort`
+renders per invocation, an order under any format-on-save budget. The
+editor face's `format_walk` (1.86 µs, the LSP table above) is the same
+themeless walk over the smaller fixture; absolute numbers are
+environment-specific, the ratios are the point.
