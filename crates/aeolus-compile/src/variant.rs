@@ -259,6 +259,16 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "disabled" => Some(Cond::Disabled),
         "visited" => Some(Cond::Visited),
         "checked" => Some(Cond::Checked),
+        // The validation states (the v4.1.17 forms block's static
+        // variants, the selector-side tier beside `checked:`): the
+        // constraint pair answers from ONE Env fact (`valid:` its
+        // complement — CSS's own pristine-field reading), the `user-`
+        // pair additionally gates on the interaction fact the HTML
+        // spec requires.
+        "valid" => Some(Cond::Valid),
+        "invalid" => Some(Cond::Invalid),
+        "user-valid" => Some(Cond::UserValid),
+        "user-invalid" => Some(Cond::UserInvalid),
         "placeholder-shown" => Some(Cond::PlaceholderShown),
         "selection" => Some(Cond::Selection),
         "placeholder" => Some(Cond::Placeholder),
@@ -383,6 +393,13 @@ fn state_pseudo(name: &str) -> Option<&'static str> {
         "visited" => Some(":visited"),
         "checked" => Some(":checked"),
         "placeholder-shown" => Some(":placeholder-shown"),
+        // The validation states: the element-own probe states beside
+        // `checked:` (the same tier, the same `:pseudo` shape — the
+        // has- inner grammar answers them like any state spelling).
+        "valid" => Some(":valid"),
+        "invalid" => Some(":invalid"),
+        "user-valid" => Some(":user-valid"),
+        "user-invalid" => Some(":user-invalid"),
         _ => None,
     }
 }
@@ -585,6 +602,11 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "disabled",
     "visited",
     "checked",
+    // The validation states (the closed forms-block spellings).
+    "valid",
+    "invalid",
+    "user-valid",
+    "user-invalid",
     "placeholder-shown",
     "selection",
     "placeholder",
@@ -710,6 +732,11 @@ mod completion_tests {
             "visited",
             "checked",
             "placeholder-shown",
+            // The validation states (the closed forms-block spellings).
+            "valid",
+            "invalid",
+            "user-valid",
+            "user-invalid",
             "selection",
             "placeholder",
             // The mode.
