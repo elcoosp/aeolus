@@ -250,6 +250,7 @@ Pay only for the dynamism you use:
 | `has-*:` `group-has-*:` `peer-has-*:`                      | typed `Cond::Has` + `DescendantProbe` subtree facts (`tw`-side `*_descendants` walks), CSS `:has()` semantics | ✅                                                            |
 | `supports-*:` `supports-[…]:`                              | typed `Cond::Supports` + `SupportsProbe` capability facts (`tw`-side `*_supports` walks), CSS `@supports` semantics | ✅                                                            |
 | `motion-*:` `contrast-*:` `forced-colors:` `print:`        | typed `Cond::Media` bits, `Env` preference facts (frame state — no probe seam), CSS media-query semantics | ✅                                                            |
+| `pointer-*:` `any-pointer-*:` `portrait:` `landscape:`     | typed `Cond::Media` bits, `Env` capability facts (the same frame-state tier; `landscape:` the `portrait:` complement), CSS media-query semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
 | `selection:` `placeholder:`                                | `PseudoTarget` scoped cascades                                        | ✅                                                            |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
@@ -288,7 +289,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1629 tests with all features enabled (2026-11).
+  **zero** allocations). Workspace battery: 1687 tests with all features enabled (2026-11).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -417,6 +418,8 @@ cargo run -p aeolus-cli --example expand_descendants    # expand --has: the subt
 cargo run -p aeolus-compile --example supports          # the supports seam: the @supports family answers
 cargo run -p aeolus-cli --example expand_supports       # expand --supports: the capability facts the supports layers answer from
 cargo run -p aeolus-compile --example preferences       # the preference families: the media-feature tier answers
+cargo run -p aeolus-compile --example capabilities      # the capability tier: pointer/orientation media-feature answers
+cargo run -p aeolus-cli --example expand_capabilities   # expand --pointer-fine/--portrait: the facts the capability layers answer from
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
@@ -507,6 +510,8 @@ cargo run -p aeolus-cli --example plan            # the plan bridge: snapshot + 
 cargo run -p aeolus-cli --example check            # the CI lint face: candidates, typed findings, the fail-on gate
 cargo run -p aeolus-cli --example fmt              # the fmt file face: the drift report beside the rewrite
 cargo run -p aeolus-cli --example expand_descendants  # expand --has: the has-* layers answer from the subtree facts
+cargo run -p aeolus-cli --example expand_supports  # expand --supports: the @supports layers answer from the capability facts
+cargo run -p aeolus-cli --example expand_capabilities  # expand --pointer-fine/--portrait: the capability layers answer from the frame facts
 # the P5 LSP row
 cargo run -p aeolus-lsp --example lsp_hover
 cargo run -p aeolus-lsp --example lsp_completion  # completion at the typing edge
