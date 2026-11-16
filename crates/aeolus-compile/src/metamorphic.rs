@@ -825,6 +825,13 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
                 aeolus_ir::Pref::Portrait => env.portrait = true,
                 aeolus_ir::Pref::Landscape => env.portrait = false,
             },
+            // The direction variants are frame state: the conjunctive
+            // env carries the fact (the complement bakes the bit false,
+            // the `landscape:` arm's own reading).
+            Cond::Dir(dir) => match dir {
+                aeolus_ir::Direction::Ltr => env.direction_rtl = false,
+                aeolus_ir::Direction::Rtl => env.direction_rtl = true,
+            },
             // The sourceless shapes: the layer never fires on either
             // side (a CSS selector that does not match), the note rides.
             Cond::Base
@@ -896,6 +903,7 @@ fn cond_label(cond: &Cond) -> String {
         Cond::Has(_) => "has".to_string(),
         Cond::Supports(_) => "supports".to_string(),
         Cond::Media(pref) => pref.source().to_string(),
+        Cond::Dir(dir) => dir.source().to_string(),
         Cond::GroupHas(_) => "group-has".to_string(),
         Cond::PeerHas(_) => "peer-has".to_string(),
         Cond::Structural(_) => "structural".to_string(),
