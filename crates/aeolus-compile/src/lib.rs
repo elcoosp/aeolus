@@ -278,16 +278,15 @@ pub use variant::{KNOWN_VARIANTS, supports_condition};
 
 // The lowering audits the rows' meaning; a registry semantics bump must
 // re-audit it. Byte-wise const compare — `&str` equality is not a const
-// trait, so the pin walks the bytes (const-safe on the MSRV).
-const fn registry_version_is_pinned() -> bool {
-    let v = aeolus_data::REGISTRY_VERSION.as_bytes();
-    if v.len() != 1 {
-        return false;
-    }
-    v[0] == b'1'
-}
+// trait, so the pin walks the bytes in the assert's own const block
+// (const-safe on the MSRV; a named helper here used to read as
+// never-called — the anonymous const is the pin's only consumer — so
+// the walk lives inside it).
 const _: () = assert!(
-    registry_version_is_pinned(),
+    {
+        let v = aeolus_data::REGISTRY_VERSION.as_bytes();
+        v.len() == 1 && v[0] == b'1'
+    },
     "aeolus-compile pins the registry semantics at REGISTRY_VERSION \"1\"; \
      re-audit the value pass before bumping the registry"
 );
