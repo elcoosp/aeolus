@@ -1051,7 +1051,7 @@ impl PlanWriter {
             | Prop::BorderLeftWidth => {
                 // The numeric scale arrives as `Num` (`border-2`), the
                 // keyword forms as row px texts (`border`-family arms).
-                if let Some(px) = self.number(val).or_else(|| self.length_px(val, kw)) {
+                if let Some(px) = Self::number(val).or_else(|| self.length_px(val, kw)) {
                     let slot = style.border_width.get_or_insert_with(BorderWidth::default);
                     set_edge(slot, edge_of(prop), px);
                 }
@@ -1111,7 +1111,7 @@ impl PlanWriter {
             }
             // ---- ring / outline widths ------------------------------
             Prop::RingWidth => {
-                if let Some(px) = self.number(val) {
+                if let Some(px) = Self::number(val) {
                     style
                         .ring
                         .get_or_insert_with(aeolus_core::Ring::default)
@@ -1119,7 +1119,7 @@ impl PlanWriter {
                 }
             }
             Prop::RingOffsetWidth => {
-                if let Some(px) = self.number(val) {
+                if let Some(px) = Self::number(val) {
                     style
                         .ring
                         .get_or_insert_with(aeolus_core::Ring::default)
@@ -1135,7 +1135,7 @@ impl PlanWriter {
                         .outline
                         .get_or_insert_with(aeolus_core::Outline::default)
                         .none = true;
-                } else if let Some(px) = self.number(val) {
+                } else if let Some(px) = Self::number(val) {
                     style
                         .outline
                         .get_or_insert_with(aeolus_core::Outline::default)
@@ -1143,7 +1143,7 @@ impl PlanWriter {
                 }
             }
             Prop::OutlineOffset => {
-                if let Some(px) = self.number(val) {
+                if let Some(px) = Self::number(val) {
                     style
                         .outline
                         .get_or_insert_with(aeolus_core::Outline::default)
@@ -1256,9 +1256,8 @@ impl PlanWriter {
             Prop::FlexGrow => {
                 // The bare forms are keyword slots too (`grow` → Bare("1")
                 // → Kw(0)); the row text parses to the factor.
-                if let Some(n) = self
-                    .number(val)
-                    .or_else(|| kw.and_then(|text| text.parse::<f32>().ok()))
+                if let Some(n) =
+                    Self::number(val).or_else(|| kw.and_then(|text| text.parse::<f32>().ok()))
                 {
                     style
                         .layout
@@ -1267,9 +1266,8 @@ impl PlanWriter {
                 }
             }
             Prop::FlexShrink => {
-                if let Some(n) = self
-                    .number(val)
-                    .or_else(|| kw.and_then(|text| text.parse::<f32>().ok()))
+                if let Some(n) =
+                    Self::number(val).or_else(|| kw.and_then(|text| text.parse::<f32>().ok()))
                 {
                     style
                         .layout
@@ -1774,7 +1772,7 @@ impl PlanWriter {
                 }
             }
             Prop::TransitionDuration => {
-                if let Some(ms) = self.number(val) {
+                if let Some(ms) = Self::number(val) {
                     transition_slot(style).duration_ms = ms;
                 }
             }
@@ -1791,7 +1789,7 @@ impl PlanWriter {
                 }
             }
             Prop::TransitionDelay => {
-                if let Some(ms) = self.number(val) {
+                if let Some(ms) = Self::number(val) {
                     transition_slot(style).delay_ms = ms;
                 }
             }
@@ -1930,7 +1928,7 @@ impl PlanWriter {
                 }
             }
             Prop::TextUnderlineOffset => {
-                if let Some(px) = self.number(val) {
+                if let Some(px) = Self::number(val) {
                     set_text(style, TextProperty::UnderlineOffset, TextValue::Px(px));
                 }
             }
@@ -2081,9 +2079,11 @@ impl PlanWriter {
     }
 
     /// A bare number (`z-10`, `border-2`, `rotate-45`) — px where the
-    /// slot is a length, the raw number where it is a count/angle.
-    fn number(&self, val: Val) -> Option<f32> {
-        let _ = self;
+    /// slot is a length, the raw number where it is a count/angle. An
+    /// associated function: the lowering reads no lowering state (the
+    /// dead receiver the `let _ = self;` discard carried retires — the
+    /// suggest fold's dead-`tokens` precedent).
+    fn number(val: Val) -> Option<f32> {
         match val {
             Val::Num(v) => Some(v),
             Val::Px(v) => Some(v),
@@ -2606,6 +2606,27 @@ fn bucket(
         }
         Cond::UserInvalid => {
             let when = V0Cond(vec![Atom::On(Test::State(State::UserInvalid))]);
+            bucket_rule(plan, when, write);
+        }
+        // The element-state family: the v0.x `State` surface ALREADY
+        // carries the four forms (the state/enabled/forms blocks) —
+        // every layer lands its `Test::State(...)` rule slot, no note
+        // rides (the validation quartet's precedent, not the direction
+        // boundary).
+        Cond::Target => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Target))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::Indeterminate => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Indeterminate))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::Autofill => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Autofill))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::ReadOnly => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::ReadOnly))]);
             bucket_rule(plan, when, write);
         }
         Cond::PlaceholderShown => {
