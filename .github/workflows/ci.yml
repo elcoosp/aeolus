@@ -39,14 +39,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88
-      # The 1.88 set: the publishable pair, the CLI, and the five V1
-      # pipeline crates (each declares rust-version = 1.88 — gated here,
-      # not just claimed).
+      # The 1.88 set: the publishable pair, the CLI, the five V1
+      # pipeline crates, the P3 runtime/codegen set and the P5 LSP
+      # surface (each declares rust-version = 1.88 — gated here, not
+      # just claimed; the rt/codegen/codegen-gpui/lsp quartet joined
+      # after their manifests declared 1.88 but the job never named
+      # them — the drift the form-state handoff fixed).
       - run: >-
           cargo check -p aeolus-core -p aeolus-macro -p aeolus-cli
           -p aeolus-syntax -p aeolus-data -p aeolus-ir
           -p aeolus-compile -p aeolus-theme -p xtask
           -p aeolus-gpui
+          -p aeolus-rt -p aeolus-codegen -p aeolus-codegen-gpui
+          -p aeolus-lsp
 
   msrv-backends:
     runs-on: ubuntu-latest
