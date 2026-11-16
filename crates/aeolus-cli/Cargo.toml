@@ -71,3 +71,10 @@ harness = false
 [[bench]]
 name = "plan"
 harness = false
+
+# The fmt command's benchmarks (the class-sort seam's file face): the
+# whole-file extraction+sort walk and the single-string sort at the
+# Button slice's real shape.
+[[bench]]
+name = "fmt"
+harness = false
