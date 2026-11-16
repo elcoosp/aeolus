@@ -304,6 +304,31 @@ pub enum Cond {
     /// query; `read-write:` has no v4.1.17 registration, the spelling
     /// stays out — evidence 27's own boundary).
     ReadOnly,
+    /// `open:` — the element is open (the state block's
+    /// `staticVariant('open', ['&:is([open], :popover-open, :open)'])`;
+    /// the disclosure/popover answer — a `dialog[open]`, a
+    /// `details[open]`, an open popover — the host widget tracks). One
+    /// AFFIRMATIVE element-own fact: a non-open element matches
+    /// neither arm the way a non-target element misses `:target`, so
+    /// the resting env's quiet miss answers.
+    Open,
+    /// `inert:` — the element is inside (or itself carries) an
+    /// `[inert]` frozen subtree (the state block's
+    /// `staticVariant('inert', ['&:is([inert], [inert] *)'])`; the
+    /// compound head's two arms share ONE per-element fact the host
+    /// computes — when a widget freezes, the whole subtree's elements
+    /// know they are inert). The resting env's quiet miss a selector
+    /// that does not match is.
+    Inert,
+    /// `default:` — the element is its form group's default control
+    /// (the forms block's `staticVariant('default', ['&:default'])`;
+    /// the `:default` answer the host widget tracks beside
+    /// [`Cond::Checked`] — the checkbox with the `checked` attribute,
+    /// the form's first submit button). One AFFIRMATIVE element-own
+    /// fact: a non-form element matches neither the way a non-control
+    /// misses `:indeterminate`, so the resting env's quiet miss
+    /// answers.
+    Default,
     /// `selection:` — the element's own `::selection` rendering (v0.9 §1).
     Selection,
     /// `placeholder:` — the `::placeholder` rendering.
@@ -472,6 +497,12 @@ impl Cond {
             | Cond::Indeterminate
             | Cond::Autofill
             | Cond::ReadOnly
+            // The widget-state family rides the same element-own probe
+            // tier: the open, inert and form-default tests are selector
+            // conjuncts (`:is([open], …)`, `:default`), not at-rules.
+            | Cond::Open
+            | Cond::Inert
+            | Cond::Default
             | Cond::Selection
             | Cond::Placeholder
             // The attribute probes compound on the element itself, the
@@ -536,6 +567,12 @@ impl Cond {
             Cond::Indeterminate => Some("indeterminate"),
             Cond::Autofill => Some("autofill"),
             Cond::ReadOnly => Some("read-only"),
+            // The widget-state spellings are bare variants: the
+            // condition names its own closed text (the element-state
+            // arm's shape).
+            Cond::Open => Some("open"),
+            Cond::Inert => Some("inert"),
+            Cond::Default => Some("default"),
             Cond::Selection => Some("selection"),
             Cond::Placeholder => Some("placeholder"),
             // The direction spellings are CLOSED (the Direction enum's
