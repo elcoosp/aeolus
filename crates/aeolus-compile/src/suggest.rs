@@ -24,7 +24,7 @@
 //!
 //! let compiled = compile("flex-clo", &Default::default()).unwrap();
 //! for diagnostic in &compiled.diagnostics {
-//!     for suggestion in suggest_for(diagnostic, None, None) {
+//!     for suggestion in suggest_for(diagnostic, None) {
 //!         println!("did you mean `{}`?", suggestion.replacement);
 //!     }
 //! }
@@ -334,17 +334,9 @@ pub fn suggest_over(token: &str, surfaces: &[&dyn SuggestionSurface]) -> Vec<Sug
 /// answer empty — no honest correction exists, the help text is the
 /// story.
 ///
-/// * `tokens` — the theme pass's table (the token surface joins for
-///   the not-a-token miss when the root is a colour-group root; the
-///   engine's and the CLI's own config tables ride in here);
 /// * `customs` — the registered customs (the custom surface joins
 ///   every utility-half fold).
-pub fn suggest_for(
-    diagnostic: &Diagnostic,
-    tokens: Option<&TokenTable>,
-    customs: Option<&Customs>,
-) -> Vec<Suggestion> {
-    let _ = tokens; // the composed fold rides the registry's own audited tables (see compose_utility)
+pub fn suggest_for(diagnostic: &Diagnostic, customs: Option<&Customs>) -> Vec<Suggestion> {
     match &diagnostic.kind {
         DiagnosticKind::UnknownRoot { body } => compose_utility(diagnostic, body, customs),
         DiagnosticKind::ShapeRejected { body, .. } => compose_utility(diagnostic, body, customs),
