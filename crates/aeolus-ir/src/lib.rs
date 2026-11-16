@@ -30,7 +30,7 @@ pub mod program;
 pub mod prop;
 pub mod val;
 
-pub use cond::{Bp, Cond, Structural};
+pub use cond::{Bp, Cond, Pref, Structural};
 pub use program::{Decl, Layer, Program};
 pub use prop::{Prop, PropMask};
 pub use val::Val;
