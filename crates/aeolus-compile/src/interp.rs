@@ -235,6 +235,25 @@ pub struct Env {
     /// `read-write:` has no v4.1.17 registration, the spelling stays
     /// out).
     pub read_write: bool,
+    /// The element is open ([`Cond::Open`]'s `open:`; the
+    /// disclosure/popover answer — a `dialog[open]`, a
+    /// `details[open]`, an open popover — the host widget tracks).
+    /// One AFFIRMATIVE element-own fact: a non-open element matches
+    /// neither `:open`'s arms, the resting env's quiet miss).
+    pub opened: bool,
+    /// The element is inside (or itself carries) an `[inert]` frozen
+    /// subtree ([`Cond::Inert`]'s `inert:`; the compound head's two
+    /// arms share ONE per-element fact the host computes — when a
+    /// widget freezes, the whole subtree's elements know they are
+    /// inert; the resting env's quiet miss).
+    pub inert: bool,
+    /// The element is its form group's default control
+    /// ([`Cond::Default`]'s `default:`; the `:default` answer the
+    /// host widget tracks beside [`Env::checked`] — the checkbox with
+    /// the `checked` attribute, the form's first submit button; a
+    /// non-form element matches neither, the resting env's quiet
+    /// miss).
+    pub form_default: bool,
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
@@ -1196,6 +1215,18 @@ pub(crate) fn decide(
         Cond::Indeterminate => fires(env.indeterminate),
         Cond::Autofill => fires(env.autofilled),
         Cond::ReadOnly => fires(!env.read_write),
+        // The widget-state family is ELEMENT STATE (the tier
+        // `checked:`/`target:` ride): the Env answers on its ONE
+        // affirmative fact each — `open:` the disclosure/popover
+        // answer, `inert:` the frozen-subtree answer the host computes
+        // for every element inside (or carrying) an `[inert]` root,
+        // `default:` the form group's default-control answer (the
+        // `target:`/`autofill:` shape: no complement rides, an unset
+        // bit is a QUIET miss — a selector that does not match, never
+        // an exclusion note).
+        Cond::Open => fires(env.opened),
+        Cond::Inert => fires(env.inert),
+        Cond::Default => fires(env.form_default),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
         Cond::PeerHover => fires(env.peer_hover),
