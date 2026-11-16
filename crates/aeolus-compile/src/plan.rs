@@ -2648,6 +2648,32 @@ fn bucket(
             let when = V0Cond(vec![Atom::On(Test::State(State::Default))]);
             bucket_rule(plan, when, write);
         }
+        // The form-state family: the v0.x `State` surface ALREADY
+        // carries the five states (the landed slots evidence 27
+        // documented at the matches-neither boundary the family now
+        // closes) — every layer lands its `Test::State(...)` rule slot,
+        // no note rides (the widget-state trio's precedent, not the
+        // direction boundary).
+        Cond::Enabled => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Enabled))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::Required => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Required))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::Optional => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Optional))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::InRange => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::InRange))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::OutOfRange => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::OutOfRange))]);
+            bucket_rule(plan, when, write);
+        }
         Cond::PlaceholderShown => {
             let when = V0Cond(vec![Atom::On(Test::State(State::PlaceholderShown))]);
             bucket_rule(plan, when, write);
