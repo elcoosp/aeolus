@@ -696,6 +696,15 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
             "open" => set.pseudos.push(":is([open], :popover-open, :open)"),
             "inert" => set.pseudos.push(":is([inert], [inert] *)"),
             "default" => set.pseudos.push(":default"),
+            // The form-state family: the v4.1.17 state/forms blocks'
+            // pseudo-classes (the selector-side tier beside the
+            // widget-state family, no at-rule head — the family's
+            // `staticVariant` texts).
+            "enabled" => set.pseudos.push(":enabled"),
+            "required" => set.pseudos.push(":required"),
+            "optional" => set.pseudos.push(":optional"),
+            "in-range" => set.pseudos.push(":in-range"),
+            "out-of-range" => set.pseudos.push(":out-of-range"),
             "placeholder-shown" => set.pseudos.push(":placeholder-shown"),
             "selection" => set.pseudos.push("::selection"),
             "placeholder" => set.pseudos.push("::placeholder"),
@@ -770,6 +779,15 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         Cond::Open => set.pseudos.push(":is([open], :popover-open, :open)"),
         Cond::Inert => set.pseudos.push(":is([inert], [inert] *)"),
         Cond::Default => set.pseudos.push(":default"),
+        // The form-state family: the upstream pseudo-classes derived
+        // from the typed conditions (the v4.1.17 `staticVariant` texts
+        // of the state/forms blocks — the render cannot drift the
+        // fold, the widget-state arm's own shape).
+        Cond::Enabled => set.pseudos.push(":enabled"),
+        Cond::Required => set.pseudos.push(":required"),
+        Cond::Optional => set.pseudos.push(":optional"),
+        Cond::InRange => set.pseudos.push(":in-range"),
+        Cond::OutOfRange => set.pseudos.push(":out-of-range"),
         Cond::PlaceholderShown => set.pseudos.push(":placeholder-shown"),
         Cond::Selection => set.pseudos.push("::selection"),
         Cond::Placeholder => set.pseudos.push("::placeholder"),
