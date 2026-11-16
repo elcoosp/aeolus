@@ -674,9 +674,12 @@ fn interp_notes_the_parent_probes_too() {
         interp(&compiled.program, &Env::default()).expect("no theme forms in the program");
     assert!(interped.decls.is_empty());
     assert_eq!(interped.notes.len(), 1, "{:?}", interped.notes);
+    // The descendant shapes carry their OWN note since the
+    // descendant-probe seam landed (the blanket attribute spelling
+    // retired for the family).
     assert!(matches!(
         interped.notes[0],
-        InterpNote::AttributeUnqueried { .. }
+        InterpNote::DescendantUnqueried { .. }
     ));
 }
 
