@@ -277,6 +277,33 @@ pub enum Cond {
     /// `staticVariant('user-invalid', ['&:user-invalid'])`; the same
     /// interaction gate).
     UserInvalid,
+    /// `target:` — the element is the document's fragment target (the
+    /// state block's `staticVariant('target', ['&:target'])`). The
+    /// fragment-target state is ELEMENT STATE the host answers — the
+    /// resting env's quiet miss a `:target` selector that does not
+    /// match is.
+    Target,
+    /// `indeterminate:` — the element's own indeterminate state (the
+    /// forms block's `staticVariant('indeterminate', ['&:indeterminate'])`;
+    /// the checkbox/radio answer the host sets beside `checked:`, one
+    /// fact per question — an element either is or is not
+    /// indeterminate, a non-control is NOT, the resting env's quiet
+    /// miss).
+    Indeterminate,
+    /// `autofill:` — the element was autofilled (the forms block's
+    /// `staticVariant('autofill', ['&:autofill'])`; the browser's
+    /// filled-form answer, one element-own fact — the resting env's
+    /// quiet miss).
+    Autofill,
+    /// `read-only:` — the element is NOT user-editable (the forms
+    /// block's `staticVariant('read-only', ['&:read-only'])`). The
+    /// COMPLEMENT of the editability fact the Env carries — the pair's
+    /// two CSS values share one fact, the `valid:`/`invalid:`
+    /// precedent (CSS's own reading for a non-editable element IS
+    /// `:read-only`, so the resting env answers the `read-only:`
+    /// query; `read-write:` has no v4.1.17 registration, the spelling
+    /// stays out — evidence 27's own boundary).
+    ReadOnly,
     /// `selection:` — the element's own `::selection` rendering (v0.9 §1).
     Selection,
     /// `placeholder:` — the `::placeholder` rendering.
@@ -437,6 +464,14 @@ impl Cond {
             | Cond::Invalid
             | Cond::UserValid
             | Cond::UserInvalid
+            // The element-state family rides the element-own probe tier
+            // beside the validation states: the fragment-target,
+            // indeterminate, autofill and read-only tests are selector
+            // conjuncts (`:target`, `:read-only`), not at-rules.
+            | Cond::Target
+            | Cond::Indeterminate
+            | Cond::Autofill
+            | Cond::ReadOnly
             | Cond::Selection
             | Cond::Placeholder
             // The attribute probes compound on the element itself, the
@@ -494,6 +529,13 @@ impl Cond {
             Cond::Invalid => Some("invalid"),
             Cond::UserValid => Some("user-valid"),
             Cond::UserInvalid => Some("user-invalid"),
+            // The element-state spellings are bare variants: the
+            // condition names its own closed text (the validation
+            // arm's shape).
+            Cond::Target => Some("target"),
+            Cond::Indeterminate => Some("indeterminate"),
+            Cond::Autofill => Some("autofill"),
+            Cond::ReadOnly => Some("read-only"),
             Cond::Selection => Some("selection"),
             Cond::Placeholder => Some("placeholder"),
             // The direction spellings are CLOSED (the Direction enum's
