@@ -28,14 +28,22 @@
 
 use aeolus_compile::{
     ClassKeywords, Config, ContainerBound, ContainerState, DescendantFact, DescendantKind,
-    DescendantState, Env, RustSheet, RustStrings, SourceFile, StructFacts, build as build_artifact,
-    compile, compile_theme, emit_plan, emit_plan_theme, emit_rust, emit_rust_theme,
-    interp_containers, interp_containers_descendants, interp_containers_struct,
-    interp_containers_struct_descendants, interp_descendants, interp_struct,
-    interp_struct_descendants, interp_theme, interp_theme_containers,
-    interp_theme_containers_descendants, interp_theme_containers_struct,
-    interp_theme_containers_struct_descendants, interp_theme_descendants, interp_theme_struct,
-    interp_theme_struct_descendants, keyword_texts, scan, scan_rust_strings, sort,
+    DescendantState, Env, RustSheet, RustStrings, SourceFile, StructFacts, SupportsState,
+    build as build_artifact, compile, compile_theme, emit_plan, emit_plan_theme, emit_rust,
+    emit_rust_theme, interp_containers, interp_containers_descendants,
+    interp_containers_descendants_supports, interp_containers_struct,
+    interp_containers_struct_descendants, interp_containers_struct_descendants_supports,
+    interp_containers_struct_supports, interp_containers_supports, interp_descendants,
+    interp_descendants_supports, interp_struct, interp_struct_descendants,
+    interp_struct_descendants_supports, interp_struct_supports, interp_supports, interp_theme,
+    interp_theme_containers, interp_theme_containers_descendants,
+    interp_theme_containers_descendants_supports, interp_theme_containers_struct,
+    interp_theme_containers_struct_descendants,
+    interp_theme_containers_struct_descendants_supports, interp_theme_containers_struct_supports,
+    interp_theme_containers_supports, interp_theme_descendants, interp_theme_descendants_supports,
+    interp_theme_struct, interp_theme_struct_descendants, interp_theme_struct_descendants_supports,
+    interp_theme_struct_supports, interp_theme_supports, keyword_texts, scan, scan_rust_strings,
+    sort,
 };
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
@@ -412,6 +420,17 @@ struct Args {
     /// The `--dark` probe flag (`expand` only): lift the mode tier the
     /// interp resolves under.
     dark: bool,
+    /// The preference probe flags (`expand` only): the media-feature
+    /// facts the interp's [`Env`] answers the
+    /// `motion-*`/`contrast-*`/`forced-colors:`/`print:` layers from —
+    /// the user agent's own media-query answers, frame state like the
+    /// mode. Unset flags are the quiet miss a media query that does
+    /// not hold is.
+    reduced_motion: bool,
+    more_contrast: bool,
+    less_contrast: bool,
+    forced_colors: bool,
+    print_media: bool,
     /// The `--container name=rem` bounds (`expand` only, repeatable):
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
@@ -423,6 +442,14 @@ struct Args {
     /// ancestor's, the `.peer` sibling's), the fragment the rendered
     /// `:has()` inner ([`DescendantFact`]'s own payload shape).
     has: Vec<(DescendantKind, String)>,
+    /// The `--supports condition` facts (`expand` only, repeatable):
+    /// the render target's capability facts the interp's supports seam
+    /// answers the `supports-[…]:` layers from — each fact normalizes
+    /// through the fold's own grammar (the
+    /// [`aeolus_compile::supports_condition`] face), so the bare
+    /// `display:grid` spelling and the paren-wrapped `(display:grid)`
+    /// land the SAME payload the variant folded.
+    supports: Vec<String>,
     /// The `--child i/n` facts (`expand` only): the element's 0-based
     /// child index and the parent's element-child count — the
     /// [`StructFacts`] the interp's structural seam answers the
@@ -444,8 +471,14 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut summary = false;
     let mut json = false;
     let mut dark = false;
+    let mut reduced_motion = false;
+    let mut more_contrast = false;
+    let mut less_contrast = false;
+    let mut forced_colors = false;
+    let mut print_media = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
+    let mut supports: Vec<String> = Vec::new();
     let mut child: Option<(usize, usize)> = None;
     let mut empty = false;
     let mut fail_on: Option<String> = None;
@@ -474,6 +507,21 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--json" if allow.contains(&"json") => json = true,
             "--dark" if allow.contains(&"dark") => dark = true,
             "--empty" if allow.contains(&"empty") => empty = true,
+            "--reduced-motion" if allow.contains(&"reduced-motion") => {
+                reduced_motion = true;
+            }
+            "--more-contrast" if allow.contains(&"more-contrast") => {
+                more_contrast = true;
+            }
+            "--less-contrast" if allow.contains(&"less-contrast") => {
+                less_contrast = true;
+            }
+            "--forced-colors" if allow.contains(&"forced-colors") => {
+                forced_colors = true;
+            }
+            "--print" if allow.contains(&"print") => {
+                print_media = true;
+            }
             "--fail-on" if allow.contains(&"fail-on") => {
                 i += 1;
                 match rest.get(i) {
@@ -561,6 +609,29 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
                 }
                 has.push((kind, fragment.to_string()));
             }
+            "--supports" if allow.contains(&"supports") => {
+                i += 1;
+                let Some(value) = rest.get(i) else {
+                    let _ = writeln!(
+                        err,
+                        "--supports needs a condition (e.g. --supports 'display:grid')"
+                    );
+                    return None;
+                };
+                // The fact grammar IS the fold's (one grammar, two
+                // consumers): the condition normalizes to the payload
+                // the `supports-[…]` layers carry, a refusal is a CLI
+                // input error, exit 2.
+                let Some(condition) = aeolus_compile::supports_condition(value) else {
+                    let _ = writeln!(
+                        err,
+                        "--supports condition must fold (bracketed inner, balanced parens, \
+                         no braces/;/backslash; `_` spells a space), got {value:?}"
+                    );
+                    return None;
+                };
+                supports.push(condition.to_string());
+            }
             "--container" if allow.contains(&"container") => {
                 i += 1;
                 let Some(value) = rest.get(i) else {
@@ -608,8 +679,14 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         summary,
         json,
         dark,
+        reduced_motion,
+        more_contrast,
+        less_contrast,
+        forced_colors,
+        print_media,
         containers,
         has,
+        supports,
         child,
         empty,
         fail_on,
@@ -994,8 +1071,14 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "dark",
             "container",
             "has",
+            "supports",
             "child",
             "empty",
+            "reduced-motion",
+            "more-contrast",
+            "less-contrast",
+            "forced-colors",
+            "print",
         ],
     ) else {
         return 2;
@@ -1026,6 +1109,11 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
     };
     let env = Env {
         dark: args.dark,
+        reduced_motion: args.reduced_motion,
+        more_contrast: args.more_contrast,
+        less_contrast: args.less_contrast,
+        forced_colors: args.forced_colors,
+        print_media: args.print_media,
         ..Env::default()
     };
     // The NAMED containers' widths ride the `--container name=rem`
@@ -1070,7 +1158,118 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         .collect();
     let tree_state = DescendantState::new(&tree);
     let descendants_used = !args.has.is_empty();
-    let interped = if descendants_used {
+    // The render target's capability facts ride the `--supports
+    // condition` flags: the same normalized payloads the fold produces
+    // (the strings outlive the walk). Without any, `expand` keeps the
+    // sourceless shape — supports layers report instead of answering.
+    let conditions: Vec<&str> = args.supports.iter().map(String::as_str).collect();
+    let target_state = SupportsState::new(&conditions);
+    let supports_used = !args.supports.is_empty();
+    let interped = if supports_used {
+        if descendants_used {
+            match (&table, bounds.is_empty(), structs_used) {
+                (Some(table), false, true) => interp_theme_containers_struct_descendants_supports(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &state,
+                    &facts,
+                    &tree_state,
+                    &target_state,
+                ),
+                (Some(table), false, false) => interp_theme_containers_descendants_supports(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &state,
+                    &tree_state,
+                    &target_state,
+                ),
+                (Some(table), true, true) => interp_theme_struct_descendants_supports(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &facts,
+                    &tree_state,
+                    &target_state,
+                ),
+                (Some(table), true, false) => interp_theme_descendants_supports(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &tree_state,
+                    &target_state,
+                ),
+                (None, false, true) => interp_containers_struct_descendants_supports(
+                    &compiled.program,
+                    &env,
+                    &state,
+                    &facts,
+                    &tree_state,
+                    &target_state,
+                ),
+                (None, false, false) => interp_containers_descendants_supports(
+                    &compiled.program,
+                    &env,
+                    &state,
+                    &tree_state,
+                    &target_state,
+                ),
+                (None, true, true) => interp_struct_descendants_supports(
+                    &compiled.program,
+                    &env,
+                    &facts,
+                    &tree_state,
+                    &target_state,
+                ),
+                (None, true, false) => {
+                    interp_descendants_supports(&compiled.program, &env, &tree_state, &target_state)
+                }
+            }
+        } else {
+            match (&table, bounds.is_empty(), structs_used) {
+                (Some(table), false, true) => interp_theme_containers_struct_supports(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &state,
+                    &facts,
+                    &target_state,
+                ),
+                (Some(table), false, false) => interp_theme_containers_supports(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &state,
+                    &target_state,
+                ),
+                (Some(table), true, true) => interp_theme_struct_supports(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &facts,
+                    &target_state,
+                ),
+                (Some(table), true, false) => {
+                    interp_theme_supports(&compiled.program, table, &env, &target_state)
+                }
+                (None, false, true) => interp_containers_struct_supports(
+                    &compiled.program,
+                    &env,
+                    &state,
+                    &facts,
+                    &target_state,
+                ),
+                (None, false, false) => {
+                    interp_containers_supports(&compiled.program, &env, &state, &target_state)
+                }
+                (None, true, true) => {
+                    interp_struct_supports(&compiled.program, &env, &facts, &target_state)
+                }
+                (None, true, false) => interp_supports(&compiled.program, &env, &target_state),
+            }
+        }
+    } else if descendants_used {
         match (&table, bounds.is_empty(), structs_used) {
             (Some(table), false, true) => interp_theme_containers_struct_descendants(
                 &compiled.program,
@@ -1998,7 +2197,10 @@ USAGE:
   aeolus sort    [--json] <classes...>                       registry-order class sort (the §5.5 parity line)
   aeolus fmt     [--check] <file>                            one file's class strings into the canonical order;
                                                              --check prints the drift report and exits 1 (CI gate)
-  aeolus expand  [--theme <spec>] [--dark] [--container name=rem] [--has kind=fragment] [--child i/n] [--empty] [--json] <classes...>
+  aeolus expand  [--theme <spec>] [--dark] [--reduced-motion] [--more-contrast]
+                 [--less-contrast] [--forced-colors] [--print] [--container name=rem]
+                 [--has kind=fragment] [--supports condition] [--child i/n] [--empty]
+                 [--json] <classes...>
                                                              effective declarations (the interp (c) arm);
                                                              --container names the bounds the named
                                                              @container layers resolve from, --has carries
