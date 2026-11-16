@@ -195,3 +195,15 @@ fn document_highlights_walk(bencher: Bencher) {
         .sum::<u32>();
     bencher.bench(|| lsp.document_highlights("file:///card.rs", line, character));
 }
+
+/// The format-on-save path (the class-sort seam's editor face): the
+/// document's class strings through the themeless sort walk — the
+/// registry's read side and the variant fold per string, the canonical
+/// join compared against the hit text — the cost a format request pays
+/// per didOpen (and a dirty buffer per save).
+#[divan::bench]
+fn format_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    bencher.bench(|| lsp.format("file:///card.rs"));
+}
