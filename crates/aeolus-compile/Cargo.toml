@@ -132,6 +132,13 @@ harness = false
 name = "preferences"
 harness = false
 
+# The capability families' benchmarks (the media-feature tier's
+# input/orientation half): the env-answer walk over a capability-mixed
+# program, the fire path and the quiet-miss path beside it.
+[[bench]]
+name = "capabilities"
+harness = false
+
 # The named-container seam's benchmarks (plan §3.5's container row, the
 # resolution half): the per-frame walk over a container-mixed program
 # with the bounds table hit and quietly missed, themeless and themed.
