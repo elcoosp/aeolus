@@ -255,6 +255,7 @@ Pay only for the dynamism you use:
 | `ltr:` `rtl:`                                              | typed `Cond::Dir` bit, one `Env` direction fact (`ltr:` the `rtl:` complement), CSS `:where(:dir(…))` selector semantics | ✅                                                            |
 | `valid:` `invalid:` `user-valid:` `user-invalid:`          | typed `Cond` states, two `Env` facts (the constraint pair + the `user-` interaction gate), CSS `:pseudo` selector semantics | ✅                                                            |
 | `target:` `indeterminate:` `autofill:` `read-only:`        | typed `Cond` states, one `Env` fact each (`read-only:` the editability fact's complement — the resting env answers), CSS `:pseudo` selector semantics | ✅                                                            |
+| `open:` `inert:` `default:`                                | typed `Cond` states, one affirmative `Env` fact each (the v0.x `State` surface's own slots — the v0.x-gap closure the element-state landing documented), CSS `:is([open], :popover-open, :open)`/`:is([inert], [inert] *)`/`:default` selector semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
 | `selection:` `placeholder:`                                | `PseudoTarget` scoped cascades                                        | ✅                                                            |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
@@ -293,7 +294,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1732 tests with all features enabled (2026-11).
+  **zero** allocations). Workspace battery: 1750 tests with all features enabled (2026-11).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -430,7 +431,14 @@ cargo run -p aeolus-cli --example expand_direction      # expand --rtl: the dire
 cargo run -p aeolus-compile --example validation        # the validation states: valid/invalid/user-* element-state answers
 cargo run -p aeolus-cli --example expand_validation     # expand --invalid/--user-*: the facts the validation layers answer from
 cargo run -p aeolus-compile --example element_states    # the element states: target/indeterminate/autofill/read-only answers
+cargo run -p aeolus-compile --example descendants       # the descendant-probe seam: the has-* family answers
+cargo run -p aeolus-compile --example supports          # the supports seam: the @supports family answers
+cargo run -p aeolus-compile --example preferences       # the preference families: the media-feature tier answers
+cargo run -p aeolus-compile --example capabilities      # the capability tier: pointer/orientation media-feature answers
+cargo run -p aeolus-compile --example widget_states     # the widget states: open/inert/default element-state answers
 cargo run -p aeolus-cli --example expand_element_states # expand --target/--indeterminate/--autofill/--read-write: the facts the element-state layers answer from
+cargo run -p aeolus-compile --example widget_states     # the widget states: open/inert/default element-state answers
+cargo run -p aeolus-cli --example expand_widget_states  # expand --open/--inert/--default: the facts the widget-state layers answer from
 cargo run -p aeolus-cli --example sort                  # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
@@ -529,7 +537,9 @@ cargo run -p aeolus-cli --example expand_capabilities  # expand --pointer-fine/-
 cargo run -p aeolus-cli --example expand_direction  # expand --rtl: the rtl/ltr layers answer from the one direction fact
 cargo run -p aeolus-cli --example expand_validation  # expand --invalid/--user-*: the validation layers answer from the facts
 cargo run -p aeolus-cli --example expand_element_states  # expand --target/--indeterminate/--autofill/--read-write: the element-state layers answer from the facts
+cargo run -p aeolus-cli --example expand_widget_states   # expand --open/--inert/--default: the widget-state layers answer from the facts
 cargo run -p aeolus-cli --example sort              # the sort face: canonical order beside the miss channel
+cargo run -p aeolus-cli --example cn                # the cn face: IR-level merge, the rightmost-wins answer
 # the shadcn program tables
 cargo run -p aeolus-shadcn --example program_tables  # the Button programs headless (the variants! output)
 cargo run -p aeolus-shadcn --example program_components  # the non-button program tables: Badge/Alert/Base beside the input/card shapes
