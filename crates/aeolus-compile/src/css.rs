@@ -84,6 +84,16 @@ pub enum CssAt {
         /// The named container (`@max-lg/sidebar:`).
         name: Option<&'static str>,
     },
+    /// `@supports <condition>` — the `supports-[…]:` family. The
+    /// payload is the fold's rendered condition text verbatim (the
+    /// render cannot drift the fold — the same payload contract the
+    /// attribute probes keep).
+    Supports(&'static str),
+    /// `@media <feature>` — the `motion-*`/`contrast-*`/
+    /// `forced-colors:`/`print:` families. The payload is the typed
+    /// [`aeolus_ir::Pref`] bit; the head renders the real tailwindcss v4.1.17
+    /// text (the static variants' own pinned spellings).
+    MediaPref(aeolus_ir::Pref),
 }
 
 impl CssAt {
@@ -108,6 +118,18 @@ impl CssAt {
                 bp,
                 name: Some(name),
             } => format!("@container {name} (width < {}rem)", bp.rem()),
+            CssAt::Supports(condition) => format!("@supports {condition}"),
+            CssAt::MediaPref(pref) => {
+                use aeolus_ir::Pref;
+                match pref {
+                    Pref::MotionSafe => "@media (prefers-reduced-motion: no-preference)".into(),
+                    Pref::MotionReduce => "@media (prefers-reduced-motion: reduce)".into(),
+                    Pref::ContrastMore => "@media (prefers-contrast: more)".into(),
+                    Pref::ContrastLess => "@media (prefers-contrast: less)".into(),
+                    Pref::ForcedColors => "@media (forced-colors: active)".into(),
+                    Pref::Print => "@media print".into(),
+                }
+            }
         }
     }
 }
@@ -589,6 +611,8 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
                     | aeolus_ir::Cond::Aria { .. }
                     | aeolus_ir::Cond::Has(_)
                     | aeolus_ir::Cond::Structural(_)
+                    | aeolus_ir::Cond::Supports(_)
+                    | aeolus_ir::Cond::Media(_)
             )
         {
             apply_cond_shape(&mut set, cond);
@@ -734,6 +758,14 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         // forms the v0.x oracle's `structural_pseudo` renders — one
         // grammar, the render cannot drift the fold).
         Cond::Structural(test) => set.pseudos.push(structural_pseudo(test)),
+        // The supports condition: the at-rule head IS the payload (the
+        // fold's rendered condition text — the same payload the interp
+        // seam and the plan note carry; one grammar, every consumer).
+        Cond::Supports(condition) => set.at = Some(CssAt::Supports(condition)),
+        // The media-feature preferences: the at-rule head derives from
+        // the typed bit (the corpus's pinned texts — the render cannot
+        // drift the fold).
+        Cond::Media(pref) => set.at = Some(CssAt::MediaPref(pref)),
         Cond::Bp(bp) | Cond::Min(bp) => set.at = Some(CssAt::MediaMin(bp)),
         Cond::Max(bp) => set.at = Some(CssAt::MediaMax(bp)),
         Cond::Container { bp, name } => set.at = Some(CssAt::ContainerMin { bp, name }),
