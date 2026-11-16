@@ -48,7 +48,13 @@
 //!     riding the edit that repairs it ([`EngineCodeAction`]);
 //!   * *where else is this class?* — the document highlights: every
 //!     occurrence of the candidate under the cursor, document order, the
-//!     editor's click-to-find ([`EngineHighlight`]).
+//!     editor's click-to-find ([`EngineHighlight`]);
+//!   * *what order should this string ride?* — the formatting edits:
+//!     every class string not yet in the registry's canonical order
+//!     rides one edit over its content span, the class-sort seam's own
+//!     canonical join as the new text — the no-op contract a
+//!     format-on-save rides, an already-canonical string answering
+//!     nothing ([`EngineTextEdit`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -285,6 +291,21 @@ pub struct EngineCodeAction {
 pub struct EngineHighlight {
     /// The occurrence's range (the editor highlights the spelling).
     pub range: EngineRange,
+}
+
+/// One edit the formatter rides (the class-sort seam's editor face —
+/// the wire's `textDocument/formatting` answer): the string content's
+/// byte-true range and the sort seam's canonical join as the new text.
+/// The range covers the class STRING's content span (the extractor's
+/// own trimmed hit) — never the quotes around it, the editor's own
+/// territory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineTextEdit {
+    /// The content span the edit replaces (UTF-16 pairs, byte-true).
+    pub range: EngineRange,
+    /// The canonical order the sort seam answers (single-space join —
+    /// the whitespace run does not survive the canonical form).
+    pub new_text: String,
 }
 
 /// One open document the engine keeps: the current text and the LSP's
