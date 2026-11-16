@@ -119,7 +119,8 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             InterpNote::PseudoElement { cond, .. }
             | InterpNote::ContainerUnqueried { cond, .. }
             | InterpNote::AttributeUnqueried { cond, .. }
-            | InterpNote::StructuralUnqueried { cond, .. } => *cond,
+            | InterpNote::StructuralUnqueried { cond, .. }
+            | InterpNote::DescendantUnqueried { cond, .. } => *cond,
         };
         let what = cond
             .source()
