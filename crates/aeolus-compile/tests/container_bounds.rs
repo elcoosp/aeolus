@@ -58,7 +58,8 @@ fn note_for<'a>(interp: &'a aeolus_compile::Interped, cond: &'a Cond) -> Option<
         | InterpNote::ContainerUnqueried { cond: c, .. }
         | InterpNote::AttributeUnqueried { cond: c, .. }
         | InterpNote::StructuralUnqueried { cond: c, .. }
-        | InterpNote::DescendantUnqueried { cond: c, .. } => c == cond,
+        | InterpNote::DescendantUnqueried { cond: c, .. }
+        | InterpNote::SupportsUnqueried { cond: c, .. } => c == cond,
     })
 }
 
