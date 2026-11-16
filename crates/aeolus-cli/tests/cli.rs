@@ -1668,3 +1668,74 @@ fn expand_read_only_answers_the_complement() {
     assert_eq!(code, 0, "{out}");
     assert!(!out.contains("padding-top = 2rem"), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// The widget-state battery: the family's headless facts (M2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_open_flag_answers_the_layers() {
+    // The disclosure/popover fact is element state like the state bits:
+    // the flag sets the Env bit, the open layers fire (the --target
+    // precedent; one flag per FACT).
+    let (code, out, _) = run_cmd(&["expand", "--open", "open:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--open", "open:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+}
+
+#[test]
+fn expand_inert_flag_answers_the_layers() {
+    // The frozen-subtree fact is the per-element answer the compound
+    // `:is([inert], [inert] *)` head reads: the flag sets the Env bit,
+    // the inert layers fire.
+    let (code, out, _) = run_cmd(&["expand", "--inert", "inert:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_default_flag_answers_the_layers() {
+    // The form group's default-control fact is the `:default` answer
+    // the host widget tracks beside checked: the flag sets the Env
+    // bit, the default layers fire.
+    let (code, out, _) = run_cmd(&["expand", "--default", "default:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+}
+
+#[test]
+fn expand_without_widget_state_flags_is_a_quiet_miss() {
+    // The default Env asserts no widget-state fact — every family
+    // question is AFFIRMATIVE, so the layers miss QUIETLY (never a
+    // reported exclusion; the element-state battery's own shape).
+    let (code, out, _) = run_cmd(&["expand", "open:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "a quiet miss reports nothing: {out}"
+    );
+
+    let (code, out, _) = run_cmd(&["expand", "inert:hidden"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("display = none"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "default:hidden"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("display = none"), "{out}");
+}
+
+#[test]
+fn expand_widget_state_flags_mix_with_the_facts() {
+    // The family rides the same Env the other fact flags build: the
+    // widget-state flags compose with the base layer (the facts'
+    // cascade, the element-state battery's own shape).
+    let (code, out, _) = run_cmd(&["expand", "--open", "--default", "p-4 open:p-8 default:mt-2"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+    assert!(out.contains("margin-top = 0.5rem"), "{out}");
+}
