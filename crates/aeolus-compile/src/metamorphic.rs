@@ -780,6 +780,21 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
             Cond::Visited => env.visited = true,
             Cond::Checked => env.checked = true,
             Cond::PlaceholderShown => env.placeholder_shown = true,
+            // The validation states are element state: the conjunctive
+            // env carries the facts (the complement bakes the bit
+            // false, the `landscape:` arm's own reading; the `user-`
+            // pair's interaction gate rides WITH the constraint fact —
+            // both spellings fire together only with the gate set).
+            Cond::Valid => env.validation_invalid = false,
+            Cond::Invalid => env.validation_invalid = true,
+            Cond::UserValid => {
+                env.user_validated = true;
+                env.validation_invalid = false;
+            }
+            Cond::UserInvalid => {
+                env.user_validated = true;
+                env.validation_invalid = true;
+            }
             Cond::GroupHover => env.group_hover = true,
             Cond::GroupFocus => env.group_focus = true,
             Cond::PeerHover => env.peer_hover = true,
@@ -874,6 +889,10 @@ fn cond_label(cond: &Cond) -> String {
         Cond::Visited => "visited".to_string(),
         Cond::Checked => "checked".to_string(),
         Cond::PlaceholderShown => "placeholder-shown".to_string(),
+        Cond::Valid => "valid".to_string(),
+        Cond::Invalid => "invalid".to_string(),
+        Cond::UserValid => "user-valid".to_string(),
+        Cond::UserInvalid => "user-invalid".to_string(),
         Cond::Selection => "selection".to_string(),
         Cond::Placeholder => "placeholder".to_string(),
         Cond::GroupHover => "group-hover".to_string(),
