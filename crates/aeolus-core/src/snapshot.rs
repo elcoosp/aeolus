@@ -3532,6 +3532,11 @@ fn state_name(s: State) -> &'static str {
         State::ReadOnly => "read_only",
         State::InRange => "in_range",
         State::OutOfRange => "out_of_range",
+        // The widget-state family's slots (single words keep the bare
+        // form the one-word states use).
+        State::Open => "open",
+        State::Inert => "inert",
+        State::Default => "default",
     }
 }
 
@@ -3559,6 +3564,11 @@ fn parse_state(s: &str) -> Option<State> {
         "read_only" => State::ReadOnly,
         "in_range" => State::InRange,
         "out_of_range" => State::OutOfRange,
+        // The widget-state family's slots (the strict reader accepts
+        // the names `state_name` writes — the round trip is total).
+        "open" => State::Open,
+        "inert" => State::Inert,
+        "default" => State::Default,
         _ => return None,
     })
 }
