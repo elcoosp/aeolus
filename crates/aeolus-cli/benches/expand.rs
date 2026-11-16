@@ -1,6 +1,6 @@
 //! The `expand` command's microbenchmarks (divan, stable — the
 //! workspace bench idiom): the interp arm's human-readable form, §3.2's
-//! CLI row. Three arms pin the cost split: the themeless effective walk
+//! CLI row. Four arms pin the cost split: the themeless effective walk
 //! (the keyword texts riding the winner attribution), the themed walk
 //! (the tiered table resolving the token forms) and the keyword-heavy
 //! render (every slot reading its row text through the `(cond, prop)`
@@ -53,4 +53,30 @@ fn expand_themed_effective(bencher: Bencher) {
 fn expand_keyword_slots(bencher: Bencher) {
     let compiled = compile(KEYWORDS, &Config::default()).expect("non-empty input compiles");
     bencher.bench(|| compiled.interp(&Env::default()).expect("no theme forms"));
+}
+
+/// The descendant-probe seam's CLI face (the `--has` facts): the same
+/// Button-shaped program through the `*_descendants` walk, the fact
+/// table hit and the note path beside it.
+const HAS_BUTTON: &str =
+    "inline-flex items-center gap-2 has-[>svg]:px-3 has-data-[slot=card-action]:p-8 has-focus:p-8";
+
+#[divan::bench]
+fn expand_descendant_facts(bencher: Bencher) {
+    use aeolus_compile::{DescendantFact, DescendantKind, DescendantState, interp_descendants};
+    let compiled = compile(HAS_BUTTON, &Config::default()).expect("non-empty input compiles");
+    let tree = DescendantState::new(&[
+        DescendantFact {
+            kind: DescendantKind::Element,
+            fragment: "*:focus",
+        },
+        DescendantFact {
+            kind: DescendantKind::Element,
+            fragment: "*[data-slot=\"card-action\"]",
+        },
+    ]);
+    let env = Env::default();
+    bencher.bench(|| {
+        interp_descendants(&compiled.program, &env, &tree).expect("the program resolves")
+    });
 }
