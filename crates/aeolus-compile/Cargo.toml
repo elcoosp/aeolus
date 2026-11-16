@@ -160,6 +160,13 @@ harness = false
 name = "element_states"
 harness = false
 
+# The widget-state family's benchmarks (the tier beside the
+# element-state family): the env-answer walk over a widget-state-mixed
+# program, the fire path and the resting-env quiet-miss path beside it.
+[[bench]]
+name = "widget_states"
+harness = false
+
 # The named-container seam's benchmarks (plan §3.5's container row, the
 # resolution half): the per-frame walk over a container-mixed program
 # with the bounds table hit and quietly missed, themeless and themed.
