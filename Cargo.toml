@@ -64,7 +64,7 @@ exclude = ["fuzz"]
 version = "0.19.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/aeolus-rs/aeolus"
+repository = "https://github.com/elcoosp/aeolus"
 
 # Pedantic clippy, workspace-wide (v0.8 §4). Every member opts in with
 # `[lints] workspace = true`. Lints that fight the codebase's DELIBERATE
