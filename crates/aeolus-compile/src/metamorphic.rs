@@ -804,6 +804,14 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
             Cond::Indeterminate => env.indeterminate = true,
             Cond::Autofill => env.autofilled = true,
             Cond::ReadOnly => env.read_write = false,
+            // The widget-state family is element state: the
+            // conjunctive env carries the facts (the one-fact states
+            // bake their bit true — the `target:` arm's own reading;
+            // every family question is AFFIRMATIVE, no complement
+            // rides).
+            Cond::Open => env.opened = true,
+            Cond::Inert => env.inert = true,
+            Cond::Default => env.form_default = true,
             Cond::GroupHover => env.group_hover = true,
             Cond::GroupFocus => env.group_focus = true,
             Cond::PeerHover => env.peer_hover = true,
@@ -908,6 +916,11 @@ fn cond_label(cond: &Cond) -> String {
         Cond::Indeterminate => "indeterminate".to_string(),
         Cond::Autofill => "autofill".to_string(),
         Cond::ReadOnly => "read-only".to_string(),
+        // The widget-state family: the bare spellings (the
+        // element-state arm's shape — the label renders the tier).
+        Cond::Open => "open".to_string(),
+        Cond::Inert => "inert".to_string(),
+        Cond::Default => "default".to_string(),
         Cond::Selection => "selection".to_string(),
         Cond::Placeholder => "placeholder".to_string(),
         Cond::GroupHover => "group-hover".to_string(),
