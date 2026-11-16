@@ -692,6 +692,10 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
                 });
                 set.peer = true;
             }
+            // The direction family: the selector-side probe (the
+            // upstream static-variant selectors, the fold's typed bit
+            // rendering its own head).
+            "ltr" | "rtl" => set.probes.push(direction_probe(name).to_string()),
             _ => {
                 // `variant::classify` typed it; the @-rule shape derives
                 // from the same spelling the fold consumed.
@@ -768,6 +772,11 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         // forms the v0.x oracle's `structural_pseudo` renders — one
         // grammar, the render cannot drift the fold).
         Cond::Structural(test) => set.pseudos.push(structural_pseudo(test)),
+        // The direction probes: the upstream static-variant selectors
+        // derived from the typed bit (the v4.1.17 `staticVariant` texts
+        // — the render cannot drift the fold, the structural-pseudo
+        // precedent).
+        Cond::Dir(dir) => set.probes.push(direction_probe(dir.source()).to_string()),
         // The supports condition: the at-rule head IS the payload (the
         // fold's rendered condition text — the same payload the interp
         // seam and the plan note carry; one grammar, every consumer).
@@ -780,6 +789,19 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         Cond::Max(bp) => set.at = Some(CssAt::MediaMax(bp)),
         Cond::Container { bp, name } => set.at = Some(CssAt::ContainerMin { bp, name }),
         Cond::MaxContainer { bp, name } => set.at = Some(CssAt::ContainerMax { bp, name }),
+    }
+}
+
+/// The direction probe's selector text for one spelling — the
+/// tailwindcss v4.1.17 source's own `staticVariant` selectors
+/// (`packages/tailwindcss/src/variants.ts`, pinned verbatim: the
+/// `:where(...)` disjunction the `&` the utility selector replaces
+/// precedes). Static text — the spellings are closed, no interning.
+fn direction_probe(spelling: &str) -> &'static str {
+    match spelling {
+        "ltr" => ":where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)",
+        "rtl" => ":where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)",
+        _ => unreachable!("the direction probe renders the closed spelling set"),
     }
 }
 
