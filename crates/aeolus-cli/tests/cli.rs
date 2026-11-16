@@ -1401,3 +1401,78 @@ fn expand_motion_safe_asks_the_complement() {
     assert_eq!(code, 0, "{out}");
     assert!(!out.contains("padding-top = 2rem"), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// expand --pointer-fine etc.: the capability families' CLI face
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_capability_flags_answer_the_layers() {
+    // The capability facts are frame state like the preferences: the
+    // flags set the Env bits, the layers fire (the --reduced-motion
+    // precedent).
+    let (code, out, _) = run_cmd(&["expand", "--pointer-fine", "pointer-fine:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&[
+        "expand",
+        "--any-pointer-coarse",
+        "any-pointer-coarse:hidden",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--pointer-none", "pointer-none:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--portrait", "portrait:p-4"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 1rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--any-pointer-fine", "any-pointer-fine:ring-2"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("--tw-ring"), "{out}");
+}
+
+#[test]
+fn expand_without_capability_flags_is_a_quiet_miss() {
+    // The default Env asserts no capability fact — the pointer queries
+    // do not hold, the layers miss QUIETLY (never a reported
+    // exclusion).
+    let (code, out, _) = run_cmd(&["expand", "pointer-fine:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "a quiet miss reports nothing: {out}"
+    );
+}
+
+#[test]
+fn expand_landscape_asks_the_complement() {
+    // The orientation query always holds an answer: landscape fires
+    // while the portrait bit is off (the resting env's own answer),
+    // misses when --portrait sets it.
+    let (code, out, _) = run_cmd(&["expand", "landscape:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--portrait", "landscape:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_portrait_asks_the_complement_pair() {
+    // The same fact from the portrait side: --portrait fires the
+    // portrait layer, the resting env misses it.
+    let (code, out, _) = run_cmd(&["expand", "--portrait", "portrait:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "portrait:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
