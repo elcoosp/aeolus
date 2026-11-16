@@ -152,6 +152,16 @@ pub fn env_for_probe(probe: &EguiProbe) -> Env {
         opened: false,
         inert: false,
         form_default: false,
+        // The form-state facts ride no probe surface either (the
+        // form-membership answer, the required-attribute answer and
+        // the range-bounds answers come from the host's form state,
+        // not the probe path's viewport/container facts): the probe
+        // path honestly keeps them off — the form-state layers stay
+        // the quiet miss a selector that does not match is.
+        form_associated: false,
+        required_field: false,
+        range_bounded: false,
+        range_in: false,
         viewport_rem: probe.width.unwrap_or(0.0) / REM_PX,
         container_rem: probe.container_width.map(|width| width / REM_PX),
     }
