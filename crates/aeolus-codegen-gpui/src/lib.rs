@@ -334,6 +334,13 @@ fn cond_tokens(cond: Cond, ir: &TokenStream) -> TokenStream {
             let name = ident_tokens(pref, "preference");
             quote! { #ir::Cond::Media(#ir::Pref::#name) }
         }
+        // The direction variants: the payload is the typed bit — the
+        // frozen static item names it, the interp walk's env fact
+        // answering at runtime (the media-feature arm's own shape).
+        Cond::Dir(dir) => {
+            let name = ident_tokens(dir, "direction");
+            quote! { #ir::Cond::Dir(#ir::Direction::#name) }
+        }
         other => {
             let name = ident_tokens(other, "condition");
             quote! { #ir::Cond::#name }
