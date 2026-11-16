@@ -1268,3 +1268,114 @@ fn document_highlight_before_initialize_rides_silently() {
         "requests before initialize ride the quiet-drop contract"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The formatting wire (the class-sort seam's editor face):
+// textDocument/formatting — the canonical-order edits over the protocol's
+// TextEdit shape
+// ---------------------------------------------------------------------------
+
+/// The formatting request the harness reuses.
+fn formatting_request(id: i32, uri: &str) -> Message {
+    request(
+        id,
+        "textDocument/formatting",
+        json!({
+            "textDocument": {"uri": uri},
+            "options": {"tabSize": 4, "insertSpaces": true},
+        }),
+    )
+}
+
+/// The wire-side formatter fixture: one out-of-order string.
+const FMT_WIRE_DOC: &str = "fn card() {\n    let s = \"hover:flex-col p-4 flex-col\";\n}\n";
+
+#[test]
+fn initialize_advertises_document_formatting() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("initialize answers a response");
+    };
+    let result = response.result.expect("the capabilities carry a result");
+    let capabilities = &result["capabilities"];
+    // The plain `true` form: no options object, the honest shape (the
+    // answer is the engine's whole-document walk).
+    assert_eq!(
+        capabilities["documentFormattingProvider"], true,
+        "the formatting capability advertises: {capabilities}"
+    );
+}
+
+#[test]
+fn formatting_answers_the_canonical_order_edits() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, FMT_WIRE_DOC));
+    let handled = handle_message(&mut session, formatting_request(40, &uri()));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers");
+    };
+    let result = response.result.expect("the edit list");
+    let edits = result.as_array().expect("an array of TextEdits");
+    assert_eq!(
+        edits.len(),
+        1,
+        "one out-of-order string, one edit: {result}"
+    );
+    // The protocol's TextEdit shape: the string content's byte-true
+    // range (line 1, column 13 — right after the opening quote) plus
+    // the canonical order the sort seam answers.
+    assert_eq!(edits[0]["range"]["start"]["line"], 1);
+    assert_eq!(edits[0]["range"]["start"]["character"], 13);
+    assert_eq!(edits[0]["range"]["end"]["character"], 40);
+    assert_eq!(edits[0]["newText"], "p-4 flex-col hover:flex-col");
+}
+
+#[test]
+fn formatting_a_clean_document_answers_empty() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, "fn clean() {}\n"));
+    let handled = handle_message(&mut session, formatting_request(41, &uri()));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers");
+    };
+    assert_eq!(response.result, Some(serde_json::json!([])));
+}
+
+#[test]
+fn formatting_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(&mut session, formatting_request(42, &uri()));
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
+
+#[test]
+fn formatting_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, FMT_WIRE_DOC));
+    let handled = handle_message(
+        &mut session,
+        request(
+            43,
+            "textDocument/formatting",
+            json!({"textDocument": "not-an-object"}),
+        ),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers");
+    };
+    assert_eq!(
+        response.result,
+        Some(serde_json::Value::Null),
+        "malformed params: the protocol's own empty answer"
+    );
+}
