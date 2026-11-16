@@ -15,8 +15,8 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 
 use aeolus_compile::{
-    COLOUR_GROUPS, Config, CssSheet, Diagnostic, KNOWN_VARIANTS, ScanHit, compile, compile_theme,
-    emit_css, emit_css_theme, scan_rust_strings, suggest_for,
+    COLOUR_GROUPS, Compiled, Config, CssSheet, Diagnostic, KNOWN_VARIANTS, ScanHit, compile,
+    compile_theme, emit_css, emit_css_theme, scan_rust_strings, sort, suggest_for,
 };
 use aeolus_data::ValueKind;
 use aeolus_data::rows::ROWS;
@@ -27,7 +27,7 @@ use aeolus_theme::TokenTable;
 use crate::{
     DocumentMap, EngineCodeAction, EngineColour, EngineColourPresentation, EngineCompletion,
     EngineCompletionKind, EngineDiagnostic, EngineHighlight, EngineHover, EngineInlayHint,
-    EnginePosition, EngineRange, EngineSemanticKind, EngineSemanticToken,
+    EnginePosition, EngineRange, EngineSemanticKind, EngineSemanticToken, EngineTextEdit,
 };
 
 // ---------------------------------------------------------------------------
@@ -319,11 +319,9 @@ impl AeolusEngine {
 
     /// The document's colour swatches: every candidate class whose
     /// program carries a colour-valued declaration, its byte-true range
-    /// and the table's resolved light-tier rgba. The walk is the
-    /// per-candidate compile (the SAME entry points the CLI and the
-    /// macros run, one candidate per call — the program does not carry
-    /// per-candidate attribution, the spans come from the lexer), and
-    /// the swatch is the FIRST colour declaration in cascade order (the
+    /// and the table's resolved light-tier rgba. The walk is the shared
+    /// per-candidate compile ([`Self::compiled_candidates`]), and the
+    /// swatch is the FIRST colour declaration in cascade order (the
     /// class's primary colour — a class that writes two colour
     /// longhands paints the one the base layer carries first). The
     /// theme-less config answers empty for every token class (the
@@ -336,37 +334,18 @@ impl AeolusEngine {
             return Vec::new();
         };
         let text = doc.text.as_str();
-        let mut out = Vec::new();
-        for hit in scan_rust_strings(text) {
-            let (candidates, _) = parse_class_string(&hit.text);
-            for candidate in candidates {
-                // The single-candidate pipeline answer: the themed walk
-                // when the config carries a table, the theme-less
-                // boundary otherwise.
-                let compiled = match &self.config.tokens {
-                    Some(table) => compile_theme(candidate.raw, table, &self.config.compile),
-                    None => compile(candidate.raw, &self.config.compile),
-                };
-                let Ok(compiled) = compiled else {
-                    continue;
-                };
-                let Some(rgba) = compiled.program.layers.iter().find_map(|layer| {
-                    layer
-                        .decls
-                        .iter()
-                        .find_map(|decl| colour_of(decl.val, self.config.tokens.as_ref()))
-                }) else {
-                    continue;
-                };
-                let range = range_of(
-                    text,
-                    hit.offset + candidate.span.0,
-                    hit.offset + candidate.span.1,
-                );
-                out.push(EngineColour { range, rgba });
-            }
-        }
-        out
+        self.compiled_candidates(text, |_raw, span, compiled| {
+            let rgba = compiled.program.layers.iter().find_map(|layer| {
+                layer
+                    .decls
+                    .iter()
+                    .find_map(|decl| colour_of(decl.val, self.config.tokens.as_ref()))
+            })?;
+            Some(EngineColour {
+                range: range_of(text, span.0, span.1),
+                rgba,
+            })
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -377,49 +356,30 @@ impl AeolusEngine {
     /// extraction seam's strings carry, its byte-true range and its
     /// compile outcome — a clean lower is the legend's `Lowered` (the
     /// wire's `class` type), a typed refusal is `Refused` (the wire's
-    /// custom `refused` type). The walk is the document-colour walk's
-    /// own shape: the per-candidate compile through the SAME entry
-    /// points the CLI and the macros run (one candidate per call, the
-    /// spans from the lexer), the classification the diagnostics list's
-    /// emptiness — no parallel matcher, no guessed shape. The theme-less
-    /// config answers the same (a refusal is a refusal either way: the
-    /// token classes refuse honestly, the highlighter shows it).
-    /// Deterministic and pure over the document map; an unknown URI
-    /// answers empty, and the answer rides in document order (the
-    /// delta encoder's own precondition).
+    /// custom `refused` type). The walk is the shared per-candidate
+    /// compile ([`Self::compiled_candidates`]), the classification the
+    /// diagnostics list's emptiness — no parallel matcher, no guessed
+    /// shape. The theme-less config answers the same (a refusal is a
+    /// refusal either way: the token classes refuse honestly, the
+    /// highlighter shows it). Deterministic and pure over the document
+    /// map; an unknown URI answers empty, and the answer rides in
+    /// document order (the delta encoder's own precondition).
     pub fn semantic_tokens(&self, uri: &str) -> Vec<EngineSemanticToken> {
         let Some(doc) = self.documents.get(uri) else {
             return Vec::new();
         };
         let text = doc.text.as_str();
-        let mut out = Vec::new();
-        for hit in scan_rust_strings(text) {
-            let (candidates, _) = parse_class_string(&hit.text);
-            for candidate in candidates {
-                // The single-candidate pipeline answer: the themed walk
-                // when the config carries a table, the theme-less
-                // boundary otherwise.
-                let compiled = match &self.config.tokens {
-                    Some(table) => compile_theme(candidate.raw, table, &self.config.compile),
-                    None => compile(candidate.raw, &self.config.compile),
-                };
-                let Ok(compiled) = compiled else {
-                    continue;
-                };
-                let kind = if compiled.diagnostics.is_empty() {
-                    EngineSemanticKind::Lowered
-                } else {
-                    EngineSemanticKind::Refused
-                };
-                let range = range_of(
-                    text,
-                    hit.offset + candidate.span.0,
-                    hit.offset + candidate.span.1,
-                );
-                out.push(EngineSemanticToken { range, kind });
-            }
-        }
-        out
+        self.compiled_candidates(text, |_raw, span, compiled| {
+            let kind = if compiled.diagnostics.is_empty() {
+                EngineSemanticKind::Lowered
+            } else {
+                EngineSemanticKind::Refused
+            };
+            Some(EngineSemanticToken {
+                range: range_of(text, span.0, span.1),
+                kind,
+            })
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -501,64 +461,48 @@ impl AeolusEngine {
     /// The document's inline hints: every candidate class that lowers
     /// cleanly rides one hint at its END position — the CSS arm's own
     /// declarations compacted to the single-line label, the hover's
-    /// markdown riding as the tooltip. The walk is the colour-swatch
-    /// walk's own shape (the per-candidate compile through the SAME
-    /// entry points the CLI and the macros run, the spans from the
-    /// lexer), and the rendering is the HOVER's own — the shared
-    /// [`lowered_markdown`], one answer shape at two surfaces. The
-    /// refused candidates never hint (their story is the diagnostics'
-    /// and the semantic legend's — a refused class has no CSS to show,
-    /// the honest boundary), and the theme-less config answers the same
-    /// (the CSS arm renders the lowered class either way). Deterministic
-    /// and pure over the document map; an unknown URI answers empty.
+    /// markdown riding as the tooltip. The walk is the shared
+    /// per-candidate compile ([`Self::compiled_candidates`]), and the
+    /// rendering is the HOVER's own — the shared [`lowered_markdown`],
+    /// one answer shape at two surfaces. The refused candidates never
+    /// hint (their story is the diagnostics' and the semantic legend's —
+    /// a refused class has no CSS to show, the honest boundary), and the
+    /// theme-less config answers the same (the CSS arm renders the
+    /// lowered class either way). Deterministic and pure over the
+    /// document map; an unknown URI answers empty.
     pub fn inlay_hints(&self, uri: &str) -> Vec<EngineInlayHint> {
         let Some(doc) = self.documents.get(uri) else {
             return Vec::new();
         };
         let text = doc.text.as_str();
-        let mut out = Vec::new();
-        for hit in scan_rust_strings(text) {
-            let (candidates, _) = parse_class_string(&hit.text);
-            for candidate in candidates {
-                // The single-candidate pipeline answer: the themed walk
-                // when the config carries a table, the theme-less
-                // boundary otherwise.
-                let compiled = match &self.config.tokens {
-                    Some(table) => compile_theme(candidate.raw, table, &self.config.compile),
-                    None => compile(candidate.raw, &self.config.compile),
-                };
-                let Ok(compiled) = compiled else {
-                    continue;
-                };
-                // The refusal boundary: a class the walk refused has no
-                // CSS to show — the diagnostics publish it, the legend
-                // highlights it, the hint stays quiet.
-                if !compiled.diagnostics.is_empty() {
-                    continue;
-                }
-                let sheet = match &self.config.tokens {
-                    Some(table) => emit_css_theme(candidate.raw, table, &self.config.compile),
-                    None => emit_css(candidate.raw, &self.config.compile),
-                };
-                let Ok(sheet) = sheet else {
-                    continue;
-                };
-                let cond = compiled
-                    .program
-                    .layers
-                    .last()
-                    .map_or(Cond::Base, |layer| layer.cond);
-                // The hint rides where the class's spelling stops: the
-                // candidate's END, already in the LSP's UTF-16 pairs.
-                let (line, character) = position_of(text, hit.offset + candidate.span.1);
-                out.push(EngineInlayHint {
-                    position: EnginePosition { line, character },
-                    label: compact_css(&sheet),
-                    tooltip: lowered_markdown(candidate.raw, cond, &sheet),
-                });
+        self.compiled_candidates(text, |raw, span, compiled| {
+            // The refusal boundary: a class the walk refused has no
+            // CSS to show — the diagnostics publish it, the legend
+            // highlights it, the hint stays quiet.
+            if !compiled.diagnostics.is_empty() {
+                return None;
             }
-        }
-        out
+            let sheet = match &self.config.tokens {
+                Some(table) => emit_css_theme(raw, table, &self.config.compile),
+                None => emit_css(raw, &self.config.compile),
+            };
+            let Ok(sheet) = sheet else {
+                return None;
+            };
+            let cond = compiled
+                .program
+                .layers
+                .last()
+                .map_or(Cond::Base, |layer| layer.cond);
+            // The hint rides where the class's spelling stops: the
+            // candidate's END, already in the LSP's UTF-16 pairs.
+            let (line, character) = position_of(text, span.1);
+            Some(EngineInlayHint {
+                position: EnginePosition { line, character },
+                label: compact_css(&sheet),
+                tooltip: lowered_markdown(raw, cond, &sheet),
+            })
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -670,6 +614,114 @@ impl AeolusEngine {
                     hit.offset + candidate.span.1,
                 );
                 out.push(EngineHighlight { range });
+            }
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
+    // The formatting answer
+    // -----------------------------------------------------------------------
+
+    /// The document's canonical-order edits (the class-sort seam's
+    /// editor face — the wire's `textDocument/formatting`): every
+    /// extracted class string whose order is not yet the registry's
+    /// canonical one rides ONE edit over the string's content span, the
+    /// sort seam's own canonical join as the new text.
+    ///
+    /// The walk is the pipeline's own sort seam
+    /// ([`sort`](aeolus_compile::sort)) — the rows' canonical utility
+    /// progression, the variant buckets riding after the base by the
+    /// IR's cascade specificity, registered customs unavailable here
+    /// (the engine's config carries no registrations, the honest
+    /// default [`sort`] has). The THEME-LESS walk is deliberate: the
+    /// order is a shape-level fact (the row a body addresses), the
+    /// sort module documents the boundary — a themeless token boundary
+    /// sorts exactly like its lowered sibling, so the formatter needs
+    /// no table.
+    ///
+    /// Three boundaries the answer keeps honestly:
+    ///
+    /// * an already-canonical string answers NO edit — the no-op
+    ///   contract a format-on-save rides (the edit list is exactly the
+    ///   diff, never a rewrite);
+    /// * the canonical join normalizes the string's whitespace run to
+    ///   single spaces (the seam's own documented canonical form), so a
+    ///   whitespace-only difference is an edit too;
+    /// * the classes the seam cannot order ride the TAIL in source
+    ///   order and never block the edit (the known prefix still
+    ///   reorders) — but the misses themselves are NOT this answer's
+    ///   channel: the diagnostics publish them (push and pull), the
+    ///   formatter carries edits only.
+    ///
+    /// Deterministic and pure over the document map; an unknown URI
+    /// answers empty. The edit's range is the string CONTENT's span
+    /// (the extractor's own trimmed hit, byte-true in the LSP's UTF-16
+    /// pairs) — the quotes around it stay the editor's.
+    pub fn format(&self, uri: &str) -> Vec<EngineTextEdit> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let mut out = Vec::new();
+        for hit in scan_rust_strings(text) {
+            // The themeless sort walk: the order is a shape-level fact,
+            // deliberately value/theme free (the sort module's own
+            // boundary). Only the empty input errors — the extractor's
+            // prose pre-filter keeps those out anyway.
+            let Ok(sorted) = sort(&hit.text) else {
+                continue;
+            };
+            let canonical = sorted.to_class_string();
+            if canonical == hit.text {
+                continue;
+            }
+            let range = range_of(text, hit.offset, hit.offset + hit.text.len());
+            out.push(EngineTextEdit {
+                range,
+                new_text: canonical,
+            });
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
+    // The shared per-candidate compile walk
+    // -----------------------------------------------------------------------
+
+    /// The document's compiled candidates, ONE walk (the whole-document
+    /// answers' shared scaffold — the colour swatches, the semantic
+    /// legend and the inlay hints — the shared-locator precedent: one
+    /// walk, many answers, no parallel scaffolds to drift). The fold
+    /// receives each candidate's raw spelling, its ABSOLUTE byte span
+    /// in the document text (the hit's content offset plus the
+    /// candidate's span) and the single-candidate pipeline answer (the
+    /// themed walk when the config carries a table, the theme-less
+    /// boundary otherwise — the same entry points the CLI and the
+    /// macros run, one candidate per call). A `None` answer skips the
+    /// candidate: each answer's boundary (the keyword slots, the
+    /// refusals, the sheet misses) stays the answer's own, documented
+    /// in its rustdoc — the walker carries none of them.
+    fn compiled_candidates<T>(
+        &self,
+        text: &str,
+        mut fold: impl FnMut(&str, (usize, usize), &Compiled) -> Option<T>,
+    ) -> Vec<T> {
+        let mut out = Vec::new();
+        for hit in scan_rust_strings(text) {
+            let (candidates, _) = parse_class_string(&hit.text);
+            for candidate in candidates {
+                let compiled = match &self.config.tokens {
+                    Some(table) => compile_theme(candidate.raw, table, &self.config.compile),
+                    None => compile(candidate.raw, &self.config.compile),
+                };
+                let Ok(compiled) = compiled else {
+                    continue;
+                };
+                let span = (hit.offset + candidate.span.0, hit.offset + candidate.span.1);
+                if let Some(item) = fold(candidate.raw, span, &compiled) {
+                    out.push(item);
+                }
             }
         }
         out
