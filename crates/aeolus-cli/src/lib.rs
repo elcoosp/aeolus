@@ -478,6 +478,18 @@ struct Args {
     indeterminate: bool,
     autofilled: bool,
     read_write: bool,
+    /// The widget-state flags (`expand` only): the one-fact answers the
+    /// interp's [`Env`] carries the `open:`/`inert:`/`default:` layers
+    /// from — element state like the state bits. `--open` asserts the
+    /// disclosure/popover fact, `--inert` the frozen-subtree fact the
+    /// compound `:is([inert], [inert] *)` head answers from, `--default`
+    /// the form group's default-control fact. Every family question is
+    /// AFFIRMATIVE (the `--target` precedent — no complement rides), so
+    /// one flag per FACT and unset is the quiet miss a selector that
+    /// does not match is.
+    opened: bool,
+    inert: bool,
+    form_default: bool,
     /// The `--container name=rem` bounds (`expand` only, repeatable):
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
@@ -537,6 +549,9 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut indeterminate = false;
     let mut autofilled = false;
     let mut read_write = false;
+    let mut opened = false;
+    let mut inert = false;
+    let mut form_default = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut supports: Vec<String> = Vec::new();
@@ -630,6 +645,23 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             }
             "--read-write" if allow.contains(&"read-write") => {
                 read_write = true;
+            }
+            // The widget-state flags assert the one-fact questions the
+            // family answers from: `--open` the disclosure/popover
+            // fact, `--inert` the frozen-subtree fact the compound
+            // `:is([inert], [inert] *)` head answers from, `--default`
+            // the form group's default-control fact. Every family
+            // question is AFFIRMATIVE (the `--target` precedent — no
+            // complement rides; one flag per FACT, the `--invalid`
+            // precedent).
+            "--open" if allow.contains(&"open") => {
+                opened = true;
+            }
+            "--inert" if allow.contains(&"inert") => {
+                inert = true;
+            }
+            "--default" if allow.contains(&"default") => {
+                form_default = true;
             }
             "--more-contrast" if allow.contains(&"more-contrast") => {
                 more_contrast = true;
@@ -819,6 +851,9 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         indeterminate,
         autofilled,
         read_write,
+        opened,
+        inert,
+        form_default,
         containers,
         has,
         supports,
@@ -1229,6 +1264,9 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "indeterminate",
             "autofill",
             "read-write",
+            "open",
+            "inert",
+            "default",
         ],
     ) else {
         return 2;
@@ -1278,6 +1316,9 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         indeterminate: args.indeterminate,
         autofilled: args.autofilled,
         read_write: args.read_write,
+        opened: args.opened,
+        inert: args.inert,
+        form_default: args.form_default,
         ..Env::default()
     };
     // The NAMED containers' widths ride the `--container name=rem`
