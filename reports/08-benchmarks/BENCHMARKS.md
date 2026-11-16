@@ -577,3 +577,12 @@ Run: `cargo bench -p aeolus-compile --bench direction` (divan 0.1.21), release p
 |---|---|---|
 | `interp_direction_button` | **130.5 ns** | the fire path (the rtl layers hold under `--rtl`) |
 | `interp_direction_default_env` | **46.6 ns** | the resting-env path beside the complement (`ltr:` fires on the resting `direction_rtl: false` answer — CSS's initial `direction` is ltr) |
+
+## The validation states (2026-11-16, 2-core sandbox)
+
+Run: `cargo bench -p aeolus-compile --bench validation` (divan 0.1.21), release profile, shared sandbox. The program is the validation half of the Button shape (`invalid:p-8 valid:mt-2 user-invalid:hidden`, three layers). No probe seam rides — the `Env` answers (element state beside `hover:`/`checked:`, the constraint fact plus the interaction gate the `user-` spellings gate on), so the cost is the env-field read the whole state tier shares.
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_validation_button` | **185.8 ns** | the fire path (the invalid layer holds, the gated user-invalid past the interaction fact) |
+| `interp_validation_default_env` | **46.97 ns** | the resting path beside the complement (`valid:` fires on the resting `validation_invalid: false` answer — CSS's pristine-field reading; the `user-` pair stays quiet until the gate is set) |
