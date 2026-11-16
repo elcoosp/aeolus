@@ -816,6 +816,14 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
                 aeolus_ir::Pref::ContrastLess => env.less_contrast = true,
                 aeolus_ir::Pref::ForcedColors => env.forced_colors = true,
                 aeolus_ir::Pref::Print => env.print_media = true,
+                aeolus_ir::Pref::PointerFine => env.pointer_fine = true,
+                aeolus_ir::Pref::PointerCoarse => env.pointer_coarse = true,
+                aeolus_ir::Pref::PointerNone => env.pointer_none = true,
+                aeolus_ir::Pref::AnyPointerFine => env.any_pointer_fine = true,
+                aeolus_ir::Pref::AnyPointerCoarse => env.any_pointer_coarse = true,
+                aeolus_ir::Pref::AnyPointerNone => env.any_pointer_none = true,
+                aeolus_ir::Pref::Portrait => env.portrait = true,
+                aeolus_ir::Pref::Landscape => env.portrait = false,
             },
             // The sourceless shapes: the layer never fires on either
             // side (a CSS selector that does not match), the note rides.
