@@ -27,7 +27,7 @@ fallback path). "❌" = not representable; reported via `LoweringReport`.
 | **egui** | immediate-mode `Style`; no cascade; `StyleProvider`+`Classes` plugin = programmatic rules | ⚠️ per-widget visuals each frame | ⚠️ | ✅ trivial (replace Style) | ❌ | ❌ | ✅ trivial | ✅ |
 | **Ribir** | Rust DSL + class-transformers (`Theme.classes`, `style_class!`) | ⚠️ hover/pressed flags | ❌ | ✅ Theme hot-writable | ❌ | ❌ | ✅ | ✅ |
 
-## Aeolus slot support per v1 backend
+## Aeolus slot support per v1 backend (xilem + floem audited; the GPUI/iced/egui/slint columns stay untabulated)
 
 | StylePlan slot | aeolus-xilem (fallback widget) | aeolus-floem | notes |
 |---|---|---|---|
