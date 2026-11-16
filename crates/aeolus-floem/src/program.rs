@@ -142,6 +142,16 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
         Cond::Visited => fires(env.visited),
         Cond::Checked => fires(env.checked),
         Cond::PlaceholderShown => fires(env.placeholder_shown),
+        // The validation states are element state — the Env answers
+        // (the interp's `decide` semantics shared verbatim: `invalid:`
+        // on the constraint fact, `valid:` its complement, the
+        // `user-` pair gating on the interaction fact the HTML spec
+        // requires; the unset bits are the quiet misses a selector
+        // that does not match is).
+        Cond::Valid => fires(!env.validation_invalid),
+        Cond::Invalid => fires(env.validation_invalid),
+        Cond::UserValid => fires(env.user_validated && !env.validation_invalid),
+        Cond::UserInvalid => fires(env.user_validated && env.validation_invalid),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
         Cond::PeerHover => fires(env.peer_hover),
