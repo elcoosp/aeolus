@@ -254,6 +254,42 @@ pub struct Env {
     /// non-form element matches neither, the resting env's quiet
     /// miss).
     pub form_default: bool,
+    /// The element is a form-associated control (the HTML spec's
+    /// form-associated list — an `input`, a `select`, a `textarea`, a
+    /// `button`, an `object`, an `output`, a `fieldset`). The
+    /// MEMBERSHIP fact the matches-neither pairs answer from (the
+    /// boundary evidence 27 documented: a non-form element matches
+    /// NEITHER half of the `enabled`/`required`/`optional` questions,
+    /// so one state bit per pair cannot answer them honestly — the
+    /// two-fact shape the form-state family lands): [`Cond::Enabled`]
+    /// fires on the membership beside the unset [`Env::disabled`]
+    /// bit, [`Cond::Required`]/[`Cond::Optional`] on the membership
+    /// beside (and beside the complement of) [`Env::required_field`].
+    pub form_associated: bool,
+    /// The form control carries the `required` attribute
+    /// ([`Cond::Required`]/[`Cond::Optional`]'s state fact — the
+    /// pair splits on it within the form universe: `required:` on the
+    /// bit, `optional:` its complement, the `validation_invalid`
+    /// precedent). Meaningful only when [`Env::form_associated`]
+    /// rides: the attribute bit alone never fires — a non-form
+    /// element matches neither half.
+    pub required_field: bool,
+    /// The element tests its value against declared min/max bounds
+    /// AND holds a bounds answer for the current value
+    /// ([`Cond::InRange`]/[`Cond::OutOfRange`]'s MEMBERSHIP fact — a
+    /// non-range element matches NEITHER half, the form pair's own
+    /// shape). The host keeps the fact off while no position answer
+    /// exists — a pristine empty field reports neither half, the HTML
+    /// reading.
+    pub range_bounded: bool,
+    /// The bounded field's value sits WITHIN the declared bounds
+    /// ([`Cond::InRange`]/[`Cond::OutOfRange`]'s position fact —
+    /// `in-range:` on the bit, `out-of-range:` its complement within
+    /// the bounded universe, the `validation_invalid` precedent).
+    /// Meaningful only when [`Env::range_bounded`] rides: the
+    /// position bit alone never fires — a non-range element matches
+    /// neither half.
+    pub range_in: bool,
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
@@ -1227,6 +1263,22 @@ pub(crate) fn decide(
         Cond::Open => fires(env.opened),
         Cond::Inert => fires(env.inert),
         Cond::Default => fires(env.form_default),
+        // The form-state family is ELEMENT STATE (the tier
+        // `checked:`/`target:` ride): the Env answers from the
+        // TWO-FACT shape the matches-neither pairs need — the
+        // membership fact gates every half (a non-form element matches
+        // NEITHER `:enabled` NOR `:disabled`'s arms, the boundary
+        // evidence 27 documented), the pair's state bit answers within
+        // the universe (`required_field` on the bit, `optional:` its
+        // complement — the `validation_invalid` precedent; `range_in`
+        // the bounded field's position, `out-of-range:` its
+        // complement). An unset membership is a QUIET miss (a selector
+        // that does not match, never an exclusion note).
+        Cond::Enabled => fires(env.form_associated && !env.disabled),
+        Cond::Required => fires(env.form_associated && env.required_field),
+        Cond::Optional => fires(env.form_associated && !env.required_field),
+        Cond::InRange => fires(env.range_bounded && env.range_in),
+        Cond::OutOfRange => fires(env.range_bounded && !env.range_in),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
         Cond::PeerHover => fires(env.peer_hover),
