@@ -1522,3 +1522,79 @@ fn expand_ltr_answers_the_complement() {
     assert_eq!(code, 0, "{out}");
     assert!(!out.contains("padding-top = 2rem"), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// expand --invalid/--user-valid/--user-invalid: the validation family's
+// CLI face
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_invalid_flag_answers_the_layers() {
+    // The constraint fact is element state like the state bits: the
+    // flag sets the Env bit, the invalid layers fire (the --rtl
+    // precedent; one flag per SPELLING — `valid:` answers from the
+    // same bit).
+    let (code, out, _) = run_cmd(&["expand", "--invalid", "invalid:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--invalid", "invalid:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+}
+
+#[test]
+fn expand_without_validation_flags_is_a_quiet_miss() {
+    // The default Env asserts no failing-constraints fact — the
+    // invalid layers miss QUIETLY (never a reported exclusion).
+    let (code, out, _) = run_cmd(&["expand", "invalid:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "a quiet miss reports nothing: {out}"
+    );
+}
+
+#[test]
+fn expand_valid_answers_the_complement() {
+    // The constraint query always holds an answer: valid fires while
+    // the failing bit is off (the resting env's own answer — CSS's
+    // pristine-field reading is :valid, the rtl/ltr precedent),
+    // misses when --invalid sets it.
+    let (code, out, _) = run_cmd(&["expand", "valid:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--invalid", "valid:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_user_flags_answer_past_the_gate() {
+    // The `user-` pair gates on the interaction fact the HTML spec
+    // requires: at the resting env BOTH spellings miss quietly; the
+    // flags assert the gate AND the matching constraint fact, past it
+    // the pair answers from the same fact the plain pair shares.
+    let (code, out, _) = run_cmd(&["expand", "user-valid:p-8"]);
+    assert_eq!(code, 0);
+    assert!(
+        !out.contains("padding-top = 2rem"),
+        "no gate, no fire: {out}"
+    );
+
+    let (code, out, _) = run_cmd(&["expand", "--user-valid", "user-valid:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--user-invalid", "user-invalid:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+
+    // The gate alone is not the constraint fact: --user-valid asserts
+    // (gate AND not-failing), so the user-invalid layer misses.
+    let (code, out, _) = run_cmd(&["expand", "--user-valid", "user-invalid:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("display = none"), "{out}");
+}
