@@ -185,6 +185,9 @@ pub enum MetamorphicNote {
     /// A structural layer the sourceless walk cannot answer (the
     /// interp's [`InterpNote::StructuralUnqueried`], translated).
     StructuralUnqueried,
+    /// A descendant layer the sourceless walk cannot answer (the
+    /// interp's [`InterpNote::DescendantUnqueried`], translated).
+    DescendantUnqueried,
     /// The CSS arm's composed-filter chain line (`filter: var(--tw-blur,)
     /// …` — the filter family's v4 emission form): the re-declaration
     /// the primitive rules carry beside their var lines. The IR keeps
@@ -237,6 +240,12 @@ impl fmt::Display for MetamorphicNote {
                 f,
                 "the structural layer never matched: no StructProbe source \
                  rides, and a CSS selector that does not match is quiet"
+            ),
+            MetamorphicNote::DescendantUnqueried => write!(
+                f,
+                "the descendant layer never matched: no DescendantProbe \
+                 source rides, and a CSS selector that does not match is \
+                 quiet"
             ),
         }
     }
@@ -692,6 +701,9 @@ fn situation_walk(
                 InterpNote::StructuralUnqueried { .. } => {
                     notes.push(MetamorphicNote::StructuralUnqueried);
                 }
+                InterpNote::DescendantUnqueried { .. } => {
+                    notes.push(MetamorphicNote::DescendantUnqueried);
+                }
             }
         }
     }
@@ -732,7 +744,7 @@ fn fires(env: &Env, conds: &[Cond]) -> bool {
 /// container or structural source): the probe layers refuse to fire and
 /// the notes carry them, exactly the plain interp forms' semantics.
 fn decide_shim(cond: Cond, env: &Env) -> Fire {
-    crate::interp::decide(cond, env, None, None, None, PropMask::EMPTY)
+    crate::interp::decide(cond, env, None, None, None, None, PropMask::EMPTY)
 }
 
 /// The conjunctive probe env a condition stack names: every state bit
