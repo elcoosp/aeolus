@@ -586,3 +586,12 @@ Run: `cargo bench -p aeolus-compile --bench validation` (divan 0.1.21), release 
 |---|---|---|
 | `interp_validation_button` | **185.8 ns** | the fire path (the invalid layer holds, the gated user-invalid past the interaction fact) |
 | `interp_validation_default_env` | **46.97 ns** | the resting path beside the complement (`valid:` fires on the resting `validation_invalid: false` answer — CSS's pristine-field reading; the `user-` pair stays quiet until the gate is set) |
+
+## The element-state family (2026-11-16, 2-core sandbox)
+
+Run: `cargo bench -p aeolus-compile --bench element_states` (divan 0.1.21), release profile, shared sandbox. The program is the element-state half of the Button shape (`target:p-8 read-only:mt-2 indeterminate:hidden autofill:ring-2`, four layers). No probe seam rides — the `Env` answers (the one-fact tier beside the validation quartet; `read-only:` reads the editability fact's complement), so the cost is the env-field read the whole state tier shares.
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_element_state_button` | **138.7 ns** | the fire path (the target layer holds on `url_target`, `read-only:` on the resting editability complement) |
+| `interp_element_state_default_env` | **50.11 ns** | the resting path beside the complement (`read-only:` fires on the resting `read_write: false` answer — CSS's non-editable-element reading; the target/indeterminate/autofill layers stay quiet) |
