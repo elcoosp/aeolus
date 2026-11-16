@@ -540,3 +540,22 @@ linear fact-table scan plus the fired layer's declaration resolve),
 and the walk now does MORE work because a layer fires, not because
 the seam is expensive. The shape matches the attribute seam's verdict
 (~26 ns per probe on its token-free program).
+
+## The supports-variant seam (2026-11, this handoff)
+
+Run: `cargo bench -p aeolus-compile --bench supports` and `cargo bench -p aeolus-cli --bench expand` (divan 0.1.21), release profile, shared sandbox. The program is the supports half of the Button shape (`supports-[display:grid]:p-8 supports-[selector(:hover)]:px-3 supports-[(width_>_400px)]:mt-4`).
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_supports_button` | **114.8 ns** | the capability-table hit over the three supports layers |
+| `interp_sourceless_button` | **43.4 ns** | the note path (the pre-seam walk's cost, for the record) |
+| `expand_supports_facts` (CLI face) | **229.9 ns** | the `--supports` walk, the same shape the descendant face keys on |
+
+## The preference families (2026-11, this handoff)
+
+Run: `cargo bench -p aeolus-compile --bench preferences` (divan 0.1.21), release profile, shared sandbox. The program is the preference half of the Button shape (five layers). No probe seam rides — the `Env` answers (frame state), so the cost is the env-field read the whole state tier shares.
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_preferences_button` | **109.1 ns** | the fire path (two of five layers hold) |
+| `interp_preferences_default_env` | **56.8 ns** | the quiet-miss path (no layer holds — a media query that does not hold reports nothing) |
