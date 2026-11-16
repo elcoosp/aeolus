@@ -642,6 +642,18 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         Cond::Open => env.opened,
         Cond::Inert => env.inert,
         Cond::Default => env.form_default,
+        // The form-state family is element state: the env answers (the
+        // interp's `decide` semantics shared verbatim — one semantics,
+        // three walks; the matches-neither pairs gate on their
+        // membership fact (`form_associated`, `range_bounded`) beside
+        // the pair's shared state bit (`required_field`, `range_in`),
+        // the unset membership the quiet miss a selector that does not
+        // match is).
+        Cond::Enabled => env.form_associated && !env.disabled,
+        Cond::Required => env.form_associated && env.required_field,
+        Cond::Optional => env.form_associated && !env.required_field,
+        Cond::InRange => env.range_bounded && env.range_in,
+        Cond::OutOfRange => env.range_bounded && !env.range_in,
         Cond::Selection | Cond::Placeholder => false,
         Cond::GroupHover => env.group_hover,
         Cond::GroupFocus => env.group_focus,
