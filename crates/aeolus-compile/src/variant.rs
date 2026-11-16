@@ -243,6 +243,13 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "any-pointer-none" => Some(Cond::Media(aeolus_ir::Pref::AnyPointerNone)),
         "portrait" => Some(Cond::Media(aeolus_ir::Pref::Portrait)),
         "landscape" => Some(Cond::Media(aeolus_ir::Pref::Landscape)),
+        // The direction family: the selector-side static variants the
+        // v4.1.17 source carries beside the media-feature tier (the
+        // upstream selectors are the CSS arm's own pins) — the
+        // resolved direction is frame state, the `Direction` bit the
+        // Env answers.
+        "ltr" => Some(Cond::Dir(aeolus_ir::Direction::Ltr)),
+        "rtl" => Some(Cond::Dir(aeolus_ir::Direction::Rtl)),
         "dark" => Some(Cond::Dark),
         "hover" => Some(Cond::Hover),
         "focus" => Some(Cond::Focus),
@@ -643,6 +650,9 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "any-pointer-none",
     "portrait",
     "landscape",
+    // The direction family (the selector-side static variants).
+    "ltr",
+    "rtl",
 ];
 
 // ---------------------------------------------------------------------------
@@ -763,6 +773,9 @@ mod completion_tests {
             "any-pointer-none",
             "portrait",
             "landscape",
+            // The direction family (the selector-side static variants).
+            "ltr",
+            "rtl",
         ];
         let mut actual: Vec<&str> = KNOWN_VARIANTS.to_vec();
         let mut expected: Vec<&str> = expected.to_vec();
