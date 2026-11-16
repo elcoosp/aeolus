@@ -541,7 +541,7 @@ and the walk now does MORE work because a layer fires, not because
 the seam is expensive. The shape matches the attribute seam's verdict
 (~26 ns per probe on its token-free program).
 
-## The supports-variant seam (2026-11, this handoff)
+## The supports-variant seam (2026-11-15, 2-core sandbox)
 
 Run: `cargo bench -p aeolus-compile --bench supports` and `cargo bench -p aeolus-cli --bench expand` (divan 0.1.21), release profile, shared sandbox. The program is the supports half of the Button shape (`supports-[display:grid]:p-8 supports-[selector(:hover)]:px-3 supports-[(width_>_400px)]:mt-4`).
 
@@ -551,7 +551,7 @@ Run: `cargo bench -p aeolus-compile --bench supports` and `cargo bench -p aeolus
 | `interp_sourceless_button` | **43.4 ns** | the note path (the pre-seam walk's cost, for the record) |
 | `expand_supports_facts` (CLI face) | **229.9 ns** | the `--supports` walk, the same shape the descendant face keys on |
 
-## The preference families (2026-11, this handoff)
+## The preference families (2026-11-15, 2-core sandbox)
 
 Run: `cargo bench -p aeolus-compile --bench preferences` (divan 0.1.21), release profile, shared sandbox. The program is the preference half of the Button shape (five layers). No probe seam rides — the `Env` answers (frame state), so the cost is the env-field read the whole state tier shares.
 
@@ -560,7 +560,7 @@ Run: `cargo bench -p aeolus-compile --bench preferences` (divan 0.1.21), release
 | `interp_preferences_button` | **109.1 ns** | the fire path (two of five layers hold) |
 | `interp_preferences_default_env` | **56.8 ns** | the quiet-miss path (no layer holds — a media query that does not hold reports nothing) |
 
-## The media-feature capability tier (2026-11, this handoff)
+## The media-feature capability tier (2026-11-16, 2-core sandbox)
 
 Run: `cargo bench -p aeolus-compile --bench capabilities` (divan 0.1.21), release profile, shared sandbox. The program is the capability half of the Button shape (`pointer-fine:p-8 pointer-coarse:mt-2 any-pointer-none:hidden portrait:px-3 landscape:flex`, five layers). No probe seam rides — the `Env` answers (frame state, the preference families' own tier), so the cost is the env-field read the whole media tier shares.
 
@@ -568,3 +568,12 @@ Run: `cargo bench -p aeolus-compile --bench capabilities` (divan 0.1.21), releas
 |---|---|---|
 | `interp_capabilities_button` | **111.1 ns** | the fire path (two of five layers hold) |
 | `interp_capabilities_default_env` | **54.1 ns** | the quiet-miss path beside the complement (`landscape:` fires on the resting `portrait: false` answer — the orientation query always holding one) |
+
+## The direction family (2026-11-16, 2-core sandbox)
+
+Run: `cargo bench -p aeolus-compile --bench direction` (divan 0.1.21), release profile, shared sandbox. The program is the direction half of the Button shape (`rtl:p-8 ltr:mt-2 rtl:hidden`, three layers). No probe seam rides — the `Env` answers (frame state, the capability tier's own reading), so the cost is the env-field read the whole frame-state tier shares; the selector-side head costs nothing at interp time.
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_direction_button` | **130.5 ns** | the fire path (the rtl layers hold under `--rtl`) |
+| `interp_direction_default_env` | **46.6 ns** | the resting-env path beside the complement (`ltr:` fires on the resting `direction_rtl: false` answer — CSS's initial `direction` is ltr) |
