@@ -175,6 +175,43 @@ impl Pref {
     }
 }
 
+/// The text-direction facts the direction variants ask about — the
+/// closed spelling set the variant fold accepts (`ltr:`, `rtl:`; every
+/// direction static variant tailwindcss v4.1.17 carries,
+/// `packages/tailwindcss/src/variants.ts`'s `staticVariant('ltr', …)` /
+/// `staticVariant('rtl', …)` calls). `Copy`, `const`-constructible, no
+/// heap: the static form stays a `static` item end to end.
+///
+/// The fact is FRAME STATE (the element's resolved `direction`, the
+/// tier the preference and capability bits ride): the `Env` carries ONE
+/// fact and the two spellings answer from it — `rtl:` on the bit,
+/// `ltr:` its COMPLEMENT (the feature's two v4 values share one fact,
+/// the `portrait:`/`landscape:` precedent; CSS's own initial
+/// `direction` value is `ltr`, so the query always holds an answer the
+/// way the orientation one does).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Direction {
+    /// `ltr:` — the resolved direction is left-to-right
+    /// (`&:where(:dir(ltr), [dir="ltr"], [dir="ltr"] *)` — the
+    /// complement of [`Direction::Rtl`]).
+    Ltr,
+    /// `rtl:` — the resolved direction is right-to-left
+    /// (`&:where(:dir(rtl), [dir="rtl"], [dir="rtl"] *)`).
+    Rtl,
+}
+
+impl Direction {
+    /// The canonical v4 spelling (the variant segment the fold
+    /// accepted, the diagnostics' and the metamorphic labels' text).
+    pub const fn source(self) -> &'static str {
+        match self {
+            Direction::Ltr => "ltr",
+            Direction::Rtl => "rtl",
+        }
+    }
+}
+
 /// The condition a layer fires under. `Copy`, `const`-constructible, no
 /// heap: the static program is a `static` item end to end.
 ///
@@ -333,6 +370,12 @@ pub enum Cond {
     /// row-text boundary that keeps `Val::Kw` row-relative does not
     /// apply here, the [`Cond::Has`] payload precedent.
     Supports(&'static str),
+    /// `ltr:` / `rtl:` — the element's resolved text-direction probe
+    /// ([`Direction`]; the v4.1.17 static variants' selector-side
+    /// family — the direction fact is FRAME STATE, the tier the
+    /// preference and capability bits ride, so the `Env` answers and a
+    /// renderer derives its own `:where(...)` form from the bit).
+    Dir(Direction),
     /// `motion-safe:` / `motion-reduce:` / `contrast-more:` /
     /// `contrast-less:` / `forced-colors:` / `print:` — the
     /// media-feature tier (tailwindcss v4.1.17's static variants; the
@@ -368,10 +411,14 @@ impl Cond {
             | Cond::Placeholder
             // The attribute probes compound on the element itself, the
             // same tier the pseudo-class states occupy (the corpus's
-            // output nests them on the `&` alongside `:hover`).
+            // output nests them on the `&` alongside `:hover`). The
+            // direction probe rides the same tier: the direction test
+            // is a selector conjunct (`:where(:dir(rtl), …)`), not an
+            // at-rule.
             | Cond::Data { .. }
             | Cond::Aria { .. }
             | Cond::Has(_)
+            | Cond::Dir(_)
             | Cond::Structural(_) => 2,
             Cond::GroupHas(_) | Cond::PeerHas(_) => 3,
             Cond::GroupHover | Cond::GroupFocus | Cond::PeerHover | Cond::PeerFocus => 3,
@@ -413,6 +460,9 @@ impl Cond {
             Cond::PlaceholderShown => Some("placeholder-shown"),
             Cond::Selection => Some("selection"),
             Cond::Placeholder => Some("placeholder"),
+            // The direction spellings are CLOSED (the Direction enum's
+            // own table) — the condition reconstructs its text.
+            Cond::Dir(dir) => Some(dir.source()),
             Cond::GroupHover => Some("group-hover"),
             Cond::GroupFocus => Some("group-focus"),
             Cond::PeerHover => Some("peer-hover"),
