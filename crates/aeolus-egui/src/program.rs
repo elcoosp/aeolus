@@ -103,15 +103,23 @@ pub fn env_for_probe(probe: &EguiProbe) -> Env {
         group_focus: false,
         peer_hover: false,
         peer_focus: false,
-        // The preference facts ride no probe surface (the media-feature
-        // queries answer from the user agent, not the element): the
-        // probe path honestly keeps them off — the layers stay the
-        // quiet miss a media query that does not hold is.
+        // The preference and capability facts ride no probe surface
+        // (the media-feature queries answer from the user agent, not
+        // the element): the probe path honestly keeps them off — the
+        // layers stay the quiet miss a media query that does not hold
+        // is.
         reduced_motion: false,
         more_contrast: false,
         less_contrast: false,
         forced_colors: false,
         print_media: false,
+        pointer_fine: false,
+        pointer_coarse: false,
+        pointer_none: false,
+        any_pointer_fine: false,
+        any_pointer_coarse: false,
+        any_pointer_none: false,
+        portrait: false,
         viewport_rem: probe.width.unwrap_or(0.0) / REM_PX,
         container_rem: probe.container_width.map(|width| width / REM_PX),
     }
