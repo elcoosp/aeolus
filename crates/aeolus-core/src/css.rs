@@ -871,6 +871,13 @@ fn state_pseudo(s: State) -> &'static str {
         State::ReadOnly => ":read-only",
         State::InRange => ":in-range",
         State::OutOfRange => ":out-of-range",
+        // The widget-state family: the v4.1.17 state/forms blocks'
+        // `staticVariant` texts verbatim (the compound `:is(...)` heads
+        // are the upstream selectors' own shape — the render IS the
+        // pinned evidence, no re-derivation).
+        State::Open => ":is([open], :popover-open, :open)",
+        State::Inert => ":is([inert], [inert] *)",
+        State::Default => ":default",
     }
 }
 
