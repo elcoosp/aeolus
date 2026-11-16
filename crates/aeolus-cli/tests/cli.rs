@@ -1225,3 +1225,52 @@ fn fmt_is_a_documented_command() {
     assert!(out.contains("aeolus fmt"), "{out}");
     assert!(out.contains("canonical order"), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// expand --has: the descendant-probe seam's CLI face
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_reports_descendant_layers_without_facts() {
+    // The sourceless shape: the descendant layer reports (the honest
+    // boundary the seam's own pins carry), nothing fires.
+    let (code, out, _) = run_cmd(&["expand", "has-focus:p-8"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("never matched"), "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_descendant_facts_answer_the_layers() {
+    // The seam wired through the CLI: the element's own subtree
+    // matches `*:focus` — the layer fires, the cascade hands it the
+    // longhands.
+    let (code, out, _) = run_cmd(&["expand", "--has", "element=*:focus", "has-focus:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_descendant_facts_discriminate_the_scope() {
+    // The scope discriminates the question: the GROUP scope answers,
+    // the PEER question does not ride the group answer — a
+    // source-answered miss is a quiet skip, not an exclusion note.
+    let (code, out, _) = run_cmd(&["expand", "--has", "group=*:focus", "peer-has-focus:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "the answered miss is a quiet skip: {out}"
+    );
+}
+
+#[test]
+fn expand_rejects_malformed_has_facts() {
+    let (code, _out, err) = run_cmd(&["expand", "--has", "element", "w-64"]);
+    assert_eq!(code, 2, "a malformed fact is a CLI input error");
+    assert!(err.contains("kind=fragment"), "{err}");
+
+    let (code, _out, err) = run_cmd(&["expand", "--has", "ancestor=*:focus", "w-64"]);
+    assert_eq!(code, 2, "an unknown kind is a CLI input error");
+    assert!(err.contains("element|group|peer"), "{err}");
+}
