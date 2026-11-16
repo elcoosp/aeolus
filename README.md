@@ -256,6 +256,7 @@ Pay only for the dynamism you use:
 | `valid:` `invalid:` `user-valid:` `user-invalid:`          | typed `Cond` states, two `Env` facts (the constraint pair + the `user-` interaction gate), CSS `:pseudo` selector semantics | ✅                                                            |
 | `target:` `indeterminate:` `autofill:` `read-only:`        | typed `Cond` states, one `Env` fact each (`read-only:` the editability fact's complement — the resting env answers), CSS `:pseudo` selector semantics | ✅                                                            |
 | `open:` `inert:` `default:`                                | typed `Cond` states, one affirmative `Env` fact each (the v0.x `State` surface's own slots — the v0.x-gap closure the element-state landing documented), CSS `:is([open], :popover-open, :open)`/`:is([inert], [inert] *)`/`:default` selector semantics | ✅                                                            |
+| `enabled:` `required:` `optional:` `in-range:` `out-of-range:` | typed `Cond` states, the two-fact answers (the membership fact `form_associated`/`range_bounded` beside the pair's shared state bit `required_field`/`range_in` — the matches-neither boundary evidence 27 documented closes), CSS `:pseudo` selector semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
 | `selection:` `placeholder:`                                | `PseudoTarget` scoped cascades                                        | ✅                                                            |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
@@ -294,7 +295,8 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1750 tests with all features enabled (2026-11).
+  **zero** allocations). Workspace battery: 1771 tests with all features enabled (2026-11,
+  the form-state handoff's honest sum — `cargo test --workspace --all-features`).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -311,7 +313,10 @@ static path) hold by construction today.
 ## Feature flags
 
 Every flag is additive and off by default — the documented defaults are
-the zero-dependency builds (the `--all-features` CI run covers them all):
+the zero-dependency builds; the workspace battery pins the all-features
+build (`cargo test --workspace --all-features`), CI's suite the
+defaults (there is no conflict-feature bundle to gate — every flag
+composes):
 
 | Flag | Crates | What it adds |
 | --- | --- | --- |
@@ -424,6 +429,7 @@ cargo run -p aeolus-cli --example expand_descendants    # expand --has: the subt
 cargo run -p aeolus-compile --example supports          # the supports seam: the @supports family answers
 cargo run -p aeolus-cli --example expand_supports       # expand --supports: the capability facts the supports layers answer from
 cargo run -p aeolus-compile --example preferences       # the preference families: the media-feature tier answers
+cargo run -p aeolus-cli --example expand_preferences    # expand --reduced-motion/--more-contrast/--forced-colors/--print: the facts the preference layers answer from
 cargo run -p aeolus-compile --example capabilities      # the capability tier: pointer/orientation media-feature answers
 cargo run -p aeolus-cli --example expand_capabilities   # expand --pointer-fine/--portrait: the facts the capability layers answer from
 cargo run -p aeolus-compile --example direction         # the direction family: ltr/rtl selector-side answers
@@ -431,14 +437,11 @@ cargo run -p aeolus-cli --example expand_direction      # expand --rtl: the dire
 cargo run -p aeolus-compile --example validation        # the validation states: valid/invalid/user-* element-state answers
 cargo run -p aeolus-cli --example expand_validation     # expand --invalid/--user-*: the facts the validation layers answer from
 cargo run -p aeolus-compile --example element_states    # the element states: target/indeterminate/autofill/read-only answers
-cargo run -p aeolus-compile --example descendants       # the descendant-probe seam: the has-* family answers
-cargo run -p aeolus-compile --example supports          # the supports seam: the @supports family answers
-cargo run -p aeolus-compile --example preferences       # the preference families: the media-feature tier answers
-cargo run -p aeolus-compile --example capabilities      # the capability tier: pointer/orientation media-feature answers
-cargo run -p aeolus-compile --example widget_states     # the widget states: open/inert/default element-state answers
 cargo run -p aeolus-cli --example expand_element_states # expand --target/--indeterminate/--autofill/--read-write: the facts the element-state layers answer from
 cargo run -p aeolus-compile --example widget_states     # the widget states: open/inert/default element-state answers
 cargo run -p aeolus-cli --example expand_widget_states  # expand --open/--inert/--default: the facts the widget-state layers answer from
+cargo run -p aeolus-compile --example form_states       # the form states: enabled/required/optional/in-range/out-of-range answers
+cargo run -p aeolus-cli --example expand_form_states    # expand --form-associated/--required/--range-bounded/--range-in: the facts the form-state layers answer from
 cargo run -p aeolus-cli --example sort                  # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
@@ -493,6 +496,13 @@ cargo run -p aeolus-compile --example grid_flow         # the grid-flow family: 
 cargo run -p aeolus-compile --example hints             # the wider v4 hint table: angle/time/position/family/string end to end
 cargo run -p aeolus-compile --example direction         # the direction family: ltr/rtl selector-side answers
 cargo run -p aeolus-compile --example validation        # the validation states: valid/invalid/user-* element-state answers
+cargo run -p aeolus-compile --example descendants       # the descendant-probe seam: the has-* family answers
+cargo run -p aeolus-compile --example supports          # the supports seam: the @supports family answers
+cargo run -p aeolus-compile --example preferences       # the preference families: the media-feature tier answers
+cargo run -p aeolus-compile --example capabilities      # the capability tier: pointer/orientation media-feature answers
+cargo run -p aeolus-compile --example element_states    # the element states: target/indeterminate/autofill/read-only answers
+cargo run -p aeolus-compile --example widget_states     # the widget states: open/inert/default element-state answers
+cargo run -p aeolus-compile --example form_states       # the form states: enabled/required/optional/in-range/out-of-range answers
 # codegen & runtime
 cargo run -p aeolus-codegen --example text_emit
 cargo run -p aeolus-codegen-gpui --example conformance
@@ -538,6 +548,8 @@ cargo run -p aeolus-cli --example expand_direction  # expand --rtl: the rtl/ltr 
 cargo run -p aeolus-cli --example expand_validation  # expand --invalid/--user-*: the validation layers answer from the facts
 cargo run -p aeolus-cli --example expand_element_states  # expand --target/--indeterminate/--autofill/--read-write: the element-state layers answer from the facts
 cargo run -p aeolus-cli --example expand_widget_states   # expand --open/--inert/--default: the widget-state layers answer from the facts
+cargo run -p aeolus-cli --example expand_form_states  # expand --form-associated/--required/--range-bounded/--range-in: the form-state layers answer from the facts
+cargo run -p aeolus-cli --example expand_preferences  # expand --reduced-motion/--more-contrast/--forced-colors/--print: the preference layers answer from the facts
 cargo run -p aeolus-cli --example sort              # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-cli --example cn                # the cn face: IR-level merge, the rightmost-wins answer
 # the shadcn program tables
