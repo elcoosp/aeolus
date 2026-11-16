@@ -198,6 +198,19 @@ pub struct Env {
     /// resting env answers the `ltr:` query the way it answers
     /// `landscape:`).
     pub direction_rtl: bool,
+    /// The element's constraints fail ([`Cond::Invalid`]'s `invalid:`;
+    /// `valid:` is the COMPLEMENT — the pair's two v4 values share one
+    /// fact, the `rtl:`/`ltr:` precedent; CSS's own reading for a
+    /// pristine field is `:valid`, so the resting env answers the
+    /// `valid:` query).
+    pub validation_invalid: bool,
+    /// The user has interacted with the element (the HTML spec's
+    /// user-interaction gate the `:user-valid`/`:user-invalid`
+    /// pseudo-classes require — BOTH [`Cond::UserValid`]/[`Cond::UserInvalid`]
+    /// spellings stay quiet until the gate is set, the resting env's
+    /// honest reading; past the gate the pair answers from the SAME
+    /// constraint fact [`Env::validation_invalid`] carries).
+    pub user_validated: bool,
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
@@ -1132,6 +1145,21 @@ pub(crate) fn decide(
         Cond::Visited => fires(env.visited),
         Cond::Checked => fires(env.checked),
         Cond::PlaceholderShown => fires(env.placeholder_shown),
+        // The validation states are ELEMENT STATE (the form-field
+        // facts, the tier `hover:`/`checked:` ride): the Env answers —
+        // `invalid:` on the constraint fact, `valid:` its COMPLEMENT
+        // (the pair's two v4 values share one fact, the `rtl:`/`ltr:`
+        // precedent; CSS's own reading for a pristine field is :valid,
+        // so the resting env answers the valid query) — and the
+        // `user-` pair additionally gates on the interaction fact the
+        // HTML spec requires (BOTH spellings quiet until the gate is
+        // set, past it the SAME constraint fact answers). An unset bit
+        // is a QUIET miss (a selector that does not match, never an
+        // exclusion note).
+        Cond::Valid => fires(!env.validation_invalid),
+        Cond::Invalid => fires(env.validation_invalid),
+        Cond::UserValid => fires(env.user_validated && !env.validation_invalid),
+        Cond::UserInvalid => fires(env.user_validated && env.validation_invalid),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
         Cond::PeerHover => fires(env.peer_hover),
