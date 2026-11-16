@@ -1598,3 +1598,73 @@ fn expand_user_flags_answer_past_the_gate() {
     assert_eq!(code, 0, "{out}");
     assert!(!out.contains("display = none"), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// expand --target/--indeterminate/--autofill/--read-write: the element
+// state family's CLI face
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_target_flag_answers_the_layers() {
+    // The fragment-target fact is element state like the state bits: the
+    // flag sets the Env bit, the target layers fire (the --invalid
+    // precedent; one flag per FACT).
+    let (code, out, _) = run_cmd(&["expand", "--target", "target:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--target", "target:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+}
+
+#[test]
+fn expand_without_element_state_flags_is_a_quiet_miss() {
+    // The default Env asserts no element-state fact — the target and
+    // autofill layers miss QUIETLY (never a reported exclusion).
+    let (code, out, _) = run_cmd(&["expand", "target:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "a quiet miss reports nothing: {out}"
+    );
+
+    let (code, out, _) = run_cmd(&["expand", "autofill:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_indeterminate_flag_answers_the_layers() {
+    // The indeterminate fact is the checkbox/radio's own answer: the
+    // flag sets the Env bit, the indeterminate layers fire.
+    let (code, out, _) = run_cmd(&["expand", "--indeterminate", "indeterminate:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_autofill_flag_answers_the_layers() {
+    // The autofill fact is the browser's filled-form answer: the flag
+    // sets the Env bit, the autofill layers fire.
+    let (code, out, _) = run_cmd(&["expand", "--autofill", "autofill:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+}
+
+#[test]
+fn expand_read_only_answers_the_complement() {
+    // The editability query always holds an answer: read-only fires
+    // while the read-write fact is off (the resting env's own answer —
+    // CSS's reading for a non-editable element is :read-only, the
+    // valid/ltr complement precedent), misses when --read-write sets
+    // the editability fact.
+    let (code, out, _) = run_cmd(&["expand", "read-only:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--read-write", "read-only:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
