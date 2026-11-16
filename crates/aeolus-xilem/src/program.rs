@@ -137,6 +137,15 @@ pub fn env_for_state(
         indeterminate: false,
         autofilled: false,
         read_write: false,
+        // The widget-state facts ride no probe surface either (the
+        // disclosure/popover answer, the frozen-subtree answer and the
+        // form-default answer come from the host's widget state, not
+        // the probe path's viewport/container facts): the probe path
+        // honestly keeps them off — the widget-state layers stay the
+        // quiet miss a selector that does not match is.
+        opened: false,
+        inert: false,
+        form_default: false,
         viewport_rem: env.viewport_width.unwrap_or(0.0) / REM_PX,
         container_rem: env.container_width.map(|width| width / REM_PX),
     }
