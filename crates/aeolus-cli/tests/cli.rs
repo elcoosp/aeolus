@@ -1274,3 +1274,130 @@ fn expand_rejects_malformed_has_facts() {
     assert_eq!(code, 2, "an unknown kind is a CLI input error");
     assert!(err.contains("element|group|peer"), "{err}");
 }
+
+// ---------------------------------------------------------------------------
+// expand --supports: the supports-variant seam's CLI face
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_reports_supports_layers_without_facts() {
+    // The sourceless shape: the supports layer reports (the honest
+    // boundary the seam's own pins carry), nothing fires.
+    let (code, out, _) = run_cmd(&["expand", "supports-[display:grid]:p-8"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("never matched"), "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_supports_facts_answer_the_layers() {
+    // The seam wired through the CLI: the render target supports the
+    // grid probe — the layer fires, the cascade hands it the
+    // longhands. The fact normalizes through the fold's own grammar:
+    // the bare spelling and the paren-wrapped spelling land the SAME
+    // payload the variant folded.
+    let (code, out, _) = run_cmd(&[
+        "expand",
+        "--supports",
+        "(display:grid)",
+        "supports-[display:grid]:p-8",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&[
+        "expand",
+        "--supports",
+        "display:grid",
+        "supports-[display:grid]:p-8",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_supports_facts_answer_the_function_form() {
+    // The function form rides the same payload equality: the fact's
+    // text answers the `supports-[selector(:hover)]` layer, and the
+    // compound the table does NOT carry is an answered miss — a quiet
+    // skip, not a note.
+    let (code, out, _) = run_cmd(&[
+        "expand",
+        "--supports",
+        "selector(:hover)",
+        "supports-[selector(:hover)]:p-8 supports-[hover:hover]:p-8",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "the answered miss is a quiet skip: {out}"
+    );
+}
+
+#[test]
+fn expand_rejects_malformed_supports_facts() {
+    // The fact grammar is the fold's own (one grammar, two consumers):
+    // an empty, brace-carrying or unbalanced condition is a CLI input
+    // error, exit 2, the refusal names the grammar.
+    let (code, _out, err) = run_cmd(&["expand", "--supports", "", "w-64"]);
+    assert_eq!(code, 2, "an empty condition is a CLI input error");
+    assert!(err.contains("condition"), "{err}");
+
+    let (code, _out, err) = run_cmd(&["expand", "--supports", "(display:grid", "w-64"]);
+    assert_eq!(code, 2, "an unbalanced condition is a CLI input error");
+    assert!(err.contains("condition"), "{err}");
+}
+
+// ---------------------------------------------------------------------------
+// expand --reduced-motion etc.: the preference families' CLI face
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_preference_flags_answer_the_layers() {
+    // The media-feature facts are frame state: the flags set the Env
+    // bits, the layers fire (the --dark precedent).
+    let (code, out, _) = run_cmd(&["expand", "--reduced-motion", "motion-reduce:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--print", "print:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--forced-colors", "forced-colors:hidden"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("display = none"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--more-contrast", "contrast-more:ring-2"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("--tw-ring"), "{out}");
+}
+
+#[test]
+fn expand_without_preference_flags_is_a_quiet_miss() {
+    // The default Env answers every preference question false — the
+    // media query does not hold, the layer misses QUIETLY (never a
+    // reported exclusion).
+    let (code, out, _) = run_cmd(&["expand", "motion-reduce:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "a quiet miss reports nothing: {out}"
+    );
+}
+
+#[test]
+fn expand_motion_safe_asks_the_complement() {
+    // The user agent's no-preference answer: motion-safe fires while
+    // the reduced-motion bit is off, misses when --reduced-motion sets
+    // it.
+    let (code, out, _) = run_cmd(&["expand", "motion-safe:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--reduced-motion", "motion-safe:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
