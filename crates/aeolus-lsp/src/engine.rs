@@ -320,7 +320,7 @@ impl AeolusEngine {
     /// The document's colour swatches: every candidate class whose
     /// program carries a colour-valued declaration, its byte-true range
     /// and the table's resolved light-tier rgba. The walk is the shared
-    /// per-candidate compile ([`Self::compiled_candidates`]), and the
+    /// per-candidate compile (`compiled_candidates`), and the
     /// swatch is the FIRST colour declaration in cascade order (the
     /// class's primary colour — a class that writes two colour
     /// longhands paints the one the base layer carries first). The
@@ -357,7 +357,7 @@ impl AeolusEngine {
     /// compile outcome — a clean lower is the legend's `Lowered` (the
     /// wire's `class` type), a typed refusal is `Refused` (the wire's
     /// custom `refused` type). The walk is the shared per-candidate
-    /// compile ([`Self::compiled_candidates`]), the classification the
+    /// compile (`compiled_candidates`), the classification the
     /// diagnostics list's emptiness — no parallel matcher, no guessed
     /// shape. The theme-less config answers the same (a refusal is a
     /// refusal either way: the token classes refuse honestly, the
@@ -462,8 +462,8 @@ impl AeolusEngine {
     /// cleanly rides one hint at its END position — the CSS arm's own
     /// declarations compacted to the single-line label, the hover's
     /// markdown riding as the tooltip. The walk is the shared
-    /// per-candidate compile ([`Self::compiled_candidates`]), and the
-    /// rendering is the HOVER's own — the shared [`lowered_markdown`],
+    /// per-candidate compile (`compiled_candidates`), and the
+    /// rendering is the HOVER's own — the shared `lowered_markdown`,
     /// one answer shape at two surfaces. The refused candidates never
     /// hint (their story is the diagnostics' and the semantic legend's —
     /// a refused class has no CSS to show, the honest boundary), and the
@@ -1135,6 +1135,8 @@ fn cond_label(cond: Cond) -> &'static str {
         Cond::Data { .. } => "data probe",
         Cond::Aria { .. } => "aria probe",
         Cond::Has(_) | Cond::GroupHas(_) | Cond::PeerHas(_) => "descendant probe",
+        Cond::Supports(_) => "supports condition",
+        Cond::Media(_) => "media preference",
         Cond::Structural(_) => "structural",
     }
 }
