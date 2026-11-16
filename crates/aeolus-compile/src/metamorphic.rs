@@ -812,6 +812,33 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
             Cond::Open => env.opened = true,
             Cond::Inert => env.inert = true,
             Cond::Default => env.form_default = true,
+            // The form-state family is element state: the conjunctive
+            // env carries the TWO-FACT shape the matches-neither pairs
+            // answer from — the membership fact bakes TRUE beside the
+            // pair's state bit (the bit true, or its complement false —
+            // the `valid:`/`read-only:` arms' own reading); the
+            // membership fact alone never fires, so the resting
+            // non-membership arms stay the quiet miss.
+            Cond::Enabled => {
+                env.form_associated = true;
+                env.disabled = false;
+            }
+            Cond::Required => {
+                env.form_associated = true;
+                env.required_field = true;
+            }
+            Cond::Optional => {
+                env.form_associated = true;
+                env.required_field = false;
+            }
+            Cond::InRange => {
+                env.range_bounded = true;
+                env.range_in = true;
+            }
+            Cond::OutOfRange => {
+                env.range_bounded = true;
+                env.range_in = false;
+            }
             Cond::GroupHover => env.group_hover = true,
             Cond::GroupFocus => env.group_focus = true,
             Cond::PeerHover => env.peer_hover = true,
@@ -921,6 +948,13 @@ fn cond_label(cond: &Cond) -> String {
         Cond::Open => "open".to_string(),
         Cond::Inert => "inert".to_string(),
         Cond::Default => "default".to_string(),
+        // The form-state family: the bare spellings (the widget-state
+        // arm's shape — the label renders the tier).
+        Cond::Enabled => "enabled".to_string(),
+        Cond::Required => "required".to_string(),
+        Cond::Optional => "optional".to_string(),
+        Cond::InRange => "in-range".to_string(),
+        Cond::OutOfRange => "out-of-range".to_string(),
         Cond::Selection => "selection".to_string(),
         Cond::Placeholder => "placeholder".to_string(),
         Cond::GroupHover => "group-hover".to_string(),
