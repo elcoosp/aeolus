@@ -91,15 +91,20 @@ pub enum Structural {
 /// The user-agent preference/media-type facts the media-feature
 /// variants ask about — the closed spelling set the variant fold
 /// accepts (`motion-safe:`, `motion-reduce:`, `contrast-more:`,
-/// `contrast-less:`, `forced-colors:`, `print:`). `Copy`,
+/// `contrast-less:`, `forced-colors:`, `print:`, the input-capability
+/// tier `pointer-fine:`..`any-pointer-none:`, and the orientation forms
+/// `portrait:`/`landscape:` — every media-feature static variant
+/// tailwindcss v4.1.17 carries). `Copy`,
 /// `const`-constructible, no heap: the static form stays a `static`
 /// item end to end.
 ///
 /// The bits are FRAME STATE (the user agent's own media-query answers,
 /// the tier `dark:` rides): the `Env` carries one fact per
 /// question and the interp answers from it — `motion-safe:` is the
-/// COMPLEMENT of `motion-reduce:` (the feature's two v4 values, no
-/// other spelling exists in v4), the rest fire on their own bit.
+/// COMPLEMENT of `motion-reduce:` and `landscape:` of `portrait:`
+/// (each feature's two v4 values share one fact, the orientation query
+/// always holding an answer the way the reduced-motion one does), the
+/// rest fire on their own bit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Pref {
@@ -120,6 +125,31 @@ pub enum Pref {
     ForcedColors,
     /// `print:` — the print media type (`@media print`).
     Print,
+    /// `pointer-fine:` — the PRIMARY pointer is precise
+    /// (`@media (pointer: fine)`).
+    PointerFine,
+    /// `pointer-coarse:` — the primary pointer is coarse
+    /// (`@media (pointer: coarse)`).
+    PointerCoarse,
+    /// `pointer-none:` — there is no primary pointer
+    /// (`@media (pointer: none)`).
+    PointerNone,
+    /// `any-pointer-fine:` — ANY pointer is precise
+    /// (`@media (any-pointer: fine)`).
+    AnyPointerFine,
+    /// `any-pointer-coarse:` — ANY pointer is coarse
+    /// (`@media (any-pointer: coarse)`).
+    AnyPointerCoarse,
+    /// `any-pointer-none:` — NO pointer exists
+    /// (`@media (any-pointer: none)`).
+    AnyPointerNone,
+    /// `portrait:` — the viewport is taller than wide
+    /// (`@media (orientation: portrait)`).
+    Portrait,
+    /// `landscape:` — the viewport is at least as wide as tall — the
+    /// COMPLEMENT of [`Pref::Portrait`] (the feature's two v4 values
+    /// share one fact, the `motion-safe:` precedent).
+    Landscape,
 }
 
 impl Pref {
@@ -133,6 +163,14 @@ impl Pref {
             Pref::ContrastLess => "contrast-less",
             Pref::ForcedColors => "forced-colors",
             Pref::Print => "print",
+            Pref::PointerFine => "pointer-fine",
+            Pref::PointerCoarse => "pointer-coarse",
+            Pref::PointerNone => "pointer-none",
+            Pref::AnyPointerFine => "any-pointer-fine",
+            Pref::AnyPointerCoarse => "any-pointer-coarse",
+            Pref::AnyPointerNone => "any-pointer-none",
+            Pref::Portrait => "portrait",
+            Pref::Landscape => "landscape",
         }
     }
 }
