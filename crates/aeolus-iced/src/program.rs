@@ -131,6 +131,16 @@ pub fn env_for_probe(probe: &IcedProbe) -> Env {
         // stay the quiet miss a selector that does not match is.
         validation_invalid: false,
         user_validated: false,
+        // The element-state facts ride no probe surface either (the
+        // fragment target, the indeterminate/autofill answers and the
+        // editability fact come from the host's element state, not
+        // the probe path's viewport/container facts): the probe path
+        // honestly keeps them off — the element-state layers stay the
+        // quiet miss a selector that does not match is.
+        url_target: false,
+        indeterminate: false,
+        autofilled: false,
+        read_write: false,
         viewport_rem: probe.width.unwrap_or(0.0) / REM_PX,
         container_rem: probe.container_width.map(|width| width / REM_PX),
     }
