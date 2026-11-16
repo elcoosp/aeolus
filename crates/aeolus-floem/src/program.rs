@@ -227,6 +227,14 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
             aeolus_ir::Pref::Portrait => env.portrait,
             aeolus_ir::Pref::Landscape => !env.portrait,
         }),
+        // The direction variants are frame state — the Env answers (the
+        // interp's `decide` semantics shared verbatim: `rtl:` on the
+        // fact, `ltr:` its complement, the unset bit the quiet miss a
+        // selector that does not match is).
+        Cond::Dir(dir) => fires(match dir {
+            aeolus_ir::Direction::Ltr => !env.direction_rtl,
+            aeolus_ir::Direction::Rtl => env.direction_rtl,
+        }),
         // The supports conditions answer through the interp arm's
         // SupportsProbe seam — the render target's capability set is not
         // frame state (the Env cannot answer it), and this walk consults
