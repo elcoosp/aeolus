@@ -170,6 +170,18 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
         Cond::Open => fires(env.opened),
         Cond::Inert => fires(env.inert),
         Cond::Default => fires(env.form_default),
+        // The form-state family is element state — the Env answers
+        // (the interp's `decide` semantics shared verbatim: the
+        // matches-neither pairs gate on their membership fact
+        // (`form_associated`, `range_bounded`) beside the pair's
+        // shared state bit (`required_field`, `range_in`), the unset
+        // membership the quiet miss a selector that does not match
+        // is).
+        Cond::Enabled => fires(env.form_associated && !env.disabled),
+        Cond::Required => fires(env.form_associated && env.required_field),
+        Cond::Optional => fires(env.form_associated && !env.required_field),
+        Cond::InRange => fires(env.range_bounded && env.range_in),
+        Cond::OutOfRange => fires(env.range_bounded && !env.range_in),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
         Cond::PeerHover => fires(env.peer_hover),
