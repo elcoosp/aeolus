@@ -516,3 +516,27 @@ renders per invocation, an order under any format-on-save budget. The
 editor face's `format_walk` (1.86 µs, the LSP table above) is the same
 themeless walk over the smaller fixture; absolute numbers are
 environment-specific, the ratios are the point.
+
+
+## Descendant-seam run (2026-11-16, 2-core sandbox, release profile, divan 0.1.21)
+
+The `has-*` family's answer seam (the interp arm's fourth member, the
+`DescendantProbe` precedent the attribute/container/structural seams
+set — `crates/aeolus-compile/benches/descendants.rs` and the CLI face's
+`expand_descendant_facts` in `crates/aeolus-cli/benches/expand.rs`).
+The program is the Button string's descendant half (`has-[>svg]:px-3`
++ the fold's own data/aria compounds + `has-focus`), the sourceless
+note path the before number.
+
+| benchmark | median | note |
+|---|---|---|
+| `interp_descendants_button` | **257.9 ns** | the descendant layers through the built-in fact table (one hit firing, the scope discrimination riding) |
+| `interp_sourceless_button` (baseline) | 100 ns | the same program through the sourceless walk (every descendant layer reported) |
+| `expand/expand_descendant_facts` | **256 ns** | the CLI `--has` face: the same seam from the parsed flag rows |
+
+Verdict: the descendant consult costs ~158 ns over the note path on
+the three-descendant-layer program (~50 ns per layer asked — the
+linear fact-table scan plus the fired layer's declaration resolve),
+and the walk now does MORE work because a layer fires, not because
+the seam is expensive. The shape matches the attribute seam's verdict
+(~26 ns per probe on its token-free program).
