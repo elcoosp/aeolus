@@ -275,11 +275,10 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         // answer their ONE question each, `read-only:` the
         // editability fact's COMPLEMENT (the `valid:` precedent —
         // CSS's own reading for a non-editable element IS
-        // `:read-only`). The matches-neither spellings stay out (the
-        // `enabled:`/`required:`/`optional:`/`in-range:`/
-        // `out-of-range:` boundary evidence 27 documented: a
-        // non-form element matches NEITHER half, so one Env bit
-        // cannot answer them honestly).
+        // `:read-only`). The matches-neither spellings ride their own
+        // family below (the form-state family — the boundary evidence
+        // 27 documented closes with the two-fact shape: a membership
+        // fact per universe beside the pair's shared state bit).
         "target" => Some(Cond::Target),
         "indeterminate" => Some(Cond::Indeterminate),
         "autofill" => Some(Cond::Autofill),
@@ -297,6 +296,20 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "open" => Some(Cond::Open),
         "inert" => Some(Cond::Inert),
         "default" => Some(Cond::Default),
+        // The form-state family (the v4.1.17 state/forms blocks' static
+        // variants evidence 27 left at the matches-neither boundary —
+        // the family closes it): `enabled:`/`required:`/`optional:`
+        // gate on the form-membership fact (a non-form element matches
+        // NEITHER half of each pair — the two-fact shape one Env bit
+        // could not answer honestly), `in-range:`/`out-of-range:` gate
+        // on the bounded-universe membership fact beside the value's
+        // position bit (the same shape, the `required_field` bit's
+        // complement reading within its universe).
+        "enabled" => Some(Cond::Enabled),
+        "required" => Some(Cond::Required),
+        "optional" => Some(Cond::Optional),
+        "in-range" => Some(Cond::InRange),
+        "out-of-range" => Some(Cond::OutOfRange),
         "placeholder-shown" => Some(Cond::PlaceholderShown),
         "selection" => Some(Cond::Selection),
         "placeholder" => Some(Cond::Placeholder),
@@ -445,6 +458,15 @@ fn state_pseudo(name: &str) -> Option<&'static str> {
         "open" => Some(":is([open], :popover-open, :open)"),
         "inert" => Some(":is([inert], [inert] *)"),
         "default" => Some(":default"),
+        // The form-state family: the element-own probe states beside
+        // the widget-state family (the same tier, the same `:pseudo`
+        // shape the upstream `staticVariant` texts pin — the has- inner
+        // grammar answers them like any state spelling).
+        "enabled" => Some(":enabled"),
+        "required" => Some(":required"),
+        "optional" => Some(":optional"),
+        "in-range" => Some(":in-range"),
+        "out-of-range" => Some(":out-of-range"),
         _ => None,
     }
 }
@@ -664,6 +686,14 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "open",
     "inert",
     "default",
+    // The form-state family (the closed state/forms-block spellings
+    // evidence 27 left at the matches-neither boundary — the family
+    // that closes it with the two-fact shape).
+    "enabled",
+    "required",
+    "optional",
+    "in-range",
+    "out-of-range",
     "placeholder-shown",
     "selection",
     "placeholder",
@@ -806,6 +836,15 @@ mod completion_tests {
             "open",
             "inert",
             "default",
+            // The form-state family (the closed state/forms-block
+            // spellings evidence 27 left at the matches-neither
+            // boundary — the family that closes it with the two-fact
+            // shape).
+            "enabled",
+            "required",
+            "optional",
+            "in-range",
+            "out-of-range",
             "selection",
             "placeholder",
             // The mode.
