@@ -60,8 +60,7 @@ fn variant_surface_fold(bencher: Bencher) {
 #[divan::bench]
 fn composed_miss_fold(bencher: Bencher) {
     let diagnostic = miss_diagnostic();
-    let table = shadcn_table();
-    bencher.bench(|| suggest_for(&diagnostic, Some(&table), None));
+    bencher.bench(|| suggest_for(&diagnostic, None));
 }
 
 /// The host-composable raw fold: two surfaces over one miss (the
