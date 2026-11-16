@@ -1138,6 +1138,13 @@ fn cond_label(cond: Cond) -> &'static str {
         Cond::Open => "open",
         Cond::Inert => "inert",
         Cond::Default => "default",
+        // The form-state family: the bare spellings (the widget-state
+        // arm's shape — the hover renders the tier).
+        Cond::Enabled => "enabled",
+        Cond::Required => "required",
+        Cond::Optional => "optional",
+        Cond::InRange => "in-range",
+        Cond::OutOfRange => "out-of-range",
         Cond::Selection => "selection",
         Cond::Placeholder => "placeholder",
         Cond::GroupHover => "group-hover",
