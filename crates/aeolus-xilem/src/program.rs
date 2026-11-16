@@ -97,6 +97,15 @@ pub fn env_for_state(
         group_focus: env.group_focused,
         peer_hover: env.peer_hovered,
         peer_focus: env.peer_focused,
+        // The preference facts ride no probe surface (the media-feature
+        // queries answer from the user agent, not the element): the
+        // probe path honestly keeps them off — the layers stay the
+        // quiet miss a media query that does not hold is.
+        reduced_motion: false,
+        more_contrast: false,
+        less_contrast: false,
+        forced_colors: false,
+        print_media: false,
         viewport_rem: env.viewport_width.unwrap_or(0.0) / REM_PX,
         container_rem: env.container_width.map(|width| width / REM_PX),
     }
@@ -114,7 +123,8 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             | InterpNote::ContainerUnqueried { cond, .. }
             | InterpNote::AttributeUnqueried { cond, .. }
             | InterpNote::StructuralUnqueried { cond, .. }
-            | InterpNote::DescendantUnqueried { cond, .. } => *cond,
+            | InterpNote::DescendantUnqueried { cond, .. }
+            | InterpNote::SupportsUnqueried { cond, .. } => *cond,
         };
         let what = cond
             .source()
@@ -131,6 +141,12 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             PlanNoteKind::GradientRow => ("background-image".to_string(), boundary.help()),
             PlanNoteKind::ShadowPreset => ("box-shadow".to_string(), boundary.help()),
             PlanNoteKind::HasFragment { inner } => (format!("has:{inner}"), boundary.help()),
+            PlanNoteKind::SupportsCondition { cond } => {
+                (format!("supports:{cond}"), boundary.help())
+            }
+            PlanNoteKind::MediaFeature { pref } => {
+                (format!("media:{}", pref.source()), boundary.help())
+            }
             PlanNoteKind::CompositeValue { prop, text } => {
                 (format!("{} {text}", prop.name()), boundary.help())
             }
