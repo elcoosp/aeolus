@@ -452,6 +452,17 @@ struct Args {
     /// one direction fact (`ltr:` is its complement — CSS's own
     /// initial `direction` value is ltr).
     direction_rtl: bool,
+    /// The validation flags (`expand` only): the constraint facts the
+    /// interp's [`Env`] answers the `valid:`/`invalid:`/`user-valid:`/
+    /// `user-invalid:` layers from — element state like the state bits.
+    /// `--invalid` asserts the failing-constraints fact (`valid:` is
+    /// its complement — CSS's own pristine-field reading), and the
+    /// `user-` flags additionally assert the interaction gate the HTML
+    /// spec requires (`--user-valid` the gate with the holding fact,
+    /// `--user-invalid` the gate with the failing fact). Unset is the
+    /// quiet miss a selector that does not match is.
+    validation_invalid: bool,
+    user_validated: bool,
     /// The `--container name=rem` bounds (`expand` only, repeatable):
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
@@ -505,6 +516,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut any_pointer_none = false;
     let mut portrait = false;
     let mut direction_rtl = false;
+    let mut validation_invalid = false;
+    let mut user_validated = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut supports: Vec<String> = Vec::new();
@@ -562,6 +575,21 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             }
             "--rtl" if allow.contains(&"rtl") => {
                 direction_rtl = true;
+            }
+            "--invalid" if allow.contains(&"invalid") => {
+                validation_invalid = true;
+            }
+            // The `user-` flags assert the interaction gate the HTML
+            // spec requires BESIDE the constraint fact: `--user-valid`
+            // the gate with the holding fact, `--user-invalid` the
+            // gate with the failing fact (one flag per SPELLING, the
+            // env facts the spelling answers from).
+            "--user-valid" if allow.contains(&"user-valid") => {
+                user_validated = true;
+            }
+            "--user-invalid" if allow.contains(&"user-invalid") => {
+                user_validated = true;
+                validation_invalid = true;
             }
             "--more-contrast" if allow.contains(&"more-contrast") => {
                 more_contrast = true;
@@ -745,6 +773,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         any_pointer_none,
         portrait,
         direction_rtl,
+        validation_invalid,
+        user_validated,
         containers,
         has,
         supports,
@@ -1148,6 +1178,9 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "any-pointer-none",
             "portrait",
             "rtl",
+            "invalid",
+            "user-valid",
+            "user-invalid",
         ],
     ) else {
         return 2;
@@ -1191,6 +1224,8 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         any_pointer_none: args.any_pointer_none,
         portrait: args.portrait,
         direction_rtl: args.direction_rtl,
+        validation_invalid: args.validation_invalid,
+        user_validated: args.user_validated,
         ..Env::default()
     };
     // The NAMED containers' widths ride the `--container name=rem`
