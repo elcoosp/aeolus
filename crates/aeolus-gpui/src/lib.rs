@@ -633,6 +633,15 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         Cond::Indeterminate => env.indeterminate,
         Cond::Autofill => env.autofilled,
         Cond::ReadOnly => !env.read_write,
+        // The widget-state family is element state: the env answers
+        // (the interp's `decide` semantics shared verbatim — one
+        // semantics, three walks; the open/inert/default layers on
+        // their ONE affirmative fact each, the `target:` arm's own
+        // reading; the unset bits are the quiet misses a selector that
+        // does not match is).
+        Cond::Open => env.opened,
+        Cond::Inert => env.inert,
+        Cond::Default => env.form_default,
         Cond::Selection | Cond::Placeholder => false,
         Cond::GroupHover => env.group_hover,
         Cond::GroupFocus => env.group_focus,
