@@ -612,6 +612,16 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         Cond::Visited => env.visited,
         Cond::Checked => env.checked,
         Cond::PlaceholderShown => env.placeholder_shown,
+        // The validation states are element state: the env answers (the
+        // interp's `decide` semantics shared verbatim — one semantics,
+        // three walks; `invalid:` on the constraint fact, `valid:` its
+        // complement, the `user-` pair gating on the interaction fact
+        // the HTML spec requires; the unset bits are the quiet misses a
+        // selector that does not match is).
+        Cond::Valid => !env.validation_invalid,
+        Cond::Invalid => env.validation_invalid,
+        Cond::UserValid => env.user_validated && !env.validation_invalid,
+        Cond::UserInvalid => env.user_validated && env.validation_invalid,
         Cond::Selection | Cond::Placeholder => false,
         Cond::GroupHover => env.group_hover,
         Cond::GroupFocus => env.group_focus,
