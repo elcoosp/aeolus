@@ -247,7 +247,7 @@ Pay only for the dynamism you use:
 | `dark:`                                                    | T1 pair index / `Env` mode                                            | ✅ branch-free                                                |
 | `sm:` … `2xl:`                                             | `Env.bp` compare                                                      | ✅ 1 compare                                                  |
 | `data-*:` `aria-*:`                                        | typed `AttrProbe` bits (`tw_probes`), CSS selector semantics          | ✅                                                            |
-| `has-*:`                                                   | typed `Cond::Has`; element-side answered                              | ✅ (descendant probes diagnosed)                              |
+| `has-*:` `group-has-*:` `peer-has-*:`                      | typed `Cond::Has` + `DescendantProbe` subtree facts (`tw`-side `*_descendants` walks), CSS `:has()` semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
 | `selection:` `placeholder:`                                | `PseudoTarget` scoped cascades                                        | ✅                                                            |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
@@ -261,6 +261,7 @@ aeolus sort "block p-4 mx-2 hover:block"              # canonical registry order
 aeolus fmt src/widget.rs                              # one file's class strings into the canonical order (--check = the CI drift gate)
 aeolus explain "p-4 flex-col" --theme shadcn          # class → the Rust tokens it emits
 aeolus expand "hidden dark:block" --dark              # effective declarations under a probe Env
+aeolus expand --has element=*:focus "has-focus:p-8"   # the subtree facts the has-* layers answer from
 aeolus build src/ --theme shadcn-dark --out app.css   # whole project → ONE stylesheet
 aeolus plan "p-4 hover:px-8" --theme shadcn | jq .    # the V1 lane's plan bridge → the same snapshot JSON
 aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · diff · cn also available
@@ -285,7 +286,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1610 tests with all features enabled (2026-11).
+  **zero** allocations). Workspace battery: 1629 tests with all features enabled (2026-11).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -298,6 +299,17 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 ² Contract from the [V1 plan §4](docs/AEOLUS_V1_ARCHITECTURE.md); the P0 `iai-callgrind`/criterion gates
 replace targets with measured numbers before 1.0. Structural guarantees (no parse/hash/locks on the
 static path) hold by construction today.
+
+## Feature flags
+
+Every flag is additive and off by default — the documented defaults are
+the zero-dependency builds (the `--all-features` CI run covers them all):
+
+| Flag | Crates | What it adds |
+| --- | --- | --- |
+| `tracing` | `aeolus-cli`, `aeolus-compile`, `aeolus-data`, `aeolus-theme` | `debug_span!`/`debug!` events on the pipeline walk (compile, interp, sort, expand); no subscriber is installed — the host owns that |
+| `miette` | `aeolus-cli`, `aeolus-compile`, `aeolus-data`, `aeolus-theme` | structured [`miette::Diagnostic`] impls on the typed errors/diagnostics (codes, help text, spans) |
+| `verbose-diagnostics` | `aeolus-macro` | multi-line compile-error rendering for `tw!`/`cn!` refusals (the single-line form stays the default) |
 
 ## Status & roadmap
 
@@ -319,7 +331,7 @@ differential oracle — no big-bang migration.
 **Open boundaries — typed, test-pinned, never silent:**
 
 - composite arbitrary values landed (the IR's verbatim slot: `calc()`, track lists, `url()`, `aspect-[16/9]`) and the wider v4 hint table landed (`angle:` on the degree rows, `time:` on the millisecond rows, `position:`, `family-name:`/`generic-name:`, `absolute-size:`/`relative-size:`, `string:` onto the new `content` longhand — the `content-["…"]` spelling now lowers); the arbitrary-property form (`[mask-type:luminance]`) → the remaining typed refusal
-- `has-*` descendant probes → diagnosed with reasons (element-side attribute probes are answered)
+- the `has-*` family answers through the descendant-probe seam (`DescendantProbe`/`DescendantState`, the `*_descendants` walks); the `*:` arbitrary-variant half stays diagnosed with reasons (honest failure, kept)
 - container **measurement** (who computes element widths) → the seam landed, the GPUI walk answers named queries through it (`tw_containers`), and the GPUI measuring wrapper landed beside it: `tw_container(name, &MeasuredContainers)` publishes the element box's width at the layout phase, the delta handshake asks for one re-render on a real change
 - GPUI motion's static emit keeps its per-longhand refusals (`with_animation` needs element id + animator — the stateful `TwAnimExt` lane applies them at runtime); >2-stop / radial / conic gradients refuse
 - the decoration family landed (`decoration-{color,thickness,style}` — three appended longhands, the GPUI walk riding the pinned `text_decoration_*` methods); GPUI renders a single solid line, so the `double`/`dotted`/`dashed` style keywords and the `auto`/`from-font`/rem/percent thickness forms keep their typed refusals (the CSS/interp arms carry the real output)
@@ -398,6 +410,8 @@ cargo run -p aeolus-lsp --example lsp_inlay_hints       # the inline hints: the 
 cargo run -p aeolus-lsp --example lsp_code_actions      # the quick fixes + the click-to-find highlights
 cargo run -p aeolus-lsp --example lsp_format            # the canonical-order formatting: one edit per out-of-order string
 cargo run -p aeolus-cli --example fmt                   # the fmt command's file face: the drift report + the rewrite
+cargo run -p aeolus-compile --example descendants       # the descendant-probe seam: the has-* family answers
+cargo run -p aeolus-cli --example expand_descendants    # expand --has: the subtree facts the has-* layers answer from
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
 cargo run -p aeolus-macro --example frozen_program  # what a tw! expansion actually emits
@@ -486,6 +500,7 @@ cargo run -p aeolus-cli --example explain
 cargo run -p aeolus-cli --example plan            # the plan bridge: snapshot + notes + the two lanes' answer
 cargo run -p aeolus-cli --example check            # the CI lint face: candidates, typed findings, the fail-on gate
 cargo run -p aeolus-cli --example fmt              # the fmt file face: the drift report beside the rewrite
+cargo run -p aeolus-cli --example expand_descendants  # expand --has: the has-* layers answer from the subtree facts
 # the P5 LSP row
 cargo run -p aeolus-lsp --example lsp_hover
 cargo run -p aeolus-lsp --example lsp_completion  # completion at the typing edge
