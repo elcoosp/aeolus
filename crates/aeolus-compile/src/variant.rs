@@ -284,6 +284,19 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "indeterminate" => Some(Cond::Indeterminate),
         "autofill" => Some(Cond::Autofill),
         "read-only" => Some(Cond::ReadOnly),
+        // The widget-state family (the v4.1.17 state/forms blocks'
+        // static variants evidence 28 left at the v0.x-surface
+        // boundary — the family closes the gap in the other direction:
+        // the v0.x `State` surface grew the slots AND the fold grows
+        // the arms). All three are AFFIRMATIVE one-fact questions (the
+        // `target:` shape: a non-open element matches neither
+        // `:open`'s arms, a non-form element misses `:default`, a
+        // non-inert subtree misses `:is([inert], [inert] *)`), so the
+        // resting env answers every one of them with the quiet miss a
+        // selector that does not match is — no complement rides.
+        "open" => Some(Cond::Open),
+        "inert" => Some(Cond::Inert),
+        "default" => Some(Cond::Default),
         "placeholder-shown" => Some(Cond::PlaceholderShown),
         "selection" => Some(Cond::Selection),
         "placeholder" => Some(Cond::Placeholder),
@@ -423,6 +436,15 @@ fn state_pseudo(name: &str) -> Option<&'static str> {
         "indeterminate" => Some(":indeterminate"),
         "autofill" => Some(":autofill"),
         "read-only" => Some(":read-only"),
+        // The widget-state family: the element-own probe states beside
+        // the element-state family (the same tier, the same
+        // `:pseudo`/`:is(...)` shape the upstream `staticVariant`
+        // texts pin — the has- inner grammar answers them like any
+        // state spelling, the v4 mechanism rendering the inner's `&`
+        // as `*`).
+        "open" => Some(":is([open], :popover-open, :open)"),
+        "inert" => Some(":is([inert], [inert] *)"),
+        "default" => Some(":default"),
         _ => None,
     }
 }
@@ -636,6 +658,12 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "indeterminate",
     "autofill",
     "read-only",
+    // The widget-state family (the closed state/forms-block spellings
+    // evidence 28 left at the v0.x boundary — the family that closed
+    // the gap).
+    "open",
+    "inert",
+    "default",
     "placeholder-shown",
     "selection",
     "placeholder",
@@ -772,6 +800,12 @@ mod completion_tests {
             "indeterminate",
             "autofill",
             "read-only",
+            // The widget-state family (the closed state/forms-block
+            // spellings evidence 28 left at the v0.x boundary — the
+            // family that closed the gap).
+            "open",
+            "inert",
+            "default",
             "selection",
             "placeholder",
             // The mode.
