@@ -188,6 +188,9 @@ pub enum MetamorphicNote {
     /// A descendant layer the sourceless walk cannot answer (the
     /// interp's [`InterpNote::DescendantUnqueried`], translated).
     DescendantUnqueried,
+    /// A supports layer the sourceless walk cannot answer (the
+    /// interp's [`InterpNote::SupportsUnqueried`], translated).
+    SupportsUnqueried,
     /// The CSS arm's composed-filter chain line (`filter: var(--tw-blur,)
     /// …` — the filter family's v4 emission form): the re-declaration
     /// the primitive rules carry beside their var lines. The IR keeps
@@ -246,6 +249,12 @@ impl fmt::Display for MetamorphicNote {
                 "the descendant layer never matched: no DescendantProbe \
                  source rides, and a CSS selector that does not match is \
                  quiet"
+            ),
+            MetamorphicNote::SupportsUnqueried => write!(
+                f,
+                "the supports layer never matched: no SupportsProbe \
+                 source rides, and an @supports block the target fails \
+                 is quiet"
             ),
         }
     }
@@ -704,6 +713,9 @@ fn situation_walk(
                 InterpNote::DescendantUnqueried { .. } => {
                     notes.push(MetamorphicNote::DescendantUnqueried);
                 }
+                InterpNote::SupportsUnqueried { .. } => {
+                    notes.push(MetamorphicNote::SupportsUnqueried);
+                }
             }
         }
     }
@@ -744,7 +756,7 @@ fn fires(env: &Env, conds: &[Cond]) -> bool {
 /// container or structural source): the probe layers refuse to fire and
 /// the notes carry them, exactly the plain interp forms' semantics.
 fn decide_shim(cond: Cond, env: &Env) -> Fire {
-    crate::interp::decide(cond, env, None, None, None, None, PropMask::EMPTY)
+    crate::interp::decide(cond, env, None, None, None, None, None, PropMask::EMPTY)
 }
 
 /// The conjunctive probe env a condition stack names: every state bit
@@ -794,6 +806,17 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
                     _ => below,
                 });
             }
+            // The media-feature preferences are frame state: the
+            // conjunctive env carries the fact, the layer fires on
+            // both sides when the query holds.
+            Cond::Media(pref) => match pref {
+                aeolus_ir::Pref::MotionSafe => env.reduced_motion = false,
+                aeolus_ir::Pref::MotionReduce => env.reduced_motion = true,
+                aeolus_ir::Pref::ContrastMore => env.more_contrast = true,
+                aeolus_ir::Pref::ContrastLess => env.less_contrast = true,
+                aeolus_ir::Pref::ForcedColors => env.forced_colors = true,
+                aeolus_ir::Pref::Print => env.print_media = true,
+            },
             // The sourceless shapes: the layer never fires on either
             // side (a CSS selector that does not match), the note rides.
             Cond::Base
@@ -805,6 +828,7 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
             | Cond::GroupHas(_)
             | Cond::PeerHas(_)
             | Cond::Structural(_)
+            | Cond::Supports(_)
             | Cond::Selection
             | Cond::Placeholder => {}
         }
@@ -862,6 +886,8 @@ fn cond_label(cond: &Cond) -> String {
             None => format!("aria-{name}"),
         },
         Cond::Has(_) => "has".to_string(),
+        Cond::Supports(_) => "supports".to_string(),
+        Cond::Media(pref) => pref.source().to_string(),
         Cond::GroupHas(_) => "group-has".to_string(),
         Cond::PeerHas(_) => "peer-has".to_string(),
         Cond::Structural(_) => "structural".to_string(),
