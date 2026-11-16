@@ -139,6 +139,13 @@ harness = false
 name = "capabilities"
 harness = false
 
+# The direction family's benchmarks (the selector-side tier beside the
+# media forms): the env-answer walk over a direction-mixed program, the
+# fire path and the resting-env complement path beside it.
+[[bench]]
+name = "direction"
+harness = false
+
 # The named-container seam's benchmarks (plan §3.5's container row, the
 # resolution half): the per-frame walk over a container-mixed program
 # with the bounds table hit and quietly missed, themeless and themed.
