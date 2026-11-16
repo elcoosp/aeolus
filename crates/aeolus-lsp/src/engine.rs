@@ -1127,6 +1127,12 @@ fn cond_label(cond: Cond) -> &'static str {
         Cond::Invalid => "invalid",
         Cond::UserValid => "user-valid",
         Cond::UserInvalid => "user-invalid",
+        // The element-state family: the bare spellings (the validation
+        // arm's shape — the hover renders the element-state tier).
+        Cond::Target => "target",
+        Cond::Indeterminate => "indeterminate",
+        Cond::Autofill => "autofill",
+        Cond::ReadOnly => "read-only",
         Cond::Selection => "selection",
         Cond::Placeholder => "placeholder",
         Cond::GroupHover => "group-hover",
