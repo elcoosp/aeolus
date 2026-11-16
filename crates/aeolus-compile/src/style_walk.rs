@@ -214,7 +214,9 @@ fn run(
         // keeps the sourceless shape (the style lane's named-container
         // and `has-*` layers report, exactly as they did before the
         // seams landed).
-        match decide(layer.cond, env, probes, None, structs, None, layer.mask) {
+        match decide(
+            layer.cond, env, probes, None, structs, None, None, layer.mask,
+        ) {
             Fire::Yes => {
                 for (di, decl) in layer.decls.iter().enumerate() {
                     let text = keywords
