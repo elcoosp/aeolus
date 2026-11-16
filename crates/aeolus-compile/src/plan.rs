@@ -197,6 +197,25 @@ pub enum PlanNoteKind {
         /// The rendered `:has(...)` inner text, verbatim.
         inner: &'static str,
     },
+    /// The `supports-[…]` layer's `@supports` condition: the v0.x plan
+    /// surface has no at-rule-condition slot for it AT ALL (the v0.x
+    /// `Cond` set predates the family). The IR lowering is correct; the
+    /// condition reports so the class stays visible, never silently
+    /// dropped.
+    SupportsCondition {
+        /// The rendered `@supports` condition text, verbatim.
+        cond: &'static str,
+    },
+    /// The media-feature layer's preference (`motion-*`/`contrast-*`/
+    /// `forced-colors:`/`print:`): the v0.x `Atom::Viewport` form
+    /// carries width bounds only — no preference slot. The IR lowering
+    /// is correct; the preference reports so the class stays visible,
+    /// never silently dropped (the supports-condition boundary's
+    /// sibling).
+    MediaFeature {
+        /// The typed preference the layer asks about.
+        pref: aeolus_ir::Pref,
+    },
     /// The composite grammar's verbatim value (the `Val::Verbatim` slot):
     /// the v0.x plan slots carry baked numerics and row keywords — a
     /// composite text has no slot to land in. The note names the longhand
@@ -220,6 +239,8 @@ impl PlanNoteKind {
             PlanNoteKind::GradientRow => "aeolus::compile::plan::gradient_row",
             PlanNoteKind::ShadowPreset => "aeolus::compile::plan::shadow_preset",
             PlanNoteKind::HasFragment { .. } => "aeolus::compile::plan::has_fragment",
+            PlanNoteKind::SupportsCondition { .. } => "aeolus::compile::plan::supports_condition",
+            PlanNoteKind::MediaFeature { .. } => "aeolus::compile::plan::media_feature",
             PlanNoteKind::CompositeValue { .. } => "aeolus::compile::plan::composite_value",
         }
     }
@@ -253,6 +274,14 @@ impl PlanNoteKind {
                 "the composite arbitrary value (calc()/track lists/image functions) lowers \
                  into the IR verbatim; the v0.x plan slots carry baked numerics and row \
                  keywords — emit_css renders the real output"
+            }
+            PlanNoteKind::SupportsCondition { .. } => {
+                "the @supports condition has no slot in the v0.x plan surface; the layer \
+                 reports instead of landing — emit_css renders the real output"
+            }
+            PlanNoteKind::MediaFeature { .. } => {
+                "the media-feature preference has no slot in the v0.x plan surface; the layer \
+                 reports instead of landing — emit_css renders the real output"
             }
         }
     }
@@ -2516,6 +2545,23 @@ fn bucket(
                 kind: PlanNoteKind::HasFragment { inner },
             }),
         },
+        // The supports conditions: the v0.x surface has no
+        // at-rule-condition slot — the style does not land, the typed
+        // note names the condition (the unmappable-fragment boundary
+        // the has- family keeps; emit_css renders the real head).
+        Cond::Supports(condition) => notes.push(PlanNote {
+            span,
+            raw: raw.to_string(),
+            kind: PlanNoteKind::SupportsCondition { cond: condition },
+        }),
+        // The media-feature preferences: the v0.x Atom set carries
+        // width bounds only — the style does not land, the typed note
+        // names the preference (emit_css renders the real head).
+        Cond::Media(pref) => notes.push(PlanNote {
+            span,
+            raw: raw.to_string(),
+            kind: PlanNoteKind::MediaFeature { pref },
+        }),
         Cond::Checked => {
             let when = V0Cond(vec![Atom::On(Test::State(State::Checked))]);
             bucket_rule(plan, when, write);
