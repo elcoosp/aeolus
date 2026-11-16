@@ -209,11 +209,12 @@ fn run(
         // The verdicts are the INTERP's own `decide` — one
         // implementation, two walks (the effective-declaration arm and
         // this style fold), so the two cannot disagree on when a layer
-        // fires. The container-bounds seam rides the interp arm's
-        // `*_containers` forms; this fold keeps the sourceless shape
-        // (the style lane's named-container layers report, exactly as
-        // they did before the seam landed).
-        match decide(layer.cond, env, probes, None, structs, layer.mask) {
+        // fires. The container-bounds and descendant seams ride the
+        // interp arm's `*_containers`/`*_descendants` forms; this fold
+        // keeps the sourceless shape (the style lane's named-container
+        // and `has-*` layers report, exactly as they did before the
+        // seams landed).
+        match decide(layer.cond, env, probes, None, structs, None, layer.mask) {
             Fire::Yes => {
                 for (di, decl) in layer.decls.iter().enumerate() {
                     let text = keywords
