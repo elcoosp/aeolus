@@ -272,6 +272,12 @@ pub fn parse_named_variant(name: &str) -> NamedVariant<'_> {
         "read-only" => NamedVariant::ReadOnly,
         "in-range" => NamedVariant::InRange,
         "out-of-range" => NamedVariant::OutOfRange,
+        // The widget-state family's spellings (the v4.1.17 state/forms
+        // blocks' static variants — the closed probe-testable set
+        // extends with the family).
+        "open" => NamedVariant::Open,
+        "inert" => NamedVariant::Inert,
+        "default" => NamedVariant::Default,
         "dark" => NamedVariant::Dark,
         "print" => NamedVariant::Print,
         "motion-safe" => NamedVariant::MotionSafe,
