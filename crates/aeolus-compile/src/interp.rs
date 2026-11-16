@@ -153,6 +153,22 @@ pub struct Env {
     pub peer_hover: bool,
     /// A `.peer` sibling has focus ([`Cond::PeerFocus`]).
     pub peer_focus: bool,
+    /// The user prefers reduced motion ([`Cond::Media`]'s
+    /// `motion-reduce:`; `motion-safe:` is the COMPLEMENT — the
+    /// feature's two v4 values share one fact).
+    pub reduced_motion: bool,
+    /// The user requests more contrast ([`Cond::Media`]'s
+    /// `contrast-more:`).
+    pub more_contrast: bool,
+    /// The user requests less contrast ([`Cond::Media`]'s
+    /// `contrast-less:`).
+    pub less_contrast: bool,
+    /// The user agent forces a color palette ([`Cond::Media`]'s
+    /// `forced-colors:`).
+    pub forced_colors: bool,
+    /// The render target is the print media ([`Cond::Media`]'s
+    /// `print:`).
+    pub print_media: bool,
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
@@ -340,6 +356,69 @@ impl DescendantProbe for DescendantState<'_> {
         self.facts
             .iter()
             .any(|fact| fact.kind == kind && fact.fragment == fragment)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The supports seam: SupportsProbe
+// ---------------------------------------------------------------------------
+
+/// The supports-variant SEAM the interpreter walks through for the
+/// `supports-[…]:` layers: where a render target's `@supports` answer
+/// comes from. The same shape as the attribute seam's [`AttrProbe`],
+/// the container seam's [`ContainerProbe`], the structural seam's
+/// [`StructProbe`] and the descendant seam's [`DescendantProbe`]: the
+/// walk is generic over the source, [`SupportsState`] is the built-in
+/// (a static fact table), and a host implements the ONE question
+/// itself (a capability query against its style system, a
+/// feature-detection table, a test double recording what it was
+/// asked).
+///
+/// The seam's answer IS the CSS semantics: a YES fires the layer, a NO
+/// is a QUIET skip (an `@supports` block the render target fails, never
+/// an exclusion) — and the sourceless forms keep the reported boundary
+/// ([`InterpNote::SupportsUnqueried`]). The render target's capability
+/// set is NOT frame state — the [`Env`] cannot answer it (the
+/// structural seam's own reading: a target supports `display: grid`
+/// for every frame or for none), so there is no sourceless fallback
+/// value.
+pub trait SupportsProbe {
+    /// Whether the render target satisfies this `@supports` condition.
+    /// The condition is the folded [`Cond`]'s own payload (the rendered
+    /// text after the `@supports ` head — `(display:grid)`,
+    /// `selector(:hover)`), verbatim: a host that borrows the condition
+    /// from the condition compares like against like, and a host that
+    /// probes its style system builds the rows from its own feature
+    /// facts. A condition the host cannot evaluate is a plain `false`
+    /// (the block does not apply), never an error.
+    fn supported(&self, condition: &str) -> bool;
+}
+
+/// The built-in [`SupportsProbe`]: the render target's supported
+/// conditions as a borrowed, static table — the zero-allocation form of
+/// the seam (the [`DescendantState`] precedent). A host borrows its
+/// capability rows into one table (the same borrow shape the
+/// [`AttrState`] bits take); an empty table is the target that supports
+/// none of the conditions — every supports layer a QUIET miss.
+#[derive(Clone, Copy, Debug)]
+pub struct SupportsState<'t> {
+    conditions: &'t [&'t str],
+}
+
+impl<'t> SupportsState<'t> {
+    /// The supported conditions, in table order (presence IS the
+    /// answer: a row fires the layer, its absence quietly misses — a
+    /// host that never repeats a condition text needs no order, and
+    /// the table is small by construction, one row per capability the
+    /// target declares).
+    pub const fn new(conditions: &'t [&'t str]) -> Self {
+        Self { conditions }
+    }
+}
+
+impl SupportsProbe for SupportsState<'_> {
+    fn supported(&self, condition: &str) -> bool {
+        self.conditions.contains(&condition)
     }
 }
 
@@ -860,6 +939,23 @@ pub enum InterpNote {
         /// The longhands the unqueried layer sets.
         props: PropMask,
     },
+    /// A supports layer ([`Cond::Supports`] — `supports-[display:grid]:`,
+    /// `supports-[selector(:hover)]:`) the walk could not answer: the
+    /// entry point carries no [`SupportsProbe`] source (the plain
+    /// [`interp`]/[`interp_theme`]/`*_probes`/`*_containers`/`*_struct`/
+    /// `*_descendants` forms — the `*_supports` forms carry the seam,
+    /// and a source-ANSWERED miss is a CSS-quiet skip instead). The
+    /// render target's `@supports` capability set is not frame state —
+    /// the [`Env`] cannot answer it — so there is no sourceless
+    /// fallback value. CSS semantics — an `@supports` block the render
+    /// target does not satisfy never applies — so the layer did not
+    /// fire, reported so the exclusion is never silent.
+    SupportsUnqueried {
+        /// The unqueried layer's condition.
+        cond: Cond,
+        /// The longhands the unqueried layer sets.
+        props: PropMask,
+    },
 }
 
 impl fmt::Display for InterpNote {
@@ -871,7 +967,8 @@ impl fmt::Display for InterpNote {
             | InterpNote::ContainerUnqueried { props, .. }
             | InterpNote::AttributeUnqueried { props, .. }
             | InterpNote::StructuralUnqueried { props, .. }
-            | InterpNote::DescendantUnqueried { props, .. } => {
+            | InterpNote::DescendantUnqueried { props, .. }
+            | InterpNote::SupportsUnqueried { props, .. } => {
                 props.to_vec().iter().map(|p| p.name()).collect()
             }
         };
@@ -903,6 +1000,12 @@ impl fmt::Display for InterpNote {
                 "the {cond:?} layer never matched: no DescendantProbe source \
                  rides — the subtree's :has() facts are not frame state \
                  ({props} unset)"
+            ),
+            InterpNote::SupportsUnqueried { cond, .. } => write!(
+                f,
+                "the {cond:?} layer never matched: no SupportsProbe source \
+                 rides — the render target's @supports facts are not \
+                 frame state ({props} unset)"
             ),
         }
     }
@@ -984,6 +1087,7 @@ pub(crate) fn decide(
     containers: Option<&dyn ContainerProbe>,
     structs: Option<&dyn StructProbe>,
     descendants: Option<&dyn DescendantProbe>,
+    supports: Option<&dyn SupportsProbe>,
     props: PropMask,
 ) -> Fire {
     let fires = |yes: bool| if yes { Fire::Yes } else { Fire::No };
@@ -1075,6 +1179,29 @@ pub(crate) fn decide(
             Some(source) => fires(source.has(DescendantKind::Peer, fragment)),
             None => Fire::Note(InterpNote::DescendantUnqueried { cond, props }),
         },
+        // The media-feature preferences are FRAME STATE (the user
+        // agent's own media-query answers, the tier `dark:` rides):
+        // the Env answers, an unset bit is a QUIET miss (a media
+        // query that does not hold, never an exclusion note).
+        Cond::Media(pref) => fires(match pref {
+            aeolus_ir::Pref::MotionSafe => !env.reduced_motion,
+            aeolus_ir::Pref::MotionReduce => env.reduced_motion,
+            aeolus_ir::Pref::ContrastMore => env.more_contrast,
+            aeolus_ir::Pref::ContrastLess => env.less_contrast,
+            aeolus_ir::Pref::ForcedColors => env.forced_colors,
+            aeolus_ir::Pref::Print => env.print_media,
+        }),
+        // The supports conditions answer through their own seam (the
+        // `@supports` family, the at-rule tier beside the media forms):
+        // a YES fires, a source-answered NO is a CSS-quiet skip (an
+        // `@supports` block the render target fails), and the
+        // sourceless forms stay the reported exclusion — the render
+        // target's capability set is not frame state, so the [`Env`]
+        // carries no fallback answer.
+        Cond::Supports(condition) => match supports {
+            Some(source) => fires(source.supported(condition)),
+            None => Fire::Note(InterpNote::SupportsUnqueried { cond, props }),
+        },
         // The structural probes ask the DOM-position seam (the
         // position half of the plan §3.5 typed-state-bits row): the
         // facts decide — an unknown field quietly misses its tests (a
@@ -1111,6 +1238,7 @@ fn walk(
     containers: Option<&dyn ContainerProbe>,
     structs: Option<&dyn StructProbe>,
     descendants: Option<&dyn DescendantProbe>,
+    supports: Option<&dyn SupportsProbe>,
     resolve: impl Fn(Prop, Val) -> Result<Val, InterpError>,
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
@@ -1126,6 +1254,7 @@ fn walk(
             containers,
             structs,
             descendants,
+            supports,
             layer.mask,
         ) {
             Fire::Yes => {
@@ -1246,6 +1375,7 @@ pub fn interp(program: &Program, env: &Env) -> Result<Interped, InterpError> {
         None,
         None,
         None,
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1271,11 +1401,20 @@ pub fn interp_theme(
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp_theme", layers = program.layers.len()).entered();
-    walk(program, env, None, None, None, None, |_, val| match val {
-        Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
-        Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
-        concrete => Ok(concrete),
-    })
+    walk(
+        program,
+        env,
+        None,
+        None,
+        None,
+        None,
+        None,
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
 }
 
 /// Resolve a compiled [`Program`] to its effective declarations under
@@ -1311,6 +1450,7 @@ pub fn interp_probes(
         None,
         None,
         None,
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1341,6 +1481,7 @@ pub fn interp_theme_probes(
         program,
         env,
         Some(probes as &dyn AttrProbe),
+        None,
         None,
         None,
         None,
@@ -1383,6 +1524,7 @@ pub fn interp_containers(
         Some(containers as &dyn ContainerProbe),
         None,
         None,
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1416,6 +1558,7 @@ pub fn interp_theme_containers(
         Some(containers as &dyn ContainerProbe),
         None,
         None,
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -1446,6 +1589,7 @@ pub fn interp_probes_containers(
         env,
         Some(probes as &dyn AttrProbe),
         Some(containers as &dyn ContainerProbe),
+        None,
         None,
         None,
         |prop, val| match val {
@@ -1481,6 +1625,7 @@ pub fn interp_theme_probes_containers(
         env,
         Some(probes as &dyn AttrProbe),
         Some(containers as &dyn ContainerProbe),
+        None,
         None,
         None,
         |_, val| match val {
@@ -1525,6 +1670,7 @@ pub fn interp_struct(
         None,
         Some(structs as &dyn StructProbe),
         None,
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1557,6 +1703,7 @@ pub fn interp_theme_struct(
         None,
         None,
         Some(structs as &dyn StructProbe),
+        None,
         None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
@@ -1591,6 +1738,7 @@ pub fn interp_probes_struct(
         None,
         Some(structs as &dyn StructProbe),
         None,
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1621,6 +1769,7 @@ pub fn interp_theme_probes_struct(
         Some(probes as &dyn AttrProbe),
         None,
         Some(structs as &dyn StructProbe),
+        None,
         None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
@@ -1654,6 +1803,7 @@ pub fn interp_containers_struct(
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
         None,
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1686,6 +1836,7 @@ pub fn interp_theme_containers_struct(
         None,
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
+        None,
         None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
@@ -1723,6 +1874,7 @@ pub fn interp_probes_containers_struct(
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
         None,
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1759,6 +1911,7 @@ pub fn interp_theme_probes_containers_struct(
         Some(probes as &dyn AttrProbe),
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
+        None,
         None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
@@ -1802,6 +1955,7 @@ pub fn interp_descendants(
         None,
         None,
         Some(descendants as &dyn DescendantProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1834,6 +1988,7 @@ pub fn interp_theme_descendants(
         None,
         None,
         Some(descendants as &dyn DescendantProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -1867,6 +2022,7 @@ pub fn interp_probes_descendants(
         None,
         None,
         Some(descendants as &dyn DescendantProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1899,6 +2055,7 @@ pub fn interp_theme_probes_descendants(
         None,
         None,
         Some(descendants as &dyn DescendantProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -1934,6 +2091,7 @@ pub fn interp_containers_descendants(
         Some(containers as &dyn ContainerProbe),
         None,
         Some(descendants as &dyn DescendantProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1967,6 +2125,7 @@ pub fn interp_theme_containers_descendants(
         Some(containers as &dyn ContainerProbe),
         None,
         Some(descendants as &dyn DescendantProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -1999,6 +2158,7 @@ pub fn interp_struct_descendants(
         None,
         Some(structs as &dyn StructProbe),
         Some(descendants as &dyn DescendantProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -2031,6 +2191,7 @@ pub fn interp_theme_struct_descendants(
         None,
         Some(structs as &dyn StructProbe),
         Some(descendants as &dyn DescendantProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -2068,6 +2229,7 @@ pub fn interp_probes_containers_descendants(
         Some(containers as &dyn ContainerProbe),
         None,
         Some(descendants as &dyn DescendantProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -2103,6 +2265,7 @@ pub fn interp_theme_probes_containers_descendants(
         Some(containers as &dyn ContainerProbe),
         None,
         Some(descendants as &dyn DescendantProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -2139,6 +2302,7 @@ pub fn interp_probes_struct_descendants(
         None,
         Some(structs as &dyn StructProbe),
         Some(descendants as &dyn DescendantProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -2174,6 +2338,7 @@ pub fn interp_theme_probes_struct_descendants(
         None,
         Some(structs as &dyn StructProbe),
         Some(descendants as &dyn DescendantProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -2211,6 +2376,7 @@ pub fn interp_containers_struct_descendants(
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
         Some(descendants as &dyn DescendantProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -2246,6 +2412,7 @@ pub fn interp_theme_containers_struct_descendants(
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
         Some(descendants as &dyn DescendantProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -2288,6 +2455,7 @@ pub fn interp_probes_containers_struct_descendants(
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
         Some(descendants as &dyn DescendantProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -2326,6 +2494,1105 @@ pub fn interp_theme_probes_containers_struct_descendants(
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
         Some(descendants as &dyn DescendantProbe),
+        None,
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// Resolve a compiled [`Program`] to its effective declarations under
+/// one probe situation and one [`SupportsProbe`] — the supports half of
+/// the seam family (the `*_probes`/`*_containers`/`*_struct`/
+/// `*_descendants` convention's fifth member): the `supports-[…]`
+/// layers ask the source (the built-in [`SupportsState`] carries the
+/// render target's capability facts; a host wires its own — a
+/// capability query against its style system, a feature-detection
+/// table, a test double). A YES fires the layer; a source-answered NO
+/// is a QUIET skip (an `@supports` block the render target fails,
+/// never an exclusion); the sourceless forms keep the reported
+/// exclusion ([`InterpNote::SupportsUnqueried`] — the dedicated note
+/// the per-seam convention carries).
+///
+/// The walk stays pure: same program + env + source, same answer.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_supports`] for the themed form).
+pub fn interp_supports(
+    program: &Program,
+    env: &Env,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!("interp_supports", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        None,
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The pair-composed form: one [`AttrProbe`], one [`SupportsProbe`] — the attribute and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_supports`] for the themed form).
+pub fn interp_probes_supports(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_probes_supports", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        None,
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The pair-composed form: one [`ContainerProbe`], one [`SupportsProbe`] — the named-container and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_containers_supports`] for the themed form).
+pub fn interp_containers_supports(
+    program: &Program,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_containers_supports", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        None,
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The triple-composed form: one [`AttrProbe`], one [`ContainerProbe`], one [`SupportsProbe`] — the attribute and named-container and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_containers_supports`] for the themed form).
+pub fn interp_probes_containers_supports(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_containers_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        None,
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The pair-composed form: one [`StructProbe`], one [`SupportsProbe`] — the DOM-position and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_struct_supports`] for the themed form).
+pub fn interp_struct_supports(
+    program: &Program,
+    env: &Env,
+    structs: &impl StructProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_struct_supports", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        Some(structs as &dyn StructProbe),
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The triple-composed form: one [`AttrProbe`], one [`StructProbe`], one [`SupportsProbe`] — the attribute and DOM-position and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_struct_supports`] for the themed form).
+pub fn interp_probes_struct_supports(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    structs: &impl StructProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_struct_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        Some(structs as &dyn StructProbe),
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The triple-composed form: one [`ContainerProbe`], one [`StructProbe`], one [`SupportsProbe`] — the named-container and DOM-position and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_containers_struct_supports`] for the themed form).
+pub fn interp_containers_struct_supports(
+    program: &Program,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_containers_struct_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The FULL themeless form: one [`AttrProbe`], one [`ContainerProbe`], one [`StructProbe`], one [`SupportsProbe`] — the attribute and named-container and DOM-position and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_containers_struct_supports`] for the themed form).
+pub fn interp_probes_containers_struct_supports(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_containers_struct_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The pair-composed form: one [`DescendantProbe`], one [`SupportsProbe`] — the descendant and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_descendants_supports`] for the themed form).
+pub fn interp_descendants_supports(
+    program: &Program,
+    env: &Env,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!("interp_descendants_supports", layers = program.layers.len())
+        .entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The triple-composed form: one [`AttrProbe`], one [`DescendantProbe`], one [`SupportsProbe`] — the attribute and descendant and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_descendants_supports`] for the themed form).
+pub fn interp_probes_descendants_supports(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The triple-composed form: one [`ContainerProbe`], one [`DescendantProbe`], one [`SupportsProbe`] — the named-container and descendant and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_containers_descendants_supports`] for the themed form).
+pub fn interp_containers_descendants_supports(
+    program: &Program,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_containers_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The FULL themeless form: one [`AttrProbe`], one [`ContainerProbe`], one [`DescendantProbe`], one [`SupportsProbe`] — the attribute and named-container and descendant and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_containers_descendants_supports`] for the themed form).
+pub fn interp_probes_containers_descendants_supports(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_containers_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The triple-composed form: one [`StructProbe`], one [`DescendantProbe`], one [`SupportsProbe`] — the DOM-position and descendant and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_struct_descendants_supports`] for the themed form).
+pub fn interp_struct_descendants_supports(
+    program: &Program,
+    env: &Env,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_struct_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The FULL themeless form: one [`AttrProbe`], one [`StructProbe`], one [`DescendantProbe`], one [`SupportsProbe`] — the attribute and DOM-position and descendant and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_struct_descendants_supports`] for the themed form).
+pub fn interp_probes_struct_descendants_supports(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_struct_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The FULL themeless form: one [`ContainerProbe`], one [`StructProbe`], one [`DescendantProbe`], one [`SupportsProbe`] — the named-container and DOM-position and descendant and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_containers_struct_descendants_supports`] for the themed form).
+pub fn interp_containers_struct_descendants_supports(
+    program: &Program,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_containers_struct_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The FULL themeless form: one [`AttrProbe`], one [`ContainerProbe`], one [`StructProbe`], one [`DescendantProbe`], one [`SupportsProbe`] — the attribute and named-container and DOM-position and descendant and supports seams ride one
+/// themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_containers_struct_descendants_supports`] for the themed form).
+pub fn interp_probes_containers_struct_descendants_supports(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_containers_struct_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The FULL themed form: one [`TokenSource`] resolves the theme forms
+/// while the supports seam answers — one [`SupportsProbe`] (the
+/// `interp_theme` convention extended by the supports seam).
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme`]).
+pub fn interp_theme_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_theme_supports", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        None,
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_probes_supports`]:
+/// one [`TokenSource`] for the theme forms, the attribute and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes`]).
+pub fn interp_theme_probes_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        None,
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_containers_supports`]:
+/// one [`TokenSource`] for the theme forms, the named-container and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_containers`]).
+pub fn interp_theme_containers_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_containers_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        None,
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_probes_containers_supports`]:
+/// one [`TokenSource`] for the theme forms, the attribute and named-container and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes_containers`]).
+pub fn interp_theme_probes_containers_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_containers_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        None,
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_struct_supports`]:
+/// one [`TokenSource`] for the theme forms, the DOM-position and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_struct`]).
+pub fn interp_theme_struct_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    structs: &impl StructProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_struct_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        Some(structs as &dyn StructProbe),
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_probes_struct_supports`]:
+/// one [`TokenSource`] for the theme forms, the attribute and DOM-position and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes_struct`]).
+pub fn interp_theme_probes_struct_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    structs: &impl StructProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_struct_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        Some(structs as &dyn StructProbe),
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_containers_struct_supports`]:
+/// one [`TokenSource`] for the theme forms, the named-container and DOM-position and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_containers_struct`]).
+pub fn interp_theme_containers_struct_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_containers_struct_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_probes_containers_struct_supports`]:
+/// one [`TokenSource`] for the theme forms, the attribute and named-container and DOM-position and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes_containers_struct`]).
+pub fn interp_theme_probes_containers_struct_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_containers_struct_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        None,
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_descendants_supports`]:
+/// one [`TokenSource`] for the theme forms, the descendant and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_descendants`]).
+pub fn interp_theme_descendants_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_probes_descendants_supports`]:
+/// one [`TokenSource`] for the theme forms, the attribute and descendant and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes_descendants`]).
+pub fn interp_theme_probes_descendants_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_containers_descendants_supports`]:
+/// one [`TokenSource`] for the theme forms, the named-container and descendant and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_containers_descendants`]).
+pub fn interp_theme_containers_descendants_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_containers_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_probes_containers_descendants_supports`]:
+/// one [`TokenSource`] for the theme forms, the attribute and named-container and descendant and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes_containers_descendants`]).
+pub fn interp_theme_probes_containers_descendants_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_containers_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_struct_descendants_supports`]:
+/// one [`TokenSource`] for the theme forms, the DOM-position and descendant and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_struct_descendants`]).
+pub fn interp_theme_struct_descendants_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_struct_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_probes_struct_descendants_supports`]:
+/// one [`TokenSource`] for the theme forms, the attribute and DOM-position and descendant and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes_struct_descendants`]).
+pub fn interp_theme_probes_struct_descendants_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_struct_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_containers_struct_descendants_supports`]:
+/// one [`TokenSource`] for the theme forms, the named-container and DOM-position and descendant and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_containers_struct_descendants`]).
+pub fn interp_theme_containers_struct_descendants_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_containers_struct_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+/// The themed form of [`interp_theme_probes_containers_struct_descendants_supports`]:
+/// one [`TokenSource`] for the theme forms, the attribute and named-container and DOM-position and descendant and supports seams riding
+/// one walk.
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes_containers_struct_descendants`]).
+pub fn interp_theme_probes_containers_struct_descendants_supports(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+    supports: &impl SupportsProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_containers_struct_descendants_supports",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        Some(supports as &dyn SupportsProbe),
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
