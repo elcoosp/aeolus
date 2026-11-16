@@ -673,6 +673,13 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
             "disabled" => set.pseudos.push(":disabled"),
             "visited" => set.pseudos.push(":visited"),
             "checked" => set.pseudos.push(":checked"),
+            // The validation states: the v4.1.17 forms block's
+            // pseudo-classes (the selector-side tier beside `:checked`,
+            // no at-rule head — the family's `staticVariant` texts).
+            "valid" => set.pseudos.push(":valid"),
+            "invalid" => set.pseudos.push(":invalid"),
+            "user-valid" => set.pseudos.push(":user-valid"),
+            "user-invalid" => set.pseudos.push(":user-invalid"),
             "placeholder-shown" => set.pseudos.push(":placeholder-shown"),
             "selection" => set.pseudos.push("::selection"),
             "placeholder" => set.pseudos.push("::placeholder"),
@@ -724,6 +731,14 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         Cond::Disabled => set.pseudos.push(":disabled"),
         Cond::Visited => set.pseudos.push(":visited"),
         Cond::Checked => set.pseudos.push(":checked"),
+        // The validation states: the upstream pseudo-classes derived
+        // from the typed conditions (the v4.1.17 `staticVariant` texts
+        // — the render cannot drift the fold, the checked arm's own
+        // shape).
+        Cond::Valid => set.pseudos.push(":valid"),
+        Cond::Invalid => set.pseudos.push(":invalid"),
+        Cond::UserValid => set.pseudos.push(":user-valid"),
+        Cond::UserInvalid => set.pseudos.push(":user-invalid"),
         Cond::PlaceholderShown => set.pseudos.push(":placeholder-shown"),
         Cond::Selection => set.pseudos.push("::selection"),
         Cond::Placeholder => set.pseudos.push("::placeholder"),
