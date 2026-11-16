@@ -1104,6 +1104,134 @@ fn document_highlights_outside_a_candidate_answer_empty() {
 }
 
 // ---------------------------------------------------------------------------
+// The formatting answer (the class-sort seam's editor face):
+// textDocument/formatting — the registry's canonical order, one edit per
+// out-of-order class string
+// ---------------------------------------------------------------------------
+
+/// The formatter's document: one multi-byte identifier before the
+/// out-of-order string (the UTF-16 column fixture), one already-sorted
+/// string, one unknown-root string (its single class is trivially in
+/// order — the formatter stays quiet).
+const FMT_DOC: &str = "fn card() {\n    let héllo = \"hover:flex-col p-4 flex-col\";\n    let clean = \"p-4 flex-col\";\n    let bad = \"not-a-root\";\n}\n";
+
+/// The canonical form the sort seam answers for [`FMT_DOC`]'s first
+/// string (pinned against `aeolus sort`: the rows' progression rides
+/// before the variant bucket).
+const FMT_CANONICAL: &str = "p-4 flex-col hover:flex-col";
+
+#[test]
+fn format_answers_the_canonical_order() {
+    let mut lsp = engine();
+    lsp.open("file:///fmt.rs", FMT_DOC, 1);
+    let edits = lsp.format("file:///fmt.rs");
+    assert_eq!(
+        edits.len(),
+        1,
+        "one out-of-order string, one edit — the clean and refused strings stay quiet: {edits:?}"
+    );
+    let edit = &edits[0];
+    assert_eq!(edit.new_text, FMT_CANONICAL);
+    // The edit's range is the STRING CONTENT's span (the extractor's
+    // own trimmed hit, byte-true), never the quotes around it.
+    let content_start = FMT_DOC.find("hover:flex-col").expect("the fixture holds");
+    let content_end = content_start + "hover:flex-col p-4 flex-col".len();
+    let (line, character) = line_character_of(FMT_DOC, content_start);
+    let (end_line, end_character) = line_character_of(FMT_DOC, content_end);
+    assert_eq!(edit.range.start.line, line);
+    assert_eq!(edit.range.start.character, character);
+    assert_eq!(edit.range.end.line, end_line);
+    assert_eq!(edit.range.end.character, end_character);
+}
+
+#[test]
+fn format_is_byte_true_over_the_multi_byte_column() {
+    // `é` is two UTF-8 bytes but ONE UTF-16 unit: the edit's start
+    // column counts code units, never bytes — the range must land on
+    // the first class character, not inside the identifier.
+    let mut lsp = engine();
+    lsp.open("file:///fmt.rs", FMT_DOC, 1);
+    let edit = &lsp.format("file:///fmt.rs")[0];
+    let content_start = FMT_DOC.find("hover:flex-col").expect("the fixture holds");
+    let (_, character) = line_character_of(FMT_DOC, content_start);
+    let line_start = FMT_DOC[..content_start].rfind('\n').map_or(0, |i| i + 1);
+    let byte_column = content_start - line_start;
+    assert_ne!(
+        byte_column, character as usize,
+        "the fixture must be multi-byte (é shifts the byte column off the UTF-16 column)"
+    );
+    assert_eq!(
+        edit.range.start.character, character,
+        "the UTF-16 column, byte-true"
+    );
+}
+
+#[test]
+fn format_noops_an_already_ordered_document() {
+    let mut lsp = engine();
+    // Every string already rides the canonical order (and the
+    // single-class unknown root is trivially in order).
+    lsp.open("file:///fmt.rs", FMT_DOC, 1);
+    let edits = lsp.format("file:///fmt.rs");
+    assert_eq!(edits.len(), 1, "only the out-of-order string edits");
+    // A document with NO class strings at all: the honest empty.
+    lsp.change("file:///fmt.rs", "fn clean() {}\n", 2);
+    assert!(
+        lsp.format("file:///fmt.rs").is_empty(),
+        "a document with no strings answers empty"
+    );
+}
+
+#[test]
+fn format_normalizes_the_whitespace_run() {
+    // The canonical form is the sort seam's own join: the input's
+    // whitespace run does not survive it (the seam's documented
+    // formatter contract).
+    let mut lsp = engine();
+    lsp.open(
+        "file:///ws.rs",
+        "fn card() {\n    let s = \"p-4  flex-col\";\n}\n",
+        1,
+    );
+    let edits = lsp.format("file:///ws.rs");
+    assert_eq!(edits.len(), 1, "the whitespace run alone is an edit");
+    assert_eq!(edits[0].new_text, "p-4 flex-col");
+}
+
+#[test]
+fn format_known_classes_reorder_the_tail_rides_source_order() {
+    // The honest tail: classes the seam cannot order never block the
+    // formatter — the known prefix reorders, the tail rides its source
+    // order after it (the sort seam's own contract), and the MISS
+    // stays the diagnostics channels' story (the formatter's answer
+    // carries edits, never findings).
+    let mut lsp = engine();
+    let doc = "fn card() {\n    let s = \"justify-betwen p-4 not-a-class\";\n}\n";
+    lsp.open("file:///tail.rs", doc, 1);
+    let edits = lsp.format("file:///tail.rs");
+    assert_eq!(edits.len(), 1, "the known class reorders: {edits:?}");
+    assert_eq!(edits[0].new_text, "p-4 justify-betwen not-a-class");
+}
+
+#[test]
+fn format_is_pure_and_gates_on_the_document_map() {
+    let mut lsp = engine();
+    lsp.open("file:///fmt.rs", FMT_DOC, 1);
+    let first = lsp.format("file:///fmt.rs");
+    let second = lsp.format("file:///fmt.rs");
+    assert_eq!(first, second, "format is pure over its document map");
+    assert!(
+        lsp.format("file:///never-opened.rs").is_empty(),
+        "the unknown URI answers empty"
+    );
+    lsp.close("file:///fmt.rs");
+    assert!(
+        lsp.format("file:///fmt.rs").is_empty(),
+        "a closed document answers empty"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The helpers
 // ---------------------------------------------------------------------------
 
