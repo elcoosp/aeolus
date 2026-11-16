@@ -117,6 +117,21 @@ harness = false
 name = "descendants"
 harness = false
 
+# The supports-variant seam's benchmarks (the `supports-[…]` row, the
+# resolution half): the per-frame walk over a supports-mixed program
+# with the capability table hit, and the sourceless walk's note path
+# beside it.
+[[bench]]
+name = "supports"
+harness = false
+
+# The preference families' benchmarks (the media-feature tier, the
+# resolution half): the env-answer walk over a preference-mixed
+# program, the fire path and the quiet-miss path beside it.
+[[bench]]
+name = "preferences"
+harness = false
+
 # The named-container seam's benchmarks (plan §3.5's container row, the
 # resolution half): the per-frame walk over a container-mixed program
 # with the bounds table hit and quietly missed, themeless and themed.
