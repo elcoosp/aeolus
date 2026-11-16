@@ -78,7 +78,12 @@ impl Hasher for FastHasher {
         // the workspace lints with this rationale).
         let mut chunks = bytes.chunks_exact(8);
         for c in &mut chunks {
-            self.mix(u64::from_le_bytes(c.try_into().unwrap()));
+            // Infallible by construction: a chunks_exact(8) item is
+            // always exactly 8 bytes, the slice length the [u8; 8]
+            // conversion asks for.
+            self.mix(u64::from_le_bytes(
+                c.try_into().expect("a chunks_exact(8) item is 8 bytes"),
+            ));
         }
         let rem = chunks.remainder();
         if !rem.is_empty() {
