@@ -63,7 +63,8 @@ fn note_for<'a>(interp: &'a Interped, cond: &Cond) -> Option<&'a InterpNote> {
         InterpNote::PseudoElement { cond: c, .. }
         | InterpNote::ContainerUnqueried { cond: c, .. }
         | InterpNote::AttributeUnqueried { cond: c, .. }
-        | InterpNote::StructuralUnqueried { cond: c, .. } => c == cond,
+        | InterpNote::StructuralUnqueried { cond: c, .. }
+        | InterpNote::DescendantUnqueried { cond: c, .. } => c == cond,
     })
 }
 
