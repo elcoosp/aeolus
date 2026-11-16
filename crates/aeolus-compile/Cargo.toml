@@ -146,6 +146,13 @@ harness = false
 name = "direction"
 harness = false
 
+# The validation states' benchmarks (the element-state tier beside
+# hover:/checked:): the env-answer walk over a validation-mixed
+# program, the fire path and the resting-env quiet-miss path beside it.
+[[bench]]
+name = "validation"
+harness = false
+
 # The named-container seam's benchmarks (plan §3.5's container row, the
 # resolution half): the per-frame walk over a container-mixed program
 # with the bounds table hit and quietly missed, themeless and themed.
