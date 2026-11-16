@@ -226,7 +226,8 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
     }
     // The media-feature preferences: the CLOSED static-variant set
     // tailwindcss v4.1.17 carries (the at-rule texts are the
-    // `aeolus_ir::Pref` docs' pins).
+    // `aeolus_ir::Pref` docs' pins) — the preference families beside
+    // the input-capability tier and the orientation forms.
     match name {
         "motion-safe" => Some(Cond::Media(aeolus_ir::Pref::MotionSafe)),
         "motion-reduce" => Some(Cond::Media(aeolus_ir::Pref::MotionReduce)),
@@ -234,6 +235,14 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "contrast-less" => Some(Cond::Media(aeolus_ir::Pref::ContrastLess)),
         "forced-colors" => Some(Cond::Media(aeolus_ir::Pref::ForcedColors)),
         "print" => Some(Cond::Media(aeolus_ir::Pref::Print)),
+        "pointer-fine" => Some(Cond::Media(aeolus_ir::Pref::PointerFine)),
+        "pointer-coarse" => Some(Cond::Media(aeolus_ir::Pref::PointerCoarse)),
+        "pointer-none" => Some(Cond::Media(aeolus_ir::Pref::PointerNone)),
+        "any-pointer-fine" => Some(Cond::Media(aeolus_ir::Pref::AnyPointerFine)),
+        "any-pointer-coarse" => Some(Cond::Media(aeolus_ir::Pref::AnyPointerCoarse)),
+        "any-pointer-none" => Some(Cond::Media(aeolus_ir::Pref::AnyPointerNone)),
+        "portrait" => Some(Cond::Media(aeolus_ir::Pref::Portrait)),
+        "landscape" => Some(Cond::Media(aeolus_ir::Pref::Landscape)),
         "dark" => Some(Cond::Dark),
         "hover" => Some(Cond::Hover),
         "focus" => Some(Cond::Focus),
@@ -624,6 +633,16 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "contrast-less",
     "forced-colors",
     "print",
+    // The input-capability and orientation tier (the same closed set's
+    // remaining v4.1.17 spellings).
+    "pointer-fine",
+    "pointer-coarse",
+    "pointer-none",
+    "any-pointer-fine",
+    "any-pointer-coarse",
+    "any-pointer-none",
+    "portrait",
+    "landscape",
 ];
 
 // ---------------------------------------------------------------------------
@@ -734,6 +753,16 @@ mod completion_tests {
             "contrast-less",
             "forced-colors",
             "print",
+            // The input-capability and orientation tier (the same
+            // closed set's remaining v4.1.17 spellings).
+            "pointer-fine",
+            "pointer-coarse",
+            "pointer-none",
+            "any-pointer-fine",
+            "any-pointer-coarse",
+            "any-pointer-none",
+            "portrait",
+            "landscape",
         ];
         let mut actual: Vec<&str> = KNOWN_VARIANTS.to_vec();
         let mut expected: Vec<&str> = expected.to_vec();
