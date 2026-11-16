@@ -42,10 +42,24 @@
 //! precedent). A probe layer FIRES when the element carries the
 //! attribute (the presence spelling) or carries it with the folded
 //! value (the bracketed spelling); a miss is a QUIET skip — a CSS
-//! selector that does not match, not an exclusion. The descendant
-//! probes (`has-`/`group-has-`/`peer-has-`) stay the plan §3.5 row's
-//! diagnosed boundary — reported, honest failure kept — because the
-//! descendant shape is not an attribute bit.
+//! selector that does not match, not an exclusion.
+//!
+//! The DESCENDANT layers (the `has-*`/`group-has-*`/`peer-has-*`
+//! families the same fold lands on [`Cond::Has`]/[`Cond::GroupHas`]/
+//! [`Cond::PeerHas`]) resolve through the answer the same note's
+//! family carried as a diagnosed boundary until the descendant seam
+//! landed: the subtree facts — the [`DescendantProbe`] seam (one
+//! question: does THIS scope's subtree contain a descendant matching
+//! the fragment?), the built-in [`DescendantState`] static-fact
+//! table, and the `*_descendants` entry points the seam-family
+//! convention carries (the full composed matrix included). A
+//! descendant layer FIRES when the source answers yes for the
+//! layer's OWN scope (the element's subtree, the `.group` ancestor's,
+//! the `.peer` sibling's — the [`DescendantKind`] discrimination); a
+//! source-answered no is a QUIET skip (a `:has()` selector that does
+//! not match), and the sourceless forms keep the reported exclusion —
+//! now the dedicated [`InterpNote::DescendantUnqueried`] note, the
+//! per-seam convention the container and structural notes follow.
 //!
 //! The NAMED-CONTAINER layers (the `@md/card:` spellings the fold lands
 //! on [`Cond::Container`]/[`Cond::MaxContainer`] with a name) resolve
@@ -161,9 +175,10 @@ pub struct Env {
 /// The element-own attribute family a probe asks about — the families
 /// the variant fold lands on the typed `Cond` surface
 /// ([`Cond::Data`]/[`Cond::Aria`]). The descendant probes
-/// (`has-`/`group-has-`/`peer-has-`) are NOT here: the plan §3.5 row
-/// keeps them the diagnosed boundary (the descendant shape is not an
-/// attribute bit).
+/// (`has-`/`group-has-`/`peer-has-`) are NOT here: the subtree is not
+/// an attribute bit — they ask the descendant seam
+/// ([`DescendantProbe`]) under their own
+/// [`InterpNote::DescendantUnqueried`] note.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AttrKind {
     /// The `data-*` family ([`Cond::Data`] — `data-[state=open]:`).
@@ -229,6 +244,102 @@ impl AttrProbe for AttrState<'_> {
             .iter()
             .find(|bit| bit.kind == kind && bit.name == name)
             .map(|bit| bit.value)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The descendant-probe seam: DescendantProbe
+// ---------------------------------------------------------------------------
+
+/// The `:has()` scope a descendant probe asks about — the scopes the
+/// variant fold lands on the typed `Cond` surface ([`Cond::Has`]/
+/// [`Cond::GroupHas`]/[`Cond::PeerHas`]). The descendant shape is not
+/// an attribute bit (the attribute seam's own doc keeps the two
+/// families apart): the question is about the SUBTREE a scope names —
+/// the element's own descendants, the `.group` ancestor's, or the
+/// `.peer` sibling's — not about an attribute the element carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DescendantKind {
+    /// The element's own descendant subtree ([`Cond::Has`] —
+    /// `has-focus:`).
+    Element,
+    /// A `.group` ancestor's descendant subtree ([`Cond::GroupHas`] —
+    /// `group-has-focus:`). The named `group-has-x/label` spelling
+    /// folds to the same probe — the label rides the CSS head only,
+    /// the group-hover precedent — so one scope answers for the
+    /// family.
+    Group,
+    /// A `.peer` sibling's descendant subtree ([`Cond::PeerHas`] —
+    /// `peer-has-focus:`).
+    Peer,
+}
+
+/// One typed subtree fact: this scope's subtree matches this rendered
+/// `:has()` inner fragment — one row of the built-in [`DescendantState`]
+/// table. The FRAGMENT is the payload [`Cond::Has`] carries verbatim
+/// (`*:focus`, `*[data-slot="card-action"]`): the fold's own rendered
+/// form, so a host that borrows the fragment from the condition (the
+/// LSP's hover, a per-frame diff) compares like against like, and a
+/// host that collects its subtree's shapes per frame builds the rows
+/// from its own DOM facts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct DescendantFact<'t> {
+    /// The scope the fact speaks for.
+    pub kind: DescendantKind,
+    /// The rendered `:has()` inner fragment the subtree matches
+    /// (`"*:focus"`), verbatim — the folded [`Cond`]'s own payload
+    /// shape.
+    pub fragment: &'t str,
+}
+
+/// The descendant-probe SEAM the interpreter walks through for the
+/// `has-*`/`group-has-*`/`peer-has-*` layers: where a subtree answer
+/// comes from. The same shape as the attribute seam's [`AttrProbe`],
+/// the container seam's [`ContainerProbe`] and the structural seam's
+/// [`StructProbe`]: the walk is generic over the source,
+/// [`DescendantState`] is the built-in (a static fact table), and a
+/// host implements the ONE question itself (a DOM-backed `:has()`
+/// bridge, a component-tree walk, a test double recording what it was
+/// asked). A YES fires the layer; a NO is a QUIET skip — a `:has()`
+/// selector that does not match, never an exclusion — and the
+/// sourceless forms stay the reported boundary
+/// ([`InterpNote::DescendantUnqueried`]), the honest failure the plan
+/// §3.5 row kept until this seam landed.
+pub trait DescendantProbe {
+    /// Whether THIS scope's subtree contains a descendant matching the
+    /// fragment. The answer drives the CSS semantics the probes
+    /// encode: the layer fires iff the answer is true for the scope's
+    /// own question — a scope the host cannot answer is a plain
+    /// `false` (the selector does not match), never an error.
+    fn has(&self, kind: DescendantKind, fragment: &str) -> bool;
+}
+
+/// The built-in [`DescendantProbe`]: the element's subtree facts as a
+/// borrowed, static table — the zero-allocation form of the plan §3.5
+/// "the subtree answers through typed facts" reading. A per-frame host
+/// borrows its fact rows into one table (the same borrow shape the
+/// [`AttrState`] bits take); an empty table is the no-matches element.
+#[derive(Clone, Copy, Debug)]
+pub struct DescendantState<'t> {
+    facts: &'t [DescendantFact<'t>],
+}
+
+impl<'t> DescendantState<'t> {
+    /// The element's subtree facts, in table order (presence IS the
+    /// answer: a row fires the layer, its absence quietly misses — a
+    /// host that never repeats a (kind, fragment) pair needs no
+    /// order, and the table is small by construction, one row per
+    /// matched shape the frame declares).
+    pub const fn new(facts: &'t [DescendantFact<'t>]) -> Self {
+        Self { facts }
+    }
+}
+
+impl DescendantProbe for DescendantState<'_> {
+    fn has(&self, kind: DescendantKind, fragment: &str) -> bool {
+        self.facts
+            .iter()
+            .any(|fact| fact.kind == kind && fact.fragment == fragment)
     }
 }
 
@@ -691,17 +802,14 @@ pub enum InterpNote {
         /// The longhands the unqueried layer sets.
         props: PropMask,
     },
-    /// An attribute-probe layer evaluated under conditions the probe
-    /// surface cannot answer — one of the two UNQUERIED cases:
-    ///
-    /// * the entry point carries no [`AttrProbe`] source (the plain
-    ///   [`interp`]/[`interp_theme`] forms — the [`interp_probes`]/
-    ///   [`interp_theme_probes`] forms carry the plan §3.5 typed
-    ///   state bits, and their `data-*`/`aria-*` layers fire), or
-    /// * the probe is a DESCENDANT shape ([`Cond::Has`]/
-    ///   [`Cond::GroupHas`]/[`Cond::PeerHas`]) — the descendant shape
-    ///   is not an attribute bit, and the plan §3.5 row keeps those
-    ///   the diagnosed boundary (honest failure, kept).
+    /// An attribute-probe layer the probe surface cannot answer: the
+    /// entry point carries no [`AttrProbe`] source (the plain
+    /// [`interp`]/[`interp_theme`] forms — the [`interp_probes`]/
+    /// [`interp_theme_probes`] forms carry the plan §3.5 typed state
+    /// bits, and their `data-*`/`aria-*` layers fire). The DESCENDANT
+    /// shapes (`has-*`/`group-has-*`/`peer-has-*`) are NOT here —
+    /// they are subtree questions no attribute table answers, so
+    /// they carry their own note below.
     ///
     /// Either way the layer never fires, reported so the exclusion is
     /// never silent. A source-ANSWERED miss (the element does not
@@ -731,6 +839,27 @@ pub enum InterpNote {
         /// The longhands the unqueried layer sets.
         props: PropMask,
     },
+    /// A descendant layer ([`Cond::Has`]/[`Cond::GroupHas`]/
+    /// [`Cond::PeerHas`] — `has-focus:`, `group-has-data-[slot=x]:`,
+    /// `peer-has-focus:`) the walk could not answer: the entry point
+    /// carries no [`DescendantProbe`] source (the plain
+    /// [`interp`]/[`interp_theme`]/`*_probes`/`*_containers`/`*_struct`
+    /// forms — the `*_descendants` forms carry the seam, and a
+    /// source-ANSWERED miss is a CSS-quiet skip instead). The subtree's
+    /// `:has()` facts are not frame state — the [`Env`] answers the
+    /// element's own bits, not its descendants' — so there is no
+    /// sourceless fallback value (this used to ride the blanket
+    /// [`InterpNote::AttributeUnqueried`] spelling; the dedicated note
+    /// is the per-seam convention the container and structural notes
+    /// follow). CSS semantics — a `:has()` selector that cannot be
+    /// evaluated never matches — so the layer did not fire, reported
+    /// so the exclusion is never silent.
+    DescendantUnqueried {
+        /// The unqueried layer's condition.
+        cond: Cond,
+        /// The longhands the unqueried layer sets.
+        props: PropMask,
+    },
 }
 
 impl fmt::Display for InterpNote {
@@ -741,7 +870,8 @@ impl fmt::Display for InterpNote {
             InterpNote::PseudoElement { props, .. }
             | InterpNote::ContainerUnqueried { props, .. }
             | InterpNote::AttributeUnqueried { props, .. }
-            | InterpNote::StructuralUnqueried { props, .. } => {
+            | InterpNote::StructuralUnqueried { props, .. }
+            | InterpNote::DescendantUnqueried { props, .. } => {
                 props.to_vec().iter().map(|p| p.name()).collect()
             }
         };
@@ -767,6 +897,12 @@ impl fmt::Display for InterpNote {
                 "the {cond:?} layer never matched: no StructProbe source \
                  rides — the element's DOM-position facts are not frame \
                  state ({props} unset)"
+            ),
+            InterpNote::DescendantUnqueried { cond, .. } => write!(
+                f,
+                "the {cond:?} layer never matched: no DescendantProbe source \
+                 rides — the subtree's :has() facts are not frame state \
+                 ({props} unset)"
             ),
         }
     }
@@ -847,6 +983,7 @@ pub(crate) fn decide(
     probes: Option<&dyn AttrProbe>,
     containers: Option<&dyn ContainerProbe>,
     structs: Option<&dyn StructProbe>,
+    descendants: Option<&dyn DescendantProbe>,
     props: PropMask,
 ) -> Fire {
     let fires = |yes: bool| if yes { Fire::Yes } else { Fire::No };
@@ -904,8 +1041,7 @@ pub(crate) fn decide(
         // (plan §3.5's typed state bits): presence fires on any value,
         // the value spelling fires on equality, a miss is CSS-quiet.
         // The descendant shapes (`has-`/`group-has-`/`peer-has-`) are
-        // NOT attribute bits — the plan §3.5 row keeps them diagnosed
-        // (reported, honest failure kept), with or without a source.
+        // NOT attribute bits — they ask the descendant seam below.
         Cond::Data { name, value } => match probes {
             Some(source) => fires(match source.probe(AttrKind::Data, name) {
                 Some(answer) => value.is_none_or(|folded| answer == folded),
@@ -920,9 +1056,25 @@ pub(crate) fn decide(
             }),
             None => Fire::Note(InterpNote::AttributeUnqueried { cond, props }),
         },
-        Cond::Has(_) | Cond::GroupHas(_) | Cond::PeerHas(_) => {
-            Fire::Note(InterpNote::AttributeUnqueried { cond, props })
-        }
+        // The descendant probes answer through their own seam (the
+        // plan §3.5 row the `AttributeUnqueried` note kept diagnosed
+        // until it landed): the scope discriminates the question — the
+        // element's own subtree, the group ancestor's, the peer
+        // sibling's — a YES fires, a source-answered NO is a CSS
+        // -quiet skip (a `:has()` selector that does not match), and
+        // the sourceless forms stay the reported exclusion.
+        Cond::Has(fragment) => match descendants {
+            Some(source) => fires(source.has(DescendantKind::Element, fragment)),
+            None => Fire::Note(InterpNote::DescendantUnqueried { cond, props }),
+        },
+        Cond::GroupHas(fragment) => match descendants {
+            Some(source) => fires(source.has(DescendantKind::Group, fragment)),
+            None => Fire::Note(InterpNote::DescendantUnqueried { cond, props }),
+        },
+        Cond::PeerHas(fragment) => match descendants {
+            Some(source) => fires(source.has(DescendantKind::Peer, fragment)),
+            None => Fire::Note(InterpNote::DescendantUnqueried { cond, props }),
+        },
         // The structural probes ask the DOM-position seam (the
         // position half of the plan §3.5 typed-state-bits row): the
         // facts decide — an unknown field quietly misses its tests (a
@@ -947,14 +1099,18 @@ pub(crate) fn decide(
 /// last value per longhand in `Prop` order. The attribute-probe seam
 /// rides along as the (optional) probe source — `None` keeps the
 /// sourceless exclusion notes, `Some` answers the element-own probes —
-/// and the container-bounds seam rides beside it (the NAMED container
-/// queries ask it; `None` keeps their sourceless exclusion notes).
+/// the container-bounds seam rides beside it (the NAMED container
+/// queries ask it; `None` keeps their sourceless exclusion notes), the
+/// structural seam beside that (the DOM-position layers ask it), and
+/// the descendant seam beside that (the `has-*` family asks it; each
+/// `None` keeps its own family's sourceless exclusion notes).
 fn walk(
     program: &Program,
     env: &Env,
     probes: Option<&dyn AttrProbe>,
     containers: Option<&dyn ContainerProbe>,
     structs: Option<&dyn StructProbe>,
+    descendants: Option<&dyn DescendantProbe>,
     resolve: impl Fn(Prop, Val) -> Result<Val, InterpError>,
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
@@ -963,7 +1119,15 @@ fn walk(
     let mut conds: Vec<Cond> = Vec::new();
     let mut notes = Vec::new();
     for layer in program.layers {
-        match decide(layer.cond, env, probes, containers, structs, layer.mask) {
+        match decide(
+            layer.cond,
+            env,
+            probes,
+            containers,
+            structs,
+            descendants,
+            layer.mask,
+        ) {
             Fire::Yes => {
                 for decl in layer.decls {
                     let val = resolve(decl.prop, decl.val)?;
@@ -1075,10 +1239,18 @@ fn walk_pseudo(
 pub fn interp(program: &Program, env: &Env) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp_themeless", layers = program.layers.len()).entered();
-    walk(program, env, None, None, None, |prop, val| match val {
-        Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
-        concrete => Ok(concrete),
-    })
+    walk(
+        program,
+        env,
+        None,
+        None,
+        None,
+        None,
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
 }
 
 /// Resolve a compiled [`Program`] to its effective declarations under
@@ -1099,7 +1271,7 @@ pub fn interp_theme(
 ) -> Result<Interped, InterpError> {
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!("interp_theme", layers = program.layers.len()).entered();
-    walk(program, env, None, None, None, |_, val| match val {
+    walk(program, env, None, None, None, None, |_, val| match val {
         Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
         Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
         concrete => Ok(concrete),
@@ -1113,9 +1285,10 @@ pub fn interp_theme(
 /// (the built-in [`AttrState`] carries the element's attribute bits; a
 /// host wires its own). A hit FIRES the layer; a miss is a QUIET skip
 /// — a CSS selector that does not match, never an exclusion — and the
-/// descendant probes (`has-`/`group-has-`/`peer-has-`) stay the plan
-/// §3.5 diagnosed boundary: reported as
-/// [`InterpNote::AttributeUnqueried`], honest failure kept.
+/// descendant probes (`has-`/`group-has-`/`peer-has-`) are NOT this
+/// seam's questions: they ask the descendant seam
+/// ([`interp_descendants`] and friends) under their own
+/// [`InterpNote::DescendantUnqueried`] note.
 ///
 /// The walk stays pure: same program + env + probe source, same
 /// answer.
@@ -1135,6 +1308,7 @@ pub fn interp_probes(
         program,
         env,
         Some(probes as &dyn AttrProbe),
+        None,
         None,
         None,
         |prop, val| match val {
@@ -1167,6 +1341,7 @@ pub fn interp_theme_probes(
         program,
         env,
         Some(probes as &dyn AttrProbe),
+        None,
         None,
         None,
         |_, val| match val {
@@ -1207,6 +1382,7 @@ pub fn interp_containers(
         None,
         Some(containers as &dyn ContainerProbe),
         None,
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1239,6 +1415,7 @@ pub fn interp_theme_containers(
         None,
         Some(containers as &dyn ContainerProbe),
         None,
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -1269,6 +1446,7 @@ pub fn interp_probes_containers(
         env,
         Some(probes as &dyn AttrProbe),
         Some(containers as &dyn ContainerProbe),
+        None,
         None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
@@ -1303,6 +1481,7 @@ pub fn interp_theme_probes_containers(
         env,
         Some(probes as &dyn AttrProbe),
         Some(containers as &dyn ContainerProbe),
+        None,
         None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
@@ -1345,6 +1524,7 @@ pub fn interp_struct(
         None,
         None,
         Some(structs as &dyn StructProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1377,6 +1557,7 @@ pub fn interp_theme_struct(
         None,
         None,
         Some(structs as &dyn StructProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -1409,6 +1590,7 @@ pub fn interp_probes_struct(
         Some(probes as &dyn AttrProbe),
         None,
         Some(structs as &dyn StructProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1439,6 +1621,7 @@ pub fn interp_theme_probes_struct(
         Some(probes as &dyn AttrProbe),
         None,
         Some(structs as &dyn StructProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -1470,6 +1653,7 @@ pub fn interp_containers_struct(
         None,
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1502,6 +1686,7 @@ pub fn interp_theme_containers_struct(
         None,
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
+        None,
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
@@ -1537,6 +1722,7 @@ pub fn interp_probes_containers_struct(
         Some(probes as &dyn AttrProbe),
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
+        None,
         |prop, val| match val {
             Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
             concrete => Ok(concrete),
@@ -1573,6 +1759,573 @@ pub fn interp_theme_probes_containers_struct(
         Some(probes as &dyn AttrProbe),
         Some(containers as &dyn ContainerProbe),
         Some(structs as &dyn StructProbe),
+        None,
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// Resolve a compiled [`Program`] to its effective declarations under
+/// one probe situation and one [`DescendantProbe`] — the descendant
+/// half of the seam family (the `*_probes`/`*_containers`/`*_struct`
+/// convention's fourth member): the `has-*`/`group-has-*`/`peer-has-*`
+/// layers ask the source (the built-in [`DescendantState`] carries the
+/// subtree facts; a host wires its own — a DOM-backed `:has()` bridge,
+/// a component-tree walk, a test double). A YES fires the layer; a
+/// source-answered NO is a QUIET skip (a `:has()` selector that does
+/// not match, never an exclusion); the sourceless forms keep the
+/// reported exclusion ([`InterpNote::DescendantUnqueried`] — the
+/// dedicated note the per-seam convention carries, the blanket
+/// [`InterpNote::AttributeUnqueried`] spelling retired for the
+/// family).
+///
+/// The walk stays pure: same program + env + source, same answer.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_descendants`] for the themed form).
+pub fn interp_descendants(
+    program: &Program,
+    env: &Env,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!("interp_descendants", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_descendants`]: one [`TokenSource`]
+/// resolves the theme forms, one [`DescendantProbe`] answers the
+/// `has-*` family — both seams ride one walk.
+///
+/// # Errors
+/// The token source's own typed failures ([`InterpError::UnknownToken`],
+/// [`InterpError::UnknownPair`], [`InterpError::AlphaOnPair`],
+/// [`InterpError::AlphaNotFinite`] under the built-in table) — the walk
+/// stops and reports, never second-guesses.
+pub fn interp_theme_descendants(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_theme_descendants", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The probe-composed descendant form: one [`AttrProbe`] for the
+/// element-own attribute probes, one [`DescendantProbe`] for the
+/// `has-*` family — both probe surfaces ride one walk (a component's
+/// attribute bits AND its subtree facts answer together).
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_descendants`] for the themed form).
+pub fn interp_probes_descendants(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_probes_descendants", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_probes_descendants`]: one
+/// [`TokenSource`], one [`AttrProbe`], one [`DescendantProbe`].
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_probes`]).
+pub fn interp_theme_probes_descendants(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The container-composed descendant form: one [`ContainerProbe`] for
+/// the named container queries, one [`DescendantProbe`] for the
+/// `has-*` family — both layout-facing seams ride one walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_containers_descendants`] for the themed form).
+pub fn interp_containers_descendants(
+    program: &Program,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_containers_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_containers_descendants`]: one
+/// [`TokenSource`], one [`ContainerProbe`], one [`DescendantProbe`].
+///
+/// # Errors
+/// The token source's own typed failures (see
+/// [`interp_theme_containers`]).
+pub fn interp_theme_containers_descendants(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_containers_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The structural-composed descendant form: one [`StructProbe`] for
+/// the DOM-position layers, one [`DescendantProbe`] for the `has-*`
+/// family — both element-facts seams ride one walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_struct_descendants`] for the themed form).
+pub fn interp_struct_descendants(
+    program: &Program,
+    env: &Env,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span =
+        tracing::debug_span!("interp_struct_descendants", layers = program.layers.len()).entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_struct_descendants`]: one
+/// [`TokenSource`], one [`StructProbe`], one [`DescendantProbe`].
+///
+/// # Errors
+/// The token source's own typed failures (see [`interp_theme_struct`]).
+pub fn interp_theme_struct_descendants(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_struct_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        None,
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The triple-composed form: one [`AttrProbe`], one
+/// [`ContainerProbe`], one [`DescendantProbe`] — the attribute,
+/// named-container and descendant seams ride one themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_containers_descendants`] for the themed
+/// form).
+pub fn interp_probes_containers_descendants(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_containers_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_probes_containers_descendants`]: one
+/// [`TokenSource`], one [`AttrProbe`], one [`ContainerProbe`], one
+/// [`DescendantProbe`].
+///
+/// # Errors
+/// The token source's own typed failures (see
+/// [`interp_theme_probes_containers`]).
+pub fn interp_theme_probes_containers_descendants(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_containers_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        None,
+        Some(descendants as &dyn DescendantProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The triple-composed form: one [`AttrProbe`], one [`StructProbe`],
+/// one [`DescendantProbe`] — the attribute, DOM-position and
+/// descendant seams ride one themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_struct_descendants`] for the themed form).
+pub fn interp_probes_struct_descendants(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_struct_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_probes_struct_descendants`]: one
+/// [`TokenSource`], one [`AttrProbe`], one [`StructProbe`], one
+/// [`DescendantProbe`].
+///
+/// # Errors
+/// The token source's own typed failures (see
+/// [`interp_theme_probes_struct`]).
+pub fn interp_theme_probes_struct_descendants(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_struct_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        None,
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The triple-composed form: one [`ContainerProbe`], one
+/// [`StructProbe`], one [`DescendantProbe`] — the named-container,
+/// DOM-position and descendant seams ride one themeless walk.
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_containers_struct_descendants`] for the themed
+/// form).
+pub fn interp_containers_struct_descendants(
+    program: &Program,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_containers_struct_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The themed form of [`interp_containers_struct_descendants`]: one
+/// [`TokenSource`], one [`ContainerProbe`], one [`StructProbe`], one
+/// [`DescendantProbe`].
+///
+/// # Errors
+/// The token source's own typed failures (see
+/// [`interp_theme_containers_struct`]).
+pub fn interp_theme_containers_struct_descendants(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_containers_struct_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        None,
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        |_, val| match val {
+            Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
+            Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The FULL form: every seam the walk consults rides one call — one
+/// [`AttrProbe`] for the element-own attribute probes, one
+/// [`ContainerProbe`] for the named container queries, one
+/// [`StructProbe`] for the DOM-position layers and one
+/// [`DescendantProbe`] for the `has-*` family (the
+/// `interp_probes_containers_struct` convention extended by the
+/// descendant seam).
+///
+/// # Errors
+/// [`InterpError::ThemeRequired`] when a declaration's value is a
+/// theme form and no token source rides along (use
+/// [`interp_theme_probes_containers_struct_descendants`] for the
+/// themed form).
+pub fn interp_probes_containers_struct_descendants(
+    program: &Program,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_probes_containers_struct_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
+        |prop, val| match val {
+            Val::Tok { .. } | Val::ModePair(_) => Err(InterpError::ThemeRequired { prop }),
+            concrete => Ok(concrete),
+        },
+    )
+}
+
+/// The FULL themed form: one [`TokenSource`] resolves the theme forms
+/// while every seam answers — one [`AttrProbe`], one
+/// [`ContainerProbe`], one [`StructProbe`], one [`DescendantProbe`]
+/// (the `interp_theme_probes_containers_struct` convention extended by
+/// the descendant seam).
+///
+/// # Errors
+/// The token source's own typed failures (see
+/// [`interp_theme_probes_containers_struct`]).
+pub fn interp_theme_probes_containers_struct_descendants(
+    program: &Program,
+    tokens: &impl TokenSource,
+    env: &Env,
+    probes: &impl AttrProbe,
+    containers: &impl ContainerProbe,
+    structs: &impl StructProbe,
+    descendants: &impl DescendantProbe,
+) -> Result<Interped, InterpError> {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!(
+        "interp_theme_probes_containers_struct_descendants",
+        layers = program.layers.len()
+    )
+    .entered();
+    walk(
+        program,
+        env,
+        Some(probes as &dyn AttrProbe),
+        Some(containers as &dyn ContainerProbe),
+        Some(structs as &dyn StructProbe),
+        Some(descendants as &dyn DescendantProbe),
         |_, val| match val {
             Val::Tok { id, alpha } => tokens.resolve(id, alpha, env.dark),
             Val::ModePair(slot) => tokens.resolve_pair(slot, env.dark),
