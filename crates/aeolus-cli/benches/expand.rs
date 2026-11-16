@@ -80,3 +80,19 @@ fn expand_descendant_facts(bencher: Bencher) {
         interp_descendants(&compiled.program, &env, &tree).expect("the program resolves")
     });
 }
+
+/// The supports-variant seam's CLI face (the `--supports` facts): the
+/// same Button-shaped program through the `*_supports` walk, the
+/// capability table hit and the note path beside it.
+const SUPPORTS_BUTTON: &str =
+    "inline-flex items-center gap-2 supports-[display:grid]:p-8 supports-[selector(:hover)]:px-3";
+
+#[divan::bench]
+fn expand_supports_facts(bencher: Bencher) {
+    use aeolus_compile::{SupportsState, interp_supports};
+    let compiled = compile(SUPPORTS_BUTTON, &Config::default()).expect("non-empty input compiles");
+    let target = SupportsState::new(&["(display:grid)", "selector(:hover)"]);
+    let env = Env::default();
+    bencher
+        .bench(|| interp_supports(&compiled.program, &env, &target).expect("the program resolves"));
+}
