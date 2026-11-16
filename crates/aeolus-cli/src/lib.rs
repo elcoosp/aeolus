@@ -445,6 +445,13 @@ struct Args {
     any_pointer_coarse: bool,
     any_pointer_none: bool,
     portrait: bool,
+    /// The direction probe flag (`expand` only): the text-direction
+    /// fact the interp's [`Env`] answers the `rtl:` layers from — the
+    /// same frame state the capability flags assert. Unset is the
+    /// quiet miss a selector that does not match is; `--rtl` is the
+    /// one direction fact (`ltr:` is its complement — CSS's own
+    /// initial `direction` value is ltr).
+    direction_rtl: bool,
     /// The `--container name=rem` bounds (`expand` only, repeatable):
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
@@ -497,6 +504,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut any_pointer_coarse = false;
     let mut any_pointer_none = false;
     let mut portrait = false;
+    let mut direction_rtl = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut supports: Vec<String> = Vec::new();
@@ -551,6 +559,9 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             }
             "--portrait" if allow.contains(&"portrait") => {
                 portrait = true;
+            }
+            "--rtl" if allow.contains(&"rtl") => {
+                direction_rtl = true;
             }
             "--more-contrast" if allow.contains(&"more-contrast") => {
                 more_contrast = true;
@@ -733,6 +744,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         any_pointer_coarse,
         any_pointer_none,
         portrait,
+        direction_rtl,
         containers,
         has,
         supports,
@@ -1135,6 +1147,7 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "any-pointer-coarse",
             "any-pointer-none",
             "portrait",
+            "rtl",
         ],
     ) else {
         return 2;
@@ -1177,6 +1190,7 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         any_pointer_coarse: args.any_pointer_coarse,
         any_pointer_none: args.any_pointer_none,
         portrait: args.portrait,
+        direction_rtl: args.direction_rtl,
         ..Env::default()
     };
     // The NAMED containers' widths ride the `--container name=rem`
