@@ -431,6 +431,20 @@ struct Args {
     less_contrast: bool,
     forced_colors: bool,
     print_media: bool,
+    /// The capability probe flags (`expand` only): the media-feature
+    /// facts the interp's [`Env`] answers the
+    /// `pointer-*`/`any-pointer-*` input tier and the
+    /// `portrait`/`landscape` orientation forms from — the same frame
+    /// state the preference flags assert. Unset flags are the quiet
+    /// miss a media query that does not hold is; `--portrait` is the
+    /// one orientation fact (`landscape:` is its complement).
+    pointer_fine: bool,
+    pointer_coarse: bool,
+    pointer_none: bool,
+    any_pointer_fine: bool,
+    any_pointer_coarse: bool,
+    any_pointer_none: bool,
+    portrait: bool,
     /// The `--container name=rem` bounds (`expand` only, repeatable):
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
@@ -476,6 +490,13 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut less_contrast = false;
     let mut forced_colors = false;
     let mut print_media = false;
+    let mut pointer_fine = false;
+    let mut pointer_coarse = false;
+    let mut pointer_none = false;
+    let mut any_pointer_fine = false;
+    let mut any_pointer_coarse = false;
+    let mut any_pointer_none = false;
+    let mut portrait = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut supports: Vec<String> = Vec::new();
@@ -509,6 +530,27 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--empty" if allow.contains(&"empty") => empty = true,
             "--reduced-motion" if allow.contains(&"reduced-motion") => {
                 reduced_motion = true;
+            }
+            "--pointer-fine" if allow.contains(&"pointer-fine") => {
+                pointer_fine = true;
+            }
+            "--pointer-coarse" if allow.contains(&"pointer-coarse") => {
+                pointer_coarse = true;
+            }
+            "--pointer-none" if allow.contains(&"pointer-none") => {
+                pointer_none = true;
+            }
+            "--any-pointer-fine" if allow.contains(&"any-pointer-fine") => {
+                any_pointer_fine = true;
+            }
+            "--any-pointer-coarse" if allow.contains(&"any-pointer-coarse") => {
+                any_pointer_coarse = true;
+            }
+            "--any-pointer-none" if allow.contains(&"any-pointer-none") => {
+                any_pointer_none = true;
+            }
+            "--portrait" if allow.contains(&"portrait") => {
+                portrait = true;
             }
             "--more-contrast" if allow.contains(&"more-contrast") => {
                 more_contrast = true;
@@ -684,6 +726,13 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         less_contrast,
         forced_colors,
         print_media,
+        pointer_fine,
+        pointer_coarse,
+        pointer_none,
+        any_pointer_fine,
+        any_pointer_coarse,
+        any_pointer_none,
+        portrait,
         containers,
         has,
         supports,
@@ -1079,6 +1128,13 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "less-contrast",
             "forced-colors",
             "print",
+            "pointer-fine",
+            "pointer-coarse",
+            "pointer-none",
+            "any-pointer-fine",
+            "any-pointer-coarse",
+            "any-pointer-none",
+            "portrait",
         ],
     ) else {
         return 2;
@@ -1114,6 +1170,13 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         less_contrast: args.less_contrast,
         forced_colors: args.forced_colors,
         print_media: args.print_media,
+        pointer_fine: args.pointer_fine,
+        pointer_coarse: args.pointer_coarse,
+        pointer_none: args.pointer_none,
+        any_pointer_fine: args.any_pointer_fine,
+        any_pointer_coarse: args.any_pointer_coarse,
+        any_pointer_none: args.any_pointer_none,
+        portrait: args.portrait,
         ..Env::default()
     };
     // The NAMED containers' widths ride the `--container name=rem`
