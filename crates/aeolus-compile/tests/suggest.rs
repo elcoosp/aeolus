@@ -39,7 +39,7 @@ fn diagnostics_of(raw: &str) -> Vec<aeolus_compile::Diagnostic> {
 /// The fold's answers for one string's FIRST diagnostic.
 fn suggestions_for(raw: &str) -> Vec<Suggestion> {
     let diagnostics = diagnostics_of(raw);
-    suggest_for(&diagnostics[0], Some(&shadcn_table()), None)
+    suggest_for(&diagnostics[0], None)
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ fn an_unaudited_token_name_never_suggests() {
     let table = numbered_table();
     let compiled = compile_theme("bg-primary", &table, &Default::default())
         .expect("only the empty input errors");
-    let suggestions = suggest_for(&compiled.diagnostics[0], Some(&table), None);
+    let suggestions = suggest_for(&compiled.diagnostics[0], None);
     assert!(
         suggestions.iter().all(|s| s.replacement != "bg-primary-1"),
         "the unaudited name never suggests: {suggestions:?}"
@@ -206,7 +206,7 @@ fn the_themeless_boundary_suggests_no_token() {
     // The theme-less fold (the `compile` boundary): the token surface
     // never joins — the keyword siblings still answer.
     let compiled = compile("bg-priamry", &Default::default()).expect("only the empty input errors");
-    let suggestions = suggest_for(&compiled.diagnostics[0], None, None);
+    let suggestions = suggest_for(&compiled.diagnostics[0], None);
     assert!(
         suggestions
             .iter()
@@ -255,7 +255,7 @@ fn a_composed_stack_suggests_no_variant() {
         .find(|d| d.raw == "dark:havor:p-4")
         .expect("the composed stack refuses");
     assert!(
-        suggest_for(variant_miss, Some(&shadcn_table()), None).is_empty(),
+        suggest_for(variant_miss, None).is_empty(),
         "no single-spelling edit for a composed stack"
     );
 }
@@ -277,7 +277,7 @@ fn the_whole_token_refusals_answer_empty() {
         );
         for diagnostic in &diagnostics {
             assert!(
-                suggest_for(diagnostic, Some(&shadcn_table()), None).is_empty(),
+                suggest_for(diagnostic, None).is_empty(),
                 "{raw:?} ({:?}) carries no correction",
                 diagnostic.kind
             );
@@ -307,7 +307,7 @@ fn the_registered_custom_suggests_itself() {
         &[aeolus_ir::Prop::PaddingTop, aeolus_ir::Prop::PaddingBottom],
     ));
     let compiled = compile("brnd-pad", &Default::default()).expect("only the empty input errors");
-    let with = suggest_for(&compiled.diagnostics[0], None, Some(&customs));
+    let with = suggest_for(&compiled.diagnostics[0], Some(&customs));
     assert!(
         with.iter()
             .any(|s| s.replacement == "brand-pad" && s.source == SuggestionSource::Custom),
@@ -315,7 +315,7 @@ fn the_registered_custom_suggests_itself() {
     );
     // The built-ins alone keep the quiet answer (the surface's reason
     // to exist: the host's vocabulary is invisible without it).
-    let without = suggest_for(&compiled.diagnostics[0], None, None);
+    let without = suggest_for(&compiled.diagnostics[0], None);
     assert!(
         without.iter().all(|s| s.replacement != "brand-pad"),
         "no custom answer without the registration: {without:?}"
