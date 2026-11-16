@@ -44,7 +44,7 @@ it compiles it through the full V1 pipeline at macro-expansion time and emits a 
 
 > [!IMPORTANT]
 > **The honesty contract carried over.** Every class that does not lower produces a spanned, coded,
-> helped diagnostic — in the macro, the CLI, and every backend walk. Per-backend capability is a
+> helped diagnostic — in the macro, the CLI, and every backend walk. GPUI capability is a
 > published [conformance score](docs/CONFORMANCE.md) computed from the emitter's own gates, never a
 > parallel claim.
 
@@ -117,7 +117,8 @@ Every backend also has the V1 lane: `lower_program` walks a frozen `StaticProgra
 // In view state: compiled when the string changes, a content compare per frame otherwise.
 struct Card { classes: ClassCell }   // !Sync, UI-thread, no RwLock/Arc atomics
 
-div().tw_dyn(self.classes.get(&self.user_classes, theme))
+let program = self.classes.get(&self.user_classes, &config)?; // Result — never a panic per frame
+div().tw_dyn(program)
 ```
 
 `ClassCell` keys on exact content + compile identity (never hash-only), hands back the _same_
@@ -252,6 +253,7 @@ Pay only for the dynamism you use:
 | `motion-*:` `contrast-*:` `forced-colors:` `print:`        | typed `Cond::Media` bits, `Env` preference facts (frame state — no probe seam), CSS media-query semantics | ✅                                                            |
 | `pointer-*:` `any-pointer-*:` `portrait:` `landscape:`     | typed `Cond::Media` bits, `Env` capability facts (the same frame-state tier; `landscape:` the `portrait:` complement), CSS media-query semantics | ✅                                                            |
 | `ltr:` `rtl:`                                              | typed `Cond::Dir` bit, one `Env` direction fact (`ltr:` the `rtl:` complement), CSS `:where(:dir(…))` selector semantics | ✅                                                            |
+| `valid:` `invalid:` `user-valid:` `user-invalid:`          | typed `Cond` states, two `Env` facts (the constraint pair + the `user-` interaction gate), CSS `:pseudo` selector semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
 | `selection:` `placeholder:`                                | `PseudoTarget` scoped cascades                                        | ✅                                                            |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
@@ -290,7 +292,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1700 tests with all features enabled (2026-11).
+  **zero** allocations). Workspace battery: 1715 tests with all features enabled (2026-11).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -348,7 +350,7 @@ differential oracle — no big-bang migration.
 
 | Crate            | Role                                                                                                                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `aeolus-syntax`  | zero-copy lexer: borrowed candidates + spans, `no_std + alloc`                                                         |
+| `aeolus-syntax`  | zero-copy lexer: borrowed candidates + spans (std build today; `no_std + alloc` capable per the architecture plan)      |
 | `aeolus-data`    | the registry as data: 213 audited rows → generated roots index, docs, sort order                                       |
 | `aeolus-ir`      | `Copy` longhand IR: `Prop`/`Val`/`Decl`/`Layer`/`Program` + `PropMask` bitset algebra                                  |
 | `aeolus-theme`   | CSS-first `ThemeSource` → tiered `TokenTable`s; `@source` directives                                                   |
@@ -424,6 +426,8 @@ cargo run -p aeolus-compile --example capabilities      # the capability tier: p
 cargo run -p aeolus-cli --example expand_capabilities   # expand --pointer-fine/--portrait: the facts the capability layers answer from
 cargo run -p aeolus-compile --example direction         # the direction family: ltr/rtl selector-side answers
 cargo run -p aeolus-cli --example expand_direction      # expand --rtl: the direction fact the rtl/ltr layers answer from
+cargo run -p aeolus-compile --example validation        # the validation states: valid/invalid/user-* element-state answers
+cargo run -p aeolus-cli --example expand_validation     # expand --invalid/--user-*: the facts the validation layers answer from
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
@@ -476,6 +480,7 @@ cargo run -p aeolus-compile --example backdrop_filters  # the backdrop layer: bo
 cargo run -p aeolus-compile --example grid_flow         # the grid-flow family: the auto-flow slot end to end
 cargo run -p aeolus-compile --example hints             # the wider v4 hint table: angle/time/position/family/string end to end
 cargo run -p aeolus-compile --example direction         # the direction family: ltr/rtl selector-side answers
+cargo run -p aeolus-compile --example validation        # the validation states: valid/invalid/user-* element-state answers
 # codegen & runtime
 cargo run -p aeolus-codegen --example text_emit
 cargo run -p aeolus-codegen-gpui --example conformance
@@ -518,6 +523,7 @@ cargo run -p aeolus-cli --example expand_descendants  # expand --has: the has-* 
 cargo run -p aeolus-cli --example expand_supports  # expand --supports: the @supports layers answer from the capability facts
 cargo run -p aeolus-cli --example expand_capabilities  # expand --pointer-fine/--portrait: the capability layers answer from the frame facts
 cargo run -p aeolus-cli --example expand_direction  # expand --rtl: the rtl/ltr layers answer from the one direction fact
+cargo run -p aeolus-cli --example expand_validation  # expand --invalid/--user-*: the validation layers answer from the facts
 # the shadcn program tables
 cargo run -p aeolus-shadcn --example program_tables  # the Button programs headless (the variants! output)
 cargo run -p aeolus-shadcn --example program_components  # the non-button program tables: Badge/Alert/Base beside the input/card shapes
