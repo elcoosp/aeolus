@@ -209,19 +209,36 @@ pub use dyn_cache::{
 pub use interp::{
     AttrBit, AttrKind, AttrProbe, AttrState, ContainerBound, ContainerProbe, ContainerState,
     DescendantFact, DescendantKind, DescendantProbe, DescendantState, Env, InterpError, InterpNote,
-    Interped, PseudoTarget, StructFacts, StructProbe, TokenSource, interp, interp_containers,
-    interp_containers_descendants, interp_containers_struct, interp_containers_struct_descendants,
-    interp_descendants, interp_probes, interp_probes_containers,
-    interp_probes_containers_descendants, interp_probes_containers_struct,
-    interp_probes_containers_struct_descendants, interp_probes_descendants, interp_probes_struct,
-    interp_probes_struct_descendants, interp_pseudo, interp_pseudo_theme, interp_struct,
-    interp_struct_descendants, interp_theme, interp_theme_containers,
-    interp_theme_containers_descendants, interp_theme_containers_struct,
-    interp_theme_containers_struct_descendants, interp_theme_descendants, interp_theme_probes,
-    interp_theme_probes_containers, interp_theme_probes_containers_descendants,
-    interp_theme_probes_containers_struct, interp_theme_probes_containers_struct_descendants,
-    interp_theme_probes_descendants, interp_theme_probes_struct,
-    interp_theme_probes_struct_descendants, interp_theme_struct, interp_theme_struct_descendants,
+    Interped, PseudoTarget, StructFacts, StructProbe, SupportsProbe, SupportsState, TokenSource,
+    interp, interp_containers, interp_containers_descendants,
+    interp_containers_descendants_supports, interp_containers_struct,
+    interp_containers_struct_descendants, interp_containers_struct_descendants_supports,
+    interp_containers_struct_supports, interp_containers_supports, interp_descendants,
+    interp_descendants_supports, interp_probes, interp_probes_containers,
+    interp_probes_containers_descendants, interp_probes_containers_descendants_supports,
+    interp_probes_containers_struct, interp_probes_containers_struct_descendants,
+    interp_probes_containers_struct_descendants_supports, interp_probes_containers_struct_supports,
+    interp_probes_containers_supports, interp_probes_descendants,
+    interp_probes_descendants_supports, interp_probes_struct, interp_probes_struct_descendants,
+    interp_probes_struct_descendants_supports, interp_probes_struct_supports,
+    interp_probes_supports, interp_pseudo, interp_pseudo_theme, interp_struct,
+    interp_struct_descendants, interp_struct_descendants_supports, interp_struct_supports,
+    interp_supports, interp_theme, interp_theme_containers, interp_theme_containers_descendants,
+    interp_theme_containers_descendants_supports, interp_theme_containers_struct,
+    interp_theme_containers_struct_descendants,
+    interp_theme_containers_struct_descendants_supports, interp_theme_containers_struct_supports,
+    interp_theme_containers_supports, interp_theme_descendants, interp_theme_descendants_supports,
+    interp_theme_probes, interp_theme_probes_containers,
+    interp_theme_probes_containers_descendants,
+    interp_theme_probes_containers_descendants_supports, interp_theme_probes_containers_struct,
+    interp_theme_probes_containers_struct_descendants,
+    interp_theme_probes_containers_struct_descendants_supports,
+    interp_theme_probes_containers_struct_supports, interp_theme_probes_containers_supports,
+    interp_theme_probes_descendants, interp_theme_probes_descendants_supports,
+    interp_theme_probes_struct, interp_theme_probes_struct_descendants,
+    interp_theme_probes_struct_descendants_supports, interp_theme_probes_struct_supports,
+    interp_theme_probes_supports, interp_theme_struct, interp_theme_struct_descendants,
+    interp_theme_struct_descendants_supports, interp_theme_struct_supports, interp_theme_supports,
     structural_fires,
 };
 
@@ -257,7 +274,7 @@ pub use suggest::{
 // roots complete theme-token spellings — one source of truth with the
 // compile walk, so a suggested class is always a lowered class.
 pub use arbitrary::COLOUR_GROUPS;
-pub use variant::KNOWN_VARIANTS;
+pub use variant::{KNOWN_VARIANTS, supports_condition};
 
 // The lowering audits the rows' meaning; a registry semantics bump must
 // re-audit it. Byte-wise const compare — `&str` equality is not a const
@@ -955,6 +972,627 @@ impl Compiled {
             containers,
             structs,
             descendants,
+        )
+    }
+
+    /// Resolve this compile's program to its effective declarations
+    /// under one probe situation and one [`SupportsProbe`] — the
+    /// supports half ([`interp_supports`] on [`Compiled::program`]):
+    /// the `supports-[…]` layers ask the source (the built-in
+    /// [`SupportsState`] carries the render target's capability facts;
+    /// a host wires its own). A source-answered NO is CSS-quiet; the
+    /// sourceless forms report
+    /// [`InterpNote::SupportsUnqueried`].
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_supports(
+        &self,
+        env: &Env,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_supports(&self.program, env, supports)
+    }
+    /// The composed supports form (one [`AttrProbe`], one [`SupportsProbe`])
+    /// ([`interp_probes_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_supports(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_supports(&self.program, env, probes, supports)
+    }
+    /// The composed supports form (one [`ContainerProbe`], one [`SupportsProbe`])
+    /// ([`interp_containers_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_containers_supports(
+        &self,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_containers_supports(&self.program, env, containers, supports)
+    }
+    /// The composed supports form (one [`AttrProbe`], one [`ContainerProbe`], one [`SupportsProbe`])
+    /// ([`interp_probes_containers_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_containers_supports(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_containers_supports(&self.program, env, probes, containers, supports)
+    }
+    /// The composed supports form (one [`StructProbe`], one [`SupportsProbe`])
+    /// ([`interp_struct_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_struct_supports(
+        &self,
+        env: &Env,
+        structs: &impl StructProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_struct_supports(&self.program, env, structs, supports)
+    }
+    /// The composed supports form (one [`AttrProbe`], one [`StructProbe`], one [`SupportsProbe`])
+    /// ([`interp_probes_struct_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_struct_supports(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_struct_supports(&self.program, env, probes, structs, supports)
+    }
+    /// The composed supports form (one [`ContainerProbe`], one [`StructProbe`], one [`SupportsProbe`])
+    /// ([`interp_containers_struct_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_containers_struct_supports(
+        &self,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_containers_struct_supports(&self.program, env, containers, structs, supports)
+    }
+    /// The composed supports form (one [`AttrProbe`], one [`ContainerProbe`], one [`StructProbe`], one [`SupportsProbe`])
+    /// ([`interp_probes_containers_struct_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_containers_struct_supports(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_containers_struct_supports(
+            &self.program,
+            env,
+            probes,
+            containers,
+            structs,
+            supports,
+        )
+    }
+    /// The composed supports form (one [`DescendantProbe`], one [`SupportsProbe`])
+    /// ([`interp_descendants_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_descendants_supports(
+        &self,
+        env: &Env,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_descendants_supports(&self.program, env, descendants, supports)
+    }
+    /// The composed supports form (one [`AttrProbe`], one [`DescendantProbe`], one [`SupportsProbe`])
+    /// ([`interp_probes_descendants_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_descendants_supports(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_descendants_supports(&self.program, env, probes, descendants, supports)
+    }
+    /// The composed supports form (one [`ContainerProbe`], one [`DescendantProbe`], one [`SupportsProbe`])
+    /// ([`interp_containers_descendants_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_containers_descendants_supports(
+        &self,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_containers_descendants_supports(
+            &self.program,
+            env,
+            containers,
+            descendants,
+            supports,
+        )
+    }
+    /// The composed supports form (one [`AttrProbe`], one [`ContainerProbe`], one [`DescendantProbe`], one [`SupportsProbe`])
+    /// ([`interp_probes_containers_descendants_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_containers_descendants_supports(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_containers_descendants_supports(
+            &self.program,
+            env,
+            probes,
+            containers,
+            descendants,
+            supports,
+        )
+    }
+    /// The composed supports form (one [`StructProbe`], one [`DescendantProbe`], one [`SupportsProbe`])
+    /// ([`interp_struct_descendants_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_struct_descendants_supports(
+        &self,
+        env: &Env,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_struct_descendants_supports(&self.program, env, structs, descendants, supports)
+    }
+    /// The composed supports form (one [`AttrProbe`], one [`StructProbe`], one [`DescendantProbe`], one [`SupportsProbe`])
+    /// ([`interp_probes_struct_descendants_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_struct_descendants_supports(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_struct_descendants_supports(
+            &self.program,
+            env,
+            probes,
+            structs,
+            descendants,
+            supports,
+        )
+    }
+    /// The composed supports form (one [`ContainerProbe`], one [`StructProbe`], one [`DescendantProbe`], one [`SupportsProbe`])
+    /// ([`interp_containers_struct_descendants_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_containers_struct_descendants_supports(
+        &self,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_containers_struct_descendants_supports(
+            &self.program,
+            env,
+            containers,
+            structs,
+            descendants,
+            supports,
+        )
+    }
+    /// The composed supports form (one [`AttrProbe`], one [`ContainerProbe`], one [`StructProbe`], one [`DescendantProbe`], one [`SupportsProbe`])
+    /// ([`interp_probes_containers_struct_descendants_supports`] on [`Compiled::program`]).
+    ///
+    /// # Errors
+    /// [`InterpError::ThemeRequired`] when a declaration's value is a
+    /// theme form and no token source rides along.
+    pub fn interp_probes_containers_struct_descendants_supports(
+        &self,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_probes_containers_struct_descendants_supports(
+            &self.program,
+            env,
+            probes,
+            containers,
+            structs,
+            descendants,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_supports`]: one
+    /// [`TokenSource`] for the theme forms, one [`SupportsProbe`]
+    /// for the `supports-[…]` family — both seams ride one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_supports`]).
+    pub fn interp_theme_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_supports(&self.program, tokens, env, supports)
+    }
+    /// The themed form of [`Compiled::interp_probes_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes`]).
+    pub fn interp_theme_probes_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_supports(&self.program, tokens, env, probes, supports)
+    }
+    /// The themed form of [`Compiled::interp_containers_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_containers`]).
+    pub fn interp_theme_containers_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_containers_supports(&self.program, tokens, env, containers, supports)
+    }
+    /// The themed form of [`Compiled::interp_probes_containers_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes_containers`]).
+    pub fn interp_theme_probes_containers_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_containers_supports(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            containers,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_struct_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_struct`]).
+    pub fn interp_theme_struct_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        structs: &impl StructProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_struct_supports(&self.program, tokens, env, structs, supports)
+    }
+    /// The themed form of [`Compiled::interp_probes_struct_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes_struct`]).
+    pub fn interp_theme_probes_struct_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_struct_supports(&self.program, tokens, env, probes, structs, supports)
+    }
+    /// The themed form of [`Compiled::interp_containers_struct_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_containers_struct`]).
+    pub fn interp_theme_containers_struct_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_containers_struct_supports(
+            &self.program,
+            tokens,
+            env,
+            containers,
+            structs,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_probes_containers_struct_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes_containers_struct`]).
+    pub fn interp_theme_probes_containers_struct_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_containers_struct_supports(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            containers,
+            structs,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_descendants_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_descendants`]).
+    pub fn interp_theme_descendants_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_descendants_supports(&self.program, tokens, env, descendants, supports)
+    }
+    /// The themed form of [`Compiled::interp_probes_descendants_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes_descendants`]).
+    pub fn interp_theme_probes_descendants_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_descendants_supports(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            descendants,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_containers_descendants_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_containers_descendants`]).
+    pub fn interp_theme_containers_descendants_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_containers_descendants_supports(
+            &self.program,
+            tokens,
+            env,
+            containers,
+            descendants,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_probes_containers_descendants_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes_containers_descendants`]).
+    pub fn interp_theme_probes_containers_descendants_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_containers_descendants_supports(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            containers,
+            descendants,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_struct_descendants_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_struct_descendants`]).
+    pub fn interp_theme_struct_descendants_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_struct_descendants_supports(
+            &self.program,
+            tokens,
+            env,
+            structs,
+            descendants,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_probes_struct_descendants_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes_struct_descendants`]).
+    pub fn interp_theme_probes_struct_descendants_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_struct_descendants_supports(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            structs,
+            descendants,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_containers_struct_descendants_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_containers_struct_descendants`]).
+    pub fn interp_theme_containers_struct_descendants_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_containers_struct_descendants_supports(
+            &self.program,
+            tokens,
+            env,
+            containers,
+            structs,
+            descendants,
+            supports,
+        )
+    }
+    /// The themed form of [`Compiled::interp_probes_containers_struct_descendants_supports`]:
+    /// one [`TokenSource`] for the theme forms, the composed seams
+    /// beside it — every seam rides one walk.
+    ///
+    /// # Errors
+    /// The source's own typed failures (see [`interp_theme_probes_containers_struct_descendants`]).
+    pub fn interp_theme_probes_containers_struct_descendants_supports(
+        &self,
+        tokens: &impl TokenSource,
+        env: &Env,
+        probes: &impl AttrProbe,
+        containers: &impl ContainerProbe,
+        structs: &impl StructProbe,
+        descendants: &impl DescendantProbe,
+        supports: &impl SupportsProbe,
+    ) -> Result<Interped, InterpError> {
+        interp_theme_probes_containers_struct_descendants_supports(
+            &self.program,
+            tokens,
+            env,
+            probes,
+            containers,
+            structs,
+            descendants,
+            supports,
         )
     }
 
