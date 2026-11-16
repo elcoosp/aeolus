@@ -216,6 +216,15 @@ pub enum PlanNoteKind {
         /// The typed preference the layer asks about.
         pref: aeolus_ir::Pref,
     },
+    /// The direction layer's spelling (`ltr:`/`rtl:`): the v0.x plan
+    /// surface has no text-direction slot (the `Atom` set predates the
+    /// family, the media-feature boundary's sibling). The IR lowering
+    /// is correct; the direction reports so the class stays visible,
+    /// never silently dropped.
+    Direction {
+        /// The typed direction the layer asks about.
+        cond: aeolus_ir::Direction,
+    },
     /// The composite grammar's verbatim value (the `Val::Verbatim` slot):
     /// the v0.x plan slots carry baked numerics and row keywords — a
     /// composite text has no slot to land in. The note names the longhand
@@ -241,6 +250,7 @@ impl PlanNoteKind {
             PlanNoteKind::HasFragment { .. } => "aeolus::compile::plan::has_fragment",
             PlanNoteKind::SupportsCondition { .. } => "aeolus::compile::plan::supports_condition",
             PlanNoteKind::MediaFeature { .. } => "aeolus::compile::plan::media_feature",
+            PlanNoteKind::Direction { .. } => "aeolus::compile::plan::direction",
             PlanNoteKind::CompositeValue { .. } => "aeolus::compile::plan::composite_value",
         }
     }
@@ -281,6 +291,10 @@ impl PlanNoteKind {
             }
             PlanNoteKind::MediaFeature { .. } => {
                 "the media-feature preference has no slot in the v0.x plan surface; the layer \
+                 reports instead of landing — emit_css renders the real output"
+            }
+            PlanNoteKind::Direction { .. } => {
+                "the text-direction variant has no slot in the v0.x plan surface; the layer \
                  reports instead of landing — emit_css renders the real output"
             }
         }
@@ -2561,6 +2575,14 @@ fn bucket(
             span,
             raw: raw.to_string(),
             kind: PlanNoteKind::MediaFeature { pref },
+        }),
+        // The direction variants: the v0.x Atom set carries no
+        // text-direction slot — the style does not land, the typed note
+        // names the direction (emit_css renders the real selector head).
+        Cond::Dir(cond) => notes.push(PlanNote {
+            span,
+            raw: raw.to_string(),
+            kind: PlanNoteKind::Direction { cond },
         }),
         Cond::Checked => {
             let when = V0Cond(vec![Atom::On(Test::State(State::Checked))]);
