@@ -152,6 +152,16 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
         Cond::Invalid => fires(env.validation_invalid),
         Cond::UserValid => fires(env.user_validated && !env.validation_invalid),
         Cond::UserInvalid => fires(env.user_validated && env.validation_invalid),
+        // The element-state family is element state — the Env answers
+        // (the interp's `decide` semantics shared verbatim: the
+        // target/indeterminate/autofill layers on their ONE fact each,
+        // `read-only:` the editability fact's complement, the `valid:`
+        // arm's own reading; the unset bits are the quiet misses a
+        // selector that does not match is).
+        Cond::Target => fires(env.url_target),
+        Cond::Indeterminate => fires(env.indeterminate),
+        Cond::Autofill => fires(env.autofilled),
+        Cond::ReadOnly => fires(!env.read_write),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
         Cond::PeerHover => fires(env.peer_hover),
