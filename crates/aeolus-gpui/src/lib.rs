@@ -633,6 +633,24 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         Cond::Structural(_) => {
             unreachable!("cond_matches routes the structural shapes to the seam arm")
         }
+        // The media-feature preferences are frame state: the env
+        // answers (the interp's `decide` semantics shared verbatim —
+        // one semantics, three walks; the unset bit is the quiet miss a
+        // media query that does not hold is).
+        Cond::Media(pref) => match pref {
+            aeolus_ir::Pref::MotionSafe => !env.reduced_motion,
+            aeolus_ir::Pref::MotionReduce => env.reduced_motion,
+            aeolus_ir::Pref::ContrastMore => env.more_contrast,
+            aeolus_ir::Pref::ContrastLess => env.less_contrast,
+            aeolus_ir::Pref::ForcedColors => env.forced_colors,
+            aeolus_ir::Pref::Print => env.print_media,
+        },
+        // The supports shape routes through `cond_matches`'s seam arm
+        // the same way (the render target's capability set is not frame
+        // state — the env alone has no answer for it).
+        Cond::Supports(_) => {
+            unreachable!("cond_matches routes the supports shapes to the seam arm")
+        }
         Cond::Bp(bp) | Cond::Min(bp) => env.viewport_rem >= bp.rem(),
         Cond::Max(bp) => env.viewport_rem < bp.rem(),
         // The container queries: the unnamed form answers from the
@@ -692,6 +710,13 @@ fn cond_matches(
         // the diagnosed boundary (the interp reports them as notes), so
         // the walk skips them with or without a source.
         Cond::Has(_) | Cond::GroupHas(_) | Cond::PeerHas(_) => false,
+        // The supports conditions answer through the interp arm's
+        // SupportsProbe seam — the render target's capability set is
+        // not frame state (the Env cannot answer it), and this walk
+        // consults no supports source: the layers stay quiet (the
+        // interp reports `SupportsUnqueried`; this walk has no note
+        // channel, so the selector-miss skip stands).
+        Cond::Supports(_) => false,
         // The structural probes answer through the DOM-position seam
         // (the interp's `structural_fires` verdict, shared verbatim —
         // one semantics, three walks). With no source the layers stay
