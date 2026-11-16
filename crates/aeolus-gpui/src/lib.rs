@@ -622,6 +622,17 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         Cond::Invalid => env.validation_invalid,
         Cond::UserValid => env.user_validated && !env.validation_invalid,
         Cond::UserInvalid => env.user_validated && env.validation_invalid,
+        // The element-state family is element state: the env answers
+        // (the interp's `decide` semantics shared verbatim — one
+        // semantics, three walks; the target/indeterminate/autofill
+        // layers on their ONE fact each, `read-only:` the editability
+        // fact's complement, the `valid:` arm's own reading; the
+        // unset bits are the quiet misses a selector that does not
+        // match is).
+        Cond::Target => env.url_target,
+        Cond::Indeterminate => env.indeterminate,
+        Cond::Autofill => env.autofilled,
+        Cond::ReadOnly => !env.read_write,
         Cond::Selection | Cond::Placeholder => false,
         Cond::GroupHover => env.group_hover,
         Cond::GroupFocus => env.group_focus,
