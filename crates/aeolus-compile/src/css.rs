@@ -680,6 +680,14 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
             "invalid" => set.pseudos.push(":invalid"),
             "user-valid" => set.pseudos.push(":user-valid"),
             "user-invalid" => set.pseudos.push(":user-invalid"),
+            // The element-state family: the v4.1.17 state/forms blocks'
+            // pseudo-classes (the selector-side tier beside the
+            // validation states, no at-rule head — the family's
+            // `staticVariant` texts).
+            "target" => set.pseudos.push(":target"),
+            "indeterminate" => set.pseudos.push(":indeterminate"),
+            "autofill" => set.pseudos.push(":autofill"),
+            "read-only" => set.pseudos.push(":read-only"),
             "placeholder-shown" => set.pseudos.push(":placeholder-shown"),
             "selection" => set.pseudos.push("::selection"),
             "placeholder" => set.pseudos.push("::placeholder"),
@@ -739,6 +747,14 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         Cond::Invalid => set.pseudos.push(":invalid"),
         Cond::UserValid => set.pseudos.push(":user-valid"),
         Cond::UserInvalid => set.pseudos.push(":user-invalid"),
+        // The element-state family: the upstream pseudo-classes derived
+        // from the typed conditions (the v4.1.17 `staticVariant` texts
+        // of the state/forms blocks — the render cannot drift the
+        // fold, the validation arm's own shape).
+        Cond::Target => set.pseudos.push(":target"),
+        Cond::Indeterminate => set.pseudos.push(":indeterminate"),
+        Cond::Autofill => set.pseudos.push(":autofill"),
+        Cond::ReadOnly => set.pseudos.push(":read-only"),
         Cond::PlaceholderShown => set.pseudos.push(":placeholder-shown"),
         Cond::Selection => set.pseudos.push("::selection"),
         Cond::Placeholder => set.pseudos.push("::placeholder"),
