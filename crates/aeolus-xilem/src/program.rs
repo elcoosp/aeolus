@@ -120,6 +120,13 @@ pub fn env_for_state(
         // rtl/ltr layers stay the quiet miss a selector that does not
         // match is.
         direction_rtl: false,
+        // The validation facts ride no probe surface either (the
+        // constraint state and the user-interaction gate answer from
+        // the host's field, not the probe path's element state): the
+        // probe path honestly keeps them off — the validation layers
+        // stay the quiet miss a selector that does not match is.
+        validation_invalid: false,
+        user_validated: false,
         viewport_rem: env.viewport_width.unwrap_or(0.0) / REM_PX,
         container_rem: env.container_width.map(|width| width / REM_PX),
     }
