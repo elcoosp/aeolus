@@ -23,7 +23,17 @@
 //! * `has-<state>:` / `has-[:<state>]:` / `has-data-…` / `has-aria-…` —
 //!   the descendant probe, its payload the star-prefixed `:has()`
 //!   fragment the corpus renders (`:has(*:focus)`,
-//!   `:has(*[data-slot="card-action"])`).
+//!   `:has(*[data-slot="card-action"])`);
+//! * `supports-[<condition>]:` — the `@supports` at-rule condition (the
+//!   family's only v4 spelling is the bracketed arbitrary form; the
+//!   differential evidence is the tailwindcss v4.1.17 source's own
+//!   normalization, `packages/tailwindcss/src/variants.ts`'s
+//!   `functional('supports', …)` arm — function-prefixed inners pass
+//!   through verbatim with `and`/`or`/`not` connectives spaced,
+//!   colon-bearing declarations wrap in parens, bare features expand to
+//!   the `(feature: var(--tw))` declaration probe — see
+//!   [`supports_condition`], the one-grammar public face the CLI fact
+//!   flag reuses).
 //!
 //! * `first:` / `last:` / `odd:` / `even:` / `only:` / `empty:` /
 //!   `nth-N:` / `nth-last-N:` — the STRUCTURAL family, the element's
@@ -33,7 +43,8 @@
 //!   `parse_nth` — every `i32`, the selector forms `nth-[2n+1]:`
 //!   staying outside).
 //!
-//! What does NOT fold (arbitrary variants, unregistered spellings,
+//! What does NOT fold (the OTHER arbitrary variants — the `*:` and
+//! `[@media…]` spellings — unregistered spellings,
 //! compound `has-` inners — including structural inners, `has-first:` —
 //! parent-relative compounds like `group-data-*`, and the structural
 //! parent-relative compositions `group-first:`/`peer-last:`) comes back
@@ -124,6 +135,17 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         let fragment = has_inner_fragment(rest)?;
         return Some(Cond::Has(fragment));
     }
+    // The supports family checks the RAW segment like the other
+    // payload-carrying probes (a condition's text may carry `/` —
+    // `supports-[aspect-ratio:16/9]` — which the group/peer label split
+    // would truncate). The only v4 spelling is the bracketed arbitrary
+    // form: a bare `supports-display` refuses, a stray suffix after the
+    // closing bracket refuses.
+    if let Some(rest) = variant.strip_prefix("supports-") {
+        let inner = rest.strip_prefix('[').and_then(|s| s.strip_suffix(']'))?;
+        let condition = supports_condition(inner)?;
+        return Some(Cond::Supports(condition));
+    }
     let (name, label) = match variant.split_once('/') {
         Some((name, label)) => (name, Some(label)),
         None => (variant, None),
@@ -202,7 +224,16 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         };
         return Some(Cond::Container { bp, name: named });
     }
+    // The media-feature preferences: the CLOSED static-variant set
+    // tailwindcss v4.1.17 carries (the at-rule texts are the
+    // `aeolus_ir::Pref` docs' pins).
     match name {
+        "motion-safe" => Some(Cond::Media(aeolus_ir::Pref::MotionSafe)),
+        "motion-reduce" => Some(Cond::Media(aeolus_ir::Pref::MotionReduce)),
+        "contrast-more" => Some(Cond::Media(aeolus_ir::Pref::ContrastMore)),
+        "contrast-less" => Some(Cond::Media(aeolus_ir::Pref::ContrastLess)),
+        "forced-colors" => Some(Cond::Media(aeolus_ir::Pref::ForcedColors)),
+        "print" => Some(Cond::Media(aeolus_ir::Pref::Print)),
         "dark" => Some(Cond::Dark),
         "hover" => Some(Cond::Hover),
         "focus" => Some(Cond::Focus),
@@ -359,6 +390,153 @@ fn intern(text: &str) -> &'static str {
     Box::leak(text.to_string().into_boxed_str())
 }
 
+/// The `supports-[…]` inner → the rendered `@supports` condition — the
+/// tailwindcss v4.1.17 source's own normalization
+/// (`packages/tailwindcss/src/variants.ts`, the
+/// `functional('supports', …)` arm), tightened to the honest grammar.
+/// The caller passes the INNER text (the bracket strip is the fold's
+/// job — a bare `supports-display` is not v4 grammar and refuses there).
+///
+/// One normalization per shape, pinned from the source:
+///
+/// * function-prefixed (`^[\w-]*\s*\(` — `(display:grid)`,
+///   `selector(:hover)`, `not(display:grid)`) → the condition passes
+///   through verbatim, `and`/`or`/`not` connectives spaced (Chrome's
+///   `(a)or(b)` bug is the source's own normalization reason), runs of
+///   whitespace collapsed to one (CSS whitespace is insignificant; the
+///   payload stays deterministic);
+/// * a colon-bearing declaration (`display:grid`) → wraps in parens
+///   (`(display:grid)`);
+/// * a bare feature (`display`) → the declaration probe
+///   (`(display: var(--tw))`, the source's own shorthand words).
+///
+/// The v4 arbitrary-value convention rides the fold too: `_` spells
+/// the space a class string cannot carry (`supports-[(width_>_400px)]`
+/// → `(width > 400px)`), converted before the branches; a backslash
+/// escape is outside the honest grammar and refuses.
+///
+/// The tightening (the honest-failure contract — a condition no
+/// `@supports` grammar accepts never folds, so no renderer can emit a
+/// broken head): the empty inner refuses, braces and the `;` rule
+/// separator refuse, and unbalanced parentheses refuse (the source
+/// passes them through; aeolus reports them as the typed
+/// unsupported-variant diagnostic instead).
+///
+/// `pub`: the fold's own grammar is the CLI fact flag's validator too
+/// (`expand --supports <condition>` — one grammar, two consumers, the
+/// refusal sets cannot drift; the `has_inner_fragment` precedent).
+pub fn supports_condition(inner: &str) -> Option<&'static str> {
+    if inner.is_empty()
+        || inner.contains('{')
+        || inner.contains('}')
+        || inner.contains(';')
+        || inner.contains('\\')
+    {
+        return None;
+    }
+    // The v4 arbitrary-value convention: `_` spells the spaces a class
+    // string cannot carry (`supports-[(width_>_400px)]` -> `(width >
+    // 400px)`). The conversion runs BEFORE the branches, so every
+    // shape normalizes the same way; a backslash escape is outside the
+    // honest grammar and refuses above.
+    let spaced = inner.replace('_', " ");
+    let inner = spaced.as_str();
+    if starts_function(inner) {
+        if !parens_balanced(inner) {
+            return None;
+        }
+        let spaced = space_connectives(inner);
+        return Some(intern(spaced.trim()));
+    }
+    if !inner.contains(':') {
+        // The bare-feature shorthand expands to the declaration probe —
+        // the source's own words: `supports-[display]` ->
+        // `@supports (display: var(--tw))`.
+        let text = format!("({inner}: var(--tw))");
+        return Some(intern(&text));
+    }
+    if !parens_balanced(inner) {
+        return None;
+    }
+    // The wrap branch: the declaration form gains its parens (the
+    // source's `(${value})`; a paren-balanced text cannot start with
+    // `(` here — the function branch took it — so the wrap is
+    // unconditional, the source's own check degenerating to this form).
+    let text = format!("({inner})");
+    Some(intern(&text))
+}
+
+/// The source's function-prefix test (`/^[\w-]*\s*\(/`): zero or more
+/// identifier chars, optional whitespace, then an open paren.
+fn starts_function(inner: &str) -> bool {
+    let rest =
+        inner.trim_start_matches(|c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    rest.trim_start().starts_with('(')
+}
+
+/// The parentheses balance: every `(` closes, no `)` closes an open
+/// paren that is not there. The honesty tightening over the source's
+/// own pass-through.
+fn parens_balanced(text: &str) -> bool {
+    let mut depth = 0usize;
+    for ch in text.chars() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+    depth == 0
+}
+
+/// The connective spacing pass: `and`/`or`/`not` WORDS get one space on
+/// each side (the source's `replace(/\b(and|or|not)\b/g, ' $1 ')` — a
+/// maximal identifier run equal to the word is the `\b` boundary pair's
+/// Rust spelling), runs of whitespace collapsed to one, the result
+/// trimmed. Deterministic per inner.
+fn space_connectives(inner: &str) -> String {
+    let mut out = String::with_capacity(inner.len() + 8);
+    let mut run = String::new();
+    for ch in inner.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            run.push(ch);
+            continue;
+        }
+        flush_word(&mut out, &mut run);
+        if ch == ' ' {
+            if !out.is_empty() && !out.ends_with(' ') {
+                out.push(' ');
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    flush_word(&mut out, &mut run);
+    out
+}
+
+/// Flush one maximal identifier run into the output, spacing it when the
+/// run is a connective word.
+fn flush_word(out: &mut String, run: &mut String) {
+    if run.is_empty() {
+        return;
+    }
+    let spaced = matches!(run.as_str(), "and" | "or" | "not");
+    if spaced && !out.is_empty() && !out.ends_with(' ') {
+        out.push(' ');
+    }
+    out.push_str(run);
+    if spaced {
+        out.push(' ');
+    }
+    run.clear();
+}
+
 /// The named breakpoint (`"sm"` → `Bp::Sm`) — a reverse walk over
 /// [`Bp::ALL`]/[`Bp::name`], so the IR's own table is the single source
 /// and a new breakpoint cannot drift the compile stage's spelling table
@@ -436,6 +614,16 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "has-focus",
     "group-has-focus",
     "peer-has-focus",
+    // The supports family: the bracketed arbitrary form's demo spelling
+    // (a custom condition rides the same prefix grammar).
+    "supports-[display:grid]",
+    // The media-feature preferences (the closed static-variant set).
+    "motion-safe",
+    "motion-reduce",
+    "contrast-more",
+    "contrast-less",
+    "forced-colors",
+    "print",
 ];
 
 // ---------------------------------------------------------------------------
@@ -536,6 +724,16 @@ mod completion_tests {
             "has-focus",
             "group-has-focus",
             "peer-has-focus",
+            // The supports family (the demo spelling; custom conditions
+            // are open-ended, not closed).
+            "supports-[display:grid]",
+            // The media-feature preferences (the closed set).
+            "motion-safe",
+            "motion-reduce",
+            "contrast-more",
+            "contrast-less",
+            "forced-colors",
+            "print",
         ];
         let mut actual: Vec<&str> = KNOWN_VARIANTS.to_vec();
         let mut expected: Vec<&str> = expected.to_vec();
