@@ -568,10 +568,20 @@ impl<'t> Resolver<'t> {
     }
 
     fn named_atom(&self, n: &NamedVariant<'_>) -> Result<Atom, &'static str> {
+        // The Custom arm answers first (the registration may carry a
+        // state/media meaning of its own); the state/media probes then
+        // bind their answer directly — the guard+unwrap double-check
+        // reads the fact once.
+        if let NamedVariant::Custom(name) = n {
+            return self.custom_atom(name);
+        }
+        if let Some(state) = n.state() {
+            return Ok(Atom::On(crate::cond::Test::State(state)));
+        }
+        if let Some(media) = n.media() {
+            return Ok(Atom::Media(media));
+        }
         Ok(match n {
-            NamedVariant::Custom(name) => return self.custom_atom(name),
-            _ if n.state().is_some() => Atom::On(crate::cond::Test::State(n.state().unwrap())),
-            _ if n.media().is_some() => Atom::Media(n.media().unwrap()),
             NamedVariant::Breakpoint(b) => Atom::Viewport {
                 min: Some(self.theme.breakpoint_px(*b)),
                 max: None,
