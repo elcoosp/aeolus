@@ -2629,6 +2629,25 @@ fn bucket(
             let when = V0Cond(vec![Atom::On(Test::State(State::ReadOnly))]);
             bucket_rule(plan, when, write);
         }
+        // The widget-state family: the v0.x `State` surface NOW
+        // carries the three states (the family's own slots — the gap
+        // evidence 28 named closes in the other direction: the core
+        // grows the state/forms blocks AND the bridge lands them) —
+        // every layer lands its `Test::State(...)` rule slot, no note
+        // rides (the element-state quartet's precedent, not the
+        // direction boundary).
+        Cond::Open => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Open))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::Inert => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Inert))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::Default => {
+            let when = V0Cond(vec![Atom::On(Test::State(State::Default))]);
+            bucket_rule(plan, when, write);
+        }
         Cond::PlaceholderShown => {
             let when = V0Cond(vec![Atom::On(Test::State(State::PlaceholderShown))]);
             bucket_rule(plan, when, write);
