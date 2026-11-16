@@ -604,3 +604,12 @@ Run: `cargo bench -p aeolus-compile --bench widget_states` (divan 0.1.21), relea
 |---|---|---|
 | `interp_widget_state_button` | **156.9 ns** | the fire path (the three layers hold on `opened`/`inert`/`form_default`) |
 | `interp_widget_state_default_env` | **26.06 ns** | the resting path (every family question is AFFIRMATIVE — the `target:` shape — so all three layers stay the quiet miss a selector that does not match is) |
+
+## The form-state family (2026-11-16, 2-core sandbox)
+
+Run: `cargo bench -p aeolus-compile --bench form_states` (divan 0.1.21), release profile, shared sandbox. The program is the form-state half of the Button shape (`enabled:p-8 required:hidden optional:ring-2 in-range:mt-2 out-of-range:p-4`, five layers). No probe seam rides — the `Env` answers (the two-fact tier beside the widget-state family: the membership fact gates every half, the pair's shared state bit answers within its universe), so the cost is the env-field read the whole state tier shares.
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_form_state_button` | **160.4 ns** | the fire path (the membership rides, `required_field`/`range_in` answer their halves beside the unset `disabled` complement) |
+| `interp_form_state_default_env` | **26.91 ns** | the resting path (no membership fact — every form-state layer stays the quiet miss a selector that does not match is, the matches-neither boundary the two-fact shape encodes) |
