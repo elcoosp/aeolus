@@ -140,3 +140,60 @@ fn the_report_type_stays_reachable() {
     }
     assert!(reads(StyleWalk::default()));
 }
+
+// ---------------------------------------------------------------------------
+// Micro-debt: the row-text read side gains its first pins
+// ---------------------------------------------------------------------------
+
+#[test]
+fn keyword_reads_the_flattened_layer_major_texts() {
+    // The annotation slice is flattened in layer-major order ACROSS all
+    // layers (the same accumulation the walk reads): the positional
+    // form indexes (layer, decl) over that flattening, `""` (the
+    // texts a value carries itself) answering `None` like an
+    // out-of-bounds read.
+    let program = frozen("hidden p-4 bg-red-500");
+
+    // Layer 0's first declaration is the `hidden` display row: the text
+    // is the registry's own keyword spelling.
+    let display = program.keyword(0, 0).expect("the display row has a text");
+    assert_eq!(display, "none", "the row text spells the CSS value");
+
+    // A layer index past the program's own layers is out of bounds —
+    // `None`, never a panic (the walker's `get(index + decl)` shape).
+    assert_eq!(program.keyword(program.layers.len(), 0), None);
+    // A declaration index past the layer's own decls answers `None`
+    // through the same bounds read.
+    assert_eq!(program.keyword(0, 42), None);
+}
+
+#[test]
+fn keyword_for_takes_the_cascade_winner_and_skips_empty_texts() {
+    // The ergonomic lookup: the LAST matching declaration in the layer
+    // wins (the cascade's own front-to-back reading), texts that carry
+    // their own value (`""`) never shadow an earlier keyword, and an
+    // absent longhand answers `None`.
+    let program = frozen("hidden w-full p-4");
+
+    assert_eq!(
+        program.keyword_for(0, aeolus_ir::Prop::Display),
+        Some("none"),
+        "the display row's text"
+    );
+    // w-full is one of the row-text LENGTH slots (the perf contract's
+    // own corpus): the text spells the % value the CSS arm renders.
+    assert_eq!(
+        program.keyword_for(0, aeolus_ir::Prop::Width),
+        Some("100%"),
+        "the width row's text"
+    );
+    // p-4's spacing longhands carry their own value — the empty text
+    // never answers (the skip is the contract).
+    assert_eq!(
+        program.keyword_for(0, aeolus_ir::Prop::PaddingTop),
+        None,
+        "the empty-text skip"
+    );
+    // A longhand the layer does not set answers `None`.
+    assert_eq!(program.keyword_for(0, aeolus_ir::Prop::ZIndex), None);
+}
