@@ -165,12 +165,26 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         return has_inner_fragment(rest).map(Cond::PeerHas);
     }
     // The structural family: the bare spellings first, then the `nth-`
-    // ordinals. `nth-last-` is checked BEFORE `nth-` — the shared
-    // prefix would otherwise route `nth-last-2` into the `nth-` arm and
-    // parse-fail `-last-2`. The ordinal grammar is the v0.x oracle's
-    // own `parse_nth` (every `i32`; the bracketed selector forms
-    // `nth-[2n+1]` stay outside — the `nth-` arm's parse refuses them
-    // and the diagnostic is the honest report).
+    // ordinals. The OF-TYPE prefixes are checked FIRST — the longest
+    // prefix wins (the same discipline that checks `nth-last-` before
+    // `nth-`): `nth-last-of-type-2` must reach its own arm, never
+    // `nth-last-` (which would parse-fail `-of-type-2`) and never
+    // `nth-` (which would parse-fail it too). The ordinal grammar is
+    // the v0.x oracle's own `parse_nth` (every `i32`; the bracketed
+    // selector forms `nth-[2n+1]` stay outside — the arms' parses
+    // refuse them and the diagnostic is the honest report).
+    if let Some(rest) = name.strip_prefix("nth-last-of-type-") {
+        return rest
+            .parse::<i32>()
+            .ok()
+            .map(|n| Cond::Structural(Structural::NthLastOfType(n)));
+    }
+    if let Some(rest) = name.strip_prefix("nth-of-type-") {
+        return rest
+            .parse::<i32>()
+            .ok()
+            .map(|n| Cond::Structural(Structural::NthOfType(n)));
+    }
     if let Some(rest) = name.strip_prefix("nth-last-") {
         return rest
             .parse::<i32>()
@@ -190,6 +204,14 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "even" => Some(Structural::Even),
         "only" => Some(Structural::Only),
         "empty" => Some(Structural::Empty),
+        // The of-type tier: the type-relative trio beside the
+        // child-index spellings (the `variants.ts` `staticVariant`
+        // registrations, the structural family's own slice — the
+        // functional `nth-of-type-*` ordinals ride the prefix arms
+        // above).
+        "first-of-type" => Some(Structural::FirstOfType),
+        "last-of-type" => Some(Structural::LastOfType),
+        "only-of-type" => Some(Structural::OnlyOfType),
         _ => None,
     };
     if let Some(test) = bare {
@@ -249,6 +271,13 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         // and the scripting feature's `none` value.
         "inverted-colors" => Some(Cond::Media(aeolus_ir::Pref::InvertedColors)),
         "noscript" => Some(Cond::Media(aeolus_ir::Pref::NoScript)),
+        // The starting-style at-rule (the transition's first frame —
+        // the `variants.ts` `staticVariant('starting',
+        // ['@starting-style'])` registration, the media-feature tier's
+        // at-rule sibling whose `Env` reading the pseudo-element
+        // landing deliberately deferred): the frame fact is the host's
+        // first-render gate, the at-rule block the CSS arm's render.
+        "starting" => Some(Cond::Starting),
         // The direction family: the selector-side static variants the
         // v4.1.17 source carries beside the media-feature tier (the
         // upstream selectors are the CSS arm's own pins) — the
@@ -718,6 +747,17 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "placeholder-shown",
     "selection",
     "placeholder",
+    // The pseudo-element tier (the render-target spellings beside the
+    // selection/placeholder pair — the closed set the completion
+    // surface carries now too; the pre-tier landing left them out).
+    "before",
+    "after",
+    "marker",
+    "first-letter",
+    "first-line",
+    "file",
+    "backdrop",
+    "details-content",
     // The mode.
     "dark",
     // The parent probes: the bare spellings, then the named-label form
@@ -728,13 +768,18 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "peer-focus",
     "group-hover/menu",
     // The structural family — the bare spellings only (the `nth-N`
-    // ordinals are every i32, not a closed spelling set).
+    // ordinals are every i32, not a closed spelling set), the of-type
+    // trio beside them (the `nth-of-type-*` ordinals ride the same
+    // open grammar).
     "first",
     "last",
     "odd",
     "even",
     "only",
     "empty",
+    "first-of-type",
+    "last-of-type",
+    "only-of-type",
     // The breakpoints (Bp::ALL's names, ascending).
     "sm",
     "md",
@@ -783,6 +828,9 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     // The direction family (the selector-side static variants).
     "ltr",
     "rtl",
+    // The starting-style at-rule (the transition's first frame — the
+    // at-rule tier's static variant beside the media-feature set).
+    "starting",
 ];
 
 // ---------------------------------------------------------------------------
@@ -840,6 +888,21 @@ mod completion_tests {
             "visited",
             "checked",
             "placeholder-shown",
+            // The pseudo-element tier (the render-target spellings
+            // beside the selection/placeholder pair — the completion
+            // surface catches up with the tier's landing here, the
+            // audit's "every base spelling the fold accepts" claim
+            // holding for the whole wall).
+            "selection",
+            "placeholder",
+            "before",
+            "after",
+            "marker",
+            "first-letter",
+            "first-line",
+            "file",
+            "backdrop",
+            "details-content",
             // The validation states (the closed forms-block spellings).
             "valid",
             "invalid",
@@ -866,8 +929,6 @@ mod completion_tests {
             "optional",
             "in-range",
             "out-of-range",
-            "selection",
-            "placeholder",
             // The mode.
             "dark",
             // The parent probes (bare + the named-label demo spelling).
@@ -878,13 +939,18 @@ mod completion_tests {
             "group-hover/menu",
             // The structural family (the bare spellings; `nth-N` is the
             // parameterized arm the list represents with none — the
-            // ordinals are every i32, not a closed spelling set).
+            // ordinals are every i32, not a closed spelling set), the
+            // of-type trio beside them (the `nth-of-type-*` ordinals
+            // ride the same open grammar).
             "first",
             "last",
             "odd",
             "even",
             "only",
             "empty",
+            "first-of-type",
+            "last-of-type",
+            "only-of-type",
             // The breakpoints (Bp::ALL's names).
             "sm",
             "md",
@@ -932,6 +998,9 @@ mod completion_tests {
             // The direction family (the selector-side static variants).
             "ltr",
             "rtl",
+            // The starting-style at-rule (the at-rule tier's static
+            // variant beside the media-feature set).
+            "starting",
         ];
         let mut actual: Vec<&str> = KNOWN_VARIANTS.to_vec();
         let mut expected: Vec<&str> = expected.to_vec();
