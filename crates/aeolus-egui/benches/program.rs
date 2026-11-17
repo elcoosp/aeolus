@@ -41,6 +41,59 @@ fn program_walk_button(bencher: Bencher) {
     bencher.bench(|| lower_program(&program, &env));
 }
 
+/// The gradient corpus — the mesh-painter seam's per-frame cost: the
+/// payload bakes at lowering time (the stop conversions inside the
+/// walk), the strip rebuilds per rect at paint time.
+const GRADIENT: &str = "w-64 h-16 rounded-lg bg-linear-to-r from-red-500 \
+                        via-white to-blue-500 opacity-90";
+
+#[divan::bench]
+fn program_walk_linear_gradient(bencher: Bencher) {
+    let program = frozen(GRADIENT);
+    let env = Env::default();
+    bencher.bench(|| lower_program(&program, &env));
+}
+
+#[divan::bench]
+fn gradient_mesh_to_r(bencher: Bencher) {
+    // The per-frame mesh build the host runs beside the frame paint:
+    // the payload baked ONCE outside the timed loop, the strip rebuilt
+    // per rect every frame (immediate mode redraws everything).
+    let program = frozen(GRADIENT);
+    let (style, _) = lower_program(&program, &Env::default());
+    let paint = style.gradient.expect("the gradient corpus lowers");
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(256.0, 64.0));
+    bencher.bench(|| aeolus_egui::gradient_mesh(rect, &paint));
+}
+
+/// The radial corpus — the same stops over the ring-band shape (the
+/// segmentation and rect clip ride the same seam).
+const RADIAL: &str = "w-64 h-16 rounded-lg bg-radial from-red-500 \
+                      via-white to-blue-500 opacity-90";
+
+#[divan::bench]
+fn gradient_mesh_radial(bencher: Bencher) {
+    let program = frozen(RADIAL);
+    let (style, _) = lower_program(&program, &Env::default());
+    let paint = style.gradient.expect("the radial corpus lowers");
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(256.0, 64.0));
+    bencher.bench(|| aeolus_egui::gradient_mesh(rect, &paint));
+}
+
+/// The conic corpus — the angular sectors (the circumscribed fan and
+/// the rect clip ride the same seam).
+const CONIC: &str = "w-64 h-16 rounded-lg bg-conic from-red-500 \
+                     via-white to-blue-500 opacity-90";
+
+#[divan::bench]
+fn gradient_mesh_conic(bencher: Bencher) {
+    let program = frozen(CONIC);
+    let (style, _) = lower_program(&program, &Env::default());
+    let paint = style.gradient.expect("the conic corpus lowers");
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(256.0, 64.0));
+    bencher.bench(|| aeolus_egui::gradient_mesh(rect, &paint));
+}
+
 #[divan::bench]
 fn program_walk_hover_frame(bencher: Bencher) {
     // The per-frame immediate-mode shape: the frame re-walks under the
