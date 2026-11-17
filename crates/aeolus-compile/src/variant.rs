@@ -243,6 +243,12 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "any-pointer-none" => Some(Cond::Media(aeolus_ir::Pref::AnyPointerNone)),
         "portrait" => Some(Cond::Media(aeolus_ir::Pref::Portrait)),
         "landscape" => Some(Cond::Media(aeolus_ir::Pref::Landscape)),
+        // The media-feature remainder (the v4.1 additions the same
+        // blocks' `staticVariant` calls carry — the at-rule texts the
+        // `Pref` docs pin): the user agent's inverted-colours answer
+        // and the scripting feature's `none` value.
+        "inverted-colors" => Some(Cond::Media(aeolus_ir::Pref::InvertedColors)),
+        "noscript" => Some(Cond::Media(aeolus_ir::Pref::NoScript)),
         // The direction family: the selector-side static variants the
         // v4.1.17 source carries beside the media-feature tier (the
         // upstream selectors are the CSS arm's own pins) — the
@@ -313,6 +319,21 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "placeholder-shown" => Some(Cond::PlaceholderShown),
         "selection" => Some(Cond::Selection),
         "placeholder" => Some(Cond::Placeholder),
+        // The pseudo-element tier (the tailwindcss v4.1.17
+        // pseudo-elements + state blocks' remaining `staticVariant`
+        // registrations, pinned verbatim in the IR's own docs): the
+        // render-target spellings beside the selection/placeholder
+        // pair — `before:`/`after:` the functional bodies (the CSS
+        // arm carries the upstream content-injection contract), the
+        // rest the single-selector parts.
+        "before" => Some(Cond::Before),
+        "after" => Some(Cond::After),
+        "marker" => Some(Cond::Marker),
+        "first-letter" => Some(Cond::FirstLetter),
+        "first-line" => Some(Cond::FirstLine),
+        "file" => Some(Cond::FileSelector),
+        "backdrop" => Some(Cond::Backdrop),
+        "details-content" => Some(Cond::DetailsContent),
         "group-hover" => Some(Cond::GroupHover),
         "group-focus" => Some(Cond::GroupFocus),
         "peer-hover" => Some(Cond::PeerHover),
