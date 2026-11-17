@@ -470,10 +470,39 @@ pub enum Cond {
     GroupHover,
     /// `group-focus:`.
     GroupFocus,
+    /// `group-focus-visible:` — a `.group` ancestor matches
+    /// `:focus-visible` (the tailwindcss v4.1.17 `group` compound
+    /// mechanism composes with every StyleRules-eligible variant; the
+    /// composition tier carries the full probe-state set).
+    GroupFocusVisible,
+    /// `group-focus-within:`.
+    GroupFocusWithin,
+    /// `group-active:`.
+    GroupActive,
+    /// `group-disabled:`.
+    GroupDisabled,
+    /// `group-visited:`.
+    GroupVisited,
+    /// `group-checked:`.
+    GroupChecked,
     /// `peer-hover:` — a `.peer` sibling is hovered.
     PeerHover,
     /// `peer-focus:`.
     PeerFocus,
+    /// `peer-focus-visible:` — a `.peer` sibling matches
+    /// `:focus-visible` (the `peer` compound mechanism's composition,
+    /// the group side's shape).
+    PeerFocusVisible,
+    /// `peer-focus-within:`.
+    PeerFocusWithin,
+    /// `peer-active:`.
+    PeerActive,
+    /// `peer-disabled:`.
+    PeerDisabled,
+    /// `peer-visited:`.
+    PeerVisited,
+    /// `peer-checked:`.
+    PeerChecked,
     /// `data-*:` — the element's own `data-` attribute probe (plan §3.5's
     /// "typed state bits, not string probes" row; the probe IS the typed
     /// bit the plan names, the payload its name). `data-open:` folds to
@@ -681,7 +710,26 @@ impl Cond {
             | Cond::Dir(_)
             | Cond::Structural(_) => 2,
             Cond::GroupHas(_) | Cond::PeerHas(_) => 3,
-            Cond::GroupHover | Cond::GroupFocus | Cond::PeerHover | Cond::PeerFocus => 3,
+            // The parent-relative composition tier ranks with its
+            // family: the group/peer state compositions are the same
+            // parent-relative relation (rank 3), only the composed
+            // state differs.
+            Cond::GroupHover
+            | Cond::GroupFocus
+            | Cond::GroupFocusVisible
+            | Cond::GroupFocusWithin
+            | Cond::GroupActive
+            | Cond::GroupDisabled
+            | Cond::GroupVisited
+            | Cond::GroupChecked
+            | Cond::PeerHover
+            | Cond::PeerFocus
+            | Cond::PeerFocusVisible
+            | Cond::PeerFocusWithin
+            | Cond::PeerActive
+            | Cond::PeerDisabled
+            | Cond::PeerVisited
+            | Cond::PeerChecked => 3,
             // The at-rule tier: the supports condition sorts BESIDE the
             // media forms — tailwindcss v4.1.17's own conditional-rule
             // order (`@media`, `@supports`, `@container`) maps onto the
@@ -770,8 +818,24 @@ impl Cond {
             Cond::Starting => Some("starting"),
             Cond::GroupHover => Some("group-hover"),
             Cond::GroupFocus => Some("group-focus"),
+            // The composition spellings are bare variants: the
+            // condition names its own closed text (the
+            // element-state arm's shape — the composed state is part
+            // of the spelling, the group/peer prefix the relation).
+            Cond::GroupFocusVisible => Some("group-focus-visible"),
+            Cond::GroupFocusWithin => Some("group-focus-within"),
+            Cond::GroupActive => Some("group-active"),
+            Cond::GroupDisabled => Some("group-disabled"),
+            Cond::GroupVisited => Some("group-visited"),
+            Cond::GroupChecked => Some("group-checked"),
             Cond::PeerHover => Some("peer-hover"),
             Cond::PeerFocus => Some("peer-focus"),
+            Cond::PeerFocusVisible => Some("peer-focus-visible"),
+            Cond::PeerFocusWithin => Some("peer-focus-within"),
+            Cond::PeerActive => Some("peer-active"),
+            Cond::PeerDisabled => Some("peer-disabled"),
+            Cond::PeerVisited => Some("peer-visited"),
+            Cond::PeerChecked => Some("peer-checked"),
             // The attribute probes carry their spelling in the payload —
             // the segment text itself (`data-[state=open]`, `has-focus`),
             // which no const table reconstructs. `source_text` returns
