@@ -196,6 +196,14 @@ harness = false
 name = "starting"
 harness = false
 
+# The composition tier's benchmark (the parent-relative probe walk —
+# the group/peer relations' composed-state walk, the starting tier's
+# sibling): the fire path, the resting-env quiet-miss path beside it,
+# and the fold's own cost.
+[[bench]]
+name = "compositions"
+harness = false
+
 # The metamorphic seam's benchmarks (plan §5.3's differential line, the
 # `compile ⇒ interpret ⇒ equals emit` target): the full three-walk check
 # over the shadcn Button surface, themed and themeless, against the
