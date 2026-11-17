@@ -315,6 +315,10 @@ fn every_cond_form_has_an_emission_arm() {
          active:p-4 disabled:p-5 visited:p-6 checked:p-7 \
          placeholder-shown:p-8 selection:p-0 placeholder:p-1 \
          group-hover:p-2 group-focus:p-3 peer-hover:p-4 peer-focus:p-5 \
+         group-focus-visible:p-6 group-focus-within:p-7 group-active:p-8 \
+         group-disabled:p-0 group-visited:p-1 group-checked:p-2 \
+         peer-focus-visible:p-3 peer-focus-within:p-4 peer-active:p-5 \
+         peer-disabled:p-6 peer-visited:p-7 peer-checked:p-8 \
          dark:p-6 sm:p-7 min-md:p-8 max-lg:p-0 @xl:p-1 @max-2xl:p-2",
         &Config::default(),
     )
@@ -338,6 +342,18 @@ fn every_cond_form_has_an_emission_arm() {
         Cond::GroupFocus,
         Cond::PeerHover,
         Cond::PeerFocus,
+        Cond::GroupFocusVisible,
+        Cond::GroupFocusWithin,
+        Cond::GroupActive,
+        Cond::GroupDisabled,
+        Cond::GroupVisited,
+        Cond::GroupChecked,
+        Cond::PeerFocusVisible,
+        Cond::PeerFocusWithin,
+        Cond::PeerActive,
+        Cond::PeerDisabled,
+        Cond::PeerVisited,
+        Cond::PeerChecked,
         Cond::Bp(aeolus_ir::Bp::Sm),
         Cond::Min(aeolus_ir::Bp::Md),
         Cond::Max(aeolus_ir::Bp::Lg),
