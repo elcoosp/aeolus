@@ -167,6 +167,7 @@ pub fn env_for_probe(probe: &IcedProbe) -> Env {
         // frame default, never a silently-fabricated answer.
         inverted_colors: false,
         scripting_none: false,
+        starting_style: false,
         viewport_rem: probe.width.unwrap_or(0.0) / REM_PX,
         container_rem: probe.container_width.map(|width| width / REM_PX),
     }
@@ -207,6 +208,9 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             }
             PlanNoteKind::MediaFeature { pref } => {
                 (format!("media:{}", pref.source()), boundary.help())
+            }
+            PlanNoteKind::StartingStyle => {
+                ("starting-style".to_string(), boundary.help())
             }
             PlanNoteKind::Direction { cond } => {
                 (format!("direction:{}", cond.source()), boundary.help())
