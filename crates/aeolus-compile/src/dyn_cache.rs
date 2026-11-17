@@ -184,6 +184,33 @@ impl DynIdentity {
     }
 }
 
+/// The composed session key the dynamic surfaces report their
+/// decisions under: the identity's fields (the config fingerprint and
+/// the table/bag addresses, `\u{1}`-separated) followed by the input
+/// VERBATIM — never a hash of either (the v0.x collision-safety rule).
+/// The bounded pool's entries key on it (the [`DynStore`] seam's own
+/// vocabulary, the [`DynCache`] decisions ride it), and the host
+/// surfaces that run the SAME identity grammar — the view-state cell
+/// in `aeolus-rt` beside them — compose the same key through this
+/// function, so ONE observer stream reads the whole app's decisions.
+///
+/// A themed compile passes the table, a customized one the
+/// registrations; `None` and the empty bag key as their absence (the
+/// custom seam's byte-identity contracts, the identity constructors'
+/// own rule).
+pub fn session_key(
+    config: Config,
+    tokens: Option<&TokenTable>,
+    customs: &Customs,
+    input: &str,
+) -> String {
+    let identity = match tokens {
+        Some(tokens) => DynIdentity::themed_custom(config, tokens, customs),
+        None => DynIdentity::custom(config, customs),
+    };
+    format!("{}{input}", identity.key_prefix())
+}
+
 /// One cached compile result: the identity it was produced under, the
 /// interned program (the pool's own slices — a hit hands back the same
 /// allocation) and the per-class diagnostics, shared behind an `Arc` so
