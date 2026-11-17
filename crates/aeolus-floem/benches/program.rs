@@ -74,3 +74,44 @@ fn plan_walk_button(bencher: Bencher) {
 fn main() {
     divan::main();
 }
+
+#[divan::bench]
+fn program_walk_probes_wired(bencher: Bencher) {
+    // The widest entry's own path (the walk's full probe surface): a
+    // measured named container, structural facts, the subtree fact and
+    // the capability set answering the layers they know, the
+    // sourceless forms keeping their typed reports — the number a host
+    // that walks the lane WITH its probe sources judges the face by.
+    use aeolus_floem::lower_program_probes_containers_struct_descendants_supports;
+    use aeolus_rt::{
+        ContainerBound, ContainerState, DescendantFact, DescendantKind, DescendantState,
+        StructFacts, SupportsState,
+    };
+    let program = frozen(
+        "p-4 bg-primary @md/card:bg-red-500 first:bg-accent \
+         has-focus:shadow-lg supports-[display:grid]:grid",
+    );
+    let containers = ContainerState::new(&[ContainerBound {
+        name: "card",
+        rem: 64.0,
+    }]);
+    let structs = StructFacts::new(0, 3);
+    let descendants = DescendantState::new(&[DescendantFact {
+        kind: DescendantKind::Element,
+        fragment: "*:focus",
+    }]);
+    let supports = SupportsState::new(&["(display:grid)"]);
+    let env = Env::default();
+    bencher.bench(|| {
+        lower_program_probes_containers_struct_descendants_supports(
+            &program,
+            &env,
+            None,
+            Some(&containers),
+            Some(&structs),
+            Some(&descendants),
+            Some(&supports),
+            None,
+        )
+    });
+}
