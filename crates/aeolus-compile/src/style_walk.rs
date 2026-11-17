@@ -10,6 +10,10 @@
 //! program_style_probes_containers_struct_descendants_supports(
 //!     …, probes, containers, structs, descendants, supports, tokens)
 //!                                               -> (ResolvedStyle, StyleWalk)
+//! program_style_pseudo(target, layers, keywords)
+//!                                               -> (ResolvedStyle, StyleWalk)
+//! program_style_pseudo_theme(target, …, tokens, &Env)
+//!                                               -> (ResolvedStyle, StyleWalk)
 //!
 //! StaticProgram (layers + the ROW TEXTS the Kw slots index)
 //!   └─ front-to-back walk: a layer FIRES when its Cond matches the Env
@@ -21,6 +25,15 @@
 //!      └─ unmapped→ reported as the plan bridge's typed
 //!                   [`PlanNoteKind`] boundaries (the SAME note set
 //!                   `emit_plan` carries)
+//!
+//! program_style_pseudo(target, …)
+//!   └─ the TARGET's own walk (the `interp_pseudo` contract): only the
+//!      layers carrying the target's `Cond` participate — condition
+//!      equality, no `Env` and no probe seams — later fired wins per
+//!      longhand; the element's own layers and the sibling pseudo
+//!      targets are SILENT on this side (the element walk's
+//!      [`InterpNote::PseudoElement`] note is the other half of the
+//!      render-target contract)
 //! ```
 //!
 //! # Why the walk runs IN the pipeline
@@ -62,8 +75,8 @@ use aeolus_ir::{Layer, Prop, Val};
 
 use crate::Config;
 use crate::interp::{
-    AttrProbe, ContainerProbe, DescendantProbe, Env, Fire, InterpError, InterpNote, StructProbe,
-    SupportsProbe, TokenSource, decide,
+    AttrProbe, ContainerProbe, DescendantProbe, Env, Fire, InterpError, InterpNote, PseudoTarget,
+    StructProbe, SupportsProbe, TokenSource, decide,
 };
 use crate::plan::{PlanNoteKind, PlanWriter};
 
@@ -79,7 +92,12 @@ use crate::plan::{PlanNoteKind, PlanWriter};
 ///
 /// * [`StyleWalk::notes`] — the excluded layers (the interp arm's
 ///   [`InterpNote`] set: pseudo-elements, unqueried containers,
-///   attribute probes, the descendant `has-*` shapes);
+///   attribute probes, the descendant `has-*` shapes). The
+///   pseudo-target walks ([`program_style_pseudo`]) never fill this
+///   channel: a render-target's own cascade is SILENT about the layers
+///   that belong to other targets — the element walk's
+///   [`InterpNote::PseudoElement`] note is the other half of the
+///   contract, reported on ITS side;
 /// * [`StyleWalk::boundaries`] — the unmapped longhands (the plan
 ///   bridge's [`PlanNoteKind`] set: slot-less longhands, row texts the
 ///   v0.x vocabulary lacks, the shadow-preset and gradient-row
@@ -218,6 +236,158 @@ pub fn program_style_probes_containers_struct_descendants_supports(
         descendants,
         supports,
         tokens,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// The pseudo-target walks (the `interp_pseudo` contract, frozen form)
+// ---------------------------------------------------------------------------
+
+/// Resolve a frozen static program's PSEUDO-ELEMENT cascade for one
+/// [`PseudoTarget`] — the [`interp_pseudo`] contract on the program
+/// lane: the `::selection`/`::placeholder` render target's own
+/// effective style (only the layers carrying the target's condition
+/// participate; the element's own layers and the sibling pseudo
+/// targets are a different target, SILENT here — the element walk's
+/// [`InterpNote::PseudoElement`] note reports them on ITS side).
+///
+/// `layers` and `keywords` are the two slices the macro freezes (the
+/// [`program_style`] shape). The verdict is CONDITION EQUALITY (the
+/// interp arm's own pseudo walk): a pseudo layer fires by its
+/// condition alone — no [`Env`] and no probe seams ride (the flat fold
+/// collapses stacked variants onto the pseudo condition) — later fired
+/// declarations win per longhand, and the row texts index into the
+/// flattened annotations exactly as the element walk reads them.
+///
+/// The theme forms ([`Val::Tok`]/[`Val::ModePair`]) refuse PER
+/// LONGHAND into [`StyleWalk::refusals`] — the style fold's report
+/// shape, never a hard error and never a silent transparent colour;
+/// [`program_style_pseudo_theme`] carries the source they resolve
+/// from. The fold runs through the SAME [`PlanWriter`] the element
+/// walk uses, so a longhand the v0.x slots cannot carry reports its
+/// typed [`PlanNoteKind`] boundary instead of vanishing.
+///
+/// The walk is pure: same program + target, same answer.
+///
+/// [`interp_pseudo`]: crate::interp::interp_pseudo
+pub fn program_style_pseudo(
+    target: PseudoTarget,
+    layers: &'static [Layer],
+    keywords: &'static [&'static str],
+) -> (ResolvedStyle, StyleWalk) {
+    run_pseudo(target, layers, keywords, None, None)
+}
+
+/// [`program_style_pseudo`] with one [`TokenSource`] resolving the
+/// theme forms — the [`interp_pseudo_theme`] contract on the program
+/// lane (the same two questions the element walk asks, on the pseudo
+/// render target). The `env` rides the RESOLUTION (the mode selects
+/// the pair halves), never the firing — a pseudo layer fires by its
+/// condition alone, the condition-equality verdict the themeless form
+/// pins.
+///
+/// The walk is pure: same program + target + source, same answer.
+///
+/// [`interp_pseudo_theme`]: crate::interp::interp_pseudo_theme
+pub fn program_style_pseudo_theme(
+    target: PseudoTarget,
+    layers: &'static [Layer],
+    keywords: &'static [&'static str],
+    tokens: &dyn TokenSource,
+    env: &Env,
+) -> (ResolvedStyle, StyleWalk) {
+    run_pseudo(target, layers, keywords, Some(tokens), Some(env))
+}
+
+/// The pseudo-target fold: the interp arm's own-cascade verdict
+/// (condition equality) over the SAME [`PlanWriter`] the element walk
+/// writes through. The keyword annotations are flattened in
+/// layer-major order across ALL layers (the same accumulation
+/// [`StaticProgram::keyword`] reads back), so `index` advances over
+/// every layer — the target's own declarations read the texts their
+/// flattened offsets name whether the element layers ride before or
+/// after them.
+///
+/// [`StaticProgram::keyword`]: the re-exporting host crate's own
+/// reading of the flattened annotations.
+fn run_pseudo(
+    target: PseudoTarget,
+    layers: &'static [Layer],
+    keywords: &'static [&'static str],
+    tokens: Option<&dyn TokenSource>,
+    env: Option<&Env>,
+) -> (ResolvedStyle, StyleWalk) {
+    #[cfg(feature = "tracing")]
+    let _span = tracing::debug_span!("program_style_pseudo", layers = layers.len()).entered();
+
+    let mut style = ResolvedStyle::default();
+    let mut writer = PlanWriter {
+        config: Config::default(),
+        notes: Vec::new(),
+        font_size_px: None,
+        gap_row: None,
+        gap_col: None,
+        gradient_shape: None,
+        gradient_from: None,
+        gradient_via: None,
+        gradient_to: None,
+        gradient_from_pos: None,
+        gradient_via_pos: None,
+        gradient_to_pos: None,
+        // The shadow accumulator is PER LAYER here (the element walk's
+        // per-candidate shape): each fired layer's preset/clear/recolour
+        // composes at the layer's own `finish`.
+        shadow_preset: None,
+        shadow_clear: None,
+        shadow_color: None,
+    };
+    let mut refusals: Vec<(Prop, String)> = Vec::new();
+    let wanted = target.cond();
+
+    let mut index = 0usize;
+    for layer in layers {
+        // The verdict is CONDITION EQUALITY (the interp arm's own
+        // pseudo walk): only the layers carrying the target's
+        // condition participate — the element's own layers and the
+        // sibling pseudo targets are silence, not notes (the element
+        // walk's `InterpNote::PseudoElement` note is the other half of
+        // the render-target contract). No `Env` and no probe seams
+        // consult: the flat fold collapses stacked variants onto the
+        // pseudo condition.
+        if layer.cond == wanted {
+            for (di, decl) in layer.decls.iter().enumerate() {
+                let text = keywords
+                    .get(index + di)
+                    .copied()
+                    .filter(|text| !text.is_empty());
+                let val = match concrete(decl.val, env.unwrap_or(&Env::default()), tokens) {
+                    Ok(val) => val,
+                    Err(reason) => {
+                        let reason = reason.on_pseudo_face();
+                        #[cfg(feature = "tracing")]
+                        tracing::debug!(prop = ?decl.prop, %reason, "theme form refused");
+                        refusals.push((decl.prop, reason.to_string()));
+                        continue;
+                    }
+                };
+                writer.write(&mut style, decl.prop, val, text, false);
+            }
+            writer.finish(&mut style);
+            #[cfg(feature = "tracing")]
+            tracing::debug!(cond = ?wanted, fired = layer.decls.len(), "pseudo layer fired");
+        }
+        index += layer.decls.len();
+    }
+
+    (
+        style,
+        StyleWalk {
+            // The target-side silence: the sibling layers belong to
+            // other targets, reported by the element walk on ITS side.
+            notes: Vec::new(),
+            boundaries: writer.notes,
+            refusals,
+        },
     )
 }
 
@@ -374,8 +544,28 @@ enum ConcreteRefusal {
     /// No [`TokenSource`] rides and the value is a T1 pair slot
     /// ([`Val::ModePair`]): the static dark pair rides the baked table.
     NoTokenSourcePair,
+    /// [`Self::NoTokenSource`] on the pseudo-target face: the reason
+    /// names the lane that works there
+    /// ([`program_style_pseudo_theme`]).
+    NoTokenSourcePseudo,
+    /// [`Self::NoTokenSourcePair`] on the pseudo-target face.
+    NoTokenSourcePairPseudo,
     /// The source's own typed failure (see [`InterpError`]).
     Source(InterpError),
+}
+
+impl ConcreteRefusal {
+    /// The refusal as the pseudo-target face reports it: the
+    /// sourceless arms name the face's own themed entry (the reason
+    /// points at the lane that works — the codegen gates' own rule),
+    /// the source's typed failures ride unchanged.
+    fn on_pseudo_face(self) -> Self {
+        match self {
+            Self::NoTokenSource => Self::NoTokenSourcePseudo,
+            Self::NoTokenSourcePair => Self::NoTokenSourcePairPseudo,
+            other => other,
+        }
+    }
 }
 
 impl fmt::Display for ConcreteRefusal {
@@ -390,6 +580,16 @@ impl fmt::Display for ConcreteRefusal {
                 f,
                 "no TokenSource — the static dark pair rides the baked \
                  table (pass one via program_style_with)"
+            ),
+            Self::NoTokenSourcePseudo => write!(
+                f,
+                "no TokenSource — the runtime tier's explicit slow lane \
+                 (pass one via program_style_pseudo_theme)"
+            ),
+            Self::NoTokenSourcePairPseudo => write!(
+                f,
+                "no TokenSource — the static dark pair rides the baked \
+                 table (pass one via program_style_pseudo_theme)"
             ),
             Self::Source(err) => err.fmt(f),
         }
