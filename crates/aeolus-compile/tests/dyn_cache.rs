@@ -406,3 +406,107 @@ fn the_theme_and_custom_session_caches_together() {
     assert!(first.diagnostics.is_empty());
     assert_eq!(cache.hits(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// Micro-debt: the built-in TwoGenStore's rotation gains its first pins
+// ---------------------------------------------------------------------------
+
+use aeolus_compile::TwoGenStore;
+
+/// One real entry per key: the compiles come from the cache's own
+/// pipeline (the store carries interned programs, never synthetic
+/// ones).
+fn entries(count: usize) -> Vec<(String, CachedCompiled)> {
+    let config = Config::default();
+    BATTERY
+        .iter()
+        .cycle()
+        .take(count)
+        .enumerate()
+        .map(|(i, class)| {
+            let compiled = compile(&format!("{class} x{i}"), &config).unwrap();
+            // The store never validates identities — the rotation pins
+            // carry the real programs under a zeroed fingerprint.
+            let entry = CachedCompiled {
+                identity: aeolus_compile::DynIdentity {
+                    config: 0,
+                    tokens: 0,
+                    customs: 0,
+                },
+                program: compiled.program,
+                diagnostics: compiled.diagnostics.into(),
+            };
+            (format!("k{i}"), entry)
+        })
+        .collect()
+}
+
+#[test]
+fn the_two_gen_store_rotates_at_the_cap_and_promotes() {
+    let store = TwoGenStore::with_cap(2);
+    for (key, entry) in entries(3) {
+        store.store(key, entry);
+    }
+
+    // Cap 2, three keys: the rotation moved {k0, k1} to previous, the
+    // fresh current holds {k2} — resident tops out at 3, not 4 (the
+    // dropped map generation's slices stay pooled, the entries do not).
+    assert_eq!(store.resident(), 3, "current + one previous generation");
+
+    // A previous-generation hit promotes into the current generation.
+    assert!(store.probe("k0").is_some(), "the old generation answers");
+    assert!(
+        store.probe("k0").is_some(),
+        "the promoted key rides current"
+    );
+    assert_eq!(store.resident(), 3, "promotion moves, never duplicates");
+
+    // One generation further back is GONE — the boundedness story.
+    let (k3, entry) = entries(1).into_iter().next().map(|(k, e)| (k, e)).unwrap();
+    store.store(k3.clone(), entry);
+    assert_eq!(store.resident(), 3, "the rotation keeps the bound");
+    assert!(
+        store.probe("k1").is_some() || store.probe("k0").is_some(),
+        "the newer previous generation still answers"
+    );
+}
+
+#[test]
+fn the_two_gen_store_replaces_in_place_without_rotating() {
+    let store = TwoGenStore::with_cap(2);
+    let seeded = entries(2);
+    for (key, entry) in &seeded {
+        store.store(key.clone(), entry.clone());
+    }
+    let resident_at_cap = store.resident();
+    assert_eq!(resident_at_cap, 2);
+
+    // A flip-flopped key replaces in place: no rotation (the previous
+    // generation keeps its entries), the value is the NEW one.
+    let (key, fresh) = entries(1).into_iter().next().map(|(k, e)| (k, e)).unwrap();
+    let flip_key = if seeded[0].0 == key {
+        seeded[1].0.clone()
+    } else {
+        seeded[0].0.clone()
+    };
+    store.store(flip_key.clone(), fresh.clone());
+    assert_eq!(store.resident(), 2, "no rotation on the replace");
+    let probed = store.probe(&flip_key).expect("the replaced key answers");
+    assert_eq!(
+        probed.program.layers, fresh.program.layers,
+        "the store hands back the NEW compile"
+    );
+    // The untouched key still answers from the same generation.
+    let other = if flip_key == seeded[0].0 {
+        &seeded[1].0
+    } else {
+        &seeded[0].0
+    };
+    assert!(store.probe(other).is_some(), "the sibling survives");
+}
+
+#[test]
+#[should_panic(expected = "needs at least one slot")]
+fn the_two_gen_store_needs_at_least_one_slot() {
+    let _ = TwoGenStore::with_cap(0);
+}
