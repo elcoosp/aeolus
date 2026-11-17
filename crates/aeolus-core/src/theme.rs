@@ -137,8 +137,15 @@ impl Default for TailwindTheme {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let tpl = TEMPLATE.get_or_init(|| {
             let mut t = TailwindTheme::empty();
-            let _ = t.absorb_css(TAILWIND_DEFAULT_PALETTE);
-            let _ = t.absorb_css(TAILWIND_DEFAULT_THEME);
+            // The embedded v4 defaults parse by construction — the
+            // corpus pins both strings through `absorb_css` elsewhere.
+            // A failure here is an in-tree bug, never a runtime
+            // condition: the honest-failure contract names it, it does
+            // not silently drop (the `let _ =` shape this replaces).
+            t.absorb_css(TAILWIND_DEFAULT_PALETTE)
+                .expect("the embedded default palette parses");
+            t.absorb_css(TAILWIND_DEFAULT_THEME)
+                .expect("the embedded default theme parses");
             t
         });
         let mut t = tpl.clone();
