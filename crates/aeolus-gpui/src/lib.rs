@@ -1447,11 +1447,10 @@ fn border_style<S: Styled>(style: S, keyword: &str) -> S {
 }
 
 fn text_align<S: Styled>(style: S, keyword: &str) -> S {
-    match keyword {
-        "center" => style.text_center(),
-        "right" | "end" => style.text_right(),
-        _ => style.text_left(),
-    }
+    // ONE mapping: the pub helper's closed set IS the walk's own arm —
+    // the parallel match the old private arm kept could drift from the
+    // pinned spelling set.
+    style.text_align(text_align_value(keyword))
 }
 
 fn text_decoration<S: Styled>(style: S, keyword: &str) -> S {
@@ -1678,7 +1677,12 @@ fn color(val: Val) -> Option<Hsla> {
     }
 }
 
-/// The GPUI mapping for a bare `TextAlign` value, exposed for tests.
+/// The GPUI mapping for a bare `TextAlign` value — the walk's own
+/// `Prop::TextAlign` arm reads through it (one grammar, the suites pin
+/// the spelling set beside it). GPUI's [`TextAlign`] carries LEFT /
+/// CENTER / RIGHT: the registry's `start`/`end` logical directions fold
+/// to the LTR readings, and `justify` — no GPUI slot — rides the
+/// documented LEFT default (the platform's own closed set, pinned).
 pub fn text_align_value(keyword: &str) -> TextAlign {
     match keyword {
         "center" => TextAlign::Center,
