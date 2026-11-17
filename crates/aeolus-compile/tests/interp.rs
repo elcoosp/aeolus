@@ -222,6 +222,55 @@ fn group_and_peer_probes_answer_from_the_env() {
 }
 
 #[test]
+fn group_and_peer_compositions_answer_from_the_env() {
+    let compiled = compile_theme(
+        "p-4 group-active:p-0 peer-disabled:p-8 group-focus-visible:p-1 peer-checked:p-2",
+        &runtime_table(),
+        &Config::default(),
+    )
+    .expect("the string compiles");
+    // The composition facts answer from the env like the landed
+    // group/peer probes do: a `.group` ancestor IS active, a `.peer`
+    // sibling IS disabled.
+    let group = interp(
+        &compiled.program,
+        &Env {
+            group_active: true,
+            ..Env::default()
+        },
+    )
+    .expect("resolves");
+    assert_eq!(resolved(&group, Prop::PaddingTop), Val::Rem(0.0));
+    let peer = interp(
+        &compiled.program,
+        &Env {
+            peer_disabled: true,
+            ..Env::default()
+        },
+    )
+    .expect("resolves");
+    assert_eq!(resolved(&peer, Prop::PaddingTop), Val::Rem(2.0));
+    // The two new tiers fire together; they tie on rank (both
+    // parent-relative), so the LATER source layer wins per longhand
+    // (the cascade contract's own tie rule).
+    let seen = interp(
+        &compiled.program,
+        &Env {
+            group_focus_visible: true,
+            peer_checked: true,
+            ..Env::default()
+        },
+    )
+    .expect("resolves");
+    assert_eq!(resolved(&seen, Prop::PaddingTop), Val::Rem(0.5));
+    assert_eq!(resolved(&seen, Prop::PaddingBottom), Val::Rem(0.5));
+    // Unanswered compositions do not fire (CSS semantics — the layer
+    // waits for its fact, nothing degrades).
+    let quiet = interp(&compiled.program, &Env::default()).expect("resolves");
+    assert_eq!(resolved(&quiet, Prop::PaddingTop), Val::Rem(1.0));
+}
+
+#[test]
 fn min_breakpoints_fire_at_and_above_their_rem() {
     let compiled = compile_theme("sm:p-0 md:p-2 lg:p-4", &runtime_table(), &Config::default())
         .expect("the string compiles");
