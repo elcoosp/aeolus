@@ -150,6 +150,17 @@ pub enum Pref {
     /// COMPLEMENT of [`Pref::Portrait`] (the feature's two v4 values
     /// share one fact, the `motion-safe:` precedent).
     Landscape,
+    /// `inverted-colors:` — the user agent inverts colours (the
+    /// media-features block's
+    /// `staticVariant('inverted-colors', ['@media (inverted-colors:
+    /// inverted)'])`, the v4.1 addition; the accessibility answer the
+    /// `forced-colors:` bit rides beside).
+    InvertedColors,
+    /// `noscript:` — scripting is unavailable (the same block's
+    /// `staticVariant('noscript', ['@media (scripting: none)'])`; the
+    /// scripting feature's own static spelling — `enable`/`initial-only`
+    /// have no v4.1.17 registration, the spelling set stays closed).
+    NoScript,
 }
 
 impl Pref {
@@ -171,6 +182,8 @@ impl Pref {
             Pref::AnyPointerNone => "any-pointer-none",
             Pref::Portrait => "portrait",
             Pref::Landscape => "landscape",
+            Pref::InvertedColors => "inverted-colors",
+            Pref::NoScript => "noscript",
         }
     }
 }
@@ -378,6 +391,46 @@ pub enum Cond {
     Selection,
     /// `placeholder:` — the `::placeholder` rendering.
     Placeholder,
+    /// `before:` — the `::before` rendering (the tailwindcss v4.1.17
+    /// source's functional body, `packages/tailwindcss/src/variants.ts`
+    /// pinned verbatim: `styleRule('&::before', [decl('content',
+    /// 'var(--tw-content)'), …nodes])` — the variant WRAPS the
+    /// utility's declarations in the pseudo-element rule with the
+    /// content line riding first). Like [`Cond::Selection`], a
+    /// pseudo-element styles a DIFFERENT render target than the
+    /// element's own cascade, so the element walks exclude the layer
+    /// and the pseudo cascades resolve per target.
+    Before,
+    /// `after:` — the `::after` rendering (the same functional body
+    /// [`Cond::Before`] pins, `'&::after'` the selector).
+    After,
+    /// `marker:` — the list-marker rendering (the state block's
+    /// `staticVariant('marker', ['& *::marker', '&::marker',
+    /// '& *::-webkit-details-marker', '&::-webkit-details-marker'])` —
+    /// the FOUR-selector disjunction the CSS arm renders on one rule).
+    Marker,
+    /// `first-letter:` — the `::first-letter` rendering (the
+    /// pseudo-elements block's
+    /// `staticVariant('first-letter', ['&::first-letter'])`).
+    FirstLetter,
+    /// `first-line:` — the `::first-line` rendering (the same block's
+    /// `staticVariant('first-line', ['&::first-line'])`).
+    FirstLine,
+    /// `file:` — the `::file-selector-button` rendering (the state
+    /// block's `staticVariant('file',
+    /// ['&::file-selector-button'])`; the v0.x surface ALREADY carries
+    /// the part — `PseudoElement::FileSelectorButton` — so the plan
+    /// bridge lands the layer where the selection:/placeholder: pair
+    /// lands, the other pseudo spellings reporting their boundary).
+    FileSelector,
+    /// `backdrop:` — the `::backdrop` rendering (the state block's
+    /// `staticVariant('backdrop', ['&::backdrop'])` — the
+    /// dialog/popover backdrop part).
+    Backdrop,
+    /// `details-content:` — the `::details-content` rendering (the
+    /// state block's `staticVariant('details-content',
+    /// ['&::details-content'])`, the v4.1 addition).
+    DetailsContent,
     /// `group-hover:` — a `.group` ancestor is hovered (the named
     /// `group-hover/x` label form folds to the same probe with a name the
     /// compile stage threads through).
@@ -559,6 +612,18 @@ impl Cond {
             | Cond::OutOfRange
             | Cond::Selection
             | Cond::Placeholder
+            // The pseudo-element tier rides the same element-own probe
+            // tier beside the selection/placeholder pair: a
+            // pseudo-element head is a selector conjunct on the `&`
+            // (`::before`, `::file-selector-button`), not an at-rule.
+            | Cond::Before
+            | Cond::After
+            | Cond::Marker
+            | Cond::FirstLetter
+            | Cond::FirstLine
+            | Cond::FileSelector
+            | Cond::Backdrop
+            | Cond::DetailsContent
             // The attribute probes compound on the element itself, the
             // same tier the pseudo-class states occupy (the corpus's
             // output nests them on the `&` alongside `:hover`). The
@@ -636,6 +701,17 @@ impl Cond {
             Cond::OutOfRange => Some("out-of-range"),
             Cond::Selection => Some("selection"),
             Cond::Placeholder => Some("placeholder"),
+            // The pseudo-element tier's spellings are bare variants:
+            // the condition names its own closed text (the
+            // selection/placeholder arm's shape).
+            Cond::Before => Some("before"),
+            Cond::After => Some("after"),
+            Cond::Marker => Some("marker"),
+            Cond::FirstLetter => Some("first-letter"),
+            Cond::FirstLine => Some("first-line"),
+            Cond::FileSelector => Some("file"),
+            Cond::Backdrop => Some("backdrop"),
+            Cond::DetailsContent => Some("details-content"),
             // The direction spellings are CLOSED (the Direction enum's
             // own table) — the condition reconstructs its text.
             Cond::Dir(dir) => Some(dir.source()),
