@@ -462,7 +462,7 @@ fn the_two_gen_store_rotates_at_the_cap_and_promotes() {
     assert_eq!(store.resident(), 3, "promotion moves, never duplicates");
 
     // One generation further back is GONE — the boundedness story.
-    let (k3, entry) = entries(1).into_iter().next().map(|(k, e)| (k, e)).unwrap();
+    let (k3, entry) = entries(1).into_iter().next().unwrap();
     store.store(k3.clone(), entry);
     assert_eq!(store.resident(), 3, "the rotation keeps the bound");
     assert!(
@@ -483,7 +483,7 @@ fn the_two_gen_store_replaces_in_place_without_rotating() {
 
     // A flip-flopped key replaces in place: no rotation (the previous
     // generation keeps its entries), the value is the NEW one.
-    let (key, fresh) = entries(1).into_iter().next().map(|(k, e)| (k, e)).unwrap();
+    let (key, fresh) = entries(1).into_iter().next().unwrap();
     let flip_key = if seeded[0].0 == key {
         seeded[1].0.clone()
     } else {
