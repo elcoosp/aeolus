@@ -317,6 +317,58 @@ fn named_group_variants_fold_to_the_probe() {
 }
 
 #[test]
+fn group_and_peer_compositions_fold_the_full_probe_state_set() {
+    // The parent-relative compositions cover every probe state the
+    // element-own tier answers: the tailwindcss v4.1.17 `group`/`peer`
+    // compound mechanisms compose with every StyleRules-eligible
+    // variant (`staticVariant('active', ['&:active'])` and friends),
+    // so `group-active:` folds where only hover/focus did. Each
+    // composition is its own typed probe; the label form rides the
+    // group-hover/menu precedent.
+    let cases = [
+        ("group-active:p-0", Cond::GroupActive),
+        ("group-focus-visible:p-0", Cond::GroupFocusVisible),
+        ("group-focus-within:p-0", Cond::GroupFocusWithin),
+        ("group-disabled:p-0", Cond::GroupDisabled),
+        ("group-visited:p-0", Cond::GroupVisited),
+        ("group-checked:p-0", Cond::GroupChecked),
+        ("peer-active:p-0", Cond::PeerActive),
+        ("peer-focus-visible:p-0", Cond::PeerFocusVisible),
+        ("peer-focus-within:p-0", Cond::PeerFocusWithin),
+        ("peer-disabled:p-0", Cond::PeerDisabled),
+        ("peer-visited:p-0", Cond::PeerVisited),
+        ("peer-checked:p-0", Cond::PeerChecked),
+    ];
+    for (input, expected) in cases {
+        let compiled = compile(input, &Config::default()).expect("compiles");
+        assert!(
+            compiled.diagnostics.is_empty(),
+            "{input}: reports {:?}",
+            compiled.diagnostics
+        );
+        assert_eq!(compiled.program.layers[0].cond, expected, "{input}");
+    }
+    // The named-label form drops the name on the IR tier (the
+    // group-hover/menu precedent — head decoration, not a slot).
+    let labelled = compile("group-active/menu:p-0", &Config::default()).expect("compiles");
+    assert_eq!(labelled.program.layers[0].cond, Cond::GroupActive);
+    // The composition tier ranks with its family: parent-relative
+    // (rank 3), above the element-own probes, below the at-rules.
+    assert_eq!(
+        Cond::GroupActive.specificity(),
+        Cond::GroupHover.specificity()
+    );
+    assert_eq!(
+        Cond::PeerDisabled.specificity(),
+        Cond::PeerHover.specificity()
+    );
+    assert!(
+        Cond::GroupActive.specificity() > Cond::Disabled.specificity(),
+        "parent-relative outranks the element-own probe"
+    );
+}
+
+#[test]
 fn unsupported_variants_are_typed_and_skip_the_utility() {
     // The lexer accepts the segment; the typed Cond surface does not
     // cover it (a bare unknown has- inner names no state and no
