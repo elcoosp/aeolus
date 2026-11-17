@@ -28,15 +28,23 @@ aeolus-ir = { workspace = true }
 aeolus-theme = { workspace = true }
 # `tracing` feature: debug spans around command dispatch and the per-file
 # check loop (no subscriber installed by the CLI — the host app owns one).
+# The flag FORWARDS down the pipeline (the consumer-handoff): the
+# CLI drives the compile walk, so one flag instruments the WHOLE walk —
+# aeolus-compile's events forward to aeolus-data and aeolus-theme in
+# turn. The old shape left every pipeline event compiled out.
 tracing = { version = "0.1", optional = true }
 # `miette` feature: structured `Diagnostic` impls (code + help text) on
 # the typed errors; `miette`'s fancy rendering is the host's choice.
+# Forwards down the pipeline with `tracing` (see above).
 miette = { version = "7", optional = true, default-features = false }
 
 [features]
 default = []
-tracing = ["dep:tracing"]
-miette = ["dep:miette"]
+# One flag, the whole walk: the CLI's own spans AND the pipeline
+# crates' events (compile forwards to data/theme in turn — the walk's
+# registry reads and theme resolves instrument too).
+tracing = ["dep:tracing", "aeolus-compile/tracing", "aeolus-theme/tracing"]
+miette = ["dep:miette", "aeolus-compile/miette", "aeolus-theme/miette"]
 
 [dev-dependencies]
 divan = "0.1"
