@@ -79,4 +79,22 @@ fn main() {
     println!("\n$ aeolus expand --reduced-motion … (exit {code})");
     print!("{}", String::from_utf8(out).unwrap_or_default());
     print!("{}", String::from_utf8(err).unwrap_or_default());
+
+    // The media-feature remainder's flags: --inverted-colors/--noscript
+    // (the v4.1 additions' frame facts — one flag per FACT, the
+    // --portrait precedent; unset is the quiet miss).
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = run(
+        [
+            "expand".to_string(),
+            "--inverted-colors".to_string(),
+            "inverted-colors:p-8 noscript:mt-2".to_string(),
+        ],
+        &mut out,
+        &mut err,
+    );
+    println!("\n$ aeolus expand --inverted-colors … (exit {code})");
+    print!("{}", String::from_utf8(out).unwrap_or_default());
+    print!("{}", String::from_utf8(err).unwrap_or_default());
 }
