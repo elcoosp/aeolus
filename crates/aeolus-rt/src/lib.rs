@@ -45,12 +45,13 @@ mod containers;
 
 pub use aeolus_compile::{
     AttrBit, AttrKind, AttrProbe, AttrState, CachedCompiled, CompileError, ContainerBound,
-    ContainerProbe, ContainerState, Customs, DEFAULT_DYN_CACHE_CAP, Diagnostic, DynCache, DynStore,
-    Env, InterpError, InterpNote, Interped, PlanNoteKind, StructFacts, StructProbe, StyleWalk,
-    SupportsProbe, SupportsState, TokenSource, TwoGenStore, interp, interp_containers,
-    interp_containers_descendants_supports, interp_containers_struct_descendants_supports,
-    interp_containers_struct_supports, interp_containers_supports, interp_descendants_supports,
-    interp_probes, interp_probes_containers, interp_probes_containers_descendants_supports,
+    ContainerProbe, ContainerState, Customs, DEFAULT_DYN_CACHE_CAP, DescendantFact, DescendantKind,
+    DescendantProbe, DescendantState, Diagnostic, DynCache, DynStore, Env, InterpError, InterpNote,
+    Interped, PlanNoteKind, StructFacts, StructProbe, StyleWalk, SupportsProbe, SupportsState,
+    TokenSource, TwoGenStore, interp, interp_containers, interp_containers_descendants_supports,
+    interp_containers_struct_descendants_supports, interp_containers_struct_supports,
+    interp_containers_supports, interp_descendants_supports, interp_probes,
+    interp_probes_containers, interp_probes_containers_descendants_supports,
     interp_probes_containers_struct_descendants_supports, interp_probes_containers_struct_supports,
     interp_probes_containers_supports, interp_probes_descendants_supports,
     interp_probes_struct_descendants_supports, interp_probes_struct_supports,
@@ -65,7 +66,8 @@ pub use aeolus_compile::{
     interp_theme_probes_descendants_supports, interp_theme_probes_struct_descendants_supports,
     interp_theme_probes_struct_supports, interp_theme_probes_supports, interp_theme_struct,
     interp_theme_struct_descendants_supports, interp_theme_struct_supports, interp_theme_supports,
-    overlay, program_style, program_style_with,
+    overlay, program_style, program_style_probes_containers_struct_descendants_supports,
+    program_style_with,
 };
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
