@@ -298,7 +298,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1938 tests with all features enabled (2026-11,
+  **zero** allocations). Workspace battery: 1949 tests with all features enabled (2026-11,
   the backend-face handoff's honest sum — `cargo test --workspace --all-features`).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
@@ -373,7 +373,7 @@ differential oracle — no big-bang migration.
 | `aeolus-codegen`      | backend-neutral `Emit` trait + `Capability`/`Conformance` report                                                            |
 | `aeolus-codegen-gpui` | GPUI token emitter, native + polyfill capability tiers, `lower_class` third-party seam                                      |
 | `aeolus-macro`        | `tw!` / `cn!` / `tw_cn!` / `variants!` (compound + slots) / `theme!` — syn-free; emits the frozen program, never the string |
-| `aeolus-rt`           | host seam: `StaticProgram` (the `style*` face beside the free walks), `Env`, `TokenTable`, `DynCache`, `ClassCell`, `MeasuredContainers`, `theme_from_css`                             |
+| `aeolus-rt`           | host seam: `StaticProgram` (the `style*` and probe faces beside the free walks), `Env`, `TokenTable`, `DynCache`, `ClassCell`, `MeasuredContainers`, `theme_from_css`                             |
 
 **Integration & tooling**
 
@@ -522,6 +522,7 @@ cargo run -p aeolus-codegen-gpui --example conformance
 cargo run -p aeolus-rt --example class_cell
 cargo run -p aeolus-rt --example static_walk
 cargo run -p aeolus-rt --example style_face  # the host surface's own style face: the methods beside the free walks
+cargo run -p aeolus-rt --example probe_face   # the host surface's probe face: the widest walk over a MeasuredContainers hand-off
 cargo run -p aeolus-rt --example program_overlay
 cargo run -p aeolus-macro --example frozen_program  # the tw!/cn! surface: the frozen program, printed
 # GPUI
