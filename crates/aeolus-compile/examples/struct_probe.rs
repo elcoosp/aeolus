@@ -4,7 +4,10 @@
 //! `nth-last-N:` — fold onto the typed [`Cond`] surface, and the
 //! [`StructProbe`] seam carries the element's DOM-position facts into
 //! the walk (the built-in [`StructFacts`] is one Copy value; a host
-//! wires its own layout bridge through the same one question).
+//! wires its own layout bridge through the same one question). The
+//! OF-TYPE tier (`first-of-type:`, `last-of-type:`, `only-of-type:`,
+//! `nth-of-type-N:`, `nth-last-of-type-N:`) rides the same seam's
+//! type-relative facts beside the child-index ones.
 //!
 //! The demo walks the same program four ways: sourceless (the
 //! structural layers REPORT — the honest boundary, the
@@ -15,7 +18,9 @@
 //! unknown-facts value (`StructFacts::UNKNOWN` — every index-based test
 //! quietly skips). The base layer keeps answering the whole time. The
 //! themed structural lane (`interp_theme_struct`) resolves token
-//! colours through the same seam family — see `tests/structural.rs`.
+//! colours through the same seam family — see `tests/structural.rs` —
+//! and the of-type demos show the two fact dimensions answering
+//! independently.
 //!
 //! ```sh
 //! cargo run -p aeolus-compile --example struct_probe
@@ -137,6 +142,50 @@ fn main() {
         "only the base layer fired (the four padding longhands)"
     );
     println!("  notes: none (the built-in answered \"unknown\" — CSS-quiet)");
+
+    // -- the of-type tier: the type-relative facts beside the child-index
+    //    ones (the structural family's own slice) -------------------------
+
+    println!("\n── 7. the of-type tier: the element is the MIDDLE child, the FIRST of its type ──");
+    let compiled = compile("first-of-type:w-64 first:hidden p-4", &config).expect("compiles");
+    let facts = StructFacts {
+        index: Some(1),
+        sibling_count: Some(3),
+        type_index: Some(0),
+        type_sibling_count: Some(2),
+        empty: false,
+    };
+    let hot = interp_struct(&compiled.program, &Env::default(), &facts).expect("the walk resolves");
+    assert!(
+        hot.notes.is_empty(),
+        "a source-answered walk reports nothing"
+    );
+    assert_eq!(
+        hot.decls
+            .iter()
+            .find(|d| d.prop == Prop::Width)
+            .map(|d| d.val),
+        Some(Val::Rem(16.0)),
+        "the first-of-type layer fires at type index 0"
+    );
+    assert!(
+        hot.decls.iter().all(|d| d.prop != Prop::Display),
+        "the first: layer quietly misses — index 1 is not the first child (the two dimensions ride their own facts)"
+    );
+    println!("  width fired from the type facts; the child-index layer stayed quiet");
+
+    println!("\n── 8. the CSS arm renders the of-type selectors ──");
+    let sheet = aeolus_compile::emit_css("first-of-type:w-64 nth-of-type-2:w-10", &config)
+        .expect("the emit resolves");
+    for rule in &sheet.rules {
+        println!("  rule: {}", rule.selector);
+    }
+    assert!(
+        sheet
+            .to_string()
+            .contains(".first-of-type\\:w-64:first-of-type"),
+        "the type-relative selector renders"
+    );
 
     println!("\nall structural seam demos held — the honest boundaries are the tests' business");
 }
