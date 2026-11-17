@@ -1941,3 +1941,82 @@ fn expand_media_remainder_unset_flags_stay_the_quiet_miss() {
     );
     assert!(!out.contains("note:"), "no exclusion note rides: {out}");
 }
+
+// ---------------------------------------------------------------------------
+// The of-type structural tier: the `--child-of-type` facts flag
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_child_of_type_answers_the_of_type_layers() {
+    // The type-relative facts answer their layers beside the resting
+    // walk's reported boundary (the `--child` flag's sibling — the
+    // facts value the StructProbe seam documents, the type dimension
+    // beside the child-index one).
+    let (code, out, err) = run_cmd(&[
+        "expand",
+        "--child",
+        "1/3",
+        "--child-of-type",
+        "0/2",
+        "first-of-type:w-64 first:hidden",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    // The of-type layer fires (type index 0); the child-index layer
+    // quietly misses (index 1 is not the first child) — the two
+    // dimensions ride their own facts.
+    assert!(out.contains("width = 16rem"), "{out}");
+    assert!(!out.contains("display = none"), "{out}");
+
+    let (code, out, err) = run_cmd(&[
+        "expand",
+        "--child",
+        "2/3",
+        "--child-of-type",
+        "1/3",
+        "nth-of-type-2:w-10 nth-last-of-type-2:p-2",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    // The second of three same-type siblings: `nth-of-type-2` fires
+    // (1-based), and so does `nth-last-of-type-2` (the second from the
+    // type's end of three).
+    assert!(out.contains("width = 2.5rem"), "{out}");
+    assert!(out.contains("padding-top = 0.5rem"), "{out}");
+}
+
+#[test]
+fn expand_child_of_type_unset_stays_the_reported_boundary() {
+    let (code, out, _) = run_cmd(&["expand", "first-of-type:w-64"]);
+    assert_eq!(code, 0);
+    assert!(
+        !out.contains("width = 16rem"),
+        "no type facts, no fire: {out}"
+    );
+    assert!(
+        out.contains("note:"),
+        "the sourceless form reports the structural boundary: {out}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The `starting:` variant: the `--starting` fact flag
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_starting_flag_answers_the_layer() {
+    // The frame fact answers its layer beside the resting env's quiet
+    // miss (the capability flags' sibling — one flag per FACT).
+    let (code, out, err) = run_cmd(&["expand", "--starting", "starting:p-8"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_starting_unset_stays_the_quiet_miss() {
+    let (code, out, _) = run_cmd(&["expand", "starting:p-8"]);
+    assert_eq!(code, 0);
+    assert!(
+        !out.contains("padding-top = 2rem"),
+        "an unset frame fact is the quiet miss a frame the element is not in is: {out}"
+    );
+    assert!(!out.contains("note:"), "no exclusion note rides: {out}");
+}
