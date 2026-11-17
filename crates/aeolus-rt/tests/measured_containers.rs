@@ -123,3 +123,57 @@ fn boundary_rules_shared_verbatim_through_the_seam() {
         missed.decls
     );
 }
+
+// ---------------------------------------------------------------------------
+// Micro-debt: `MeasuredContainers::clear` gains its first pins — the
+// unmount reset the module docs name (the handle's owner clears it when
+// the containers unmount) had no coverage anywhere in the workspace.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn clear_drops_every_measurement_and_the_next_publish_is_a_change() {
+    let measured = MeasuredContainers::new();
+    measured.publish("card", 48.0);
+    measured.publish("sidebar", 20.0);
+
+    measured.clear();
+
+    assert_eq!(
+        measured.container("card"),
+        None,
+        "the unmount reset: every published name is the quiet miss again"
+    );
+    assert_eq!(measured.container("sidebar"), None);
+
+    // The re-mount story: the first publish after the reset counts as
+    // a CHANGED measurement (the handshake's re-render request rides
+    // it — a cleared name never schedules a frame).
+    assert!(
+        measured.publish("card", 48.0),
+        "the first publish after the reset is a change, even at the same width"
+    );
+    assert_eq!(measured.container("card"), Some(48.0));
+}
+
+#[test]
+fn clear_on_an_empty_handle_is_the_quiet_no_op() {
+    let measured = MeasuredContainers::new();
+    measured.clear();
+    assert_eq!(
+        measured.container("card"),
+        None,
+        "clearing nothing changes nothing"
+    );
+
+    // And the clone-sharing contract holds across the reset: the
+    // wrapper's clone publishes, the owner clears, BOTH see the empty
+    // state (one interior state, the ClassCell precedent).
+    let wrapper = measured.clone();
+    wrapper.publish("card", 30.0);
+    measured.clear();
+    assert_eq!(
+        wrapper.container("card"),
+        None,
+        "the clones share one state"
+    );
+}
