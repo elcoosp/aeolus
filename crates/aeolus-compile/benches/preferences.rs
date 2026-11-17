@@ -52,3 +52,19 @@ fn interp_preferences_default_env(bencher: Bencher) {
     let env = Env::default();
     bencher.bench(|| interp(&compiled.program, &env).expect("the program resolves"));
 }
+
+/// The media-feature remainder's walk (the v4.1 additions' tier): the
+/// two facts answer their layers the same env-field read carries — the
+/// bench records the remainder beside the family's own walk.
+#[divan::bench]
+fn interp_preferences_remainder(bencher: Bencher) {
+    let cache = DynCache::new();
+    let compiled = cache
+        .compile("inverted-colors:p-8 noscript:mt-2", &Config::default())
+        .expect("non-empty input compiles");
+    let env = Env {
+        inverted_colors: true,
+        ..Env::default()
+    };
+    bencher.bench(|| interp(&compiled.program, &env).expect("the program resolves"));
+}
