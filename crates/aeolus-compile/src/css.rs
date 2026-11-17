@@ -138,6 +138,8 @@ impl CssAt {
                     Pref::AnyPointerNone => "@media (any-pointer: none)".into(),
                     Pref::Portrait => "@media (orientation: portrait)".into(),
                     Pref::Landscape => "@media (orientation: landscape)".into(),
+                    Pref::InvertedColors => "@media (inverted-colors: inverted)".into(),
+                    Pref::NoScript => "@media (scripting: none)".into(),
                 }
             }
         }
@@ -569,6 +571,20 @@ pub(crate) fn run_css(
 struct CondSet {
     /// The probe-state suffixes, source order (`:hover`, `::selection`).
     pseudos: Vec<&'static str>,
+    /// The `marker:` render target is set: the head is the FOUR-selector
+    /// disjunction upstream registers (`& *::marker`, `&::marker`, the
+    /// `-webkit-details-marker` pair) — [`selector_for`] renders the
+    /// comma-joined alternatives on the one rule, the suffix list the
+    /// upstream registration order.
+    marker: bool,
+    /// The `before:`/`after:` body contract: the rule carries the
+    /// upstream functional body's injected `content: var(--tw-content)`
+    /// line ahead of the utility's own declarations (the per-rule
+    /// `""` fallback standing in for the at-root `@property
+    /// --tw-content` registration the per-candidate emitter cannot
+    /// carry — the documented divergence, the initial value upstream
+    /// registers).
+    content_injected: bool,
     /// The attribute probes and `:has()` fragments, source order
     /// (`[data-state="open"]`, `:has(*:focus)`) — the attribute-probe
     /// families' selector text, derived from the folded [`Cond`]
@@ -708,6 +724,27 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
             "placeholder-shown" => set.pseudos.push(":placeholder-shown"),
             "selection" => set.pseudos.push("::selection"),
             "placeholder" => set.pseudos.push("::placeholder"),
+            // The pseudo-element tier: the tailwindcss v4.1.17
+            // pseudo-elements + state blocks' remaining registrations
+            // (the upstream selector texts, the selection/placeholder
+            // arm's own shape). `marker:` sets the four-selector
+            // disjunction ([`selector_for`] renders the alternatives);
+            // `before:`/`after:` additionally carry the functional
+            // body's injected content line ([`push_rules`] prepends it).
+            "before" => {
+                set.pseudos.push("::before");
+                set.content_injected = true;
+            }
+            "after" => {
+                set.pseudos.push("::after");
+                set.content_injected = true;
+            }
+            "marker" => set.marker = true,
+            "first-letter" => set.pseudos.push("::first-letter"),
+            "first-line" => set.pseudos.push("::first-line"),
+            "file" => set.pseudos.push("::file-selector-button"),
+            "backdrop" => set.pseudos.push("::backdrop"),
+            "details-content" => set.pseudos.push("::details-content"),
             "group-hover" | "group-focus" => {
                 let probe = name.strip_prefix("group-").unwrap_or(name);
                 set.parent = Some(match label {
@@ -791,6 +828,26 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         Cond::PlaceholderShown => set.pseudos.push(":placeholder-shown"),
         Cond::Selection => set.pseudos.push("::selection"),
         Cond::Placeholder => set.pseudos.push("::placeholder"),
+        // The pseudo-element tier: the upstream selector texts derived
+        // from the typed conditions (the fold's spellings render their
+        // own heads — the render cannot drift the fold, the
+        // selection/placeholder arm's own shape). `marker:` sets the
+        // four-selector disjunction; `before:`/`after:` carry the
+        // injected content line beside the head.
+        Cond::Before => {
+            set.pseudos.push("::before");
+            set.content_injected = true;
+        }
+        Cond::After => {
+            set.pseudos.push("::after");
+            set.content_injected = true;
+        }
+        Cond::Marker => set.marker = true,
+        Cond::FirstLetter => set.pseudos.push("::first-letter"),
+        Cond::FirstLine => set.pseudos.push("::first-line"),
+        Cond::FileSelector => set.pseudos.push("::file-selector-button"),
+        Cond::Backdrop => set.pseudos.push("::backdrop"),
+        Cond::DetailsContent => set.pseudos.push("::details-content"),
         Cond::GroupHover => {
             set.parent = Some(".group:hover".to_string());
             set.peer = false;
@@ -990,6 +1047,42 @@ fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
     }
     out.push('.');
     out.push_str(&escape_class(raw));
+    let dark_suffix = if set.dark {
+        ":where(.dark, .dark *)"
+    } else {
+        ""
+    };
+    // The `marker:` render target: the FOUR-selector disjunction the
+    // upstream registration carries (`staticVariant('marker',
+    // ['& *::marker', '&::marker', '& *::-webkit-details-marker',
+    // '&::-webkit-details-marker'])`) — one rule, the alternatives
+    // comma-joined, each carrying the conjunctive stack the flat arm
+    // composes (the probe suffixes ride every alternative the way the
+    // `:hover` conjunct of `hover:marker:` does).
+    if set.marker {
+        const MARKER_SUFFIXES: [&str; 4] = [
+            " *::marker",
+            "::marker",
+            " *::-webkit-details-marker",
+            "::-webkit-details-marker",
+        ];
+        let alternatives: Vec<String> = MARKER_SUFFIXES
+            .iter()
+            .map(|suffix| {
+                let mut alt = out.clone();
+                for pseudo in &set.pseudos {
+                    alt.push_str(pseudo);
+                }
+                alt.push_str(suffix);
+                for probe in &set.probes {
+                    alt.push_str(probe);
+                }
+                alt.push_str(dark_suffix);
+                alt
+            })
+            .collect();
+        return alternatives.join(", ");
+    }
     for pseudo in &set.pseudos {
         out.push_str(pseudo);
     }
@@ -1011,8 +1104,19 @@ fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
 /// picks the pair's dark half where one exists (the light half never
 /// renders under dark).
 fn push_rules(rules: &mut Vec<CssRule>, raw: &str, set: &CondSet, decls: &[lower::CssDecl]) {
+    // The `before:`/`after:` body contract (the upstream functional
+    // body, pinned verbatim: `decl('content', 'var(--tw-content)')`
+    // rides ahead of `...v.nodes`). The per-rule `""` fallback stands
+    // in for the at-root `@property --tw-content` registration the
+    // per-candidate emitter cannot carry — the same initial value
+    // upstream registers, the documented divergence.
+    let content_line = if set.content_injected {
+        "content: var(--tw-content, \"\");\n"
+    } else {
+        ""
+    };
     let lines = |dark: bool| {
-        decls
+        let body = decls
             .iter()
             .map(|decl| {
                 let value = if dark {
@@ -1023,7 +1127,8 @@ fn push_rules(rules: &mut Vec<CssRule>, raw: &str, set: &CondSet, decls: &[lower
                 format!("{}: {};", decl.prop_name, value)
             })
             .collect::<Vec<_>>()
-            .join("\n")
+            .join("\n");
+        format!("{content_line}{body}")
     };
     if set.dark {
         // The rule already fires under dark: the pair's dark half IS the
