@@ -844,8 +844,24 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
             }
             Cond::GroupHover => env.group_hover = true,
             Cond::GroupFocus => env.group_focus = true,
+            // The composition tier sets its own fact (the differential
+            // harness answers the walk both sides with the SAME env —
+            // each composition is its own probe, the landed pair's
+            // shape).
+            Cond::GroupFocusVisible => env.group_focus_visible = true,
+            Cond::GroupFocusWithin => env.group_focus_within = true,
+            Cond::GroupActive => env.group_active = true,
+            Cond::GroupDisabled => env.group_disabled = true,
+            Cond::GroupVisited => env.group_visited = true,
+            Cond::GroupChecked => env.group_checked = true,
             Cond::PeerHover => env.peer_hover = true,
             Cond::PeerFocus => env.peer_focus = true,
+            Cond::PeerFocusVisible => env.peer_focus_visible = true,
+            Cond::PeerFocusWithin => env.peer_focus_within = true,
+            Cond::PeerActive => env.peer_active = true,
+            Cond::PeerDisabled => env.peer_disabled = true,
+            Cond::PeerVisited => env.peer_visited = true,
+            Cond::PeerChecked => env.peer_checked = true,
             Cond::Bp(bp) | Cond::Min(bp) => env.viewport_rem = env.viewport_rem.max(bp.rem()),
             Cond::Max(bp) => {
                 let below = (bp.rem() - 0.5).max(0.0);
@@ -987,8 +1003,23 @@ fn cond_label(cond: &Cond) -> String {
         Cond::DetailsContent => "details-content".to_string(),
         Cond::GroupHover => "group-hover".to_string(),
         Cond::GroupFocus => "group-focus".to_string(),
+        // The composition spellings reconstruct from the closed table
+        // (the pseudo-element tier's bare-variant shape — the
+        // condition names the composed state's own spelling).
+        Cond::GroupFocusVisible => "group-focus-visible".to_string(),
+        Cond::GroupFocusWithin => "group-focus-within".to_string(),
+        Cond::GroupActive => "group-active".to_string(),
+        Cond::GroupDisabled => "group-disabled".to_string(),
+        Cond::GroupVisited => "group-visited".to_string(),
+        Cond::GroupChecked => "group-checked".to_string(),
         Cond::PeerHover => "peer-hover".to_string(),
         Cond::PeerFocus => "peer-focus".to_string(),
+        Cond::PeerFocusVisible => "peer-focus-visible".to_string(),
+        Cond::PeerFocusWithin => "peer-focus-within".to_string(),
+        Cond::PeerActive => "peer-active".to_string(),
+        Cond::PeerDisabled => "peer-disabled".to_string(),
+        Cond::PeerVisited => "peer-visited".to_string(),
+        Cond::PeerChecked => "peer-checked".to_string(),
         Cond::Bp(bp) | Cond::Min(bp) => bp.name().to_string(),
         Cond::Max(bp) => format!("max-{}", bp.name()),
         Cond::Container {
