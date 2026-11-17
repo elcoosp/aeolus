@@ -613,3 +613,25 @@ Run: `cargo bench -p aeolus-compile --bench form_states` (divan 0.1.21), release
 |---|---|---|
 | `interp_form_state_button` | **160.4 ns** | the fire path (the membership rides, `required_field`/`range_in` answer their halves beside the unset `disabled` complement) |
 | `interp_form_state_default_env` | **26.91 ns** | the resting path (no membership fact — every form-state layer stays the quiet miss a selector that does not match is, the matches-neither boundary the two-fact shape encodes) |
+
+## The pseudo-element render-target tier (2026-11-16, 2-core sandbox)
+
+Run: `cargo bench -p aeolus-compile --bench pseudo_targets` (divan 0.1.21), release profile, shared sandbox. The program is the nine-layer pseudo-mixed string (`selection:bg-[#eab308] placeholder:text-[#ef4444] before:bg-[#22c55e] after:bg-[#eab308] marker:text-[#ef4444] p-4 hover:bg-[#b91c1c]`): six pseudo layers + base + hover. No `Env` rides the walk — a pseudo layer fires by its condition alone (the condition-equality walk, the render-target contract), so the cost is the per-pass layer scan the whole tier shares.
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_pseudo_selection` | **65.32 ns** | the first-half pair's target (one layer participates, five skips) |
+| `interp_pseudo_placeholder` | **55.42 ns** | the other half of the pair (the scoped-empty path's shape) |
+| `interp_pseudo_before` | **53.82 ns** | the tier's functional body (the injected content line is the CSS arm's contract, not the walk's cost) |
+| `interp_pseudo_marker` | **56.87 ns** | the four-selector head is the emit side; the walk is target-generic (one layer, condition equality) |
+| `interp_pseudo_theme_selection` | **54.85 ns** | the themed form over the same program (the token resolution beside the target) |
+
+## The media-feature remainder (2026-11-16, 2-core sandbox)
+
+Run: `cargo bench -p aeolus-compile --bench preferences` (divan 0.1.21), release profile, shared sandbox. The remainder program is the two-layer string (`inverted-colors:p-8 noscript:mt-2`); the `Env` answers both layers (the frame-state tier — no probe seam), so the per-layer cost is the env-field read the whole media tier shares.
+
+| benchmark | median | notes |
+|---|---|---|
+| `interp_preferences_remainder` | **80.38 ns** | the remainder's fire path (one layer holds on `inverted_colors`, `noscript:` the quiet miss) |
+| `interp_preferences_button` | **111.3 ns** | the family walk beside it (the five preference layers, two facts held) |
+| `interp_preferences_default_env` | **54.14 ns** | the resting path (every media layer the quiet miss) |
