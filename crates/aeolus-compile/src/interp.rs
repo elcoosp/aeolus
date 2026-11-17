@@ -301,6 +301,14 @@ pub struct Env {
     /// `enable`/`initial-only` have no v4.1.17 registration, the
     /// spelling set stays closed).
     pub scripting_none: bool,
+    /// The element is in its starting-style frame ([`Cond::Starting`]'s
+    /// `starting:` — the transition's first frame, the host's
+    /// first-render gate beside the transition; the at-rule tier the
+    /// media facts ride — an at-rule block wraps the rule, the `@media`
+    /// shape). One AFFIRMATIVE frame fact: an unset bit is the quiet
+    /// miss a frame the element is not in is, the media tier's own
+    /// reading — no probe seam and no sourceless note.
+    pub starting_style: bool,
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
@@ -635,8 +643,9 @@ impl ContainerProbe for ContainerState<'_> {
 // ---------------------------------------------------------------------------
 
 /// The element's DOM-position facts — the ONE answer the structural
-/// seam carries. Three fields cover every positional test the
-/// [`Structural`](aeolus_ir::Structural) family encodes:
+/// seam carries. Five fields cover every positional test the
+/// [`Structural`](aeolus_ir::Structural) family encodes, in TWO
+/// dimensions:
 ///
 /// * `index` — the element's 0-based position among its parent's
 ///   element children (`first` is 0; CSS's 1-based ordinals subtract
@@ -644,11 +653,27 @@ impl ContainerProbe for ContainerState<'_> {
 /// * `sibling_count` — the parent's element-child count, THIS element
 ///   included (`last` is `index + 1 == count`; `only` is
 ///   `count == 1`);
+/// * `type_index` — the element's 0-based position among its parent's
+///   element children OF THE ELEMENT'S OWN TYPE (`first-of-type` is 0;
+///   what "same type" means is the HOST's own reading — the seam
+///   carries the answer, never a tag string);
+/// * `type_sibling_count` — the parent's same-type element-child
+///   count, this element included (`last-of-type` is
+///   `type_index + 1 == type_sibling_count`; `only-of-type` is
+///   `type_sibling_count == 1`);
 /// * `empty` — the element carries no children (`:empty`; a fact about
 ///   the element's OWN children, independent of its position).
 ///
 /// CSS parity: the first child (index 0) is `:nth-child(odd)` and
-/// `:nth-child(1)`, the second (index 1) even.
+/// `:nth-child(1)`, the second (index 1) even — and the same parity
+/// holds in the type dimension (`type_index` 0 is `:nth-of-type(odd)`
+/// and `:nth-of-type(1)`). The two dimensions are INDEPENDENT: an
+/// element can be the middle child overall and the first of its type,
+/// so a facts value that carries one dimension and not the other
+/// answers only the tests that dimension encodes (an of-type test with
+/// no type facts quietly misses, the positional selector that cannot
+/// be evaluated never matches — the same reading the child-index
+/// fields carry).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct StructFacts {
     /// The element's 0-based child index, or `None` when the host does
@@ -659,6 +684,17 @@ pub struct StructFacts {
     /// The parent's element-child count (this element included), or
     /// `None` when the host does not know.
     pub sibling_count: Option<usize>,
+    /// The element's 0-based position among its same-type siblings, or
+    /// `None` when the host does not know (the of-type tier's own
+    /// dimension — an unknown type index quietly misses every of-type
+    /// test, and a facts value built from the child-index facts alone
+    /// (`StructFacts::new`) carries `None` here by design: the
+    /// pre-tier hosts keep their answers, the of-type tests just stay
+    /// quiet).
+    pub type_index: Option<usize>,
+    /// The parent's same-type element-child count (this element
+    /// included), or `None` when the host does not know.
+    pub type_sibling_count: Option<usize>,
     /// The element carries no children (the `:empty` test).
     pub empty: bool,
 }
@@ -671,16 +707,43 @@ impl StructFacts {
     pub const UNKNOWN: Self = Self {
         index: None,
         sibling_count: None,
+        type_index: None,
+        type_sibling_count: None,
         empty: false,
     };
 
     /// The facts for one positioned element: `index` 0-based,
     /// `sibling_count` the parent's element-child count (this element
-    /// included), not empty.
+    /// included), not empty. The TYPE-relative facts stay `None` — the
+    /// child-index facts alone answer the child-index tests, the
+    /// of-type tests quietly miss until a host supplies
+    /// `type_index`/`type_sibling_count` too (the two dimensions are
+    /// independent answers, never one derived from the other).
     pub const fn new(index: usize, sibling_count: usize) -> Self {
         Self {
             index: Some(index),
             sibling_count: Some(sibling_count),
+            type_index: None,
+            type_sibling_count: None,
+            empty: false,
+        }
+    }
+
+    /// The facts for one positioned element whose type-relative
+    /// position is known too: the child-index pair and the same-type
+    /// pair ride together (the of-type tier's `new` sibling — a host
+    /// that knows both dimensions answers both).
+    pub const fn with_type(
+        index: usize,
+        sibling_count: usize,
+        type_index: usize,
+        type_sibling_count: usize,
+    ) -> Self {
+        Self {
+            index: Some(index),
+            sibling_count: Some(sibling_count),
+            type_index: Some(type_index),
+            type_sibling_count: Some(type_sibling_count),
             empty: false,
         }
     }
@@ -751,6 +814,30 @@ pub fn structural_fires(test: aeolus_ir::Structural, facts: StructFacts) -> bool
                 .index
                 .zip(facts.sibling_count)
                 .is_some_and(|(index, count)| count - index == ordinal)
+        }),
+        // The of-type tier: the child-index arms' own semantics, read
+        // in the type-relative dimension (`type_index`/
+        // `type_sibling_count` — the facts the host's same-type answer
+        // carries, never derived from the child-index fields).
+        Structural::FirstOfType => facts.type_index == Some(0),
+        Structural::LastOfType => match (facts.type_index, facts.type_sibling_count) {
+            (Some(type_index), Some(type_count)) => type_index + 1 == type_count,
+            _ => false,
+        },
+        Structural::OnlyOfType => {
+            facts.type_index == Some(0) && facts.type_sibling_count == Some(1)
+        }
+        // 1-based CSS parity in the type dimension too: type index 0 is
+        // the first same-type sibling, `:nth-of-type(odd)`.
+        Structural::NthOfType(n) => usize::try_from(n)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_sub(1))
+            .is_some_and(|ordinal| facts.type_index == Some(ordinal)),
+        Structural::NthLastOfType(n) => usize::try_from(n).is_ok_and(|ordinal| {
+            facts
+                .type_index
+                .zip(facts.type_sibling_count)
+                .is_some_and(|(type_index, type_count)| type_count - type_index == ordinal)
         }),
     }
 }
@@ -1475,6 +1562,13 @@ pub(crate) fn decide(
             aeolus_ir::Pref::InvertedColors => env.inverted_colors,
             aeolus_ir::Pref::NoScript => env.scripting_none,
         }),
+        // The starting-style at-rule is FRAME STATE (the transition's
+        // first frame, the tier the media facts ride): the Env answers
+        // — one affirmative fact, the host's first-render gate — and
+        // an unset bit is a QUIET miss (a frame the element is not in,
+        // never an exclusion note; the media facts' own reading, no
+        // probe seam).
+        Cond::Starting => fires(env.starting_style),
         // The direction variants are FRAME STATE (the element's
         // resolved `direction`, the tier the preference and capability
         // bits ride): the Env answers — `rtl:` on the fact, `ltr:` its
