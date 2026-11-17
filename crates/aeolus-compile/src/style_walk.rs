@@ -167,6 +167,80 @@ pub fn program_style_struct(
     run(layers, keywords, env, None, None, structs, None, None, None)
 }
 
+/// [`program_style`] with the NAMED-CONTAINER seam wired — the
+/// `interp_containers` convention on the program lane, the narrow
+/// form of
+/// [`program_style_probes_containers_struct_descendants_supports`]
+/// with the seams it does not name riding `None`: one
+/// [`ContainerProbe`] answers the `@container` layers (a hit fires by
+/// the same AT-and-above / strictly-below boundary rules the interp
+/// pins, a container the source does not know is a QUIET miss, `None`
+/// keeps the reported boundary
+/// [`InterpNote::ContainerUnqueried`]), and the token tail (the
+/// program lane's `*_with` convention) resolves the theme forms last —
+/// `None` refuses them per longhand into the walk's report.
+pub fn program_style_containers(
+    layers: &'static [Layer],
+    keywords: &'static [&'static str],
+    env: &Env,
+    containers: Option<&dyn ContainerProbe>,
+    tokens: Option<&dyn TokenSource>,
+) -> (ResolvedStyle, StyleWalk) {
+    run(
+        layers, keywords, env, None, containers, None, None, None, tokens,
+    )
+}
+
+/// [`program_style`] with the `has-*` seam wired — the
+/// `interp_descendants` convention on the program lane, the narrow
+/// form of
+/// [`program_style_probes_containers_struct_descendants_supports`]
+/// with the seams it does not name riding `None`: one
+/// [`DescendantProbe`] answers the descendant layers (a YES fires, a
+/// NO is a quiet skip, `None` keeps the reported boundary
+/// [`InterpNote::DescendantUnqueried`]), and the token tail resolves
+/// the theme forms (the program lane's `*_with` convention).
+pub fn program_style_descendants(
+    layers: &'static [Layer],
+    keywords: &'static [&'static str],
+    env: &Env,
+    descendants: Option<&dyn DescendantProbe>,
+    tokens: Option<&dyn TokenSource>,
+) -> (ResolvedStyle, StyleWalk) {
+    run(
+        layers,
+        keywords,
+        env,
+        None,
+        None,
+        None,
+        descendants,
+        None,
+        tokens,
+    )
+}
+
+/// [`program_style`] with the `@supports` seam wired — the
+/// `interp_supports` convention on the program lane, the narrow form
+/// of
+/// [`program_style_probes_containers_struct_descendants_supports`]
+/// with the seams it does not name riding `None`: one
+/// [`SupportsProbe`] answers the capability layers (a YES fires, a NO
+/// is a quiet skip, `None` keeps the reported boundary
+/// [`InterpNote::SupportsUnqueried`]), and the token tail resolves the
+/// theme forms (the program lane's `*_with` convention).
+pub fn program_style_supports(
+    layers: &'static [Layer],
+    keywords: &'static [&'static str],
+    env: &Env,
+    supports: Option<&dyn SupportsProbe>,
+    tokens: Option<&dyn TokenSource>,
+) -> (ResolvedStyle, StyleWalk) {
+    run(
+        layers, keywords, env, None, None, None, None, supports, tokens,
+    )
+}
+
 /// [`program_style`] with the interp's two seams wired: an
 /// [`AttrProbe`] source for the element-own `data-*`/`aria-*` layers
 /// (the `tw_probes` convention) and a [`TokenSource`] for the theme
