@@ -365,8 +365,28 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "details-content" => Some(Cond::DetailsContent),
         "group-hover" => Some(Cond::GroupHover),
         "group-focus" => Some(Cond::GroupFocus),
+        // The composition tier: the `group`/`peer` compound mechanisms
+        // compose with every probe state the element-own tier answers
+        // (the tailwindcss v4.1.17 `staticVariant` set — `active`,
+        // `visited`, `disabled`, `checked`, `focus-visible`,
+        // `focus-within` — composed per the compound table's own
+        // eligibility). Each composition is its own typed probe; the
+        // label form (`group-active/menu`) splits before this table
+        // runs (the group-hover precedent).
+        "group-focus-visible" => Some(Cond::GroupFocusVisible),
+        "group-focus-within" => Some(Cond::GroupFocusWithin),
+        "group-active" => Some(Cond::GroupActive),
+        "group-disabled" => Some(Cond::GroupDisabled),
+        "group-visited" => Some(Cond::GroupVisited),
+        "group-checked" => Some(Cond::GroupChecked),
         "peer-hover" => Some(Cond::PeerHover),
         "peer-focus" => Some(Cond::PeerFocus),
+        "peer-focus-visible" => Some(Cond::PeerFocusVisible),
+        "peer-focus-within" => Some(Cond::PeerFocusWithin),
+        "peer-active" => Some(Cond::PeerActive),
+        "peer-disabled" => Some(Cond::PeerDisabled),
+        "peer-visited" => Some(Cond::PeerVisited),
+        "peer-checked" => Some(Cond::PeerChecked),
         _ => None,
     }
 }
@@ -760,12 +780,25 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     "details-content",
     // The mode.
     "dark",
-    // The parent probes: the bare spellings, then the named-label form
-    // (the one `/label` demo spelling the fold documents).
+    // The parent probes: the bare spellings, the composition tier (the
+    // compound mechanisms' full probe-state set), then the named-label
+    // form (the one `/label` demo spelling the fold documents).
     "group-hover",
     "group-focus",
+    "group-focus-visible",
+    "group-focus-within",
+    "group-active",
+    "group-disabled",
+    "group-visited",
+    "group-checked",
     "peer-hover",
     "peer-focus",
+    "peer-focus-visible",
+    "peer-focus-within",
+    "peer-active",
+    "peer-disabled",
+    "peer-visited",
+    "peer-checked",
     "group-hover/menu",
     // The structural family — the bare spellings only (the `nth-N`
     // ordinals are every i32, not a closed spelling set), the of-type
@@ -931,11 +964,25 @@ mod completion_tests {
             "out-of-range",
             // The mode.
             "dark",
-            // The parent probes (bare + the named-label demo spelling).
+            // The parent probes (bare + the composition tier + the
+            // named-label demo spelling — the fold's own table, the
+            // audit holds for the whole wall).
             "group-hover",
             "group-focus",
+            "group-focus-visible",
+            "group-focus-within",
+            "group-active",
+            "group-disabled",
+            "group-visited",
+            "group-checked",
             "peer-hover",
             "peer-focus",
+            "peer-focus-visible",
+            "peer-focus-within",
+            "peer-active",
+            "peer-disabled",
+            "peer-visited",
+            "peer-checked",
             "group-hover/menu",
             // The structural family (the bare spellings; `nth-N` is the
             // parameterized arm the list represents with none — the
