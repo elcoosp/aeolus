@@ -1172,5 +1172,6 @@ fn cond_label(cond: Cond) -> &'static str {
         Cond::Media(_) => "media preference",
         Cond::Dir(_) => "direction",
         Cond::Structural(_) => "structural",
+        Cond::Starting => "starting-style",
     }
 }
