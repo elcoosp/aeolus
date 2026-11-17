@@ -654,7 +654,19 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         Cond::Optional => env.form_associated && !env.required_field,
         Cond::InRange => env.range_bounded && env.range_in,
         Cond::OutOfRange => env.range_bounded && !env.range_in,
-        Cond::Selection | Cond::Placeholder => false,
+        // The pseudo-element tier styles a DIFFERENT render target, not
+        // element state — the env never answers a pseudo layer (the
+        // CSS/interp arms carry the targets' own cascades).
+        Cond::Selection
+        | Cond::Placeholder
+        | Cond::Before
+        | Cond::After
+        | Cond::Marker
+        | Cond::FirstLetter
+        | Cond::FirstLine
+        | Cond::FileSelector
+        | Cond::Backdrop
+        | Cond::DetailsContent => false,
         Cond::GroupHover => env.group_hover,
         Cond::GroupFocus => env.group_focus,
         Cond::PeerHover => env.peer_hover,
@@ -694,6 +706,8 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
             aeolus_ir::Pref::AnyPointerNone => env.any_pointer_none,
             aeolus_ir::Pref::Portrait => env.portrait,
             aeolus_ir::Pref::Landscape => !env.portrait,
+            aeolus_ir::Pref::InvertedColors => env.inverted_colors,
+            aeolus_ir::Pref::NoScript => env.scripting_none,
         },
         // The direction variants are frame state: the env answers (the
         // interp's `decide` semantics shared verbatim — `rtl:` on the
