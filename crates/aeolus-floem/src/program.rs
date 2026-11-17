@@ -266,6 +266,8 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
             aeolus_ir::Pref::AnyPointerNone => env.any_pointer_none,
             aeolus_ir::Pref::Portrait => env.portrait,
             aeolus_ir::Pref::Landscape => !env.portrait,
+            aeolus_ir::Pref::InvertedColors => env.inverted_colors,
+            aeolus_ir::Pref::NoScript => env.scripting_none,
         }),
         // The direction variants are frame state — the Env answers (the
         // interp's `decide` semantics shared verbatim: `rtl:` on the
@@ -295,7 +297,16 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
         ),
         // The pseudo-elements style a DIFFERENT render target, never the
         // element's own cascade.
-        Cond::Selection | Cond::Placeholder => Fire::Excluded(
+        Cond::Selection
+        | Cond::Placeholder
+        | Cond::Before
+        | Cond::After
+        | Cond::Marker
+        | Cond::FirstLetter
+        | Cond::FirstLine
+        | Cond::FileSelector
+        | Cond::Backdrop
+        | Cond::DetailsContent => Fire::Excluded(
             "a pseudo-element styles a different render target — the CSS emit arm renders it",
         ),
     }
