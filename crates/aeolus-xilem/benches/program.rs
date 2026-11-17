@@ -10,10 +10,12 @@
 use divan::Bencher;
 
 use aeolus_compile::{Config, compile_theme, keyword_alignment, keyword_texts};
-use aeolus_rt::{Env, StaticProgram};
+use aeolus_rt::{Env, PseudoTarget, StaticProgram};
 use aeolus_theme::{ThemeSource, TokenTable};
 use aeolus_xilem::widget::TwEnv;
-use aeolus_xilem::{env_for_state, lower_program};
+use aeolus_xilem::{
+    env_for_state, lower_program, lower_program_pseudo, lower_program_pseudo_theme,
+};
 
 /// The shadcn button corpus — the same string the plan path's benches
 /// and the interp arm's measure, one compile frozen per bench process.
@@ -76,4 +78,29 @@ fn plan_walk_button(bencher: Bencher) {
 
 fn main() {
     divan::main();
+}
+
+#[divan::bench]
+fn program_walk_pseudo_target(bencher: Bencher) {
+    // The render-target face's own path (the backend half of the
+    // pseudo-target seam): one `::selection` cascade lowered from the
+    // frozen program through the shared walk's condition-equality
+    // verdict and the backend's report translation — the number a
+    // host that paints the target judges the face by.
+    let program =
+        frozen("selection:bg-red-500 selection:bg-primary placeholder:text-muted-foreground p-4");
+    bencher.bench(|| lower_program_pseudo(&program, PseudoTarget::Selection));
+}
+
+#[divan::bench]
+fn program_walk_pseudo_theme_face(bencher: Bencher) {
+    // The themed face: the runtime tier's table as the TokenSource, the
+    // env riding the resolution (the mode selects the pair halves) —
+    // the same verdict walk, one theme ask per fired longhand.
+    let source = ThemeSource::shadcn().expect("the built-in shadcn source parses");
+    let runtime = TokenTable::runtime(&source).expect("the runtime table builds");
+    let program =
+        frozen("selection:bg-red-500 selection:bg-primary placeholder:text-muted-foreground p-4");
+    let env = Env::default();
+    bencher.bench(|| lower_program_pseudo_theme(&program, PseudoTarget::Selection, &runtime, &env));
 }
