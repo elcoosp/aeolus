@@ -1147,6 +1147,17 @@ fn cond_label(cond: Cond) -> &'static str {
         Cond::OutOfRange => "out-of-range",
         Cond::Selection => "selection",
         Cond::Placeholder => "placeholder",
+        // The pseudo-element tier: the bare spellings (the
+        // selection/placeholder arm's shape — the hover renders the
+        // render-target tier).
+        Cond::Before => "before",
+        Cond::After => "after",
+        Cond::Marker => "marker",
+        Cond::FirstLetter => "first-letter",
+        Cond::FirstLine => "first-line",
+        Cond::FileSelector => "file",
+        Cond::Backdrop => "backdrop",
+        Cond::DetailsContent => "details-content",
         Cond::GroupHover => "group-hover",
         Cond::GroupFocus => "group-focus",
         Cond::PeerHover => "peer-hover",
