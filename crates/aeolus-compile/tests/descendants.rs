@@ -237,6 +237,8 @@ fn structural_and_descendant_probes_compose() {
         &StructFacts {
             index: Some(0),
             sibling_count: Some(3),
+            type_index: None,
+            type_sibling_count: None,
             empty: false,
         },
         &tree_state(),
@@ -267,6 +269,8 @@ fn the_themeless_full_form_rides_every_seam() {
         &StructFacts {
             index: Some(0),
             sibling_count: Some(3),
+            type_index: None,
+            type_sibling_count: None,
             empty: false,
         },
         &tree_state(),
@@ -301,6 +305,8 @@ fn the_themed_full_form_resolves_tokens_too() {
         &StructFacts {
             index: Some(0),
             sibling_count: Some(3),
+            type_index: None,
+            type_sibling_count: None,
             empty: false,
         },
         &tree_state(),
@@ -331,6 +337,8 @@ fn the_matrix_themed_pairs_answer_their_seams() {
     let facts = StructFacts {
         index: Some(0),
         sibling_count: Some(3),
+        type_index: None,
+        type_sibling_count: None,
         empty: false,
     };
 
@@ -458,6 +466,8 @@ fn the_matrix_remaining_themeless_triples_answer_their_seams() {
     let facts = StructFacts {
         index: Some(0),
         sibling_count: Some(3),
+        type_index: None,
+        type_sibling_count: None,
         empty: false,
     };
 
