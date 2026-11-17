@@ -196,6 +196,9 @@ pub enum PlanNoteKind {
     HasFragment {
         /// The rendered `:has(...)` inner text, verbatim.
         inner: &'static str,
+        /// WHY the grammar step refused (the typed-reason discipline:
+        /// the diagnostic names the shape mismatch, not just the text).
+        reason: &'static str,
     },
     /// The `supports-[…]` layer's `@supports` condition: the v0.x plan
     /// surface has no at-rule-condition slot for it AT ALL (the v0.x
@@ -2587,10 +2590,10 @@ fn bucket(
                 let when = V0Cond(vec![Atom::Has(test)]);
                 bucket_rule(plan, when, write);
             }
-            Err(()) => notes.push(PlanNote {
+            Err(reason) => notes.push(PlanNote {
                 span,
                 raw: raw.to_string(),
-                kind: PlanNoteKind::HasFragment { inner },
+                kind: PlanNoteKind::HasFragment { inner, reason },
             }),
         },
         Cond::GroupHas(inner) | Cond::PeerHas(inner) => match has_test(inner) {
@@ -2601,10 +2604,10 @@ fn bucket(
                 )]);
                 bucket_rule(plan, when, write);
             }
-            Err(()) => notes.push(PlanNote {
+            Err(reason) => notes.push(PlanNote {
                 span,
                 raw: raw.to_string(),
-                kind: PlanNoteKind::HasFragment { inner },
+                kind: PlanNoteKind::HasFragment { inner, reason },
             }),
         },
         // The supports conditions: the v0.x surface has no
@@ -2820,9 +2823,13 @@ fn bucket_rule(plan: &mut StylePlan, when: V0Cond, write: impl FnOnce(&mut Resol
 
 /// The `:has(...)` inner fragment → the v0.x `Test` (the state, data
 /// and aria inners the fold's own grammar produces; the rest —
-/// structural selectors, tags — refuse into the note).
-fn has_test(inner: &'static str) -> Result<Test, ()> {
-    let inner = inner.strip_prefix('*').ok_or(())?;
+/// structural selectors, tags — refuse into the note WITH the reason
+/// the grammar step rejected (the typed-reason discipline the crate's
+/// diagnostics carry — never a bare `()` losing the why).
+fn has_test(inner: &'static str) -> Result<Test, &'static str> {
+    let inner = inner
+        .strip_prefix('*')
+        .ok_or("the inner lost the '*' marker the has- fold emits")?;
     if let Some(state) = inner.strip_prefix(':') {
         let state = match state {
             "focus" => State::Focus,
@@ -2833,12 +2840,18 @@ fn has_test(inner: &'static str) -> Result<Test, ()> {
             "disabled" => State::Disabled,
             "focus-visible" => State::FocusVisible,
             "focus-within" => State::FocusWithin,
-            _ => return Err(()),
+            _ => {
+                return Err("the state name is outside the Test surface's state mapping");
+            }
         };
         return Ok(Test::State(state));
     }
-    let inner = inner.strip_prefix('[').ok_or(())?;
-    let inner = inner.strip_suffix(']').ok_or(())?;
+    let inner = inner
+        .strip_prefix('[')
+        .ok_or("the attribute inner lost its opening bracket")?;
+    let inner = inner
+        .strip_suffix(']')
+        .ok_or("the attribute inner lost its closing bracket")?;
     if let Some(rest) = inner
         .strip_prefix("data-")
         .or_else(|| inner.strip_prefix("aria-"))
@@ -2849,7 +2862,7 @@ fn has_test(inner: &'static str) -> Result<Test, ()> {
         };
         return Ok(test);
     }
-    Err(())
+    Err("the attribute inner is outside the data-/aria- families the Test surface carries")
 }
 
 /// The typed structural test → the v0.x oracle's own — a 1:1 map (the
