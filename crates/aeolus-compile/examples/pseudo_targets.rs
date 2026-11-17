@@ -1,16 +1,20 @@
 //! Consumer demonstration: the pseudo-element RENDER TARGETS (plan
 //! §3.5's variant-costs row, the interp arm's own-slice note resolved).
-//! `selection:`/`placeholder:` style a DIFFERENT render target than the
-//! element's own cascade — the element walk excludes those layers with
-//! the [`InterpNote::PseudoElement`] note, and the [`PseudoTarget`]
-//! arm resolves each target's OWN cascade
-//! ([`interp_pseudo`]/[`interp_pseudo_theme`]; the parity the CSS arm
-//! already renders as `::selection`/`::placeholder` rules).
+//! The pseudo-element spellings (`selection:`/`placeholder:` beside the
+//! v4.1.17 tier's `before:`/`after:`/`marker:`/`first-letter:`/
+//! `first-line:`/`file:`/`backdrop:`/`details-content:`) style a
+//! DIFFERENT render target than the element's own cascade — the element
+//! walk excludes those layers with the [`InterpNote::PseudoElement`]
+//! note, and the [`PseudoTarget`] arm resolves each target's OWN
+//! cascade ([`interp_pseudo`]/[`interp_pseudo_theme`]; the parity the
+//! CSS arm already renders as `::selection`/`::before` rules).
 //!
-//! The demo walks one pseudo-mixed program three ways: the element
+//! The demo walks one pseudo-mixed program five ways: the element
 //! cascade (pseudo layers excluded, reported), the selection target
-//! (its own colour), and the placeholder target (empty here — no rules
-//! target it — plus one that does, resolved the same way).
+//! (its own colour), the placeholder target, and the tier's additions —
+//! the `before:` functional body and the `marker:` part — resolved the
+//! same way, beside the closed-set surface ([`PseudoTarget::ALL`] /
+//! `from_name`) the diagnostics and the CLI's `--pseudo` face key on.
 //!
 //! ```sh
 //! cargo run -p aeolus-compile --example pseudo_targets
@@ -78,7 +82,44 @@ fn main() {
         "only the ::placeholder rule applies"
     );
 
-    println!("\n── 4. the themed form: token slots resolve beside the target ──");
+    println!("\n── 4. the tier's render targets: the closed set, one walk each ──");
+    // The pseudo-element tier's additions compile and resolve through
+    // the SAME walk (the target enum grew beside the pair it carried).
+    for classes in [
+        "before:bg-[#22c55e]",
+        "after:bg-[#3f3f46]",
+        "marker:text-[#ef4444]",
+        "first-letter:text-[#eab308]",
+        "first-line:text-[#3f3f46]",
+        "file:bg-[#22c55e]",
+        "backdrop:bg-[#ef4444]",
+        "details-content:text-[#3f3f46]",
+    ] {
+        let compiled = compile(classes, &config).expect("the spelling lowers");
+        let spelling = compiled.program.layers[0]
+            .cond
+            .source()
+            .expect("the tier's conditions name their spelling");
+        let target = PseudoTarget::from_name(spelling).expect("the closed set parses it");
+        let interped = interp_pseudo(&compiled.program, target).expect("the walk resolves");
+        println!(
+            "  ::{spelling}: {} longhand(s), winner condition {:?}",
+            interped.decls.len(),
+            interped.conds[0]
+        );
+        assert_eq!(
+            interped.conds[0],
+            target.cond(),
+            "the winner's condition is the render target's own"
+        );
+    }
+    assert_eq!(
+        PseudoTarget::ALL.len(),
+        10,
+        "the closed set: the pair beside the tier's eight"
+    );
+
+    println!("\n── 5. the themed form: token slots resolve beside the target ──");
     let source = ThemeSource::shadcn_dark().expect("embedded palettes parse");
     let table = TokenTable::runtime(&source).expect("default-seeded source builds");
     let themed = compile_theme("selection:bg-primary", &table, &config).expect("theme compiles");
@@ -96,5 +137,5 @@ fn main() {
         "the token resolved concrete"
     );
 
-    println!("\nall four walks agree with the CSS semantics the pins encode.");
+    println!("\nall five walks agree with the CSS semantics the pins encode.");
 }
