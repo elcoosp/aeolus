@@ -402,3 +402,30 @@ fn the_two_walks_report_identically_themed() {
         );
     }
 }
+
+#[test]
+fn group_and_peer_compositions_render_the_state_heads() {
+    // The composition heads render like the landed probes do: the group
+    // head is a descendant conjunct (`.group:active`), the peer head the
+    // sibling conjunct (`.peer:disabled ~`) — the upstream `group` /
+    // `peer` compound mechanisms' own relations (descendant vs `~ *`).
+    let sheet = emit_css("group-active:p-4 peer-disabled:p-2", &Config::default())
+        .expect("the sheet renders");
+    let text = sheet.to_string();
+    assert!(
+        text.contains(".group:active .group-active\\:p-4 {"),
+        "the group head renders the composed state: {text}"
+    );
+    assert!(
+        text.contains(".peer:disabled ~ .peer-disabled\\:p-2 {"),
+        "the peer head renders the composed state: {text}"
+    );
+    // The label form rides the head (the group-hover/menu precedent).
+    let labelled =
+        emit_css("group-focus-visible/menu:p-1", &Config::default()).expect("the sheet renders");
+    let text = labelled.to_string();
+    assert!(
+        text.contains(".group\\/menu:focus-visible .group-focus-visible\\/menu\\:p-1 {"),
+        "the labelled head renders the composed state: {text}"
+    );
+}
