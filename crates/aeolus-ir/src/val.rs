@@ -71,14 +71,4 @@ impl Val {
     pub const fn is_token(self) -> bool {
         matches!(self, Val::Tok { .. } | Val::ModePair(_))
     }
-
-    /// The verbatim view: the composite grammar's own text, when the value
-    /// is one (the CSS arm renders it as typed; the hosts render it for
-    /// their own readers).
-    pub const fn as_verbatim(self) -> Option<&'static str> {
-        match self {
-            Val::Verbatim(text) => Some(text),
-            _ => None,
-        }
-    }
 }
