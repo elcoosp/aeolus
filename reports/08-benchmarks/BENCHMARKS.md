@@ -635,3 +635,17 @@ Run: `cargo bench -p aeolus-compile --bench preferences` (divan 0.1.21), release
 | `interp_preferences_remainder` | **80.38 ns** | the remainder's fire path (one layer holds on `inverted_colors`, `noscript:` the quiet miss) |
 | `interp_preferences_button` | **111.3 ns** | the family walk beside it (the five preference layers, two facts held) |
 | `interp_preferences_default_env` | **54.14 ns** | the resting path (every media layer the quiet miss) |
+
+## The of-type structural tier (2026-11-17, sandbox)
+
+Run: `cargo bench -p aeolus-compile --bench struct` (divan 0.1.21), release profile. The program is the of-type half of the structural walk (`first-of-type:w-64 nth-of-type-2:hidden p-4`, three layers) — the type-relative facts answer beside the child-index ones, the same per-layer trait-ask cost the family already paid.
+
+| `interp_struct_of_type_hit` | **161.1 ns** | the fire path (the second of three same-type siblings: `nth-of-type-2` fires, `first-of-type` quietly skips — the partial-fire path's cost) |
+| `interp_struct_of_type_unknown_miss` | **114.9 ns** | the resting path (UNKNOWN facts — every type-relative test quietly skips) |
+
+## The `starting:` variant (2026-11-17, sandbox)
+
+Run: `cargo bench -p aeolus-compile --bench starting` (divan 0.1.21), release profile. The program is the starting-style half (`starting:p-8 p-4`, two layers) — the at-rule tier's frame-fact walk, the form-state family's own env-read cost shape.
+
+| `interp_starting_fire` | **127.7 ns** | the fire path (the frame fact rides, the starting-style layer wins last-wins) |
+| `interp_starting_resting` | **80.7 ns** | the resting path (the layer stays the quiet miss a frame the element is not in is) |
