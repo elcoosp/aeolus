@@ -427,6 +427,20 @@ pub enum Structural {
     Nth(i32),
     /// `nth-last-2` (`:nth-last-child(2)`).
     NthLast(i32),
+    /// `first-of-type` (`:first-of-type`) — the parent's first element
+    /// child of the element's own type (the v4.1.17 `variants.ts`
+    /// `staticVariant('first-of-type', ['&:first-of-type'])` spelling;
+    /// the oracle's table grows beside the V1 tier so the differential
+    /// battery stays slot-for-slot).
+    FirstOfType,
+    /// `last-of-type` (`:last-of-type`).
+    LastOfType,
+    /// `only-of-type` (`:only-of-type`).
+    OnlyOfType,
+    /// `nth-of-type-3` (`:nth-of-type(3)`).
+    NthOfType(i32),
+    /// `nth-last-of-type-2` (`:nth-last-of-type(2)`).
+    NthLastOfType(i32),
 }
 
 /// The element's own pseudo-element renderings that v4 names as plain
@@ -484,6 +498,11 @@ impl Structural {
             Structural::Empty => "empty",
             Structural::Nth(_) => "nth",
             Structural::NthLast(_) => "nth-last",
+            Structural::FirstOfType => "first-of-type",
+            Structural::LastOfType => "last-of-type",
+            Structural::OnlyOfType => "only-of-type",
+            Structural::NthOfType(_) => "nth-of-type",
+            Structural::NthLastOfType(_) => "nth-last-of-type",
         }
     }
 }
