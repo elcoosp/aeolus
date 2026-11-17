@@ -145,7 +145,11 @@
 //! addresses), so a repeated class string pools exactly once while the
 //! cache holds it (see the `dyn_cache` module's docs; the built-in
 //! [`TwoGenStore`] is the v0.x `PlanCache`'s two-generation boundedness
-//! story, and the storage is a SEAM — [`DynStore`]).
+//! story, and the storage is a SEAM — [`DynStore`]). The cache's
+//! observability face is a SEAM too: a host-supplied [`DynObserver`]
+//! (built-in [`CacheStats`], default [`NoObserver`]) sees every
+//! hit/miss/store decision beside the counters and the opt-in
+//! `tracing` events.
 //!
 //! The registry semantics are pinned at compile time: the crate refuses
 //! to build against a `REGISTRY_VERSION` other than the one its
@@ -204,7 +208,8 @@ pub use custom::{
 };
 pub use customs_css::{CustomCssError, customs_from_css};
 pub use dyn_cache::{
-    CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity, DynStore, TwoGenStore,
+    CacheSnapshot, CacheStats, CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity,
+    DynObserver, DynStore, NoObserver, TwoGenStore,
 };
 pub use interp::{
     AttrBit, AttrKind, AttrProbe, AttrState, ContainerBound, ContainerProbe, ContainerState,
