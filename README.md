@@ -199,7 +199,7 @@ Every backend consumes **both** the v0.x `StylePlan` (runtime lane) and the V1 f
 | Xilem / Masonry | `aeolus-xilem` | `PropertyStack` + per-state `ResolvedStyle`             | **native gradients** (linear exact, radial normalized; conic reported)                                      |
 | Floem           | `aeolus-floem` | programmatic `Style`, nested selector maps              | native transitions; full pinned-rev taffy surface (grid, overflow, dashes…)                                 |
 | Iced            | `aeolus-iced`  | `StyleBook` → Catalog closures per `Status`/`&Theme`    | linear gradients native; per-corner radius; opacity baked into painted alphas                               |
-| egui            | `aeolus-egui`  | `Frame` + `WidgetVisuals` state cascade                 | hover/press restyle via egui's own machinery; shadows with spread native                                    |
+| egui            | `aeolus-egui`  | `Frame` + `WidgetVisuals` state cascade                 | hover/press restyle via egui's own machinery; shadows with spread native; gradients through the shipped mesh painter (`GradientPaint`/`gradient_mesh` — linear/radial/conic, rect-clipped) |
 | Slint           | `aeolus-slint` | brushes + generated `.slint` bindings & `states` blocks | every emitted binding **compiler-validated in CI**                                                          |
 
 Per-slot support: [capability matrix](reports/02-capability-matrix/CAPABILITY_MATRIX.md) ·
@@ -352,7 +352,7 @@ differential oracle — no big-bang migration.
 - GPUI motion's static emit keeps its per-longhand refusals (`with_animation` needs element id + animator — the stateful `TwAnimExt` lane applies them at runtime); >2-stop / radial / conic gradients refuse
 - the decoration family landed (`decoration-{color,thickness,style}` — three appended longhands, the GPUI walk riding the pinned `text_decoration_*` methods); GPUI renders a single solid line, so the `double`/`dotted`/`dashed` style keywords and the `auto`/`from-font`/rem/percent thickness forms keep their typed refusals (the CSS/interp arms carry the real output)
 - the shadow tier's `shadow-inner` placeholder keeps its typed note on the plan bridge (the `currentColor` has no plan answer); GPUI composes it (the pinned `BoxShadow` carries the `inset` flag), and the plan presets/`shadow-none`/`shadow-{color}` map through the oracle's own pass order (a preset beats the recolour, the oracle's own observable semantics)
-- per-backend gradient gaps (conic on Masonry, radial/conic on Iced, solid fills on egui) → capability matrix
+- per-backend gradient gaps: **egui's gap closed 2026-11 — the mesh-painter seam** (`GradientPaint` + `gradient_mesh`: the lowering bakes the payload, the backend ships the painter egui's solid-`Color32` `Frame` lacks; linear exact through banded strips, radial concentric rings over the `farthest-corner` radius, conic angular sectors — all clipped to the rect, the CSS `background-image`-over-`background-color` layering rendered). Still typed refusals upstream-blocked: conic on Masonry (the vello sweep TODO), radial/conic on Iced (the `Gradient` brush is linear-only at 0.14), Floem (no gradient brush — `Brush::Gradient` needs concrete geometry) → capability matrix
 
 ## Crate map
 
@@ -547,6 +547,7 @@ cargo run -p aeolus-iced --example card_style
 cargo run -p aeolus-iced --example program
 cargo run -p aeolus-egui --example panel_style
 cargo run -p aeolus-egui --example program
+cargo run -p aeolus-egui --example gradient       # the mesh-painter seam: payload bake + vertex tables, headless
 cargo run -p aeolus-slint --example style_snippet
 cargo run -p aeolus-slint --example program
 # CLI as a library
