@@ -225,6 +225,19 @@ pub enum PlanNoteKind {
         /// The typed direction the layer asks about.
         cond: aeolus_ir::Direction,
     },
+    /// The pseudo-element layer's render target (`before:`/`after:`/
+    /// `marker:`/`first-letter:`/`first-line:`/`backdrop:`/
+    /// `details-content:`): the v0.x `PseudoElement` surface carries
+    /// selection/placeholder/file-selector-button ONLY (the set
+    /// predates the tier). The IR lowering is correct; the render
+    /// target reports so the class stays visible, never silently
+    /// dropped (the media-feature boundary's sibling; `file:` lands —
+    /// the v0.x surface carries that part — and emit_css renders the
+    /// real heads for the rest).
+    PseudoElement {
+        /// The typed render target the layer styles.
+        cond: aeolus_ir::Cond,
+    },
     /// The composite grammar's verbatim value (the `Val::Verbatim` slot):
     /// the v0.x plan slots carry baked numerics and row keywords — a
     /// composite text has no slot to land in. The note names the longhand
@@ -251,6 +264,7 @@ impl PlanNoteKind {
             PlanNoteKind::SupportsCondition { .. } => "aeolus::compile::plan::supports_condition",
             PlanNoteKind::MediaFeature { .. } => "aeolus::compile::plan::media_feature",
             PlanNoteKind::Direction { .. } => "aeolus::compile::plan::direction",
+            PlanNoteKind::PseudoElement { .. } => "aeolus::compile::plan::pseudo_element",
             PlanNoteKind::CompositeValue { .. } => "aeolus::compile::plan::composite_value",
         }
     }
@@ -296,6 +310,11 @@ impl PlanNoteKind {
             PlanNoteKind::Direction { .. } => {
                 "the text-direction variant has no slot in the v0.x plan surface; the layer \
                  reports instead of landing — emit_css renders the real output"
+            }
+            PlanNoteKind::PseudoElement { .. } => {
+                "the pseudo-element render target has no slot in the v0.x plan surface (the \
+                 v0.x set carries selection/placeholder/file only); the layer reports \
+                 instead of landing — emit_css renders the real output"
             }
         }
     }
@@ -2686,6 +2705,29 @@ fn bucket(
             let when = V0Cond(vec![Atom::On(Test::Pseudo(PseudoElement::Placeholder))]);
             bucket_rule(plan, when, write);
         }
+        // The pseudo-element tier: `file:` LANDS — the v0.x
+        // `PseudoElement` surface already carries the file-selector
+        // button (the selection/placeholder arm's own shape); the rest
+        // of the tier has no v0.x slot — the style does not land, the
+        // typed note names the render target (emit_css renders the
+        // real heads).
+        Cond::FileSelector => {
+            let when = V0Cond(vec![Atom::On(Test::Pseudo(
+                PseudoElement::FileSelectorButton,
+            ))]);
+            bucket_rule(plan, when, write);
+        }
+        Cond::Before
+        | Cond::After
+        | Cond::Marker
+        | Cond::FirstLetter
+        | Cond::FirstLine
+        | Cond::Backdrop
+        | Cond::DetailsContent => notes.push(PlanNote {
+            span,
+            raw: raw.to_string(),
+            kind: PlanNoteKind::PseudoElement { cond },
+        }),
         Cond::Structural(test) => {
             // The oracle's own `Test::Structural` atom — the typed fold
             // maps 1:1 onto it (the differential battery pins the
