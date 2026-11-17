@@ -46,7 +46,10 @@
 //!   `@media`), the IR folds to the dominant condition; the checker
 //!   walks the env EVERY conjunct holds, where both sides answer, and
 //!   the note records the fold;
-//! * [`MetamorphicNote::PseudoTarget`] — `::selection`/`::placeholder`
+//! * [`MetamorphicNote::PseudoTarget`] — the pseudo-element tier
+//!   (`::selection`/`::placeholder` beside `::before`/`::after`/
+//!   `::marker`/`::first-letter`/`::first-line`/
+//!   `::file-selector-button`/`::backdrop`/`::details-content`)
 //!   layers style a DIFFERENT render target: out of the element cascade
 //!   on both sides (the interp's own [`InterpNote::PseudoElement`]
 //!   semantics, translated);
@@ -883,6 +886,8 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
                 aeolus_ir::Pref::AnyPointerNone => env.any_pointer_none = true,
                 aeolus_ir::Pref::Portrait => env.portrait = true,
                 aeolus_ir::Pref::Landscape => env.portrait = false,
+                aeolus_ir::Pref::InvertedColors => env.inverted_colors = true,
+                aeolus_ir::Pref::NoScript => env.scripting_none = true,
             },
             // The direction variants are frame state: the conjunctive
             // env carries the fact (the complement bakes the bit false,
@@ -904,7 +909,15 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
             | Cond::Structural(_)
             | Cond::Supports(_)
             | Cond::Selection
-            | Cond::Placeholder => {}
+            | Cond::Placeholder
+            | Cond::Before
+            | Cond::After
+            | Cond::Marker
+            | Cond::FirstLetter
+            | Cond::FirstLine
+            | Cond::FileSelector
+            | Cond::Backdrop
+            | Cond::DetailsContent => {}
         }
     }
     env
@@ -957,6 +970,17 @@ fn cond_label(cond: &Cond) -> String {
         Cond::OutOfRange => "out-of-range".to_string(),
         Cond::Selection => "selection".to_string(),
         Cond::Placeholder => "placeholder".to_string(),
+        // The pseudo-element tier: the bare spellings (the
+        // selection/placeholder arm's shape — the label renders the
+        // render-target tier).
+        Cond::Before => "before".to_string(),
+        Cond::After => "after".to_string(),
+        Cond::Marker => "marker".to_string(),
+        Cond::FirstLetter => "first-letter".to_string(),
+        Cond::FirstLine => "first-line".to_string(),
+        Cond::FileSelector => "file".to_string(),
+        Cond::Backdrop => "backdrop".to_string(),
+        Cond::DetailsContent => "details-content".to_string(),
         Cond::GroupHover => "group-hover".to_string(),
         Cond::GroupFocus => "group-focus".to_string(),
         Cond::PeerHover => "peer-hover".to_string(),
@@ -992,12 +1016,21 @@ fn cond_label(cond: &Cond) -> String {
 }
 
 /// The pseudo-element render target a condition folds to, when it is
-/// one (`::selection`/`::placeholder` — a different render target than
-/// the element's own cascade).
+/// one (`::selection`/`::placeholder` and the pseudo-element tier the
+/// fold carries — a different render target than the element's own
+/// cascade; the CSS arm's own head texts, the note's label).
 fn pseudo_target(cond: Cond) -> Option<&'static str> {
     match cond {
         Cond::Selection => Some("::selection"),
         Cond::Placeholder => Some("::placeholder"),
+        Cond::Before => Some("::before"),
+        Cond::After => Some("::after"),
+        Cond::Marker => Some("::marker"),
+        Cond::FirstLetter => Some("::first-letter"),
+        Cond::FirstLine => Some("::first-line"),
+        Cond::FileSelector => Some("::file-selector-button"),
+        Cond::Backdrop => Some("::backdrop"),
+        Cond::DetailsContent => Some("::details-content"),
         _ => None,
     }
 }
