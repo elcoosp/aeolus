@@ -89,6 +89,8 @@ fn empty_element() -> StructFacts {
     StructFacts {
         index: None,
         sibling_count: None,
+        type_index: None,
+        type_sibling_count: None,
         empty: true,
     }
 }
