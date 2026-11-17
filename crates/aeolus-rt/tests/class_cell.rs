@@ -198,3 +198,58 @@ fn applied_customs_freeze_their_keyword_texts() {
         "the registered text rides the frozen slice"
     );
 }
+
+/// The compile surface's FOURTH form: `get_theme_with` (the table and
+/// the bag both joining the slot identity) compiles, interns and
+/// counts like its three siblings — the pin the full-surface test
+/// above skipped (the entrance's only exercise in the workspace; the
+/// surface claim is the cell's own doc contract).
+#[test]
+fn the_theme_and_customs_entrance_compiles_and_counts() {
+    use aeolus_compile::customs_from_css;
+    use aeolus_ir::Prop;
+
+    let config = Config::default();
+    let table = baked_shadcn();
+    let customs = customs_from_css("@utility brand-gone { @apply hidden; }\n", &config)
+        .expect("the applied body registers");
+    let cell = ClassCell::new();
+
+    // The fourth form: table + bag in the identity, the applied custom
+    // freezing its registered keyword text beside the themed literal.
+    let program = cell
+        .get_theme_with("brand-gone bg-primary", &table, &customs, &config)
+        .expect("compiles");
+    assert!(cell.diagnostics().is_empty(), "the baked table answers");
+    assert_eq!(cell.misses(), 1, "the first call compiles");
+    // Same specificity tier, one sorted layer, two longhands: the
+    // applied custom's Display beside the themed token colour.
+    assert_eq!(
+        program.layers.len(),
+        1,
+        "the tier sort merges the base layer"
+    );
+    assert_eq!(program.layers[0].decls[0].prop, Prop::Display);
+    assert_eq!(program.layers[0].decls[1].prop, aeolus_ir::Prop::Background);
+    assert_eq!(
+        program.keyword(0, 0),
+        Some("none"),
+        "the registered text rides the frozen slice"
+    );
+
+    // The same call again: the content+identity match is the fast
+    // path, the same interned slices (the four forms share one swap).
+    let again = cell
+        .get_theme_with("brand-gone bg-primary", &table, &customs, &config)
+        .expect("hits");
+    assert_eq!(cell.hits(), 1, "the content match is the fast path");
+    assert_eq!(cell.misses(), 1, "no recompile");
+    assert_eq!(program, again);
+
+    // A different string through the same entrance: a content miss,
+    // the slot swaps (the one-slot contract the siblings pin).
+    let _ = cell
+        .get_theme_with("brand-gone bg-primary/90", &table, &customs, &config)
+        .expect("compiles");
+    assert_eq!(cell.misses(), 2, "the content change recompiles");
+}
