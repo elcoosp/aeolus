@@ -298,8 +298,8 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1882 tests with all features enabled (2026-11,
-  the pseudo-face handoff's honest sum — `cargo test --workspace --all-features`).
+  **zero** allocations). Workspace battery: 1938 tests with all features enabled (2026-11,
+  the backend-face handoff's honest sum — `cargo test --workspace --all-features`).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -541,8 +541,10 @@ cargo run -p aeolus-gpui --example shadow     # shadow-* on GPUI's own BoxShadow
 # backends: plan lane + V1 program lane each
 cargo run -p aeolus-xilem --example styled_label
 cargo run -p aeolus-xilem --example program
+cargo run -p aeolus-xilem --example program_pseudo  # the render targets' own cascades: the pseudo face lowers beside the silent element walk
 cargo run -p aeolus-floem --example lower_style
 cargo run -p aeolus-floem --example static_program
+cargo run -p aeolus-floem --example program_probes  # the walk's full probe surface: measured containers, DOM facts, subtree answers, capability sets
 cargo run -p aeolus-iced --example card_style
 cargo run -p aeolus-iced --example program
 cargo run -p aeolus-egui --example panel_style
