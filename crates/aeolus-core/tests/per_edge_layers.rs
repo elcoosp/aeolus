@@ -328,3 +328,49 @@ fn snapshot_strict_reader_rejects_bad_masks() {
         "the error path names the offending mask field: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The read side: `is_all`
+// ---------------------------------------------------------------------------
+
+/// The mask read side's whole-family verdict. `EdgeSet::is_all` /
+/// `CornerSet::is_all` had no caller and no coverage anywhere in the
+/// workspace (the suites asserted against the mask LITERAL); the predicate
+/// answers the merged-whole-family shape the edge-wise overlay composes
+/// and the cascades flatten from.
+#[test]
+fn the_mask_predicates_answer_the_whole_family_shape() {
+    let t = theme();
+    let r = Resolver::new(&t);
+    let whole = r.resolve("p-4").unwrap().plan;
+    let pad = whole.base.padding.expect("p-4 sets padding");
+    assert!(pad.set.is_all(), "`p-4` is the whole-edge shape");
+
+    let partial = r.resolve("px-2").unwrap().plan;
+    let pad = partial.base.padding.expect("px-2 sets padding");
+    assert!(
+        !pad.set.is_all(),
+        "`px-2` is the x pair, not the whole edge"
+    );
+
+    // The edge-wise merge composes the whole shape: the x pair under the
+    // y pair covers every edge.
+    let (base, over) = plans("px-2", "py-3");
+    let merged = base.overlay(&over);
+    let pad = merged.base.padding.expect("both families set padding");
+    assert!(pad.set.is_all(), "`px-2 ⊕ py-3` covers every edge");
+
+    let round_all = r.resolve("rounded-md").unwrap().plan;
+    let cr = round_all
+        .base
+        .corner_radius
+        .expect("rounded-md sets radius");
+    assert!(cr.set.is_all(), "`rounded-md` is the whole-corner shape");
+
+    let round_one = r.resolve("rounded-tl-md").unwrap().plan;
+    let cr = round_one
+        .base
+        .corner_radius
+        .expect("rounded-tl-md sets radius");
+    assert!(!cr.set.is_all(), "one corner is not the whole-corner shape");
+}
