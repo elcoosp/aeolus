@@ -87,3 +87,45 @@ fn interp_theme_struct_hit(bencher: Bencher) {
             .expect("the program resolves")
     });
 }
+
+// ---------------------------------------------------------------------------
+// The of-type tier: the type-relative facts answer beside the
+// child-index ones (the structural row's type-relative slice)
+// ---------------------------------------------------------------------------
+
+/// The of-type-mixed string: two of-type layers (one bare, one
+/// ordinal) and one base declaration — the three-arm walk the type
+/// facts answer (each of-type layer is ONE trait-object ask, the same
+/// per-layer cost the child-index family pays).
+const OF_TYPE_CLASSES: &str = "first-of-type:w-64 nth-of-type-2:hidden p-4";
+
+/// The facts the of-type layers HIT: the second of three same-type
+/// siblings (also the third child of five — the two dimensions riding
+/// their own facts, `nth-of-type-2` fires, `first-of-type` quietly
+/// skips — the partial-fire path's cost).
+fn of_type_hit_facts() -> StructFacts {
+    StructFacts::with_type(2, 5, 1, 3)
+}
+
+/// The themeless of-type hit: the ordinal layer fires, the bare layer
+/// quietly skips (two fact asks, two integer-compare verdicts).
+#[divan::bench]
+fn interp_struct_of_type_hit(bencher: Bencher) {
+    let compiled = compile(OF_TYPE_CLASSES, &Config::default()).expect("non-empty input compiles");
+    let facts = of_type_hit_facts();
+    bencher.bench(|| {
+        interp_struct(&compiled.program, &Env::default(), &facts).expect("the program resolves")
+    });
+}
+
+/// The unknown-facts miss over the of-type program: the built-in
+/// answers "unknown" — every type-relative test quietly skips (the
+/// miss path's cost, for the record).
+#[divan::bench]
+fn interp_struct_of_type_unknown_miss(bencher: Bencher) {
+    let compiled = compile(OF_TYPE_CLASSES, &Config::default()).expect("non-empty input compiles");
+    bencher.bench(|| {
+        interp_struct(&compiled.program, &Env::default(), &StructFacts::UNKNOWN)
+            .expect("the program resolves")
+    });
+}
