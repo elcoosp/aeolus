@@ -1443,7 +1443,10 @@ mod tests {
         assert_eq!(shared.length("x"), Some(5.0), "the content rides the Arc");
         // The shared handle is cheap to hand out (the whole point).
         let again: Arc<TailwindTheme> = Arc::clone(&shared);
-        assert!(Arc::ptr_eq(&shared, &again), "the handle clones share the allocation");
+        assert!(
+            Arc::ptr_eq(&shared, &again),
+            "the handle clones share the allocation"
+        );
     }
 
     /// The calc() operator-edge errors are typed parse failures, never
