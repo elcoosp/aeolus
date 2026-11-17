@@ -97,6 +97,24 @@ pub fn env_for_state(
         group_focus: env.group_focused,
         peer_hover: env.peer_hovered,
         peer_focus: env.peer_focused,
+        // The composition facts ride no probe surface yet (the widget
+        // env carries the group/peer hover/focus pair only — the
+        // composed states come from the host's own ancestor/sibling
+        // tracking, which Masonry's flags do not publish): the probe
+        // path honestly keeps them off — the composition layers stay
+        // the quiet miss a selector that does not match is.
+        group_focus_visible: false,
+        group_focus_within: false,
+        group_active: false,
+        group_disabled: false,
+        group_visited: false,
+        group_checked: false,
+        peer_focus_visible: false,
+        peer_focus_within: false,
+        peer_active: false,
+        peer_disabled: false,
+        peer_visited: false,
+        peer_checked: false,
         // The preference and capability facts ride no probe surface
         // (the media-feature queries answer from the user agent, not
         // the element): the probe path honestly keeps them off — the
@@ -205,9 +223,7 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             PlanNoteKind::MediaFeature { pref } => {
                 (format!("media:{}", pref.source()), boundary.help())
             }
-            PlanNoteKind::StartingStyle => {
-                ("starting-style".to_string(), boundary.help())
-            }
+            PlanNoteKind::StartingStyle => ("starting-style".to_string(), boundary.help()),
             PlanNoteKind::Direction { cond } => {
                 (format!("direction:{}", cond.source()), boundary.help())
             }
