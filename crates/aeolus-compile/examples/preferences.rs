@@ -53,4 +53,20 @@ fn main() {
         println!("  {:?} -> {:?}", decl.prop, decl.val);
     }
     println!("  notes: {}", interped.notes.len());
+
+    // The media-feature REMAINDER (the v4.1 additions' tier): the
+    // inverted-colours answer and the scripting feature's `none`
+    // value — the same frame-state facts, the same env-field read.
+    let compiled = compile("inverted-colors:p-8 noscript:mt-2", &Config::default())
+        .expect("the class string compiles");
+    let env = Env {
+        inverted_colors: true,
+        ..Env::default()
+    };
+    let interped = interp(&compiled.program, &env).expect("no theme forms");
+    println!("\nfired (inverted colours, scripting available):");
+    for decl in &interped.decls {
+        println!("  {:?} -> {:?}", decl.prop, decl.val);
+    }
+    println!("  notes: {}", interped.notes.len());
 }
