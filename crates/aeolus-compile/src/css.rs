@@ -752,7 +752,19 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
             "file" => set.pseudos.push("::file-selector-button"),
             "backdrop" => set.pseudos.push("::backdrop"),
             "details-content" => set.pseudos.push("::details-content"),
-            "group-hover" | "group-focus" => {
+            // The parent-relative tier: the state rides the head's
+            // pseudo-class slot, the composition spellings included
+            // (the probe text is the composed state, the prefix the
+            // relation — the fold's typed set decides membership, the
+            // head only renders it).
+            "group-hover"
+            | "group-focus"
+            | "group-focus-visible"
+            | "group-focus-within"
+            | "group-active"
+            | "group-disabled"
+            | "group-visited"
+            | "group-checked" => {
                 let probe = name.strip_prefix("group-").unwrap_or(name);
                 set.parent = Some(match label {
                     "" => format!(".group:{probe}"),
@@ -760,7 +772,8 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
                 });
                 set.peer = false;
             }
-            "peer-hover" | "peer-focus" => {
+            "peer-hover" | "peer-focus" | "peer-focus-visible" | "peer-focus-within"
+            | "peer-active" | "peer-disabled" | "peer-visited" | "peer-checked" => {
                 let probe = name.strip_prefix("peer-").unwrap_or(name);
                 set.parent = Some(match label {
                     "" => format!(".peer:{probe}"),
@@ -863,12 +876,64 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
             set.parent = Some(".group:focus".to_string());
             set.peer = false;
         }
+        // The composition tier renders the same conjunctive head the
+        // landed pair does — the composed state rides the group head's
+        // pseudo-class slot (the head text is the relation's selector,
+        // only the state differs).
+        Cond::GroupFocusVisible => {
+            set.parent = Some(".group:focus-visible".to_string());
+            set.peer = false;
+        }
+        Cond::GroupFocusWithin => {
+            set.parent = Some(".group:focus-within".to_string());
+            set.peer = false;
+        }
+        Cond::GroupActive => {
+            set.parent = Some(".group:active".to_string());
+            set.peer = false;
+        }
+        Cond::GroupDisabled => {
+            set.parent = Some(".group:disabled".to_string());
+            set.peer = false;
+        }
+        Cond::GroupVisited => {
+            set.parent = Some(".group:visited".to_string());
+            set.peer = false;
+        }
+        Cond::GroupChecked => {
+            set.parent = Some(".group:checked".to_string());
+            set.peer = false;
+        }
         Cond::PeerHover => {
             set.parent = Some(".peer:hover".to_string());
             set.peer = true;
         }
         Cond::PeerFocus => {
             set.parent = Some(".peer:focus".to_string());
+            set.peer = true;
+        }
+        Cond::PeerFocusVisible => {
+            set.parent = Some(".peer:focus-visible".to_string());
+            set.peer = true;
+        }
+        Cond::PeerFocusWithin => {
+            set.parent = Some(".peer:focus-within".to_string());
+            set.peer = true;
+        }
+        Cond::PeerActive => {
+            set.parent = Some(".peer:active".to_string());
+            set.peer = true;
+        }
+        Cond::PeerDisabled => {
+            set.parent = Some(".peer:disabled".to_string());
+            set.peer = true;
+        }
+        Cond::PeerVisited => {
+            set.parent = Some(".peer:visited".to_string());
+            set.peer = true;
+        }
+        Cond::PeerChecked => {
+            set.parent = Some(".peer:checked".to_string());
             set.peer = true;
         }
         // The attribute probes: the corpus's attribute-test form (the
