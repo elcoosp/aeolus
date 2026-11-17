@@ -42,7 +42,15 @@
 //! is installed here — the host app owns one), and the [`DynCache`]
 //! surface exposes the hit/miss counters and the resident key count
 //! directly for hosts that budget memory or assert cache behaviour in
-//! their own tests.
+//! their own tests. The third channel is STRUCTURED: a host-supplied
+//! [`DynObserver`] (wired through [`DynCache::with_observer`]) sees
+//! every decision in order — hit/miss/store, the key the store itself
+//! probes, the store event carrying the entry's diagnostic count — with
+//! the built-in [`CacheStats`] collector answering the session's totals
+//! and hit rate, and one stats object shared across caches for the
+//! app-wide budget. The observer adds a channel; it never changes a
+//! decision (the default is the no-op [`NoObserver`], which every
+//! constructor path installs).
 //!
 //! What this slice deliberately is NOT (each documented where it
 //! belongs): caching the emit half (`emit_css` and siblings — the CSS
@@ -355,6 +363,135 @@ impl DynStore for TwoGenStore {
     }
 }
 
+/// The observability seam: a host-implemented observer sees every
+/// decision the cache makes, in order, beside the `tracing` events and
+/// the [`DynCache`] counters — the counters answer HOW OFTEN (the
+/// totals), the observer answers WHAT and WHO ELSE (per-decision keys,
+/// one shared object spanning several caches). The bounds are the
+/// cache's own (`Send + Sync + 'static`): the observer rides the same
+/// `Arc` sharing the compiles do.
+///
+/// The key vocabulary is the [`DynStore`] seam's own: the composed
+/// identity key the cache probes and stores (the input rides verbatim
+/// after the `\u{1}`-separated identity prefix — never a hash of the
+/// string, the v0.x collision-safety rule). Every method defaults to a
+/// no-op body, so an implementor opts into the channels it wants — and
+/// [`NoObserver`], the every-constructor default, implements the trait
+/// with all of them empty.
+pub trait DynObserver: Send + Sync + 'static {
+    /// A probe answered from a resident entry.
+    fn on_hit(&self, _key: &str) {}
+
+    /// A probe missed: the lowering is about to run. An error never
+    /// reaches [`DynObserver::on_store`] — the caller bug reports and
+    /// is never cached, but the miss is real and observed.
+    fn on_miss(&self, _key: &str) {}
+
+    /// The lowered result joined the store; `_diagnostics` is the
+    /// entry's honest per-class report count.
+    fn on_store(&self, _key: &str, _diagnostics: usize) {}
+}
+
+/// The observer's every-constructor default: all channels no-op — the
+/// constructor paths' zero-cost shape (the counters and the `tracing`
+/// events keep answering; the seam adds a channel, never replaces one).
+#[derive(Debug, Default)]
+pub struct NoObserver;
+
+impl DynObserver for NoObserver {}
+
+/// Shared-observer forwarding: an `Arc<T>` of any observer IS an
+/// observer, so one host handle totals several caches (the app-wide
+/// budget's shape) and stays alive beside them — no proxy struct, the
+/// shape the store seam's test doubles had to hand-roll.
+impl<O: DynObserver + ?Sized> DynObserver for Arc<O> {
+    fn on_hit(&self, key: &str) {
+        (**self).on_hit(key);
+    }
+
+    fn on_miss(&self, key: &str) {
+        (**self).on_miss(key);
+    }
+
+    fn on_store(&self, key: &str, diagnostics: usize) {
+        (**self).on_store(key, diagnostics);
+    }
+}
+
+/// The built-in [`DynObserver`]: the session's hit/miss/store totals in
+/// one shareable handle — the counts the cache's own counters keep
+/// (hits, misses) plus the store count they don't carry, plus the
+/// sharing (one object spanning every cache the host wires it into).
+/// Atomic adds under the same `Relaxed` ordering the counters use:
+/// exact totals, no ordering claims.
+#[derive(Debug, Default)]
+pub struct CacheStats {
+    hits: AtomicU64,
+    misses: AtomicU64,
+    stores: AtomicU64,
+}
+
+impl CacheStats {
+    /// The empty session.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The session's totals so far — the `Copy` value the host's own
+    /// budget or test asserts on.
+    pub fn snapshot(&self) -> CacheSnapshot {
+        CacheSnapshot {
+            hits: self.hits.load(Ordering::Relaxed),
+            misses: self.misses.load(Ordering::Relaxed),
+            stores: self.stores.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl DynObserver for CacheStats {
+    fn on_hit(&self, _key: &str) {
+        self.hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn on_miss(&self, _key: &str) {
+        self.misses.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn on_store(&self, _key: &str, _diagnostics: usize) {
+        self.stores.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// One observer session's totals: a `Copy` value the host holds without
+/// holding the observer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CacheSnapshot {
+    /// The probes answered from resident entries.
+    pub hits: u64,
+    /// The probes that missed (the lowering ran; an error still counts
+    /// — the caller bug is a miss that never stores).
+    pub misses: u64,
+    /// The lowered results that joined the store.
+    pub stores: u64,
+}
+
+impl CacheSnapshot {
+    /// Every probe: hits plus misses.
+    pub fn lookups(&self) -> u64 {
+        self.hits + self.misses
+    }
+
+    /// The session's hit rate, or `None` before the first lookup (an
+    /// empty session has no rate to invent).
+    pub fn hit_rate(&self) -> Option<f64> {
+        let lookups = self.lookups();
+        if lookups == 0 {
+            return None;
+        }
+        Some(self.hits as f64 / lookups as f64)
+    }
+}
+
 /// The compile seam's dynamic-string cache: the leak-pool dedupe the
 /// crate docs defer to "P2's DynCache". See the module docs for the
 /// design; the entry points mirror the free
@@ -377,6 +514,7 @@ impl DynStore for TwoGenStore {
 /// ```
 pub struct DynCache<S: DynStore = TwoGenStore> {
     store: S,
+    observer: Arc<dyn DynObserver>,
     hits: AtomicU64,
     misses: AtomicU64,
 }
@@ -400,9 +538,23 @@ impl<S: DynStore> DynCache<S> {
     pub fn with_store(store: S) -> Self {
         Self {
             store,
+            observer: Arc::new(NoObserver),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
         }
+    }
+
+    /// The cache with a host-supplied [`DynObserver`] — the
+    /// observability seam's constructor, chained after ANY constructor
+    /// path (`new`, `with_cap` and `with_store` all start
+    /// observation-free, so `with_store(...).with_observer(...)` is the
+    /// composed shape; the built-in [`CacheStats`] rides an `Arc` the
+    /// host keeps a handle to). The observer adds a channel; it never
+    /// changes a decision — the differential pins every contract
+    /// byte-identical with and without one.
+    pub fn with_observer(mut self, observer: impl DynObserver + 'static) -> Self {
+        self.observer = Arc::new(observer);
+        self
     }
 
     /// [`compile`](crate::compile) over the cache: a hit hands back the
@@ -491,19 +643,22 @@ impl<S: DynStore> DynCache<S> {
         identity: DynIdentity,
         lower: impl FnOnce() -> Result<Compiled, CompileError>,
     ) -> Result<Compiled, CompileError> {
-        if let Some(cached) = self
-            .store
-            .probe(&format!("{}{input}", identity.key_prefix()))
+        // The composed key formats ONCE and rides the probe, the store
+        // AND the observer's events (one vocabulary, the store's own).
+        let key = format!("{}{input}", identity.key_prefix());
+        if let Some(cached) = self.store.probe(&key)
             && cached.identity == identity
         {
             #[cfg(feature = "tracing")]
             tracing::debug!(input_len = input.len(), "dyn cache: hit");
+            self.observer.on_hit(&key);
             self.hits.fetch_add(1, Ordering::Relaxed);
             return Ok(cached.to_compiled());
         }
         self.misses.fetch_add(1, Ordering::Relaxed);
         #[cfg(feature = "tracing")]
         tracing::debug!(input_len = input.len(), "dyn cache: miss");
+        self.observer.on_miss(&key);
         let compiled = lower()?;
         #[cfg(feature = "tracing")]
         tracing::debug!(
@@ -511,10 +666,9 @@ impl<S: DynStore> DynCache<S> {
             diagnostics = compiled.diagnostics.len(),
             "dyn cache: store"
         );
-        self.store.store(
-            format!("{}{input}", identity.key_prefix()),
-            CachedCompiled::from_compiled(identity, &compiled),
-        );
+        self.observer.on_store(&key, compiled.diagnostics.len());
+        self.store
+            .store(key, CachedCompiled::from_compiled(identity, &compiled));
         Ok(compiled)
     }
 
