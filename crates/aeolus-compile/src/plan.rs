@@ -2511,13 +2511,30 @@ fn bucket(
         Cond::Active => bucket_layer(plan, VariantCondition::Active, write),
         Cond::Disabled => bucket_layer(plan, VariantCondition::Disabled, write),
         Cond::Visited => bucket_layer(plan, VariantCondition::Visited, write),
-        Cond::GroupHover | Cond::GroupFocus => {
+        Cond::GroupHover
+        | Cond::GroupFocus
+        | Cond::GroupFocusVisible
+        | Cond::GroupFocusWithin
+        | Cond::GroupActive
+        | Cond::GroupDisabled
+        | Cond::GroupVisited
+        | Cond::GroupChecked => {
             // The named labels fold away on the IR tier (the cond's
             // documented payload set) — the default group carries the
             // style; the label rides the CSS arm's selector head only.
+            // The composition tier lands in the same labelled bucket:
+            // the v0.x plan models the group relation in its own lane,
+            // the composition probe IS that lane's state fact.
             bucket_labelled(&mut plan.group, String::new().into_boxed_str(), write);
         }
-        Cond::PeerHover | Cond::PeerFocus => {
+        Cond::PeerHover
+        | Cond::PeerFocus
+        | Cond::PeerFocusVisible
+        | Cond::PeerFocusWithin
+        | Cond::PeerActive
+        | Cond::PeerDisabled
+        | Cond::PeerVisited
+        | Cond::PeerChecked => {
             bucket_labelled(&mut plan.peer, String::new().into_boxed_str(), write);
         }
         Cond::Bp(bp) | Cond::Min(bp) => {
