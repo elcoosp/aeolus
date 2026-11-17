@@ -1316,7 +1316,10 @@ pub fn longest_prefix(body: &str) -> Option<&'static IndexEntry> {
 /// hash slot, stop on an exact-text hit, an empty slot, or the
 /// probe bound.
 fn probe(candidate: &str) -> Option<&'static IndexEntry> {
-    let start = (fnv1a(PHF_SEED, candidate) as usize) & MASK;
+    // The start slot reads through `slot_of` — one body for the mask
+    // arithmetic the slot table was generated for (the inlined copy
+    // the probe kept was one more body the drift could split).
+    let start = slot_of(candidate);
     for step in 0..PROBE_BOUND {
         let occupant = ROOT_SLOTS[(start + step) & MASK];
         if occupant == EMPTY {
