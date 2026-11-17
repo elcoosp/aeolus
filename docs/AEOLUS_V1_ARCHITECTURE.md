@@ -584,7 +584,18 @@ Do **not** block on these: the design works today and simply gets cheaper if the
    (`aeolus_rt::StaticProgram::style`/`style_with`/`style_pseudo`/
    `style_pseudo_theme` — the walk entries as methods on the frozen type, the
    free entries' delegates, the v0.x `ResolvedStyle` re-exported so the host
-   names the answer) The shadcn PROGRAM TABLES landed 2026-11 beside the lanes (§3.6's surface (2), §10's const-table row — the F6 finding gone): `aeolus-shadcn`'s `program` module interns the verbatim v4 strings through the V1 pipeline once per closed-world combo (`ButtonPrograms` per (variant, size), `BadgePrograms`/`AlertPrograms` per variant, `BasePrograms` per single-string component), the token table riding the handle (the built-in `ThemeSource::shadcn` bake or a host's own), the first compile's diagnostics pinning the documented arbitrary-variant boundary.
+   names the answer) The pseudo-target face rode the PLAN-LANE BACKENDS 2026-11
+   (the render-target contract's backend half: `lower_program_pseudo`/
+   `lower_program_pseudo_theme` on xilem, egui, iced, slint and floem — the
+   target's own cascade lowers into each backend's native payload through the
+   SAME report translation the element walk rides, floem's own walk applying
+   the condition-equality verdict over its `apply_decl` mapping), and the
+   floem walk's FULL PROBE SURFACE landed beside it (the last backend on the
+   lane: `lower_program_probes_containers_struct_descendants_supports` —
+   `structural_fires` re-exported from `aeolus-rt` so the walk shares the
+   interp's structural verdicts verbatim; the probe-seam handoff's "floem
+   already answers" line was drift, the walk demonstrably kept its pre-seam
+   shape until this landing) The shadcn PROGRAM TABLES landed 2026-11 beside the lanes (§3.6's surface (2), §10's const-table row — the F6 finding gone): `aeolus-shadcn`'s `program` module interns the verbatim v4 strings through the V1 pipeline once per closed-world combo (`ButtonPrograms` per (variant, size), `BadgePrograms`/`AlertPrograms` per variant, `BasePrograms` per single-string component), the token table riding the handle (the built-in `ThemeSource::shadcn` bake or a host's own), the first compile's diagnostics pinning the documented arbitrary-variant boundary.
 3. Delete when superseded: `resolve.rs` match walls, `StylePlan`'s `Vec/BTreeMap` shape, `PlanCache` (replaced by `DynCache`),
    per-backend `lower()` duplication (shared via `aeolus-codegen::Emit`).
 4. Keep: `Warning`/`LoweringReport` → becomes `Diagnostics` with spans + reason codes; snapshot JSON becomes a _debug_ serialisation of `Program`.
