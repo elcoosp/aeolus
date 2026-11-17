@@ -66,8 +66,9 @@ pub use aeolus_compile::{
     interp_theme_probes_descendants_supports, interp_theme_probes_struct_descendants_supports,
     interp_theme_probes_struct_supports, interp_theme_probes_supports, interp_theme_struct,
     interp_theme_struct_descendants_supports, interp_theme_struct_supports, interp_theme_supports,
-    overlay, program_style, program_style_probes_containers_struct_descendants_supports,
-    program_style_pseudo, program_style_pseudo_theme, program_style_struct, program_style_with,
+    overlay, program_style, program_style_containers, program_style_descendants,
+    program_style_probes_containers_struct_descendants_supports, program_style_pseudo,
+    program_style_pseudo_theme, program_style_struct, program_style_supports, program_style_with,
     structural_fires,
 };
 pub use aeolus_core::plan::ResolvedStyle;
@@ -162,6 +163,127 @@ impl StaticProgram {
         tokens: Option<&dyn TokenSource>,
     ) -> (ResolvedStyle, StyleWalk) {
         program_style_with(self.layers, self.keywords, env, probes, tokens)
+    }
+
+    /// [`StaticProgram::style`] with the structural seam wired: a
+    /// [`StructProbe`] source answers the [`aeolus_ir::Cond::Structural`]
+    /// layers' DOM-position questions (the `first:`/`last:`/`odd:`
+    /// families) — the free [`program_style_struct`]'s delegate. The
+    /// built-in value is one Copy [`StructFacts`]
+    /// ([`StructFacts::UNKNOWN`] the honest "the host knows nothing"
+    /// answer, a quiet miss); `None` keeps the reported boundary
+    /// ([`InterpNote::StructuralUnqueried`]) — the walk's pre-seam
+    /// shape, unchanged for callers that pass no source. The probe and
+    /// token seams stay sourceless here; the widest face
+    /// ([`StaticProgram::style_probes_containers_struct_descendants_supports`])
+    /// carries them beside the structural one.
+    pub fn style_struct(
+        &self,
+        env: &Env,
+        structs: Option<&dyn StructProbe>,
+    ) -> (ResolvedStyle, StyleWalk) {
+        program_style_struct(self.layers, self.keywords, env, structs)
+    }
+
+    /// [`StaticProgram::style`] with the interp's FULL probe surface
+    /// wired — the widest walk entry on the host face (the free
+    /// [`program_style_probes_containers_struct_descendants_supports`]'s
+    /// delegate, the five backend walks' own load-bearing entry): the
+    /// five probe seams the walk's `decide` verdicts consult, all
+    /// optional, the widest form's token tail (the `*_with`
+    /// convention) resolving the theme forms last.
+    ///
+    /// * `probes` — the element-own `data-*`/`aria-*` layers
+    ///   ([`AttrProbe`], [`StaticProgram::style_with`]'s seam);
+    /// * `containers` — the NAMED container layers ([`ContainerProbe`]):
+    ///   a hit fires by the same AT-and-above / strictly-below boundary
+    ///   rules the interp pins, a container the source does not know is
+    ///   a QUIET miss, and `None` keeps the reported boundary
+    ///   ([`InterpNote::ContainerUnqueried`]);
+    /// * `structs` — the structural layers ([`StructProbe`],
+    ///   [`StaticProgram::style_struct`]'s seam);
+    /// * `descendants` — the `has-*` layers ([`DescendantProbe`]): a YES
+    ///   fires, a NO is a quiet skip, `None` keeps
+    ///   [`InterpNote::DescendantUnqueried`];
+    /// * `supports` — the `supports-*` layers ([`SupportsProbe`]): a YES
+    ///   fires, a NO is a quiet skip, `None` keeps
+    ///   [`InterpNote::SupportsUnqueried`];
+    /// * `tokens` — the theme forms ([`TokenSource`]; `None` refuses
+    ///   them per longhand into [`StyleWalk::refusals`]).
+    ///
+    /// The verdicts stay the interp arm's own `decide` — one
+    /// implementation, two spellings — so the host face cannot disagree
+    /// with the free entries (and the backend walks riding them) on
+    /// when a layer fires, and the narrow faces are this one with the
+    /// seams they do not name riding `None`.
+    pub fn style_probes_containers_struct_descendants_supports(
+        &self,
+        env: &Env,
+        probes: Option<&dyn AttrProbe>,
+        containers: Option<&dyn ContainerProbe>,
+        structs: Option<&dyn StructProbe>,
+        descendants: Option<&dyn DescendantProbe>,
+        supports: Option<&dyn SupportsProbe>,
+        tokens: Option<&dyn TokenSource>,
+    ) -> (ResolvedStyle, StyleWalk) {
+        program_style_probes_containers_struct_descendants_supports(
+            self.layers,
+            self.keywords,
+            env,
+            probes,
+            containers,
+            structs,
+            descendants,
+            supports,
+            tokens,
+        )
+    }
+
+    /// The NAMED-CONTAINER face on THIS program — the free
+    /// [`program_style_containers`]'s delegate (the interp arm's
+    /// `interp_containers` convention, the narrow form of the widest
+    /// face with the seams it does not name riding `None`): one
+    /// [`ContainerProbe`] answers the `@container` layers, the token
+    /// tail resolves the theme forms (`None` keeps the reported
+    /// boundary / refuses the theme forms per longhand, exactly the
+    /// widest face's semantics).
+    pub fn style_containers(
+        &self,
+        env: &Env,
+        containers: Option<&dyn ContainerProbe>,
+        tokens: Option<&dyn TokenSource>,
+    ) -> (ResolvedStyle, StyleWalk) {
+        program_style_containers(self.layers, self.keywords, env, containers, tokens)
+    }
+
+    /// The `has-*` face on THIS program — the free
+    /// [`program_style_descendants`]'s delegate (the interp arm's
+    /// `interp_descendants` convention, the narrow form of the widest
+    /// face): one [`DescendantProbe`] answers the descendant layers, a
+    /// YES fires, a NO is a quiet skip, `None` keeps the reported
+    /// boundary.
+    pub fn style_descendants(
+        &self,
+        env: &Env,
+        descendants: Option<&dyn DescendantProbe>,
+        tokens: Option<&dyn TokenSource>,
+    ) -> (ResolvedStyle, StyleWalk) {
+        program_style_descendants(self.layers, self.keywords, env, descendants, tokens)
+    }
+
+    /// The `@supports` face on THIS program — the free
+    /// [`program_style_supports`]'s delegate (the interp arm's
+    /// `interp_supports` convention, the narrow form of the widest
+    /// face): one [`SupportsProbe`] answers the capability layers, a
+    /// YES fires, a NO is a quiet skip, `None` keeps the reported
+    /// boundary.
+    pub fn style_supports(
+        &self,
+        env: &Env,
+        supports: Option<&dyn SupportsProbe>,
+        tokens: Option<&dyn TokenSource>,
+    ) -> (ResolvedStyle, StyleWalk) {
+        program_style_supports(self.layers, self.keywords, env, supports, tokens)
     }
 
     /// The pseudo-target face on THIS program: one
