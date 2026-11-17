@@ -9,8 +9,20 @@
 //! per the plan's no-smaller-matcher rule): a rotating battery keeps
 //! every call a miss (the single slot has no pool — the bounded pool
 //! is the host's `DynCache`), themeless and themed.
+//!
+//! The OBSERVER row is the observability seam's cost ON the hot path
+//! it rides (the `DynCache` benches' own shape): the hit path gains
+//! one composed-key `format!` (the vocabulary the store's probe and
+//! the events share — the pool pays it for its probe, the cell for its
+//! channel), and the wired observers pin the channel's own overhead
+//! against the observation-free baseline — the built-in counter
+//! ([`CacheStats`]) and the WORST case (a recording observer that
+//! formats and pushes a line per decision).
 
-use aeolus_compile::Config;
+use std::sync::Arc;
+use std::sync::Mutex;
+
+use aeolus_compile::{CacheStats, Config, DynObserver};
 use aeolus_rt::{ClassCell, ThemeSource, TokenTable};
 use divan::Bencher;
 
@@ -25,6 +37,62 @@ fn main() {
 fn cell_hit(bencher: Bencher) {
     let config = Config::default();
     let cell = ClassCell::new();
+    let _ = cell
+        .get("p-4 flex-col gap-2 bg-white", &config)
+        .expect("compiles");
+    bencher.bench_local(|| {
+        cell.get("p-4 flex-col gap-2 bg-white", &config)
+            .expect("hits")
+    });
+}
+
+/// The built-in counter on the hot path: one composed-key `format!`
+/// (the shared vocabulary) plus one virtual call and one relaxed
+/// atomic add per hit.
+#[divan::bench]
+fn cell_hit_stats_observer(bencher: Bencher) {
+    let config = Config::default();
+    let cell = ClassCell::new().with_observer(Arc::new(CacheStats::new()));
+    let _ = cell
+        .get("p-4 flex-col gap-2 bg-white", &config)
+        .expect("compiles");
+    bencher.bench_local(|| {
+        cell.get("p-4 flex-col gap-2 bg-white", &config)
+            .expect("hits")
+    });
+}
+
+/// The worst case a host can wire: a recording observer that formats a
+/// line and appends to a mutex-guarded vector per decision.
+struct Recording(Mutex<Vec<String>>);
+
+impl DynObserver for Recording {
+    fn on_hit(&self, key: &str) {
+        self.0
+            .lock()
+            .expect("bench never poisons")
+            .push(format!("hit {key}"));
+    }
+
+    fn on_miss(&self, key: &str) {
+        self.0
+            .lock()
+            .expect("bench never poisons")
+            .push(format!("miss {key}"));
+    }
+
+    fn on_store(&self, key: &str, diagnostics: usize) {
+        self.0
+            .lock()
+            .expect("bench never poisons")
+            .push(format!("store {key} {diagnostics}"));
+    }
+}
+
+#[divan::bench]
+fn cell_hit_recording_observer(bencher: Bencher) {
+    let config = Config::default();
+    let cell = ClassCell::new().with_observer(Arc::new(Recording(Mutex::new(Vec::new()))));
     let _ = cell
         .get("p-4 flex-col gap-2 bg-white", &config)
         .expect("compiles");
