@@ -709,6 +709,10 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
             aeolus_ir::Pref::InvertedColors => env.inverted_colors,
             aeolus_ir::Pref::NoScript => env.scripting_none,
         },
+        // The starting-style at-rule is frame state: the env answers
+        // (the interp's `decide` semantics shared verbatim — the unset
+        // bit is the quiet miss a frame the element is not in is).
+        Cond::Starting => env.starting_style,
         // The direction variants are frame state: the env answers (the
         // interp's `decide` semantics shared verbatim — `rtl:` on the
         // fact, `ltr:` its complement; the unset bit is the quiet miss
