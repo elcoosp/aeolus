@@ -54,7 +54,10 @@ use aeolus_core::plan::{
 };
 use aeolus_rt::{Env, StaticProgram};
 
-pub use program::{REM_PX, lower_program, lower_program_with};
+pub use program::{
+    REM_PX, lower_program, lower_program_probes_containers_struct_descendants_supports,
+    lower_program_pseudo, lower_program_pseudo_theme, lower_program_with,
+};
 
 /// Everything the lowering could not express in Floem.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
