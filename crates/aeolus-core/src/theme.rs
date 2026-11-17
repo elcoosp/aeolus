@@ -1429,6 +1429,23 @@ fn split_decls(body: &str) -> impl Iterator<Item = &str> {
 mod tests {
     use super::*;
 
+    /// The `seal` escape hatch pins its own contract (the accessor had
+    /// no consumer and no coverage anywhere in the workspace — the
+    /// published crate's owned→shared path): the version bumps (the
+    /// cache-key component swaps see the new snapshot), the Arc hands
+    /// back the SAME theme content, and the owned value is consumed.
+    #[test]
+    fn seal_shares_the_snapshot_and_bumps_the_version() {
+        let t = TailwindTheme::from_theme_css(":root { --x: calc(2px + 3px) }").unwrap();
+        let before = t.version();
+        let shared = t.seal();
+        assert_eq!(shared.version(), before + 1, "the bump is the swap signal");
+        assert_eq!(shared.length("x"), Some(5.0), "the content rides the Arc");
+        // The shared handle is cheap to hand out (the whole point).
+        let again: Arc<TailwindTheme> = Arc::clone(&shared);
+        assert!(Arc::ptr_eq(&shared, &again), "the handle clones share the allocation");
+    }
+
     /// The calc() operator-edge errors are typed parse failures, never
     /// panics: the operator/operand invariants ride the parse path, and
     /// the shunting-yard pops its operator stack under the same guard
