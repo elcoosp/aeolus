@@ -96,6 +96,11 @@ pub enum CssAt {
     /// [`aeolus_ir::Pref`] bit; the head renders the real tailwindcss v4.1.17
     /// text (the static variants' own pinned spellings).
     MediaPref(aeolus_ir::Pref),
+    /// `@starting-style` — the `starting:` variant (the transition's
+    /// first frame, the at-rule tier beside the media forms). No
+    /// payload: the at-rule head is the bare text the upstream
+    /// registration carries.
+    Starting,
 }
 
 impl CssAt {
@@ -142,6 +147,7 @@ impl CssAt {
                     Pref::NoScript => "@media (scripting: none)".into(),
                 }
             }
+            CssAt::Starting => "@starting-style".into(),
         }
     }
 }
@@ -639,6 +645,7 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
                     | aeolus_ir::Cond::Structural(_)
                     | aeolus_ir::Cond::Supports(_)
                     | aeolus_ir::Cond::Media(_)
+                    | aeolus_ir::Cond::Starting
             )
         {
             apply_cond_shape(&mut set, cond);
@@ -906,6 +913,10 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         // the typed bit (the corpus's pinned texts — the render cannot
         // drift the fold).
         Cond::Media(pref) => set.at = Some(CssAt::MediaPref(pref)),
+        // The starting-style at-rule: the bare head the upstream
+        // registration carries (no payload — the render cannot drift
+        // the fold, the media tier's own shape).
+        Cond::Starting => set.at = Some(CssAt::Starting),
         Cond::Bp(bp) | Cond::Min(bp) => set.at = Some(CssAt::MediaMin(bp)),
         Cond::Max(bp) => set.at = Some(CssAt::MediaMax(bp)),
         Cond::Container { bp, name } => set.at = Some(CssAt::ContainerMin { bp, name }),
@@ -944,6 +955,17 @@ fn structural_pseudo(test: aeolus_ir::Structural) -> &'static str {
         Structural::Empty => ":empty",
         Structural::Nth(n) => Box::leak(format!(":nth-child({n})").into_boxed_str()),
         Structural::NthLast(n) => Box::leak(format!(":nth-last-child({n})").into_boxed_str()),
+        // The of-type tier: the same selector grammar in the
+        // type-relative dimension (the upstream `staticVariant` texts:
+        // `&:first-of-type` through the `nth-of-type` functional
+        // bodies).
+        Structural::FirstOfType => ":first-of-type",
+        Structural::LastOfType => ":last-of-type",
+        Structural::OnlyOfType => ":only-of-type",
+        Structural::NthOfType(n) => Box::leak(format!(":nth-of-type({n})").into_boxed_str()),
+        Structural::NthLastOfType(n) => {
+            Box::leak(format!(":nth-last-of-type({n})").into_boxed_str())
+        }
     }
 }
 
