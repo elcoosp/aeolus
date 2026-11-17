@@ -391,11 +391,7 @@ fn structural_and_supports_probes_compose() {
     let interped = interp_struct_supports(
         &compiled.program,
         &Env::default(),
-        &StructFacts {
-            index: Some(0),
-            sibling_count: Some(3),
-            empty: false,
-        },
+        &StructFacts::new(0, 3),
         &target_state(),
     )
     .expect("resolves");
@@ -440,11 +436,7 @@ fn the_themeless_full_form_rides_every_seam() {
         &Env::default(),
         &card_attrs(),
         &ContainerState::new(&bounds),
-        &StructFacts {
-            index: Some(0),
-            sibling_count: Some(3),
-            empty: false,
-        },
+        &StructFacts::new(0, 3),
         &tree_state(),
         &target_state(),
     )
@@ -476,11 +468,7 @@ fn the_themed_full_form_resolves_tokens_too() {
         &Env::default(),
         &card_attrs(),
         &ContainerState::new(&bounds),
-        &StructFacts {
-            index: Some(0),
-            sibling_count: Some(3),
-            empty: false,
-        },
+        &StructFacts::new(0, 3),
         &DescendantState::new(&[]),
         &target_state(),
     )
@@ -508,11 +496,7 @@ fn the_matrix_themed_pairs_answer_their_seams() {
         name: "card",
         rem: 48.0,
     }];
-    let facts = StructFacts {
-        index: Some(0),
-        sibling_count: Some(3),
-        empty: false,
-    };
+    let facts = StructFacts::new(0, 3);
 
     let compiled = compile_theme(
         "@md/card:w-64 supports-[display:grid]:p-8",
@@ -656,11 +640,7 @@ fn the_matrix_themeless_triples_and_quads_answer_their_seams() {
         name: "card",
         rem: 48.0,
     }];
-    let facts = StructFacts {
-        index: Some(0),
-        sibling_count: Some(3),
-        empty: false,
-    };
+    let facts = StructFacts::new(0, 3);
 
     // themeless: containers+struct+supports, probes+containers+supports.
     let compiled =
