@@ -801,6 +801,18 @@ fn write_test(w: &mut W, t: &Test) {
                     w.raw(&n.to_string());
                     w.raw("}");
                 }
+                Structural::NthOfType(n) => {
+                    w.raw("{");
+                    w.key("nth_of_type");
+                    w.raw(&n.to_string());
+                    w.raw("}");
+                }
+                Structural::NthLastOfType(n) => {
+                    w.raw("{");
+                    w.key("nth_last_of_type");
+                    w.raw(&n.to_string());
+                    w.raw("}");
+                }
                 other => w.str_val(structural_name(*other)),
             }
             w.raw("}");
@@ -2256,6 +2268,14 @@ fn read_structural(j: &Json, path: &str) -> Result<Structural, SnapshotError> {
                     value,
                     &join_path(path, "nth_last"),
                 )?)),
+                "nth_of_type" => Ok(Structural::NthOfType(read_i32(
+                    value,
+                    &join_path(path, "nth_of_type"),
+                )?)),
+                "nth_last_of_type" => Ok(Structural::NthLastOfType(read_i32(
+                    value,
+                    &join_path(path, "nth_last_of_type"),
+                )?)),
                 _ => Err(SnapshotError::UnknownField {
                     path: join_path(path, key),
                 }),
@@ -3638,6 +3658,10 @@ fn structural_name(s: Structural) -> &'static str {
         Structural::Only => "only",
         Structural::Empty => "empty",
         Structural::Nth(_) | Structural::NthLast(_) => "",
+        Structural::FirstOfType => "first_of_type",
+        Structural::LastOfType => "last_of_type",
+        Structural::OnlyOfType => "only_of_type",
+        Structural::NthOfType(_) | Structural::NthLastOfType(_) => "",
     }
 }
 
@@ -3649,6 +3673,9 @@ fn parse_structural(s: &str) -> Option<Structural> {
         "even" => Structural::Even,
         "only" => Structural::Only,
         "empty" => Structural::Empty,
+        "first_of_type" => Structural::FirstOfType,
+        "last_of_type" => Structural::LastOfType,
+        "only_of_type" => Structural::OnlyOfType,
         _ => return None,
     })
 }
