@@ -311,8 +311,8 @@ fn walk(root: &Path, check: bool, out: &mut dyn std::io::Write) -> i32 {
 /// Walk ONE artifact in the requested mode — the focused gate the
 /// dedicated commands run (the same write/verify contract as the full
 /// [`walk`], scoped to a single committed file). The exit code rides
-/// beside the artifact's report line (empty only on a write failure,
-/// whose message is the report).
+/// beside the artifact's report line (empty only on a prepare/write
+/// failure, whose message is the report).
 fn walk_one(root: &Path, check: bool, artifact: &'static dyn GeneratedArtifact) -> (i32, String) {
     let path = root.join(artifact.path());
     let generated = artifact.generate();
@@ -323,8 +323,20 @@ fn walk_one(root: &Path, check: bool, artifact: &'static dyn GeneratedArtifact) 
             Err(_) => Outcome::Missing,
         }
     } else {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+        // The parent directory's own failure is the report — the write
+        // error would name the missing directory only indirectly, the
+        // reason's context rides here (the no-silent-failures rule).
+        if let Some(parent) = path.parent()
+            && let Err(mk_err) = std::fs::create_dir_all(parent)
+        {
+            return (
+                EXIT_DRIFT,
+                format!(
+                    "{}  {}  prepare failed: {mk_err}\n",
+                    artifact.name(),
+                    artifact.path()
+                ),
+            );
         }
         match std::fs::write(&path, &generated) {
             Ok(()) => Outcome::Wrote(generated.len()),
