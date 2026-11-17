@@ -21,8 +21,9 @@
 
 use aeolus_core::plan::ResolvedStyle;
 use aeolus_rt::{
-    AttrProbe, Env, InterpNote, PlanNoteKind, StaticProgram, StyleWalk, TokenSource,
-    program_style_with,
+    AttrProbe, ContainerProbe, DescendantProbe, Env, InterpNote, PlanNoteKind, StaticProgram,
+    StructProbe, StyleWalk, SupportsProbe, TokenSource,
+    program_style_probes_containers_struct_descendants_supports, program_style_with,
 };
 
 use crate::LoweringReport;
@@ -63,6 +64,54 @@ pub fn lower_program_with(
     tokens: Option<&dyn TokenSource>,
 ) -> (ResolvedStyle, LoweringReport) {
     let (style, walk) = program_style_with(program.layers, program.keywords, env, probes, tokens);
+    (style, translate(&walk))
+}
+
+/// [`lower_program`] with the walk's FULL probe surface wired — the
+/// widest program-lane entry (the shared walk's
+/// `program_style_probes_containers_struct_descendants_supports`
+/// naming, the backend's report translation unchanged): the five
+/// probe seams the plan-lane program's layers can consult, all
+/// optional.
+///
+/// * `probes` — the element-own `data-*`/`aria-*` layers
+///   ([`AttrProbe`], [`lower_program_with`]'s seam);
+/// * `containers` — the NAMED container layers ([`ContainerProbe`]):
+///   the host's measured `@container` elements answer by the same
+///   AT-and-above / strictly-below boundary rules the interp pins;
+///   `None` keeps the reported boundary — the walk's pre-seam shape,
+///   unchanged for callers that pass no source;
+/// * `structs` — the structural layers ([`StructProbe`]);
+/// * `descendants` — the `has-*` layers ([`DescendantProbe`]): a YES
+///   fires, a NO is a quiet skip, `None` keeps the reported boundary;
+/// * `supports` — the `supports-*` layers ([`SupportsProbe`]): the
+///   render target's capability answer, the same shape;
+/// * `tokens` — the theme forms ([`TokenSource`]).
+///
+/// The verdicts stay the walk's own `decide` (one implementation, two
+/// walks), so the widest form cannot disagree with the narrow entries
+/// or the interp arm on when a layer fires.
+pub fn lower_program_probes_containers_struct_descendants_supports(
+    program: &StaticProgram,
+    env: &Env,
+    probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
+    structs: Option<&dyn StructProbe>,
+    descendants: Option<&dyn DescendantProbe>,
+    supports: Option<&dyn SupportsProbe>,
+    tokens: Option<&dyn TokenSource>,
+) -> (ResolvedStyle, LoweringReport) {
+    let (style, walk) = program_style_probes_containers_struct_descendants_supports(
+        program.layers,
+        program.keywords,
+        env,
+        probes,
+        containers,
+        structs,
+        descendants,
+        supports,
+        tokens,
+    );
     (style, translate(&walk))
 }
 
