@@ -556,6 +556,18 @@ struct Args {
     /// frame, the host's first-render gate — one flag per FACT, the
     /// `--portrait` precedent).
     starting: bool,
+    group_focus_visible: bool,
+    group_focus_within: bool,
+    group_active: bool,
+    group_disabled: bool,
+    group_visited: bool,
+    group_checked: bool,
+    peer_focus_visible: bool,
+    peer_focus_within: bool,
+    peer_active: bool,
+    peer_disabled: bool,
+    peer_visited: bool,
+    peer_checked: bool,
     /// The `--empty` flag (`expand` only): the childless-element fact
     /// the `empty:` layer answers from.
     empty: bool,
@@ -615,6 +627,18 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut child: Option<(usize, usize)> = None;
     let mut child_of_type: Option<(usize, usize)> = None;
     let mut starting = false;
+    let mut group_focus_visible = false;
+    let mut group_focus_within = false;
+    let mut group_active = false;
+    let mut group_disabled = false;
+    let mut group_visited = false;
+    let mut group_checked = false;
+    let mut peer_focus_visible = false;
+    let mut peer_focus_within = false;
+    let mut peer_active = false;
+    let mut peer_disabled = false;
+    let mut peer_visited = false;
+    let mut peer_checked = false;
     let mut empty = false;
     let mut pseudo: Option<String> = None;
     let mut fail_on: Option<String> = None;
@@ -661,6 +685,42 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             // from (the capability flags' sibling).
             "--starting" if allow.contains(&"starting") => {
                 starting = true;
+            }
+            "--group-focus-visible" if allow.contains(&"group_focus_visible") => {
+                group_focus_visible = true;
+            }
+            "--group-focus-within" if allow.contains(&"group_focus_within") => {
+                group_focus_within = true;
+            }
+            "--group-active" if allow.contains(&"group_active") => {
+                group_active = true;
+            }
+            "--group-disabled" if allow.contains(&"group_disabled") => {
+                group_disabled = true;
+            }
+            "--group-visited" if allow.contains(&"group_visited") => {
+                group_visited = true;
+            }
+            "--group-checked" if allow.contains(&"group_checked") => {
+                group_checked = true;
+            }
+            "--peer-focus-visible" if allow.contains(&"peer_focus_visible") => {
+                peer_focus_visible = true;
+            }
+            "--peer-focus-within" if allow.contains(&"peer_focus_within") => {
+                peer_focus_within = true;
+            }
+            "--peer-active" if allow.contains(&"peer_active") => {
+                peer_active = true;
+            }
+            "--peer-disabled" if allow.contains(&"peer_disabled") => {
+                peer_disabled = true;
+            }
+            "--peer-visited" if allow.contains(&"peer_visited") => {
+                peer_visited = true;
+            }
+            "--peer-checked" if allow.contains(&"peer_checked") => {
+                peer_checked = true;
             }
 
             "--empty" if allow.contains(&"empty") => empty = true,
@@ -1005,6 +1065,18 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         child,
         child_of_type,
         starting,
+        group_focus_visible,
+        group_focus_within,
+        group_active,
+        group_disabled,
+        group_visited,
+        group_checked,
+        peer_focus_visible,
+        peer_focus_within,
+        peer_active,
+        peer_disabled,
+        peer_visited,
+        peer_checked,
         empty,
         pseudo,
         fail_on,
@@ -1394,6 +1466,18 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "child",
             "child-of-type",
             "starting",
+            "group_focus_visible",
+            "group_focus_within",
+            "group_active",
+            "group_disabled",
+            "group_visited",
+            "group_checked",
+            "peer_focus_visible",
+            "peer_focus_within",
+            "peer_active",
+            "peer_disabled",
+            "peer_visited",
+            "peer_checked",
             "empty",
             "reduced-motion",
             "more-contrast",
@@ -1487,6 +1571,18 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         inverted_colors: args.inverted_colors,
         scripting_none: args.scripting_none,
         starting_style: args.starting,
+        group_focus_visible: args.group_focus_visible,
+        group_focus_within: args.group_focus_within,
+        group_active: args.group_active,
+        group_disabled: args.group_disabled,
+        group_visited: args.group_visited,
+        group_checked: args.group_checked,
+        peer_focus_visible: args.peer_focus_visible,
+        peer_focus_within: args.peer_focus_within,
+        peer_active: args.peer_active,
+        peer_disabled: args.peer_disabled,
+        peer_visited: args.peer_visited,
+        peer_checked: args.peer_checked,
         direction_rtl: args.direction_rtl,
         validation_invalid: args.validation_invalid,
         user_validated: args.user_validated,
@@ -2680,6 +2776,8 @@ USAGE:
                  [--pointer-fine] [--pointer-coarse] [--pointer-none]
                  [--any-pointer-fine] [--any-pointer-coarse] [--any-pointer-none]
                  [--portrait] [--inverted-colors] [--noscript] [--starting] [--rtl]
+                 [--group-focus-visible] [--group-focus-within] [--group-active] [--group-disabled] [--group-visited] [--group-checked]
+                 [--peer-focus-visible] [--peer-focus-within] [--peer-active] [--peer-disabled] [--peer-visited] [--peer-checked]
                  [--invalid] [--user-valid] [--user-invalid] [--target]
                  [--indeterminate] [--autofill] [--read-write] [--open] [--inert]
                  [--default] [--form-associated] [--required] [--range-bounded]
