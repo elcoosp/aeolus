@@ -891,6 +891,14 @@ fn structural_pseudo(s: Structural) -> String {
         Structural::Empty => ":empty".into(),
         Structural::Nth(n) => format!(":nth-child({n})"),
         Structural::NthLast(n) => format!(":nth-last-child({n})"),
+        // The of-type tier: the same selector grammar in the
+        // type-relative dimension (the oracle's own render, the V1
+        // CSS arm's texts beside).
+        Structural::FirstOfType => ":first-of-type".into(),
+        Structural::LastOfType => ":last-of-type".into(),
+        Structural::OnlyOfType => ":only-of-type".into(),
+        Structural::NthOfType(n) => format!(":nth-of-type({n})"),
+        Structural::NthLastOfType(n) => format!(":nth-last-of-type({n})"),
     }
 }
 
