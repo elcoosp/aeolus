@@ -239,14 +239,14 @@ Pay only for the dynamism you use:
 
 ## Variants & state
 
-`Env` is a `Copy` 4-byte struct written once per frame (`AeolusRoot`) — one TLS read, no locks.
+`Env` is a `Copy` struct of frame facts written once per frame (`AeolusRoot`) — one TLS read, no locks.
 
 | Family                                                     | V1 mapping                                                            | Status                                                        |
 | ---------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `hover:` `active:` `focus:` `focus-visible:`               | native state refinements (GPUI) / selector maps / status closures     | ✅                                                            |
 | `group-*` / `peer-*` (incl. named, `*-has-*`)              | parent-tier typed `Cond`s                                             | ✅                                                            |
-| `dark:`                                                    | T1 pair index / `Env` mode                                            | ✅ branch-free                                                |
-| `sm:` … `2xl:`                                             | `Env.bp` compare                                                      | ✅ 1 compare                                                  |
+| `dark:`                                                    | T1 pair index / `Env.dark`                                            | ✅ branch-free                                                |
+| `sm:` … `2xl:`                                             | `Env.viewport_rem` compare                                            | ✅ 1 compare                                                  |
 | `data-*:` `aria-*:`                                        | typed `AttrProbe` bits (`tw_probes`), CSS selector semantics          | ✅                                                            |
 | `has-*:` `group-has-*:` `peer-has-*:`                      | typed `Cond::Has` + `DescendantProbe` subtree facts (`tw`-side `*_descendants` walks), CSS `:has()` semantics | ✅                                                            |
 | `supports-*:` `supports-[…]:`                              | typed `Cond::Supports` + `SupportsProbe` capability facts (`tw`-side `*_supports` walks), CSS `@supports` semantics | ✅                                                            |
@@ -323,8 +323,8 @@ composes):
 
 | Flag | Crates | What it adds |
 | --- | --- | --- |
-| `tracing` | `aeolus-cli`, `aeolus-compile`, `aeolus-data`, `aeolus-theme` | `debug_span!`/`debug!` events on the pipeline walk (compile, interp, sort, expand); no subscriber is installed — the host owns that |
-| `miette` | `aeolus-cli`, `aeolus-compile`, `aeolus-data`, `aeolus-theme` | structured [`miette::Diagnostic`] impls on the typed errors/diagnostics (codes, help text, spans) |
+| `tracing` | `aeolus-cli`, `aeolus-compile`, `aeolus-data`, `aeolus-theme` | `debug_span!`/`debug!` events on the pipeline walk (compile, interp, sort, expand); no subscriber is installed — the host owns that. The flags FORWARD down the pipeline (`aeolus-cli` → `aeolus-compile`/`aeolus-theme` → `aeolus-data`), so one flag instruments the whole walk from any layer |
+| `miette` | `aeolus-cli`, `aeolus-compile`, `aeolus-data`, `aeolus-theme` | structured [`miette::Diagnostic`] impls on the typed errors/diagnostics (codes, help text, spans); forwards down the pipeline with `tracing` |
 | `verbose-diagnostics` | `aeolus-macro` | multi-line compile-error rendering for `tw!`/`cn!` refusals (the single-line form stays the default) |
 
 ## Status & roadmap
@@ -390,7 +390,7 @@ _`crates/muda-stub` is a dev-sandbox patch crate — never a dependency of a pub
 
 ## Examples
 
-The fastest way in — every crate ships runnable, headless examples (the xtask generator driver is the one exception — it is a build step, not an API):
+The fastest way in — every crate ships runnable, headless examples (the generator driver included: its library face is the same `run(args, out, err)` shape the CLI's):
 
 ```sh
 cargo run -p aeolus-compile --example compile_pipeline  # lex → registry → longhand Program + diagnostics
@@ -486,6 +486,7 @@ cargo run -p aeolus-compile --example custom_seam
 cargo run -p aeolus-compile --example custom_css  # the CSS-file form: @apply composites + functional stars
 cargo run -p aeolus-compile --example dyn_cache
 cargo run -p aeolus-compile --example dyn_store  # a host's own bounded store on the DynStore seam
+cargo run -p aeolus-compile --example cache_observer  # the observer seam: decisions streamed, stats shared
 cargo run -p aeolus-compile --example arbitrary_values
 cargo run -p aeolus-compile --example composites  # the composite grammar: calc(), track lists, url(), ratios
 cargo run -p aeolus-compile --example attr_variants
@@ -588,6 +589,8 @@ cargo run -p aeolus-lsp --example lsp_code_actions  # the codeAction quick fixes
 cargo run -p aeolus-lsp --example lsp_document_highlights  # the click-to-find highlights: every occurrence whose text equals the cursor's
 cargo run -p aeolus-lsp --example lsp_format  # the formatting answer: the canonical-order edits, applied
 cargo run -p aeolus-lsp --bin aeolus-lsp  # the stdio server (an editor spawns this)
+# the generator driver's library face
+cargo run -p xtask --example drift_walkthrough  # list + verify-tables through the run(args, out, err) API (read-only)
 ```
 
 </details>
