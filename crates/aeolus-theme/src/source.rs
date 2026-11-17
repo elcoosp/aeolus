@@ -155,8 +155,13 @@ fn strip_comments(css: &str) -> String {
     'walk: while !rest.is_empty() {
         // One char per step (multi-byte safe): the comment/quote tests
         // are ASCII, the general fallthrough advances by the char's
-        // own length.
-        let ch = rest.chars().next().expect("non-empty");
+        // own length. The step is the loop guard's own reading — the
+        // walk only runs while `rest` is non-empty, so the first char
+        // always exists (the unreachable names the guard, the
+        // no-panic contract's audited form).
+        let Some(ch) = rest.chars().next() else {
+            unreachable!("the walk's own guard: rest is non-empty");
+        };
         if in_string {
             match ch {
                 '\\' => {
