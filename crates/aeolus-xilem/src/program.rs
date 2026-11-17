@@ -156,6 +156,13 @@ pub fn env_for_state(
         required_field: false,
         range_bounded: false,
         range_in: false,
+        // The media-feature remainder is frame state: the probe paths keep
+        // the facts off (the form-state fields' own reading — the probe
+        // tiers carry no media answers; the walks report nothing, the
+        // layers stay the quiet miss). ''no'' here is the honest
+        // frame default, never a silently-fabricated answer.
+        inverted_colors: false,
+        scripting_none: false,
         viewport_rem: env.viewport_width.unwrap_or(0.0) / REM_PX,
         container_rem: env.container_width.map(|width| width / REM_PX),
     }
@@ -200,6 +207,13 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             PlanNoteKind::Direction { cond } => {
                 (format!("direction:{}", cond.source()), boundary.help())
             }
+            // The pseudo-element render targets: the v0.x surface carries
+            // selection/placeholder/file only — the tier's report rides
+            // the boundary channel (emit_css renders the real heads).
+            PlanNoteKind::PseudoElement { cond } => (
+                format!("pseudo:{}", cond.source().unwrap_or("pseudo-element")),
+                boundary.help(),
+            ),
             PlanNoteKind::CompositeValue { prop, text } => {
                 (format!("{} {text}", prop.name()), boundary.help())
             }
