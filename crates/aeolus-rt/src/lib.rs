@@ -12,6 +12,11 @@
 //! Env           ─ the probe situation (re-exported from the interp arm)
 //! TokenTable    ─ the runtime theme tier (re-exported from the theme pass)
 //! DynCache      ─ the bounded dynamic-string cache (the interp/compile seam)
+//! DynObserver   ─ the observability face BOTH slots carry (the pool's
+//!                 seam, joined by the view cell): the wired decisions
+//!                 stream, the `CacheStats` collector, the
+//!                 `NoObserver` default and the composed `session_key`
+//!                 vocabulary — one stream reads the whole app
 //! overlay       ─ the IR-level composition seam (plan §3.6's surface (2):
 //!                 the frozen base under the runtime override, rightmost wins)
 //! MeasuredContainers
@@ -72,6 +77,14 @@ pub use aeolus_compile::{
     structural_fires,
 };
 pub use aeolus_core::plan::ResolvedStyle;
+// The observability face BOTH dynamic slots carry: the bounded pool's
+// seam (`DynObserver`, the `NoObserver` every-constructor default, the
+// built-in `CacheStats` collector and its `CacheSnapshot`) and the
+// composed-key vocabulary (`session_key` — the identity prefix and the
+// input verbatim, the `DynStore` probe's own grammar) the pool's and
+// the view cell's decisions report under. A host consuming THIS crate
+// names the face without adding `aeolus-compile` to its manifest.
+pub use aeolus_compile::{CacheSnapshot, CacheStats, DynObserver, NoObserver, session_key};
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
 pub use containers::MeasuredContainers;
