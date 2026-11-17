@@ -47,17 +47,17 @@ pub use aeolus_compile::{
     AttrBit, AttrKind, AttrProbe, AttrState, CachedCompiled, CompileError, ContainerBound,
     ContainerProbe, ContainerState, Customs, DEFAULT_DYN_CACHE_CAP, DescendantFact, DescendantKind,
     DescendantProbe, DescendantState, Diagnostic, DynCache, DynStore, Env, InterpError, InterpNote,
-    Interped, PlanNoteKind, StructFacts, StructProbe, StyleWalk, SupportsProbe, SupportsState,
-    TokenSource, TwoGenStore, interp, interp_containers, interp_containers_descendants_supports,
-    interp_containers_struct_descendants_supports, interp_containers_struct_supports,
-    interp_containers_supports, interp_descendants_supports, interp_probes,
-    interp_probes_containers, interp_probes_containers_descendants_supports,
+    Interped, PlanNoteKind, PseudoTarget, StructFacts, StructProbe, StyleWalk, SupportsProbe,
+    SupportsState, TokenSource, TwoGenStore, interp, interp_containers,
+    interp_containers_descendants_supports, interp_containers_struct_descendants_supports,
+    interp_containers_struct_supports, interp_containers_supports, interp_descendants_supports,
+    interp_probes, interp_probes_containers, interp_probes_containers_descendants_supports,
     interp_probes_containers_struct_descendants_supports, interp_probes_containers_struct_supports,
     interp_probes_containers_supports, interp_probes_descendants_supports,
     interp_probes_struct_descendants_supports, interp_probes_struct_supports,
-    interp_probes_supports, interp_struct, interp_struct_descendants_supports,
-    interp_struct_supports, interp_supports, interp_theme, interp_theme_containers,
-    interp_theme_containers_descendants_supports,
+    interp_probes_supports, interp_pseudo, interp_pseudo_theme, interp_struct,
+    interp_struct_descendants_supports, interp_struct_supports, interp_supports, interp_theme,
+    interp_theme_containers, interp_theme_containers_descendants_supports,
     interp_theme_containers_struct_descendants_supports, interp_theme_containers_struct_supports,
     interp_theme_containers_supports, interp_theme_descendants_supports, interp_theme_probes,
     interp_theme_probes_containers_descendants_supports,
@@ -67,8 +67,9 @@ pub use aeolus_compile::{
     interp_theme_probes_struct_supports, interp_theme_probes_supports, interp_theme_struct,
     interp_theme_struct_descendants_supports, interp_theme_struct_supports, interp_theme_supports,
     overlay, program_style, program_style_probes_containers_struct_descendants_supports,
-    program_style_with,
+    program_style_pseudo, program_style_pseudo_theme, program_style_struct, program_style_with,
 };
+pub use aeolus_core::plan::ResolvedStyle;
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
 pub use containers::MeasuredContainers;
@@ -137,6 +138,53 @@ impl StaticProgram {
             index += l.decls.len();
         }
         None
+    }
+
+    /// The element walk's style face on THIS program: the frozen
+    /// slices resolve into the v0.x [`StyleWalk`]-reported
+    /// [`ResolvedStyle`] under one probe [`Env`] — the free
+    /// [`program_style`]'s delegate, the slices threaded for the host
+    /// (one import surface, no field plumbing).
+    pub fn style(&self, env: &Env) -> (ResolvedStyle, StyleWalk) {
+        program_style(self.layers, self.keywords, env)
+    }
+
+    /// [`StaticProgram::style`] with the interp's two seams wired: an
+    /// [`AttrProbe`] source for the element-own `data-*`/`aria-*`
+    /// layers and a [`TokenSource`] for the theme forms — the free
+    /// [`program_style_with`]'s delegate. `None` keeps the CSS-quiet
+    /// semantics the free entry documents.
+    pub fn style_with(
+        &self,
+        env: &Env,
+        probes: Option<&dyn AttrProbe>,
+        tokens: Option<&dyn TokenSource>,
+    ) -> (ResolvedStyle, StyleWalk) {
+        program_style_with(self.layers, self.keywords, env, probes, tokens)
+    }
+
+    /// The pseudo-target face on THIS program: one
+    /// [`PseudoTarget`]'s own cascade from the frozen slices — the
+    /// free [`program_style_pseudo`]'s delegate (the
+    /// `interp_pseudo` contract on the program lane). The element's
+    /// own layers and the sibling pseudo targets stay silent here;
+    /// the theme forms refuse per longhand into the walk's report.
+    pub fn style_pseudo(&self, target: PseudoTarget) -> (ResolvedStyle, StyleWalk) {
+        program_style_pseudo(target, self.layers, self.keywords)
+    }
+
+    /// [`StaticProgram::style_pseudo`] with one [`TokenSource`]
+    /// resolving the theme forms (the free
+    /// [`program_style_pseudo_theme`]'s delegate): the `env` rides the
+    /// resolution, never the firing — a pseudo layer fires by its
+    /// condition alone.
+    pub fn style_pseudo_theme(
+        &self,
+        target: PseudoTarget,
+        tokens: &dyn TokenSource,
+        env: &Env,
+    ) -> (ResolvedStyle, StyleWalk) {
+        program_style_pseudo_theme(target, self.layers, self.keywords, tokens, env)
     }
 }
 
