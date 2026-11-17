@@ -216,6 +216,13 @@ pub enum PlanNoteKind {
         /// The typed preference the layer asks about.
         pref: aeolus_ir::Pref,
     },
+    /// The `starting:` layer's at-rule (`@starting-style`, the
+    /// transition's first frame): the v0.x plan surface has no
+    /// starting-style slot (the `Atom` set predates the family, the
+    /// media-feature boundary's sibling). The IR lowering is correct;
+    /// the at-rule reports so the class stays visible, never silently
+    /// dropped.
+    StartingStyle,
     /// The direction layer's spelling (`ltr:`/`rtl:`): the v0.x plan
     /// surface has no text-direction slot (the `Atom` set predates the
     /// family, the media-feature boundary's sibling). The IR lowering
@@ -263,6 +270,7 @@ impl PlanNoteKind {
             PlanNoteKind::HasFragment { .. } => "aeolus::compile::plan::has_fragment",
             PlanNoteKind::SupportsCondition { .. } => "aeolus::compile::plan::supports_condition",
             PlanNoteKind::MediaFeature { .. } => "aeolus::compile::plan::media_feature",
+            PlanNoteKind::StartingStyle => "aeolus::compile::plan::starting_style",
             PlanNoteKind::Direction { .. } => "aeolus::compile::plan::direction",
             PlanNoteKind::PseudoElement { .. } => "aeolus::compile::plan::pseudo_element",
             PlanNoteKind::CompositeValue { .. } => "aeolus::compile::plan::composite_value",
@@ -305,6 +313,10 @@ impl PlanNoteKind {
             }
             PlanNoteKind::MediaFeature { .. } => {
                 "the media-feature preference has no slot in the v0.x plan surface; the layer \
+                 reports instead of landing — emit_css renders the real output"
+            }
+            PlanNoteKind::StartingStyle => {
+                "the starting-style at-rule has no slot in the v0.x plan surface; the layer \
                  reports instead of landing — emit_css renders the real output"
             }
             PlanNoteKind::Direction { .. } => {
@@ -2595,6 +2607,14 @@ fn bucket(
             raw: raw.to_string(),
             kind: PlanNoteKind::MediaFeature { pref },
         }),
+        // The starting-style at-rule: the v0.x Atom set carries no
+        // starting-style slot — the style does not land, the typed note
+        // names the boundary (emit_css renders the real head).
+        Cond::Starting => notes.push(PlanNote {
+            span,
+            raw: raw.to_string(),
+            kind: PlanNoteKind::StartingStyle,
+        }),
         // The direction variants: the v0.x Atom set carries no
         // text-direction slot — the style does not land, the typed note
         // names the direction (emit_css renders the real selector head).
@@ -2828,6 +2848,14 @@ fn structural_of(test: Structural) -> V0Structural {
         Structural::Empty => V0Structural::Empty,
         Structural::Nth(n) => V0Structural::Nth(n),
         Structural::NthLast(n) => V0Structural::NthLast(n),
+        // The of-type tier rides the oracle's own grown table (the
+        // `ast::Structural` arms landed beside the tier — the
+        // differential battery pins the folded layers slot for slot).
+        Structural::FirstOfType => V0Structural::FirstOfType,
+        Structural::LastOfType => V0Structural::LastOfType,
+        Structural::OnlyOfType => V0Structural::OnlyOfType,
+        Structural::NthOfType(n) => V0Structural::NthOfType(n),
+        Structural::NthLastOfType(n) => V0Structural::NthLastOfType(n),
     }
 }
 
