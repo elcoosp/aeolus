@@ -188,6 +188,14 @@ harness = false
 name = "pseudo_targets"
 harness = false
 
+
+# The starting-style variant's benchmark (the at-rule tier's
+# frame-fact walk, the media-feature families' sibling): the fire path
+# and the resting-env quiet-miss path beside it.
+[[bench]]
+name = "starting"
+harness = false
+
 # The metamorphic seam's benchmarks (plan §5.3's differential line, the
 # `compile ⇒ interpret ⇒ equals emit` target): the full three-walk check
 # over the shadcn Button surface, themed and themeless, against the
