@@ -3,8 +3,8 @@
 //! RESOLUTION half, the scoped walk the [`PseudoTarget`] arm adds. The
 //! measured cost is the per-frame pseudo-cascade resolve: one pass over
 //! the interned layers, skipping everything that is not the target's
-//! own — the walk a `::selection`/`::placeholder` render path would
-//! run beside the element cascade.
+//! own — the walk a `::selection`/`::before`/`::marker` render path
+//! would run beside the element cascade.
 //!
 //! The bench bodies `expect` on the walk: a compiled program resolves
 //! under any target (errors are caller bugs — unknown token ids,
@@ -21,11 +21,13 @@ fn main() {
     divan::main();
 }
 
-/// The pseudo-mixed string: one `::selection` rule, one `::placeholder`
-/// rule, a base declaration and a hover layer — the four-layer program
-/// the target walk scopes against.
-const PSEUDO_CLASSES: &str =
-    "selection:bg-[#eab308] placeholder:text-[#ef4444] p-4 hover:bg-[#b91c1c]";
+/// The pseudo-mixed string: the four render targets the tier's first
+/// half carried (one `::selection` rule, one `::placeholder` rule), the
+/// pseudo-element tier's additions (`before:`, `after:`, `marker:`), a
+/// base declaration and a hover layer — the nine-layer program the
+/// target walk scopes against.
+const PSEUDO_CLASSES: &str = "selection:bg-[#eab308] placeholder:text-[#ef4444] \
+     before:bg-[#22c55e] after:bg-[#eab308] marker:text-[#ef4444] p-4 hover:bg-[#b91c1c]";
 
 /// The runtime-tier table over the shadcn source (the themed bench's
 /// token forms).
@@ -76,5 +78,29 @@ fn interp_pseudo_theme_selection(bencher: Bencher) {
     bencher.bench(|| {
         interp_pseudo_theme(&compiled.program, &table, &env, PseudoTarget::Selection)
             .expect("the program resolves")
+    });
+}
+
+/// The `before:` target over the mixed program: the pseudo-element
+/// tier's functional body — one layer participates among the six
+/// pseudo layers, the base and hover layers skipped.
+#[divan::bench]
+fn interp_pseudo_before(bencher: Bencher) {
+    let table = runtime_table();
+    let compiled = pseudo_program(&table);
+    bencher.bench(|| {
+        interp_pseudo(&compiled.program, PseudoTarget::Before).expect("the program resolves")
+    });
+}
+
+/// The `marker:` target over the same program — the walk is
+/// target-generic (the condition equality decides; the CSS arm's
+/// four-selector head is the emit side, not the walk's cost).
+#[divan::bench]
+fn interp_pseudo_marker(bencher: Bencher) {
+    let table = runtime_table();
+    let compiled = pseudo_program(&table);
+    bencher.bench(|| {
+        interp_pseudo(&compiled.program, PseudoTarget::Marker).expect("the program resolves")
     });
 }
