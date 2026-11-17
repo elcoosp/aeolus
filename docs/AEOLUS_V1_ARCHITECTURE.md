@@ -317,7 +317,7 @@ Every stage is deterministic and total (keeps today's fuzz/property discipline).
 | `aeolus-codegen`                       | `Program → TokenStream`; backend-neutral `Emit` trait                                                                    | Library, used by macros **and** by third parties (gpui-rsx)                                                                         |
 | `aeolus-codegen-gpui`                  | GPUI target: capability table, polyfills, version shims                                                                  | Generated from the pinned GPUI `Styled` API by `xtask` (gpui-rsx's trick)                                                           |
 | `aeolus-macro`                         | The only proc-macro crate: `tw!`, `cn!`, `tw_cn!`, `variants!`, `theme!`                                                 | Thin shell over `aeolus-codegen*`                                                                                                   |
-| `aeolus-rt`                            | Tiny runtime: `Env`, `TokenTable`, `DynCache`, `Program` interpreter                                                     | No locks on the UI path (UI thread is single-threaded)                                                                              |
+| `aeolus-rt`                            | Tiny runtime: `Env`, `TokenTable`, `DynCache`, `Program` interpreter; the observability face (`DynObserver`/`CacheStats`/`NoObserver`/`CacheSnapshot`/`session_key`) is nameable here and the `ClassCell` joins the same seam (`with_observer`) | No locks on the UI path (UI thread is single-threaded); the cell is `!Sync`, the observer handle `Send + Sync`                                                                              |
 | `aeolus-gpui`                          | `TwExt`, `AeolusRoot`, `Env` plumbing, gpui-component theme bridge, re-exports                                           | The crate users depend on                                                                                                           |
 | `aeolus-cli`                            | resolve / css / diff / cn / check / explain / sort / fmt / expand / build / plan (headless; the benches are cargo benches beside the crates)                                                        | Reuses `aeolus-compile` as-is                                                                                                       |
 | `aeolus-lsp`                            | the P5 row's LSP surface (landed 2026-11, the completion and swatch answers joined 2026-11): the headless engine answers from the same pipeline — the extraction seam's strings through the V1 compile walk, per-location typed diagnostics with UTF-16 ranges and stable codes, the hover keyed by the candidate under the cursor (the CSS arm's own declaration texts, or the typed refusal), the completion at the typing edge (the registry spellings, the theme tokens, the compile crate's audited closed variant set), the colour swatches (the per-candidate compile resolving the IR's colour slots through the config's own table), the inline hints (every lowered class rides one `inlayHint` at its end — the CSS arm's own declarations compacted, the hover's markdown as the tooltip; a refused class never hints), the quick fixes (the "did you mean" suggestion seam's editor face — every correction a spelling the pipeline lowers), the document highlights (the cursor's class, every textual occurrence), the semantic tokens (`textDocument/semanticTokens` — the lowered/refused split tokenized from the same walk), the colour presentations (`textDocument/colorPresentation` — the swatch seam's per-slot forms) and the diagnostics pull (`textDocument/diagnostic` — the push diagnostics' own report, one shot); the server half is the stdio JSON-RPC state machine (`bin/aeolus-lsp`) | The engine carries none of the wire types; the state machine is testable without a pipe                                             |
@@ -452,7 +452,16 @@ User overrides go through `cn!` which resolves at compile time when static, or b
 > alignment became a public seam (`aeolus_compile::keyword_alignment`) — the
 > macro freeze, the codegen target and the cell all walk one implementation —
 > and the differential pin holds: the cell's themed program is byte-equal to
-> the macro's frozen program for the same string. The sketch's `Rc<Program>`
+> the macro's frozen program for the same string. The cell's OBSERVABILITY
+> FACE joined 2026-11 (the pool's own seam beside it): `ClassCell::with_observer`
+> wires the `DynObserver` the bounded pool carries — hit/miss/store decisions
+> in order, under the composed `session_key` vocabulary the `DynStore` probe
+> uses (the identity prefix, the input verbatim), the store event carrying the
+> entry's diagnostic count — so ONE `CacheStats` handle spans the pool AND
+> every view cell the app wires it into (the app-wide budget's shape; the cell
+> stays `!Sync`, the handle is `Send + Sync`), with `NoObserver` the
+> every-constructor default and the differential pins holding every contract
+> byte-identical with and without one. The sketch's `Rc<Program>`
 > became the landed IR's interned `&'static` form (the storage note's own
 > answer); the bounded pool remains the host's `DynCache`, the cell is the
 > per-view fast path beside it.
