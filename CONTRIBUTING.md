@@ -55,7 +55,7 @@ dropped feature to be visible:
 ## Architectural guardrails
 
 - **`aeolus-core` stays zero-dependency.** Small utilities: write them
-  (see `FxHasher`, the shunting-yard `calc()` evaluator, the
+  (see `FastHasher`, the shunting-yard `calc()` evaluator, the
   two-generation caches). Property/dev tooling may be dev-dependencies
   (`proptest`, `divan`).
 - **The V1 IR is `aeolus-ir`'s `Copy` `Program`** (longhand `Decl`s,
