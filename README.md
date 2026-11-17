@@ -298,8 +298,8 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1813 tests with all features enabled (2026-11,
-  the composition-tier handoff's honest sum — `cargo test --workspace --all-features`).
+  **zero** allocations). Workspace battery: 1832 tests with all features enabled (2026-11,
+  the probe-seam handoff's honest sum — `cargo test --workspace --all-features`).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -449,6 +449,8 @@ cargo run -p aeolus-cli --example expand_starting      # expand --starting: the 
 cargo run -p aeolus-compile --example pseudo_targets    # the pseudo-element render-target tier: one cascade each, the closed set
 cargo run -p aeolus-cli --example expand_pseudo         # expand --pseudo: the render target's own cascade beside the element answer
 cargo run -p aeolus-compile --example group_peer_states # the composition tier: group-*/peer-* over the full probe-state set, the quiet miss beside the fired facts
+cargo run -p aeolus-compile --example style_walk_probes # the program lane's full probe walk: the seams answer, the reports beside the fires
+cargo run -p aeolus-compile --example suggest           # the suggestion seam: suggest_for/SuggestionSurface end to end
 cargo run -p aeolus-cli --example sort                  # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
@@ -487,6 +489,8 @@ cargo run -p aeolus-compile --example arbitrary_values
 cargo run -p aeolus-compile --example composites  # the composite grammar: calc(), track lists, url(), ratios
 cargo run -p aeolus-compile --example attr_variants
 cargo run -p aeolus-compile --example probes
+cargo run -p aeolus-compile --example style_walk_probes  # the program lane's widest walk: the probe seams answer headless
+cargo run -p aeolus-compile --example suggest  # the suggestion seam: the diagnostic-keyed composition
 cargo run -p aeolus-compile --example plan_bridge
 cargo run -p aeolus-compile --example sort_order
 cargo run -p aeolus-compile --example project_build
