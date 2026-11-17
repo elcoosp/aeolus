@@ -290,6 +290,17 @@ pub struct Env {
     /// position bit alone never fires — a non-range element matches
     /// neither half.
     pub range_in: bool,
+    /// The user agent inverts colours ([`Cond::Media`]'s
+    /// `inverted-colors:` — the media-feature remainder's
+    /// accessibility answer, the frame-state tier the `forced_colors`
+    /// bit rides; the resting env's quiet miss a media query that does
+    /// not hold is).
+    pub inverted_colors: bool,
+    /// Scripting is unavailable ([`Cond::Media`]'s `noscript:` — the
+    /// scripting feature's `none` value, the same frame-state tier;
+    /// `enable`/`initial-only` have no v4.1.17 registration, the
+    /// spelling set stays closed).
+    pub scripting_none: bool,
     /// The viewport width in rem ([`Cond::Bp`]/[`Cond::Min`] fire AT and
     /// above their breakpoint's rem; [`Cond::Max`] strictly below it).
     pub viewport_rem: f32,
@@ -936,10 +947,14 @@ impl miette::Diagnostic for InterpError {
 // ---------------------------------------------------------------------------
 
 /// The pseudo-element RENDER TARGET a [`Program`]'s pseudo layers
-/// resolve to — the `selection:`/`placeholder:` spellings the fold
-/// lands on [`Cond::Selection`]/[`Cond::Placeholder`]. A pseudo-element
-/// styles a DIFFERENT render target than the element's own cascade (the
-/// CSS arm renders it as a `::selection`/`::placeholder` rule), so its
+/// resolve to — the pseudo-element spellings the fold lands on the
+/// [`Cond`] surface's own tier ([`Cond::Selection`], [`Cond::Placeholder`],
+/// and the v4.1.17 remainder the pseudo-element tier carries:
+/// [`Cond::Before`]/[`Cond::After`]/[`Cond::Marker`]/[`Cond::FirstLetter`]/
+/// [`Cond::FirstLine`]/[`Cond::FileSelector`]/[`Cond::Backdrop`]/
+/// [`Cond::DetailsContent`]). A pseudo-element styles a DIFFERENT render
+/// target than the element's own cascade (the CSS arm renders it as a
+/// `::selection`/`::before`/`::file-selector-button` rule), so its
 /// effective declarations resolve in their OWN walk:
 /// [`interp_pseudo`]/[`interp_pseudo_theme`] fire ONLY the layers
 /// carrying the target's condition — the element's own layers (base,
@@ -954,14 +969,94 @@ pub enum PseudoTarget {
     Selection,
     /// The `::placeholder` render target (the `placeholder:` variant).
     Placeholder,
+    /// The `::before` render target (the `before:` variant — the
+    /// functional body the CSS arm renders with the injected content
+    /// line).
+    Before,
+    /// The `::after` render target (the `after:` variant).
+    After,
+    /// The `::marker` render target (the `marker:` variant — the CSS
+    /// arm renders the four-selector disjunction).
+    Marker,
+    /// The `::first-letter` render target (the `first-letter:` variant).
+    FirstLetter,
+    /// The `::first-line` render target (the `first-line:` variant).
+    FirstLine,
+    /// The `::file-selector-button` render target (the `file:` variant).
+    FileSelector,
+    /// The `::backdrop` render target (the `backdrop:` variant).
+    Backdrop,
+    /// The `::details-content` render target (the `details-content:`
+    /// variant).
+    DetailsContent,
 }
 
 impl PseudoTarget {
+    /// Every render target, in upstream registration order — the
+    /// closed set the diagnostics and the consumer walks enumerate.
+    pub const ALL: &'static [PseudoTarget] = &[
+        PseudoTarget::Selection,
+        PseudoTarget::Placeholder,
+        PseudoTarget::Before,
+        PseudoTarget::After,
+        PseudoTarget::Marker,
+        PseudoTarget::FirstLetter,
+        PseudoTarget::FirstLine,
+        PseudoTarget::FileSelector,
+        PseudoTarget::Backdrop,
+        PseudoTarget::DetailsContent,
+    ];
+
     /// The [`Cond`] the target's layers carry.
-    const fn cond(self) -> Cond {
+    pub const fn cond(self) -> Cond {
         match self {
             PseudoTarget::Selection => Cond::Selection,
             PseudoTarget::Placeholder => Cond::Placeholder,
+            PseudoTarget::Before => Cond::Before,
+            PseudoTarget::After => Cond::After,
+            PseudoTarget::Marker => Cond::Marker,
+            PseudoTarget::FirstLetter => Cond::FirstLetter,
+            PseudoTarget::FirstLine => Cond::FirstLine,
+            PseudoTarget::FileSelector => Cond::FileSelector,
+            PseudoTarget::Backdrop => Cond::Backdrop,
+            PseudoTarget::DetailsContent => Cond::DetailsContent,
+        }
+    }
+
+    /// The canonical spelling (`"before"`, `"details-content"`) — the
+    /// condition's own source text, the CLI's `--pseudo` face and the
+    /// diagnostics' label.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            PseudoTarget::Selection => "selection",
+            PseudoTarget::Placeholder => "placeholder",
+            PseudoTarget::Before => "before",
+            PseudoTarget::After => "after",
+            PseudoTarget::Marker => "marker",
+            PseudoTarget::FirstLetter => "first-letter",
+            PseudoTarget::FirstLine => "first-line",
+            PseudoTarget::FileSelector => "file",
+            PseudoTarget::Backdrop => "backdrop",
+            PseudoTarget::DetailsContent => "details-content",
+        }
+    }
+
+    /// The target one spelling names — the closed set's parse (an
+    /// unknown or empty spelling answers `None`, the caller's honest
+    /// refusal). Not `const`: const fns cannot match on `str` (stable).
+    pub fn from_name(spelling: &str) -> Option<PseudoTarget> {
+        match spelling {
+            "selection" => Some(PseudoTarget::Selection),
+            "placeholder" => Some(PseudoTarget::Placeholder),
+            "before" => Some(PseudoTarget::Before),
+            "after" => Some(PseudoTarget::After),
+            "marker" => Some(PseudoTarget::Marker),
+            "first-letter" => Some(PseudoTarget::FirstLetter),
+            "first-line" => Some(PseudoTarget::FirstLine),
+            "file" => Some(PseudoTarget::FileSelector),
+            "backdrop" => Some(PseudoTarget::Backdrop),
+            "details-content" => Some(PseudoTarget::DetailsContent),
+            _ => None,
         }
     }
 }
@@ -976,10 +1071,13 @@ impl PseudoTarget {
 /// the element's own declarations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InterpNote {
-    /// A `::selection`/`::placeholder` layer: pseudo-elements style a
+    /// A pseudo-element layer (`selection:`/`placeholder:` and the
+    /// pseudo-element tier the fold carries — `before:`/`after:`/
+    /// `marker:`/`first-letter:`/`first-line:`/`file:`/`backdrop:`/
+    /// `details-content:`): pseudo-elements style a
     /// DIFFERENT render target, never the element's own cascade (the
-    /// CSS arm renders them as `::selection`/`::placeholder` rules; the
-    /// pseudo cascades themselves resolve through
+    /// CSS arm renders them as `::selection`/`::before`/`::placeholder`
+    /// rules; the pseudo cascades themselves resolve through
     /// [`interp_pseudo`]/[`interp_pseudo_theme`], the [`PseudoTarget`]
     /// arm).
     PseudoElement {
@@ -1374,6 +1472,8 @@ pub(crate) fn decide(
             aeolus_ir::Pref::AnyPointerNone => env.any_pointer_none,
             aeolus_ir::Pref::Portrait => env.portrait,
             aeolus_ir::Pref::Landscape => !env.portrait,
+            aeolus_ir::Pref::InvertedColors => env.inverted_colors,
+            aeolus_ir::Pref::NoScript => env.scripting_none,
         }),
         // The direction variants are FRAME STATE (the element's
         // resolved `direction`, the tier the preference and capability
@@ -1409,9 +1509,16 @@ pub(crate) fn decide(
         // The pseudo-elements are render TARGETS, not element state: the
         // interp resolves the element's own cascade, so these layers are
         // excluded and reported — never folded in, never an error.
-        Cond::Selection | Cond::Placeholder => {
-            Fire::Note(InterpNote::PseudoElement { cond, props })
-        }
+        Cond::Selection
+        | Cond::Placeholder
+        | Cond::Before
+        | Cond::After
+        | Cond::Marker
+        | Cond::FirstLetter
+        | Cond::FirstLine
+        | Cond::FileSelector
+        | Cond::Backdrop
+        | Cond::DetailsContent => Fire::Note(InterpNote::PseudoElement { cond, props }),
     }
 }
 
