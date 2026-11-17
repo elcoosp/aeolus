@@ -565,7 +565,17 @@ Do **not** block on these: the design works today and simply gets cheaper if the
    `LoweringReport`, differential pins against the plan path
    (`tests/program.rs` per backend), a divan bench and a headless `examples/`
    demo. The §7 re-target is COMPLETE: every backend consumes the frozen
-   program. The shadcn PROGRAM TABLES landed 2026-11 beside the lanes (§3.6's surface (2), §10's const-table row — the F6 finding gone): `aeolus-shadcn`'s `program` module interns the verbatim v4 strings through the V1 pipeline once per closed-world combo (`ButtonPrograms` per (variant, size), `BadgePrograms`/`AlertPrograms` per variant, `BasePrograms` per single-string component), the token table riding the handle (the built-in `ThemeSource::shadcn` bake or a host's own), the first compile's diagnostics pinning the documented arbitrary-variant boundary.
+   program. The program lane's PSEUDO-TARGET FACE landed 2026-11 (the interp
+   arm's own-cascade contract on the frozen program: `program_style_pseudo`/
+   `program_style_pseudo_theme` resolve one `PseudoTarget`'s own cascade into
+   the per-state `ResolvedStyle` through the SAME `PlanWriter` the element
+   fold writes through — condition equality is the verdict, the element walk's
+   `InterpNote::PseudoElement` note the other half of the render-target
+   contract), and the host surface's OWN STYLE FACE landed beside it
+   (`aeolus_rt::StaticProgram::style`/`style_with`/`style_pseudo`/
+   `style_pseudo_theme` — the walk entries as methods on the frozen type, the
+   free entries' delegates, the v0.x `ResolvedStyle` re-exported so the host
+   names the answer) The shadcn PROGRAM TABLES landed 2026-11 beside the lanes (§3.6's surface (2), §10's const-table row — the F6 finding gone): `aeolus-shadcn`'s `program` module interns the verbatim v4 strings through the V1 pipeline once per closed-world combo (`ButtonPrograms` per (variant, size), `BadgePrograms`/`AlertPrograms` per variant, `BasePrograms` per single-string component), the token table riding the handle (the built-in `ThemeSource::shadcn` bake or a host's own), the first compile's diagnostics pinning the documented arbitrary-variant boundary.
 3. Delete when superseded: `resolve.rs` match walls, `StylePlan`'s `Vec/BTreeMap` shape, `PlanCache` (replaced by `DynCache`),
    per-backend `lower()` duplication (shared via `aeolus-codegen::Emit`).
 4. Keep: `Warning`/`LoweringReport` → becomes `Diagnostics` with spans + reason codes; snapshot JSON becomes a _debug_ serialisation of `Program`.
