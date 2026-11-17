@@ -68,6 +68,7 @@ pub use aeolus_compile::{
     interp_theme_struct_descendants_supports, interp_theme_struct_supports, interp_theme_supports,
     overlay, program_style, program_style_probes_containers_struct_descendants_supports,
     program_style_pseudo, program_style_pseudo_theme, program_style_struct, program_style_with,
+    structural_fires,
 };
 pub use aeolus_core::plan::ResolvedStyle;
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
