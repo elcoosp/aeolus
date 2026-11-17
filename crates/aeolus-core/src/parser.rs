@@ -191,6 +191,19 @@ pub fn parse_variant(v: &str) -> Result<Variant<'_>, ParseError> {
     if v.starts_with("supports-") || v == "*" || v == "**" {
         return Ok(Variant::Arbitrary(v));
     }
+    // The of-type ordinal grammar lands BEFORE the `nth-` arm — the
+    // longest prefix wins (the V1 fold's own order): `nth-of-type-3`
+    // must reach its arm, never `nth-` (which would parse-fail
+    // `-of-type-3` and fall to the arbitrary form). The LAST form
+    // (`nth-last-of-type-*`) stays outside on purpose — the oracle's
+    // `nth-` arm never sets the last flag, so the spelling warns (the
+    // `nth-last-2:` gap the V1 fold pins as its deliberate divergence).
+    if let Some(rest) = v.strip_prefix("nth-of-type-") {
+        if let Ok(n) = rest.parse::<i32>() {
+            return Ok(Variant::Structural(Structural::NthOfType(n)));
+        }
+        return Ok(Variant::Arbitrary(v)); // nth-of-type-[2n+1] forms
+    }
     if let Some(rest) = v.strip_prefix("nth-") {
         if let Some(st) = parse_nth(rest, false) {
             return Ok(Variant::Structural(st));
@@ -212,6 +225,11 @@ fn structural_of(v: &str) -> Option<Structural> {
         "even" => Structural::Even,
         "only" => Structural::Only,
         "empty" => Structural::Empty,
+        // The of-type trio (the v4.1.17 `staticVariant` spellings; the
+        // functional `nth-of-type-*` ordinals ride the prefix arm).
+        "first-of-type" => Structural::FirstOfType,
+        "last-of-type" => Structural::LastOfType,
+        "only-of-type" => Structural::OnlyOfType,
         _ => return None,
     })
 }
