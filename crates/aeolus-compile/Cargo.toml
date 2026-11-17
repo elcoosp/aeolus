@@ -328,3 +328,11 @@ harness = false
 [[bench]]
 name = "style_walk"
 harness = false
+
+# The program lane's pseudo-target face's benchmarks (the interp arm's
+# own-cascade contract on the frozen program): the target's fire path,
+# the themed resolution, the sibling quiet path and the themeless
+# refusal report.
+[[bench]]
+name = "style_walk_pseudo"
+harness = false
