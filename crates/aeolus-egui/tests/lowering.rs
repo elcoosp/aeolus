@@ -265,34 +265,45 @@ fn opacity_bakes_into_every_painted_alpha() {
 }
 
 #[test]
-fn gradients_report_honestly() {
+fn gradients_lower_or_report_honestly() {
+    // The mesh-painter seam: the linear tier LOWERS now (the payload
+    // rides the style; the gradient.rs suite pins the geometry) — the
+    // pin moved with the capability, the halves still dropped keep
+    // their honest report.
     let resolver = resolver();
     let r = resolver
         .resolve("bg-linear-to-r from-red-500 to-blue-500")
         .unwrap();
     let mut report = aeolus_egui::LoweringReport::default();
-    let _ = lower_resolved(&r.plan.base, &mut report);
-    assert!(
-        report
-            .dropped
-            .iter()
-            .any(|(w, _)| w.starts_with("bg-linear")),
-        "Frame fills are solid; gradients must report: {report:?}"
-    );
+    let style = lower_resolved(&r.plan.base, &mut report);
+    assert!(report.is_empty(), "the linear tier lowers: {report:?}");
+    assert!(style.gradient.is_some(), "the payload lands on the style");
 
-    // Solid + gradient coexistence reports the flattening too.
+    // Solid + linear coexistence layers correctly now (bg-image over
+    // bg-color) — no flattening note.
     let r = resolver
         .resolve("bg-red-500 bg-linear-to-r from-red-500 to-blue-500")
         .unwrap();
     let mut report = aeolus_egui::LoweringReport::default();
     let _ = lower_resolved(&r.plan.base, &mut report);
     assert!(
-        report
+        !report
             .dropped
             .iter()
             .any(|(w, _)| w == "background-color under gradient"),
-        "{report:?}"
+        "the layering is renderable: {report:?}"
     );
+
+    // The radial tier lowers through the same seam now (M2 moved this
+    // pin from the refusal suite — the mesh geometry pins live in
+    // gradient.rs).
+    let r = resolver
+        .resolve("bg-radial from-red-500 to-blue-500")
+        .unwrap();
+    let mut report = aeolus_egui::LoweringReport::default();
+    let style = lower_resolved(&r.plan.base, &mut report);
+    assert!(report.is_empty(), "the radial tier lowers: {report:?}");
+    assert!(style.gradient.is_some(), "the payload lands on the style");
 }
 
 #[test]
