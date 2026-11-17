@@ -84,3 +84,43 @@ fn the_spacing_scale_is_unchanged() {
     assert_eq!(style.padding.top, Some(rems(1.0).into()));
     assert_eq!(style.gap.height, Some(rems(0.5).into()));
 }
+
+/// The TEXT_ALIGN keyword slot applies through the walk's own mapping
+/// ([`aeolus_gpui::text_align_value`]) — the helper's first pins (the
+/// doc claimed test exposure; nothing pinned the closed set). GPUI's
+/// `TextAlign` carries LEFT/CENTER/RIGHT: `start`/`end` fold to the LTR
+/// readings and `justify` rides the documented LEFT default (the
+/// platform's own closed set).
+#[test]
+fn text_align_applies_through_the_walks_own_mapping() {
+    use gpui::TextAlign;
+
+    let program = tw!("text-center");
+    let style = gpui::StyleRefinement::default().tw(program);
+    let ts = &style.text;
+    assert_eq!(ts.text_align, Some(TextAlign::Center));
+
+    let program = tw!("text-end");
+    let style = gpui::StyleRefinement::default().tw(program);
+    assert_eq!(
+        style.text.text_align,
+        Some(TextAlign::Right),
+        "`end` is the LTR right"
+    );
+
+    let program = tw!("text-start");
+    let style = gpui::StyleRefinement::default().tw(program);
+    assert_eq!(
+        style.text.text_align,
+        Some(TextAlign::Left),
+        "`start` is the LTR left"
+    );
+
+    let program = tw!("text-justify");
+    let style = gpui::StyleRefinement::default().tw(program);
+    assert_eq!(
+        style.text.text_align,
+        Some(TextAlign::Left),
+        "no GPUI slot for justify - the documented LEFT default, pinned"
+    );
+}
