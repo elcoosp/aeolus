@@ -184,8 +184,24 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
         Cond::OutOfRange => fires(env.range_bounded && !env.range_in),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
+        // The composition tier answers from the Env like the landed
+        // pair (the interp's `decide` semantics shared verbatim: the
+        // composed state one relation up, the unset bits the quiet
+        // miss a selector that does not match is).
+        Cond::GroupFocusVisible => fires(env.group_focus_visible),
+        Cond::GroupFocusWithin => fires(env.group_focus_within),
+        Cond::GroupActive => fires(env.group_active),
+        Cond::GroupDisabled => fires(env.group_disabled),
+        Cond::GroupVisited => fires(env.group_visited),
+        Cond::GroupChecked => fires(env.group_checked),
         Cond::PeerHover => fires(env.peer_hover),
         Cond::PeerFocus => fires(env.peer_focus),
+        Cond::PeerFocusVisible => fires(env.peer_focus_visible),
+        Cond::PeerFocusWithin => fires(env.peer_focus_within),
+        Cond::PeerActive => fires(env.peer_active),
+        Cond::PeerDisabled => fires(env.peer_disabled),
+        Cond::PeerVisited => fires(env.peer_visited),
+        Cond::PeerChecked => fires(env.peer_checked),
         Cond::Bp(bp) | Cond::Min(bp) => fires(env.viewport_rem >= bp.rem()),
         Cond::Max(bp) => fires(env.viewport_rem < bp.rem()),
         Cond::Container { bp, name } => match (name, env.container_rem) {
