@@ -681,6 +681,11 @@ fn conditions_route_into_the_v0_buckets() {
         }),
         ("group-hover:opacity-75", |p| p.group.len() == 1),
         ("peer-hover:opacity-75", |p| p.peer.len() == 1),
+        // The composition tier lands in the same labelled group/peer
+        // buckets (the bridge's one-lane-per-relation model — the
+        // composition probe IS the group/peer relation's state fact).
+        ("group-active:opacity-75", |p| p.group.len() == 1),
+        ("peer-disabled:opacity-75", |p| p.peer.len() == 1),
         ("data-open:bg-red-500", |p| p.rules.len() == 1),
         ("checked:bg-red-500", |p| p.rules.len() == 1),
         ("selection:bg-red-500", |p| p.rules.len() == 1),
