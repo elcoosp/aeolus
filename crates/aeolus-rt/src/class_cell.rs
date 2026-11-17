@@ -32,14 +32,28 @@
 //! own note — and the `PhantomData<Rc<()>>` marker makes the type
 //! `!Sync` so the contract fails to compile instead of waiting for a
 //! race.
+//!
+//! The observability face is the POOL's own seam joined: a
+//! host-supplied [`DynObserver`] wired through
+//! [`ClassCell::with_observer`] sees every decision the cell makes in
+//! order — hit/miss/store, under the composed session key the
+//! [`DynStore`](aeolus_compile::DynStore) vocabulary already probes
+//! ([`session_key`]: the identity prefix, the input verbatim — never a
+//! hash, the collision-safety rule) — so one observer stream reads the
+//! bounded pool AND every view cell the app wires it into. The
+//! every-constructor default is the observer-free
+//! [`NoObserver`](aeolus_compile::NoObserver): the observer adds a
+//! channel, it never changes a decision.
 
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use aeolus_compile::{
-    ClassKeywords, CompileError, Compiled, Config, Customs, Diagnostic, compile, compile_theme,
-    compile_theme_with, compile_with, keyword_alignment, keyword_texts_with,
+    ClassKeywords, CompileError, Compiled, Config, Customs, Diagnostic, DynObserver, NoObserver,
+    compile, compile_theme, compile_theme_with, compile_with, keyword_alignment,
+    keyword_texts_with, session_key,
 };
 use aeolus_ir::Layer;
 use aeolus_theme::TokenTable;
@@ -161,6 +175,12 @@ struct Slot {
 /// ```
 pub struct ClassCell {
     slot: RefCell<Slot>,
+    /// The wired observer — the pool's own seam (`DynObserver`),
+    /// `NoObserver` the every-constructor default. `Send + Sync` is
+    /// the trait's own bound (the built-in [`CacheStats`] shape): the
+    /// CELL stays `!Sync` while the handle may be shared across the
+    /// app's cells.
+    observer: Arc<dyn DynObserver>,
     hits: std::cell::Cell<u64>,
     misses: std::cell::Cell<u64>,
     // The UI-thread contract (plan §3.6's "UI-thread, !Sync, no
@@ -177,7 +197,8 @@ impl Default for ClassCell {
 
 impl ClassCell {
     /// The fresh cell: the empty program, no diagnostics, empty
-    /// counters.
+    /// counters, observation-free (the [`NoObserver`] default — every
+    /// constructor path starts quiet, the cache's own contract).
     pub fn new() -> Self {
         Self {
             slot: RefCell::new(Slot {
@@ -186,10 +207,24 @@ impl ClassCell {
                 program: empty_program(),
                 diagnostics: Vec::new(),
             }),
+            observer: Arc::new(NoObserver),
             hits: std::cell::Cell::new(0),
             misses: std::cell::Cell::new(0),
             _thread: PhantomData,
         }
+    }
+
+    /// The cell with a host-supplied [`DynObserver`] — the bounded
+    /// pool's observability seam joined, chained after `new` (the
+    /// `DynCache::with_observer` shape: the built-in
+    /// [`CacheStats`](aeolus_compile::CacheStats) rides an `Arc` the
+    /// host keeps a handle to, ONE handle spanning the pool and every
+    /// view cell the app wires it into). The observer adds a channel;
+    /// it never changes a decision — the differential pins every
+    /// contract byte-identical with and without one.
+    pub fn with_observer(mut self, observer: impl DynObserver + 'static) -> Self {
+        self.observer = Arc::new(observer);
+        self
     }
 
     /// [`compile`](aeolus_compile::compile) over the cell: the slow lane's
@@ -202,7 +237,8 @@ impl ClassCell {
     /// cached.
     pub fn get(&self, classes: &str, config: &Config) -> Result<StaticProgram, CompileError> {
         let identity = SlotIdentity::themeless(*config);
-        self.swap(identity, classes, &Customs::new(), compile)
+        let key = session_key(*config, None, &Customs::new(), classes);
+        self.swap(identity, key, classes, &Customs::new(), compile)
     }
 
     /// [`compile_theme`](aeolus_compile::compile_theme) over the cell: the
@@ -218,7 +254,8 @@ impl ClassCell {
         config: &Config,
     ) -> Result<StaticProgram, CompileError> {
         let identity = SlotIdentity::theme(*config, tokens);
-        self.swap(identity, classes, &Customs::new(), |input, config| {
+        let key = session_key(*config, Some(tokens), &Customs::new(), classes);
+        self.swap(identity, key, classes, &Customs::new(), |input, config| {
             compile_theme(input, tokens, config)
         })
     }
@@ -236,7 +273,8 @@ impl ClassCell {
         config: &Config,
     ) -> Result<StaticProgram, CompileError> {
         let identity = SlotIdentity::custom(*config, customs);
-        self.swap(identity, classes, customs, |input, config| {
+        let key = session_key(*config, None, customs, classes);
+        self.swap(identity, key, classes, customs, |input, config| {
             compile_with(input, customs, config)
         })
     }
@@ -255,7 +293,8 @@ impl ClassCell {
         config: &Config,
     ) -> Result<StaticProgram, CompileError> {
         let identity = SlotIdentity::theme_custom(*config, tokens, customs);
-        self.swap(identity, classes, customs, |input, config| {
+        let key = session_key(*config, Some(tokens), customs, classes);
+        self.swap(identity, key, classes, customs, |input, config| {
             compile_theme_with(input, tokens, customs, config)
         })
     }
@@ -288,24 +327,36 @@ impl ClassCell {
 
     /// The one path every entry point rides: probe (content + identity
     /// — never hash-only, the collision-safety rule), lower on a miss,
-    /// align, intern, store on a success. The alignment reads the SAME
-    /// customs the compile ran (`keyword_texts_with`) — an applied
-    /// body's registered keyword texts reach the frozen slice, and the
-    /// theme-less entries' empty bag stays byte-identical to the old
-    /// theme-less call.
+    /// align, intern, store on a success. The composed session key
+    /// ([`session_key`]) formats ONCE per call and rides the observer's
+    /// events — the SAME vocabulary the pool's [`DynStore`](aeolus_compile::DynStore)
+    /// probes, so one stream reads the whole app. The alignment reads
+    /// the SAME customs the compile ran (`keyword_texts_with`) — an
+    /// applied body's registered keyword texts reach the frozen slice,
+    /// and the theme-less entries' empty bag stays byte-identical to
+    /// the old theme-less call.
+    ///
+    /// The decisions ride the wired observer IN ORDER (the cache's own
+    /// contract): hit on a probe match; miss before the lowering runs;
+    /// store on a success, carrying the entry's honest per-class
+    /// diagnostic count. An error reaches `on_miss` and never
+    /// `on_store` — errors are never stored.
     fn swap(
         &self,
         identity: SlotIdentity,
+        key: String,
         classes: &str,
         customs: &Customs,
         lower: impl FnOnce(&str, &Config) -> Result<Compiled, CompileError>,
     ) -> Result<StaticProgram, CompileError> {
         let mut slot = self.slot.borrow_mut();
         if slot.identity == identity && slot.input.as_ref() == classes {
+            self.observer.on_hit(&key);
             self.hits.set(self.hits.get() + 1);
             return Ok(slot.program);
         }
         self.misses.set(self.misses.get() + 1);
+        self.observer.on_miss(&key);
         let compiled = lower(classes, &identity.config)?;
         let annotations: Vec<ClassKeywords> =
             keyword_texts_with(classes, customs, &identity.config)?;
@@ -317,6 +368,7 @@ impl ClassCell {
             // storage — one distinct string, one pool entry).
             Box::leak(texts.into_boxed_slice()),
         );
+        self.observer.on_store(&key, compiled.diagnostics.len());
         *slot = Slot {
             identity,
             input: classes.into(),
