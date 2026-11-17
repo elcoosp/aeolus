@@ -44,10 +44,10 @@
 //! pin below.
 
 use aeolus_compile::{
-    CompileError, Config, CustomForm, CustomUtility, Customs, MetamorphicNote, metamorphic_check,
-    metamorphic_check_theme,
+    CompileError, Config, CustomForm, CustomUtility, CustomVariant, Customs, MetamorphicNote,
+    metamorphic_check, metamorphic_check_theme, metamorphic_check_theme_with,
 };
-use aeolus_ir::{Bp, Prop};
+use aeolus_ir::{Bp, Cond, Prop};
 use aeolus_theme::{ThemeSource, TokenTable};
 
 // ---------------------------------------------------------------------------
@@ -360,4 +360,87 @@ fn customs_seam_rides_the_checker() {
     let base = &report.situations[0];
     assert_eq!(base.interp_decls, 4);
     assert!(base.mismatches.is_empty(), "{:#?}", base.mismatches);
+}
+
+// ---------------------------------------------------------------------------
+// The themed + customized session rides the same walk
+// ---------------------------------------------------------------------------
+
+/// The full-session checker entry: `metamorphic_check_theme_with` had no
+/// caller, no test, no bench and no example anywhere in the workspace (the
+/// re-export block named it; nothing exercised it) — the theme-token
+/// custom utility pinned against BOTH theme tiers: the T0 literal with
+/// the premultiplied `/opacity` bake, the T1 pair, the T2 `var()` tier.
+#[test]
+fn themed_with_session_rides_the_checker() {
+    // The `--value(color)` functional form: the suffix IS a theme token
+    // name — the one custom form lowered through the tiered tables (the
+    // `/opacity` modifier rides the theme pass's own arithmetic).
+    let customs = Customs::new().utility(CustomUtility::functional(
+        "brand-ink",
+        CustomForm::Token,
+        &[Prop::Color],
+    ));
+    let baked = baked_table();
+    let report =
+        metamorphic_check_theme_with("brand-ink-red-500/50", &baked, &customs, &Config::default())
+            .expect("non-empty");
+    assert!(report.agree(), "{:#?}", report.situations);
+    let base = &report.situations[0];
+    assert_eq!(base.interp_decls, 1, "the token lowers to one longhand");
+    assert!(base.mismatches.is_empty(), "{:#?}", base.mismatches);
+
+    // The T1 pair lowers without a modifier (the pair budget is its own
+    // typed boundary — `UnsupportedModifier`, the diagnostics-equality
+    // battery's own shape).
+    let pair_report =
+        metamorphic_check_theme_with("brand-ink-primary", &baked, &customs, &Config::default())
+            .expect("non-empty");
+    assert!(pair_report.agree(), "{:#?}", pair_report.situations);
+    assert!(!pair_report.situations.is_empty());
+
+    // The runtime tier keeps the typed note (the token stays a `var()`
+    // reference on the CSS side, concrete bytes on the interp side).
+    let runtime = runtime_table();
+    let report =
+        metamorphic_check_theme_with("brand-ink-primary", &runtime, &customs, &Config::default())
+            .expect("non-empty");
+    assert!(report.agree(), "{:#?}", report.situations);
+    let dynamic = report
+        .notes
+        .iter()
+        .filter(|note| matches!(note, MetamorphicNote::TokenDynamic { .. }))
+        .count();
+    assert_eq!(dynamic, 1, "one typed note for the token longhand");
+}
+
+/// The custom variant alias composes with the theme through the same
+/// entry: `night:brand-ink-brand` folds onto the dark condition and the
+/// checker walks the stack's OWN situation (a dark stack is its own dark
+/// walk — the battery never double-flips it).
+#[test]
+fn themed_with_variant_alias_agrees_in_both_modes() {
+    let customs = Customs::new()
+        .utility(CustomUtility::functional(
+            "brand-ink",
+            CustomForm::Token,
+            &[Prop::Color],
+        ))
+        .variant(CustomVariant::new("night", Cond::Dark));
+    let table = pair_table();
+    let report = metamorphic_check_theme_with(
+        "night:brand-ink-brand",
+        &table,
+        &customs,
+        &Config::default(),
+    )
+    .expect("non-empty");
+    assert!(report.agree(), "{:#?}", report.situations);
+    let dark = report
+        .situations
+        .iter()
+        .find(|s| s.label == "dark")
+        .expect("the dark stack's own situation is walked");
+    assert!(dark.mismatches.is_empty(), "{:#?}", dark.mismatches);
+    assert!(dark.env.dark, "the dark walk probes the dark mode");
 }
