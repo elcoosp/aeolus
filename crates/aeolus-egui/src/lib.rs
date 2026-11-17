@@ -47,7 +47,13 @@
 //! # }
 //! ```
 
+pub mod gradient;
 pub mod program;
+
+pub use gradient::{
+    CONIC_SEGMENTS, GradientKind, GradientPaint, PaintStop, RADIAL_SEGMENTS, gradient_mesh,
+    paint_gradient,
+};
 
 pub use program::{
     REM_PX, env_for_probe, lower_program,
@@ -71,8 +77,8 @@ use aeolus_core::plan::{
 /// `tracing::warn!` by the host, matching `aeolus-core`'s philosophy).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LoweringReport {
-    /// `(what, reason)` pairs, e.g. `("bg-linear-*", "Frame fills are
-    /// solid Color32; gradients need an app-side mesh painter")`.
+    /// `(what, reason)` pairs, e.g. `("ring", "no ring primitive in
+    /// egui; the single Stroke slot would collide with border-*")`.
     pub dropped: Vec<(String, String)>,
 }
 
@@ -185,6 +191,13 @@ pub struct EguiStyle {
     /// CSS margin, `fill` = `bg-*`, `stroke` = `border-*`, per-corner
     /// `corner_radius` = `rounded-*`, `shadow` = `shadow-*`.
     pub frame: Frame,
+    /// The baked gradient paint (`bg-linear-*`): the payload
+    /// [`gradient_mesh`]/[`paint_gradient`] render. egui's `Frame` fill
+    /// is a solid `Color32` — the mesh painter IS the gradient slot
+    /// (CSS order: the mesh paints over the fill, so translucent stops
+    /// show the solid color through). `Some` when a gradient class is
+    /// in scope, `None` on `bg-none` (the explicit image reset).
+    pub gradient: Option<GradientPaint>,
     presence: Presence,
     /// The style's own `opacity-*` factor (1.0 unless an opacity class
     /// set it). `lower_resolved` bakes it into this style's colors;
@@ -219,6 +232,7 @@ impl Default for EguiStyle {
     fn default() -> Self {
         Self {
             frame: Frame::default(),
+            gradient: None,
             presence: Presence::default(),
             // A style with no opacity class paints fully opaque.
             opacity_factor: 1.0,
@@ -250,6 +264,10 @@ impl EguiStyle {
             s.shadow.color = scale_alpha32(s.shadow.color, f);
             if let Some(c) = self.text.color {
                 self.text.color = Some(scale_alpha32(c, f));
+            }
+            // The gradient payload dims with everything else painted.
+            if let Some(g) = &mut self.gradient {
+                g.scale_alpha(f);
             }
         }
         let f = &other.frame;
@@ -311,6 +329,11 @@ impl EguiStyle {
         if other.presence.shadow {
             s.shadow = f.shadow;
         }
+        if other.presence.gradient {
+            // The image slot replaces whole (including `bg-none`, whose
+            // layer lowers to `None` — the explicit reset wins).
+            self.gradient.clone_from(&other.gradient);
+        }
         self.presence.merge(&other.presence);
         self.text.overlay(&other.text);
         if other.cursor.is_some() {
@@ -350,6 +373,9 @@ struct Presence {
     inner_margin: bool,
     outer_margin: bool,
     shadow: bool,
+    /// The gradient image slot was ADDRESSED by this style (a gradient
+    /// class, or `bg-none` clearing it) — the overlay's replace flag.
+    gradient: bool,
     /// v0.8 §1.2: WHICH corners `corner_radius` addresses.
     corner_set: CornerSet,
     /// v0.8 §1.2: WHICH edges `inner_margin` addresses.
@@ -367,6 +393,7 @@ impl Presence {
         self.inner_margin |= other.inner_margin;
         self.outer_margin |= other.outer_margin;
         self.shadow |= other.shadow;
+        self.gradient |= other.gradient;
         self.corner_set.top_left |= other.corner_set.top_left;
         self.corner_set.top_right |= other.corner_set.top_right;
         self.corner_set.bottom_right |= other.corner_set.bottom_right;
@@ -409,21 +436,36 @@ pub fn lower_resolved(style: &ResolvedStyle, report: &mut LoweringReport) -> Egu
         out.presence.fill = true;
     }
     if let Some(gradient) = &style.background_gradient {
+        out.presence.gradient = true;
         match gradient {
-            Gradient::None => {}
-            _ => {
-                if style.background.is_some() {
-                    report.drop(
-                        "background-color under gradient",
-                        "CSS layers background-image over background-color; egui Frame \
-fills are a single solid Color32 and the fill slot is taken",
-                    );
-                }
-                report.drop(
-                    "bg-linear-*/bg-radial/bg-conic*",
-                    "egui Frame fills are solid Color32; gradients need an app-side \
-mesh painter (Painter::add + RectShape UV trick) — reported, not faked",
-                );
+            Gradient::None => {
+                // The explicit background-image reset: the payload slot
+                // stays empty and the overlay's replace flag clears any
+                // accumulated paint.
+            }
+            Gradient::Linear { angle_deg, stops } => {
+                // The mesh-painter seam: the payload lands on the style
+                // and the host renders it through `paint_gradient`. The
+                // solid fill STAYS — CSS layers background-image over
+                // background-color, so translucent stops show the fill
+                // through (the old "background-color under gradient"
+                // flattening note retires with the seam).
+                out.gradient = Some(GradientPaint::linear(*angle_deg, stops, opacity));
+            }
+            Gradient::Radial { stops } => {
+                // The `circle farthest-corner` normalization (v0.6
+                // §1.5) rides the payload; the mesh clips the disc to
+                // the rect.
+                out.gradient = Some(GradientPaint::radial(stops, opacity));
+            }
+            Gradient::Conic {
+                from_angle_deg,
+                stops,
+            } => {
+                // The plan bridge composes `from 0deg` (the V1
+                // registry's conic rows carry no angle patch); the
+                // mesh sweeps clockwise from the CSS start angle.
+                out.gradient = Some(GradientPaint::conic(*from_angle_deg, stops, opacity));
             }
         }
     }
@@ -476,6 +518,18 @@ mesh painter (Painter::add + RectShape UV trick) — reported, not faked",
             sw: cr.bottom_left.clamp(0.0, 255.0) as u8,
             se: cr.bottom_right.clamp(0.0, 255.0) as u8,
         };
+        if out.gradient.is_some()
+            && (cr.set.top_left || cr.set.top_right || cr.set.bottom_right || cr.set.bottom_left)
+        {
+            // The mesh paints square corners; egui's rounding shapes
+            // the fill slot only. A real visual divergence — reported,
+            // never silent (the honest-refusal discipline).
+            report.drop(
+                "gradient-corner-radius",
+                "the gradient mesh paints square corners; egui's corner rounding applies \
+to the fill slot only",
+            );
+        }
         out.presence.corner_radius = true;
         out.presence.corner_set = cr.set;
     }
