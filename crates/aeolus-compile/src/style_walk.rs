@@ -7,6 +7,9 @@
 //! ```text
 //! program_style(layers, keywords, &Env)         -> (ResolvedStyle, StyleWalk)
 //! program_style_with(…, probes, tokens)         -> (ResolvedStyle, StyleWalk)
+//! program_style_probes_containers_struct_descendants_supports(
+//!     …, probes, containers, structs, descendants, supports, tokens)
+//!                                               -> (ResolvedStyle, StyleWalk)
 //!
 //! StaticProgram (layers + the ROW TEXTS the Kw slots index)
 //!   └─ front-to-back walk: a layer FIRES when its Cond matches the Env
@@ -59,7 +62,8 @@ use aeolus_ir::{Layer, Prop, Val};
 
 use crate::Config;
 use crate::interp::{
-    AttrProbe, Env, Fire, InterpError, InterpNote, StructProbe, TokenSource, decide,
+    AttrProbe, ContainerProbe, DescendantProbe, Env, Fire, InterpError, InterpNote, StructProbe,
+    SupportsProbe, TokenSource, decide,
 };
 use crate::plan::{PlanNoteKind, PlanWriter};
 
@@ -126,7 +130,7 @@ pub fn program_style(
     keywords: &'static [&'static str],
     env: &Env,
 ) -> (ResolvedStyle, StyleWalk) {
-    run(layers, keywords, env, None, None, None)
+    run(layers, keywords, env, None, None, None, None, None, None)
 }
 
 /// [`program_style`] with the structural seam wired: a
@@ -142,7 +146,7 @@ pub fn program_style_struct(
     env: &Env,
     structs: Option<&dyn StructProbe>,
 ) -> (ResolvedStyle, StyleWalk) {
-    run(layers, keywords, env, None, structs, None)
+    run(layers, keywords, env, None, None, structs, None, None, None)
 }
 
 /// [`program_style`] with the interp's two seams wired: an
@@ -158,7 +162,63 @@ pub fn program_style_with(
     probes: Option<&dyn AttrProbe>,
     tokens: Option<&dyn TokenSource>,
 ) -> (ResolvedStyle, StyleWalk) {
-    run(layers, keywords, env, probes, None, tokens)
+    run(
+        layers, keywords, env, probes, None, None, None, None, tokens,
+    )
+}
+
+/// [`program_style`] with the interp's FULL probe surface wired — the
+/// widest program-lane entry (the
+/// [`interp_probes_containers_struct_descendants_supports`]'s own
+/// naming, the program lane's `*_with` token tail kept): the five
+/// probe seams the walk's `decide` verdicts already consult, all
+/// optional.
+///
+/// * `probes` — the element-own `data-*`/`aria-*` layers
+///   ([`AttrProbe`], [`program_style_with`]'s seam);
+/// * `containers` — the NAMED container layers
+///   ([`ContainerProbe`]): a hit fires by the same AT-and-above /
+///   strictly-below boundary rules the interp pins, a container the
+///   source does not know is a QUIET miss, and `None` keeps the
+///   reported boundary ([`InterpNote::ContainerUnqueried`]) — the
+///   walk's pre-seam shape, unchanged for callers that pass no source;
+/// * `structs` — the structural layers ([`StructProbe`],
+///   [`program_style_struct`]'s seam);
+/// * `descendants` — the `has-*` layers ([`DescendantProbe`]): a YES
+///   fires, a NO is a quiet skip, `None` keeps
+///   [`InterpNote::DescendantUnqueried`];
+/// * `supports` — the `supports-*` layers ([`SupportsProbe`]): a YES
+///   fires, a NO is a quiet skip, `None` keeps
+///   [`InterpNote::SupportsUnqueried`];
+/// * `tokens` — the theme forms ([`TokenSource`]).
+///
+/// The verdicts stay the interp arm's own `decide` — one
+/// implementation, two walks — so the widest form cannot disagree
+/// with the effective-declaration walk on when a layer fires, and the
+/// narrow entries are this one with the seams they do not name riding
+/// `None`.
+pub fn program_style_probes_containers_struct_descendants_supports(
+    layers: &'static [Layer],
+    keywords: &'static [&'static str],
+    env: &Env,
+    probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
+    structs: Option<&dyn StructProbe>,
+    descendants: Option<&dyn DescendantProbe>,
+    supports: Option<&dyn SupportsProbe>,
+    tokens: Option<&dyn TokenSource>,
+) -> (ResolvedStyle, StyleWalk) {
+    run(
+        layers,
+        keywords,
+        env,
+        probes,
+        containers,
+        structs,
+        descendants,
+        supports,
+        tokens,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +230,10 @@ fn run(
     keywords: &'static [&'static str],
     env: &Env,
     probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
     structs: Option<&dyn StructProbe>,
+    descendants: Option<&dyn DescendantProbe>,
+    supports: Option<&dyn SupportsProbe>,
     tokens: Option<&dyn TokenSource>,
 ) -> (ResolvedStyle, StyleWalk) {
     #[cfg(feature = "tracing")]
@@ -209,13 +272,21 @@ fn run(
         // The verdicts are the INTERP's own `decide` — one
         // implementation, two walks (the effective-declaration arm and
         // this style fold), so the two cannot disagree on when a layer
-        // fires. The container-bounds and descendant seams ride the
-        // interp arm's `*_containers`/`*_descendants` forms; this fold
-        // keeps the sourceless shape (the style lane's named-container
-        // and `has-*` layers report, exactly as they did before the
-        // seams landed).
+        // fires. The full probe surface rides the widest entry point
+        // (`program_style_probes_containers_struct_descendants_supports`):
+        // the named-container, structural, descendant and supports
+        // seams answer from the host's sources when one rides, and the
+        // sourceless entries keep the reported boundary the narrow
+        // forms have always carried.
         match decide(
-            layer.cond, env, probes, None, structs, None, None, layer.mask,
+            layer.cond,
+            env,
+            probes,
+            containers,
+            structs,
+            descendants,
+            supports,
+            layer.mask,
         ) {
             Fire::Yes => {
                 for (di, decl) in layer.decls.iter().enumerate() {
