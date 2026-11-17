@@ -1850,3 +1850,94 @@ fn expand_form_state_flags_mix_with_the_facts() {
     assert!(out.contains("margin-top = 0.5rem"), "{out}");
     assert!(!out.contains("display = none"), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// The pseudo-element tier: the `--pseudo` render-target face
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_pseudo_resolves_the_target_cascade() {
+    // The element walk reports the pseudo layer as its exclusion note;
+    // the `--pseudo` face answers the render target's OWN cascade (the
+    // interp_pseudo arm) — the section rides after the element answer.
+    let (code, out, err) = run_cmd(&["expand", "--pseudo", "before", "before:p-8 p-4"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("padding-top = 1rem"), "{out}");
+    assert!(out.contains("note:"), "{out}");
+    // The pseudo section: the target's own effective declarations.
+    assert!(out.contains("::before"), "{out}");
+    let pseudo_half = out.rsplit("::before").next().unwrap_or("");
+    assert!(pseudo_half.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_pseudo_answers_the_whole_upstream_set() {
+    for spelling in [
+        "selection",
+        "placeholder",
+        "before",
+        "after",
+        "marker",
+        "first-letter",
+        "first-line",
+        "file",
+        "backdrop",
+        "details-content",
+    ] {
+        let (code, out, err) =
+            run_cmd(&["expand", "--pseudo", spelling, &format!("{spelling}:mt-2")]);
+        assert_eq!(code, 0, "{spelling}: {err}");
+        assert!(
+            out.contains(&format!("::{spelling} ")),
+            "{spelling}: the target header names the spelling: {out}"
+        );
+        assert!(
+            out.contains("margin-top = 0.5rem"),
+            "{spelling}: the target's own value: {out}"
+        );
+    }
+}
+
+#[test]
+fn expand_pseudo_refuses_the_unknown_target_as_a_usage_error() {
+    let (code, _out, err) = run_cmd(&["expand", "--pseudo", "no-such-target", "p-4"]);
+    assert_eq!(code, 2, "usage errors exit 2");
+    assert!(err.contains("--pseudo"), "{err}");
+}
+
+#[test]
+fn expand_pseudo_json_carries_the_target_answer() {
+    let (code, out, err) = run_cmd(&["expand", "--json", "--pseudo", "file", "file:p-8"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("\"pseudo\""), "{out}");
+    assert!(out.contains("\"target\":\"file\""), "{out}");
+    assert!(out.contains("padding-top"), "{out}");
+}
+
+// ---------------------------------------------------------------------------
+// The media-feature remainder: the `--inverted-colors`/`--noscript` flags
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_media_remainder_flags_answer_the_layers() {
+    // The frame facts answer their layers beside the resting env's
+    // quiet miss (the capability flags' sibling — one flag per FACT).
+    let (code, out, err) = run_cmd(&["expand", "--inverted-colors", "inverted-colors:p-8"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, err) = run_cmd(&["expand", "--noscript", "noscript:mt-2"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("margin-top = 0.5rem"), "{out}");
+}
+
+#[test]
+fn expand_media_remainder_unset_flags_stay_the_quiet_miss() {
+    let (code, out, _) = run_cmd(&["expand", "inverted-colors:p-8 noscript:mt-2"]);
+    assert_eq!(code, 0);
+    assert!(
+        !out.contains("padding-top = 2rem") && !out.contains("margin-top = 0.5rem"),
+        "an unset frame fact is the quiet miss a media query that does not hold is: {out}"
+    );
+    assert!(!out.contains("note:"), "no exclusion note rides: {out}");
+}
