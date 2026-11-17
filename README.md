@@ -259,6 +259,8 @@ Pay only for the dynamism you use:
 | `enabled:` `required:` `optional:` `in-range:` `out-of-range:` | typed `Cond` states, the two-fact answers (the membership fact `form_associated`/`range_bounded` beside the pair's shared state bit `required_field`/`range_in` — the matches-neither boundary evidence 27 documented closes), CSS `:pseudo` selector semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
 | `selection:` `placeholder:` `before:` `after:` `marker:` `first-letter:` `first-line:` `file:` `backdrop:` `details-content:` | the `PseudoTarget` render-target tier (10 targets, the closed set): the element walks exclude, `interp_pseudo` resolves the target's own cascade, the CSS arm renders the upstream heads (`marker:` the four-selector disjunction; `before:`/`after:` the injected `content: var(--tw-content)` line), CLI `expand --pseudo`, `file:` lands the v0.x plan, the rest the typed `PlanNoteKind::PseudoElement` boundary | ✅                                                            |
+| `first:` `last:` `odd:` `even:` `only:` `empty:` `nth-N:` `nth-last-N:` | the structural family (`StructProbe`/`StructFacts`): `first-of-type:` `last-of-type:` `only-of-type:` `nth-of-type-N:` `nth-last-of-type-N:` the OF-TYPE tier beside them (the type-relative facts ride the same seam — what "same type" means is the host own reading, never a tag string), the CSS arm renders `:first-child` through `:nth-last-of-type(N)`, the plan bridge lands the oracle own `Test::Structural` table, CLI `expand --child/--child-of-type/--empty` | ✅ |
+| `starting:` | the `@starting-style` at-rule (the transition first frame — the at-rule tier beside the media features): ONE affirmative `Env::starting_style` frame fact (the host first-render gate), the unset bit the quiet miss, the CSS arm renders the bare `@starting-style` head, the plan bridge reports the typed `PlanNoteKind::StartingStyle` boundary, CLI `expand --starting` | ✅ |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
 | arbitrary selectors, unsupported forms                     | precise per-form reason + suggested alternative                       | 🛑 diagnosed, never silent                                    |
 
@@ -442,7 +444,8 @@ cargo run -p aeolus-cli --example expand_element_states # expand --target/--inde
 cargo run -p aeolus-compile --example widget_states     # the widget states: open/inert/default element-state answers
 cargo run -p aeolus-cli --example expand_widget_states  # expand --open/--inert/--default: the facts the widget-state layers answer from
 cargo run -p aeolus-compile --example form_states       # the form states: enabled/required/optional/in-range/out-of-range answers
-cargo run -p aeolus-cli --example expand_form_states    # expand --form-associated/--required/--range-bounded/--range-in: the facts the form-state layers answer from
+cargo run -p aeolus-cli --example expand_form_states
+cargo run -p aeolus-cli --example expand_starting      # expand --starting: the starting-style frame fact on the CLI face    # expand --form-associated/--required/--range-bounded/--range-in: the facts the form-state layers answer from
 cargo run -p aeolus-compile --example pseudo_targets    # the pseudo-element render-target tier: one cascade each, the closed set
 cargo run -p aeolus-cli --example expand_pseudo         # expand --pseudo: the render target's own cascade beside the element answer
 cargo run -p aeolus-cli --example sort                  # the sort face: canonical order beside the miss channel
@@ -489,6 +492,7 @@ cargo run -p aeolus-compile --example project_build
 cargo run -p aeolus-compile --example named_containers
 cargo run -p aeolus-compile --example container_bounds
 cargo run -p aeolus-compile --example struct_probe  # the structural seam, facts in, layers out
+cargo run -p aeolus-compile --example starting        # the starting: variant: the @starting-style frame fact, the quiet miss beside the fired first frame
 cargo run -p aeolus-compile --example pseudo_targets
 cargo run -p aeolus-compile --example motion
 cargo run -p aeolus-compile --example shadow_plan  # the plan bridge's shadow slot, the differential walk
@@ -552,7 +556,8 @@ cargo run -p aeolus-cli --example expand_direction  # expand --rtl: the rtl/ltr 
 cargo run -p aeolus-cli --example expand_validation  # expand --invalid/--user-*: the validation layers answer from the facts
 cargo run -p aeolus-cli --example expand_element_states  # expand --target/--indeterminate/--autofill/--read-write: the element-state layers answer from the facts
 cargo run -p aeolus-cli --example expand_widget_states   # expand --open/--inert/--default: the widget-state layers answer from the facts
-cargo run -p aeolus-cli --example expand_form_states  # expand --form-associated/--required/--range-bounded/--range-in: the form-state layers answer from the facts
+cargo run -p aeolus-cli --example expand_form_states
+cargo run -p aeolus-cli --example expand_starting      # expand --starting: the starting-style frame fact on the CLI face  # expand --form-associated/--required/--range-bounded/--range-in: the form-state layers answer from the facts
 cargo run -p aeolus-cli --example expand_pseudo       # expand --pseudo: the render target's own cascade beside the element answer
 cargo run -p aeolus-cli --example expand_preferences  # expand --reduced-motion/--more-contrast/--forced-colors/--print/--inverted-colors/--noscript: the facts the preference layers answer from
 cargo run -p aeolus-cli --example sort              # the sort face: canonical order beside the miss channel
