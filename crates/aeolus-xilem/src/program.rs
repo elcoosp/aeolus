@@ -21,9 +21,10 @@
 
 use aeolus_core::plan::ResolvedStyle;
 use aeolus_rt::{
-    AttrProbe, ContainerProbe, DescendantProbe, Env, InterpNote, PlanNoteKind, StaticProgram,
-    StructProbe, StyleWalk, SupportsProbe, TokenSource,
-    program_style_probes_containers_struct_descendants_supports, program_style_with,
+    AttrProbe, ContainerProbe, DescendantProbe, Env, InterpNote, PlanNoteKind, PseudoTarget,
+    StaticProgram, StructProbe, StyleWalk, SupportsProbe, TokenSource,
+    program_style_probes_containers_struct_descendants_supports, program_style_pseudo,
+    program_style_pseudo_theme, program_style_with,
 };
 
 use crate::LoweringReport;
@@ -112,6 +113,49 @@ pub fn lower_program_probes_containers_struct_descendants_supports(
         supports,
         tokens,
     );
+    (style, translate(&walk))
+}
+
+/// Lower one [`PseudoTarget`]'s own cascade from a compiled static
+/// program into a [`ResolvedStyle`] — the render-target contract's
+/// backend half (the shared walk's `program_style_pseudo` on the
+/// backend's face): the `::selection`/`::placeholder`-family cascade a
+/// host that PAINTS the target consumes, through this backend's report
+/// translation.
+///
+/// The verdict is CONDITION EQUALITY (the interp arm's own pseudo
+/// walk): only the layers carrying the target's condition participate,
+/// later fired declarations win per longhand, no [`Env`] and no probe
+/// seams consult (the flat fold collapses stacked variants onto the
+/// pseudo condition). The element's own layers and the sibling pseudo
+/// targets stay SILENT here — the element walk's
+/// [`InterpNote::PseudoElement`] note reports them on ITS side.
+///
+/// Theme-token longhands ([`Val::Tok`]/[`Val::ModePair`]) refuse into
+/// the report here: pass a source through [`lower_program_pseudo_theme`]
+/// when the program carries them (the runtime tier's explicit slow
+/// lane).
+pub fn lower_program_pseudo(
+    program: &StaticProgram,
+    target: PseudoTarget,
+) -> (ResolvedStyle, LoweringReport) {
+    let (style, walk) = program_style_pseudo(target, program.layers, program.keywords);
+    (style, translate(&walk))
+}
+
+/// [`lower_program_pseudo`] with one [`TokenSource`] resolving the
+/// theme forms (the shared walk's `program_style_pseudo_theme` on the
+/// backend's face): the `env` rides the RESOLUTION (the mode selects
+/// the pair halves), never the firing — a pseudo layer fires by its
+/// condition alone.
+pub fn lower_program_pseudo_theme(
+    program: &StaticProgram,
+    target: PseudoTarget,
+    tokens: &dyn TokenSource,
+    env: &Env,
+) -> (ResolvedStyle, LoweringReport) {
+    let (style, walk) =
+        program_style_pseudo_theme(target, program.layers, program.keywords, tokens, env);
     (style, translate(&walk))
 }
 
