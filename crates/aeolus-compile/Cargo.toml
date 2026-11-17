@@ -48,8 +48,12 @@ miette = { version = "7", optional = true, default-features = false }
 
 [features]
 default = []
-tracing = ["dep:tracing"]
-miette = ["dep:miette"]
+# One flag, the whole walk: the compile events AND the pipeline crates'
+# walk consults — the registry reads (aeolus-data) and the theme pass
+# (aeolus-theme) instrument with the same flag, so any layer's opt-in
+# reaches the whole walk (the CLI forwards here in turn).
+tracing = ["dep:tracing", "aeolus-data/tracing", "aeolus-theme/tracing"]
+miette = ["dep:miette", "aeolus-data/miette", "aeolus-theme/miette"]
 
 [dev-dependencies]
 # The compile-seam microbenchmarks (divan, stable — the workspace bench
@@ -335,4 +339,12 @@ harness = false
 # refusal report.
 [[bench]]
 name = "style_walk_pseudo"
+harness = false
+
+# The dyn-cache observer seam's benchmarks (the observability face's
+# cost ON the hot paths it rides): the observation-free hit baseline,
+# the built-in counter's hit, the worst-case recording observer's hit
+# and the snapshot read itself.
+[[bench]]
+name = "observer"
 harness = false
