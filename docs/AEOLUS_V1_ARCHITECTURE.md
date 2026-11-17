@@ -564,7 +564,16 @@ Do **not** block on these: the design works today and simply gets cheaper if the
    entry points, the walk's typed report translated onto the crate's
    `LoweringReport`, differential pins against the plan path
    (`tests/program.rs` per backend), a divan bench and a headless `examples/`
-   demo. The §7 re-target is COMPLETE: every backend consumes the frozen
+   demo. The egui lane's GRADIENT MESH-PAINTER seam landed 2026-11 (the
+   backend ships the painter egui's solid-`Color32` `Frame` lacks: the
+   lowering bakes a `GradientPaint` payload onto `EguiStyle::gradient`,
+   `gradient_mesh` builds the paint over any rect — linear's banded
+   strip exact at every stop, radial's concentric rings over the
+   `farthest-corner` radius, conic's angular sectors from the CSS start
+   angle, all clipped to the rect — and `paint_gradient` is the
+   one-liner the host runs beside the frame; the "gradients need an
+   app-side mesh painter" refusal retired). The §7 re-target is COMPLETE:
+   every backend consumes the frozen
    program. The program lane's PSEUDO-TARGET FACE landed 2026-11 (the interp
    arm's own-cascade contract on the frozen program: `program_style_pseudo`/
    `program_style_pseudo_theme` resolve one `PseudoTarget`'s own cascade into
