@@ -321,3 +321,10 @@ harness = false
 [[bench]]
 name = "suggest"
 harness = false
+
+# The program lane's walk (the §7 re-target's style fold): the
+# sourceless report path the plan-lane backends ride beside the
+# full-probe fire path the widest entry point answers.
+[[bench]]
+name = "style_walk"
+harness = false
