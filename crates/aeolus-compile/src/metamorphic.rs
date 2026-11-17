@@ -918,6 +918,10 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
             | Cond::FileSelector
             | Cond::Backdrop
             | Cond::DetailsContent => {}
+            // The starting-style at-rule is frame state the conjunctive
+            // env bakes (the fired situation's own reading — the media
+            // facts' shape).
+            Cond::Starting => env.starting_style = true,
         }
     }
     env
@@ -1012,6 +1016,7 @@ fn cond_label(cond: &Cond) -> String {
         Cond::GroupHas(_) => "group-has".to_string(),
         Cond::PeerHas(_) => "peer-has".to_string(),
         Cond::Structural(_) => "structural".to_string(),
+        Cond::Starting => "starting-style".to_string(),
     }
 }
 
