@@ -669,8 +669,24 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         | Cond::DetailsContent => false,
         Cond::GroupHover => env.group_hover,
         Cond::GroupFocus => env.group_focus,
+        // The composition tier answers from the env like the landed
+        // pair (the interp's `decide` semantics shared verbatim — the
+        // composed state one relation up, the unset bits the quiet
+        // misses a selector that does not match is).
+        Cond::GroupFocusVisible => env.group_focus_visible,
+        Cond::GroupFocusWithin => env.group_focus_within,
+        Cond::GroupActive => env.group_active,
+        Cond::GroupDisabled => env.group_disabled,
+        Cond::GroupVisited => env.group_visited,
+        Cond::GroupChecked => env.group_checked,
         Cond::PeerHover => env.peer_hover,
         Cond::PeerFocus => env.peer_focus,
+        Cond::PeerFocusVisible => env.peer_focus_visible,
+        Cond::PeerFocusWithin => env.peer_focus_within,
+        Cond::PeerActive => env.peer_active,
+        Cond::PeerDisabled => env.peer_disabled,
+        Cond::PeerVisited => env.peer_visited,
+        Cond::PeerChecked => env.peer_checked,
         // The attribute shapes route through `cond_matches`'s probe
         // arms (the env alone has no answer for them); the guard keeps
         // the match total so a new `Cond` variant fails to compile here
