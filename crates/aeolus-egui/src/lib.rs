@@ -57,7 +57,8 @@ pub use gradient::{
 
 pub use program::{
     REM_PX, env_for_probe, lower_program,
-    lower_program_probes_containers_struct_descendants_supports, lower_program_with,
+    lower_program_probes_containers_struct_descendants_supports, lower_program_pseudo,
+    lower_program_pseudo_theme, lower_program_with,
 };
 
 use egui::style::WidgetVisuals;
