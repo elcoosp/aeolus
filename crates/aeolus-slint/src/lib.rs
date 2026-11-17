@@ -63,7 +63,10 @@ use i_slint_core::graphics::{
 use i_slint_core::items::{BuiltInMouseCursor, TextHorizontalAlignment, TextOverflow, TextWrap};
 
 pub mod program;
-pub use program::{REM_PX, env_for_probe, lower_program, lower_program_with};
+pub use program::{
+    REM_PX, env_for_probe, lower_program,
+    lower_program_probes_containers_struct_descendants_supports, lower_program_with,
+};
 
 use aeolus_core::color::Color as TwColor;
 use aeolus_core::eval::{Probe, Rel};
