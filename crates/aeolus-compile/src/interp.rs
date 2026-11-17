@@ -149,10 +149,39 @@ pub struct Env {
     pub group_hover: bool,
     /// A `.group` ancestor has focus ([`Cond::GroupFocus`]).
     pub group_focus: bool,
+    /// A `.group` ancestor matches `:focus-visible`
+    /// ([`Cond::GroupFocusVisible`]; the composition tier's fact, the
+    /// element-own probe's shape one relation up).
+    pub group_focus_visible: bool,
+    /// A `.group` ancestor contains the focused element
+    /// ([`Cond::GroupFocusWithin`]).
+    pub group_focus_within: bool,
+    /// A `.group` ancestor is pressed ([`Cond::GroupActive`]).
+    pub group_active: bool,
+    /// A `.group` ancestor is disabled ([`Cond::GroupDisabled`]).
+    pub group_disabled: bool,
+    /// A `.group` ancestor was visited ([`Cond::GroupVisited`]).
+    pub group_visited: bool,
+    /// A `.group` ancestor is checked ([`Cond::GroupChecked`]).
+    pub group_checked: bool,
     /// A `.peer` sibling is hovered ([`Cond::PeerHover`]).
     pub peer_hover: bool,
     /// A `.peer` sibling has focus ([`Cond::PeerFocus`]).
     pub peer_focus: bool,
+    /// A `.peer` sibling matches `:focus-visible`
+    /// ([`Cond::PeerFocusVisible`]).
+    pub peer_focus_visible: bool,
+    /// A `.peer` sibling contains the focused element
+    /// ([`Cond::PeerFocusWithin`]).
+    pub peer_focus_within: bool,
+    /// A `.peer` sibling is pressed ([`Cond::PeerActive`]).
+    pub peer_active: bool,
+    /// A `.peer` sibling is disabled ([`Cond::PeerDisabled`]).
+    pub peer_disabled: bool,
+    /// A `.peer` sibling was visited ([`Cond::PeerVisited`]).
+    pub peer_visited: bool,
+    /// A `.peer` sibling is checked ([`Cond::PeerChecked`]).
+    pub peer_checked: bool,
     /// The user prefers reduced motion ([`Cond::Media`]'s
     /// `motion-reduce:`; `motion-safe:` is the COMPLEMENT — the
     /// feature's two v4 values share one fact).
@@ -1466,8 +1495,24 @@ pub(crate) fn decide(
         Cond::OutOfRange => fires(env.range_bounded && !env.range_in),
         Cond::GroupHover => fires(env.group_hover),
         Cond::GroupFocus => fires(env.group_focus),
+        // The composition tier answers from the env like the landed
+        // pair: each composition is its own fact (a `.group` ancestor
+        // in the composed state), unanswered = not fired (CSS
+        // semantics).
+        Cond::GroupFocusVisible => fires(env.group_focus_visible),
+        Cond::GroupFocusWithin => fires(env.group_focus_within),
+        Cond::GroupActive => fires(env.group_active),
+        Cond::GroupDisabled => fires(env.group_disabled),
+        Cond::GroupVisited => fires(env.group_visited),
+        Cond::GroupChecked => fires(env.group_checked),
         Cond::PeerHover => fires(env.peer_hover),
         Cond::PeerFocus => fires(env.peer_focus),
+        Cond::PeerFocusVisible => fires(env.peer_focus_visible),
+        Cond::PeerFocusWithin => fires(env.peer_focus_within),
+        Cond::PeerActive => fires(env.peer_active),
+        Cond::PeerDisabled => fires(env.peer_disabled),
+        Cond::PeerVisited => fires(env.peer_visited),
+        Cond::PeerChecked => fires(env.peer_checked),
         Cond::Bp(bp) | Cond::Min(bp) => fires(env.viewport_rem >= bp.rem()),
         Cond::Max(bp) => fires(env.viewport_rem < bp.rem()),
         // The UNNAMED container question answers from the nearest
