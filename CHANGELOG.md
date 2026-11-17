@@ -1,6 +1,27 @@
 ## [Unreleased]
 
-## [Unreleased]
+### 🚀 Features — the host surface's probe face (M1)
+
+- **`StaticProgram::style_struct` / `style_probes_containers_struct_descendants_supports` on `crates/aeolus-rt`** — the host face catches up to the walk entries the five backend walks already ride: the structural face and the WIDEST probe face join the method entries the style-face handoff landed (`style`/`style_with`/`style_pseudo`/`style_pseudo_theme`), and a host holding the macro's frozen form stops threading `program.layers`/`program.keywords` into the free `aeolus_compile` entries BY HAND — the field plumbing the style face's handoff retired for the element walk. The methods are the free functions' DELEGATES (one walk, two spellings — the differential suite pins the answers byte-equal): the structural face wires one `StructProbe` (`StructFacts::UNKNOWN` the quiet "the host knows nothing" answer, the sourceless form keeping the reported `StructuralUnqueried` boundary), the widest face wires all five probe seams plus the token tail (the `*_with` convention — the theme forms resolve through one `TokenSource`, `None` refusing them per longhand into `StyleWalk::refusals`), and the verdicts stay the interp arm's own `decide`. Tests: `crates/aeolus-rt/tests/program_probe_face.rs` (5 pins, RED-first — the methods do not exist yet, the compile failure IS the capture: the structural delegate beside the free entry, the full-surface fire with every seam wired, the sourceless boundaries riding the report, the token tail beside the themeless refusal, the frozen program's IR view gaining its first pin). Bench: `crates/aeolus-rt/benches/style_face.rs` grows `style_face_struct`/`style_free_struct` (~219/~214 ns medians, the delegation parity) and `style_face_widest`/`style_free_widest` (~241/~246 ns medians). Example: `crates/aeolus-rt/examples/probe_face.rs` (the widest face over a `MeasuredContainers` hand-off, headless).
+
+### 🚀 Features — the program lane's narrow probe faces (M2)
+
+- **`program_style_containers` / `program_style_descendants` / `program_style_supports` on `crates/aeolus-compile` + the `style_containers` / `style_descendants` / `style_supports` methods on `crates/aeolus-rt`** — the interp arm's per-seam entry convention (`interp_containers`/`interp_descendants`/`interp_supports`) carried to the program lane: the narrow form of the widest entry with the seams it does not name riding `None`, each carrying the program lane's `*_with` token tail (`None` keeps the themeless refusal), so a host naming ONE seam threads one Option instead of six. The narrow face is the widest one with the same seam wired — the differential suite pins them byte-equal (one `decide`, no third verdict path). Tests: `crates/aeolus-rt/tests/program_probe_face.rs` grows the three narrow pins (RED-first — the entries do not exist yet, the unresolved imports ARE the capture: the fired boundary, the narrow-widest agreement, the sourceless report). Bench: `benches/style_face.rs` grows `style_face_containers`/`style_free_containers` (~223/~207 ns medians). Example: `examples/probe_face.rs` grows the narrow container face.
+
+### 🛠 Fixed — docs drift (this handoff)
+
+- `CHANGELOG.md` — the doubled `## [Unreleased]` header dedupes (the pseudo-target handoff's entries landed under a second copy of the heading).
+- `README.md` — the example index files the probe-face demo; the rt crate-map row files the probe face beside the style face; the workspace battery count re-measured post-handoff.
+- `docs/AEOLUS_V1_ARCHITECTURE.md` — the §7 re-target paragraph files the host surface's probe face beside the landed style face.
+
+### 🧹 Micro-debt (this handoff)
+
+- `crates/aeolus-compile/tests/dyn_cache.rs` — the built-in `TwoGenStore` gains its first pins: the two-generation rotation (cap-bounded rotate, the previous generation's promotion, the bounded resident set), the in-place replace without rotation (the config flip-flop story), and the `with_cap(0)` panic contract had no coverage anywhere in the workspace (the `DynCache` battery exercised the store only through the cache's own bookkeeping).
+- `crates/aeolus-rt/tests/program_probe_face.rs` — `StaticProgram::program`'s const IR view (the frozen layer slices' alias the codegen seams read through) gains its first pin.
+
+### 🎁 Consumer examples (additive)
+
+- `crates/aeolus-rt/examples/probe_face.rs` — the probe face headless: a `MeasuredContainers` hand-off publishes one width and the widest face reads it, the resize story re-publishes (the container layer quiets, the structural `first:w-40` is the standing beat), the structural face rides beside its free entry, the narrow container face threads one Option, and the sourceless widest prints every reported boundary.
 
 ### 🚀 Features — the pseudo-target face rides the plan-lane backends (M1)
 
