@@ -584,7 +584,14 @@ Do **not** block on these: the design works today and simply gets cheaper if the
    (`aeolus_rt::StaticProgram::style`/`style_with`/`style_pseudo`/
    `style_pseudo_theme` — the walk entries as methods on the frozen type, the
    free entries' delegates, the v0.x `ResolvedStyle` re-exported so the host
-   names the answer) The pseudo-target face rode the PLAN-LANE BACKENDS 2026-11
+   names the answer) The host surface's PROBE FACE landed 2026-11 beside it
+   (`StaticProgram::style_struct` and `style_probes_containers_struct_
+   descendants_supports` — the structural and widest walk entries the five
+   backend walks ride, as methods on the frozen type — and the narrow
+   `program_style_containers`/`program_style_descendants`/
+   `program_style_supports` entries with their `style_*` method twins, the
+   interp arm's per-seam convention carried to the program lane, each narrow
+   entry keeping the `*_with` token tail) The pseudo-target face rode the PLAN-LANE BACKENDS 2026-11
    (the render-target contract's backend half: `lower_program_pseudo`/
    `lower_program_pseudo_theme` on xilem, egui, iced, slint and floem — the
    target's own cascade lowers into each backend's native payload through the
