@@ -258,7 +258,7 @@ Pay only for the dynamism you use:
 | `open:` `inert:` `default:`                                | typed `Cond` states, one affirmative `Env` fact each (the v0.x `State` surface's own slots — the v0.x-gap closure the element-state landing documented), CSS `:is([open], :popover-open, :open)`/`:is([inert], [inert] *)`/`:default` selector semantics | ✅                                                            |
 | `enabled:` `required:` `optional:` `in-range:` `out-of-range:` | typed `Cond` states, the two-fact answers (the membership fact `form_associated`/`range_bounded` beside the pair's shared state bit `required_field`/`range_in` — the matches-neither boundary evidence 27 documented closes), CSS `:pseudo` selector semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
-| `selection:` `placeholder:` `before:` `after:` `marker:` `first-letter:` `first-line:` `file:` `backdrop:` `details-content:` | the `PseudoTarget` render-target tier (10 targets, the closed set): the element walks exclude, `interp_pseudo` resolves the target's own cascade, the CSS arm renders the upstream heads (`marker:` the four-selector disjunction; `before:`/`after:` the injected `content: var(--tw-content)` line), CLI `expand --pseudo`, `file:` lands the v0.x plan, the rest the typed `PlanNoteKind::PseudoElement` boundary | ✅                                                            |
+| `selection:` `placeholder:` `before:` `after:` `marker:` `first-letter:` `first-line:` `file:` `backdrop:` `details-content:` | the `PseudoTarget` render-target tier (10 targets, the closed set): the element walks exclude, `interp_pseudo` resolves the target's own cascade (`program_style_pseudo` the frozen program's), the CSS arm renders the upstream heads (`marker:` the four-selector disjunction; `before:`/`after:` the injected `content: var(--tw-content)` line), CLI `expand --pseudo`, `file:` lands the v0.x plan, the rest the typed `PlanNoteKind::PseudoElement` boundary | ✅                                                            |
 | `first:` `last:` `odd:` `even:` `only:` `empty:` `nth-N:` `nth-last-N:` | the structural family (`StructProbe`/`StructFacts`): `first-of-type:` `last-of-type:` `only-of-type:` `nth-of-type-N:` `nth-last-of-type-N:` the OF-TYPE tier beside them (the type-relative facts ride the same seam — what "same type" means is the host own reading, never a tag string), the CSS arm renders `:first-child` through `:nth-last-of-type(N)`, the plan bridge lands the oracle own `Test::Structural` table, CLI `expand --child/--child-of-type/--empty` | ✅ |
 | `starting:` | the `@starting-style` at-rule (the transition first frame — the at-rule tier beside the media features): ONE affirmative `Env::starting_style` frame fact (the host first-render gate), the unset bit the quiet miss, the CSS arm renders the bare `@starting-style` head, the plan bridge reports the typed `PlanNoteKind::StartingStyle` boundary, CLI `expand --starting` | ✅ |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
@@ -298,8 +298,8 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1832 tests with all features enabled (2026-11,
-  the probe-seam handoff's honest sum — `cargo test --workspace --all-features`).
+  **zero** allocations). Workspace battery: 1882 tests with all features enabled (2026-11,
+  the pseudo-face handoff's honest sum — `cargo test --workspace --all-features`).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -373,7 +373,7 @@ differential oracle — no big-bang migration.
 | `aeolus-codegen`      | backend-neutral `Emit` trait + `Capability`/`Conformance` report                                                            |
 | `aeolus-codegen-gpui` | GPUI token emitter, native + polyfill capability tiers, `lower_class` third-party seam                                      |
 | `aeolus-macro`        | `tw!` / `cn!` / `tw_cn!` / `variants!` (compound + slots) / `theme!` — syn-free; emits the frozen program, never the string |
-| `aeolus-rt`           | host seam: `StaticProgram`, `Env`, `TokenTable`, `DynCache`, `ClassCell`, `MeasuredContainers`, `theme_from_css`            |
+| `aeolus-rt`           | host seam: `StaticProgram` (the `style*` face beside the free walks), `Env`, `TokenTable`, `DynCache`, `ClassCell`, `MeasuredContainers`, `theme_from_css`                             |
 
 **Integration & tooling**
 
@@ -450,6 +450,7 @@ cargo run -p aeolus-compile --example pseudo_targets    # the pseudo-element ren
 cargo run -p aeolus-cli --example expand_pseudo         # expand --pseudo: the render target's own cascade beside the element answer
 cargo run -p aeolus-compile --example group_peer_states # the composition tier: group-*/peer-* over the full probe-state set, the quiet miss beside the fired facts
 cargo run -p aeolus-compile --example style_walk_probes # the program lane's full probe walk: the seams answer, the reports beside the fires
+cargo run -p aeolus-compile --example style_walk_pseudo # the program lane's pseudo-target face: the render targets' own cascades
 cargo run -p aeolus-compile --example suggest           # the suggestion seam: suggest_for/SuggestionSurface end to end
 cargo run -p aeolus-cli --example sort                  # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
@@ -520,6 +521,7 @@ cargo run -p aeolus-codegen --example text_emit
 cargo run -p aeolus-codegen-gpui --example conformance
 cargo run -p aeolus-rt --example class_cell
 cargo run -p aeolus-rt --example static_walk
+cargo run -p aeolus-rt --example style_face  # the host surface's own style face: the methods beside the free walks
 cargo run -p aeolus-rt --example program_overlay
 cargo run -p aeolus-macro --example frozen_program  # the tw!/cn! surface: the frozen program, printed
 # GPUI
