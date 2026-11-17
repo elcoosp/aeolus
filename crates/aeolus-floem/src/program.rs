@@ -47,7 +47,10 @@ use floem::taffy::prelude::{
 use floem::taffy::style::Overflow;
 
 use aeolus_ir::{Cond, Prop, Val};
-use aeolus_rt::{AttrKind, AttrProbe, Env, InterpError, StaticProgram, TokenSource};
+use aeolus_rt::{
+    AttrKind, AttrProbe, ContainerProbe, DescendantKind, DescendantProbe, Env, InterpError,
+    PseudoTarget, StaticProgram, StructProbe, SupportsProbe, TokenSource, structural_fires,
+};
 
 use crate::LoweringReport;
 
@@ -86,7 +89,7 @@ pub fn lower_program_with(
     let mut report = LoweringReport::default();
     let mut style = Style::new();
     for (layer_index, layer) in program.layers.iter().enumerate() {
-        match decide(layer.cond, env, probes) {
+        match decide(layer.cond, env, probes, None, None, None, None) {
             Fire::Yes => {
                 for (decl_index, decl) in layer.decls.iter().enumerate() {
                     let keyword = program.keyword(layer_index, decl_index).unwrap_or("");
@@ -110,6 +113,154 @@ pub fn lower_program_with(
     (style, report)
 }
 
+/// [`lower_program`] with THIS walk's FULL probe surface wired — the
+/// widest program-lane entry (the shared walk's
+/// `program_style_probes_containers_struct_descendants_supports`
+/// naming, the four delegating backends' own shape): the probe seams
+/// the plan-lane program's layers can consult, all optional, the
+/// verdicts staying the interp arm's own `decide` semantics applied in
+/// this walk.
+///
+/// * `probes` — the element-own `data-*`/`aria-*` layers
+///   ([`AttrProbe`], [`lower_program_with`]'s seam);
+/// * `containers` — the NAMED container layers ([`ContainerProbe`]):
+///   the host's measured `@container` elements answer by the same
+///   AT-and-above / strictly-below boundary rules the interp pins; an
+///   unknown container is the quiet miss a selector that does not
+///   match is; `None` keeps the reported boundary — the walk's
+///   pre-seam shape, unchanged for callers that pass no source;
+/// * `structs` — the structural layers ([`StructProbe`]): the DOM
+///   -position facts decide, an unknown field the quiet miss;
+/// * `descendants` — the `has-*` layers ([`DescendantProbe`]): a YES
+///   fires, a NO is a quiet skip, `None` keeps the reported boundary;
+/// * `supports` — the `supports-*` layers ([`SupportsProbe`]): the
+///   render target's capability answer, the same shape;
+/// * `tokens` — the theme forms ([`TokenSource`]).
+pub fn lower_program_probes_containers_struct_descendants_supports(
+    program: &StaticProgram,
+    env: &Env,
+    probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
+    structs: Option<&dyn StructProbe>,
+    descendants: Option<&dyn DescendantProbe>,
+    supports: Option<&dyn SupportsProbe>,
+    tokens: Option<&dyn TokenSource>,
+) -> (Style, LoweringReport) {
+    let mut report = LoweringReport::default();
+    let mut style = Style::new();
+    for (layer_index, layer) in program.layers.iter().enumerate() {
+        match decide(
+            layer.cond,
+            env,
+            probes,
+            containers,
+            structs,
+            descendants,
+            supports,
+        ) {
+            Fire::Yes => {
+                for (decl_index, decl) in layer.decls.iter().enumerate() {
+                    let keyword = program.keyword(layer_index, decl_index).unwrap_or("");
+                    style = apply_decl(
+                        style,
+                        decl.prop,
+                        decl.val,
+                        keyword,
+                        env,
+                        tokens,
+                        &mut report,
+                    );
+                }
+            }
+            Fire::No => {}
+            Fire::Excluded(reason) => {
+                report.drop(exclusion_text(layer.cond), reason);
+            }
+        }
+    }
+    (style, report)
+}
+
+/// Lower one [`PseudoTarget`]'s own cascade from a compiled static
+/// program into a Floem [`Style`] — the render-target contract's
+/// backend half (the interp arm's own-cascade walk on this backend's
+/// own walk): the `::selection`/`::placeholder`-family cascade a host
+/// that PAINTS the target consumes, through the SAME `apply_decl`
+/// mapping the element walk rides.
+///
+/// The verdict is CONDITION EQUALITY (the interp arm's own pseudo
+/// walk): only the layers carrying the target's condition participate,
+/// later fired declarations win per longhand, no probe seams consult
+/// and no [`Env`] gates the FIRING (the flat fold collapses stacked
+/// variants onto the pseudo condition). The element's own layers and
+/// the sibling pseudo targets stay SILENT here — the element walk's
+/// `Excluded` report names them on ITS side, never on the target's.
+///
+/// Theme-token longhands ([`Val::Tok`]/[`Val::ModePair`]) refuse into
+/// the report with the prop named (the crate's own colour-path lane
+/// note): pass a source through [`lower_program_pseudo_theme`] when the
+/// program carries them (the runtime tier's explicit slow lane).
+pub fn lower_program_pseudo(
+    program: &StaticProgram,
+    target: PseudoTarget,
+) -> (Style, LoweringReport) {
+    lower_pseudo(program, target, &Env::default(), None)
+}
+
+/// [`lower_program_pseudo`] with one [`TokenSource`] resolving the
+/// theme forms (the interp arm's `interp_pseudo_theme` contract on this
+/// backend's own walk): the `env` rides the RESOLUTION (the mode
+/// selects the pair halves), never the firing — a pseudo layer fires by
+/// its condition alone.
+pub fn lower_program_pseudo_theme(
+    program: &StaticProgram,
+    target: PseudoTarget,
+    tokens: &dyn TokenSource,
+    env: &Env,
+) -> (Style, LoweringReport) {
+    lower_pseudo(program, target, env, Some(tokens))
+}
+
+/// The pseudo-target fold over THIS backend's own walk: condition
+/// equality is the whole verdict, the row texts index the flattened
+/// annotations exactly as the element walk reads them
+/// ([`StaticProgram::keyword`]), and the declarations apply through the
+/// SAME `apply_decl` the element walk uses — one mapping, two walks, so
+/// the target's answer cannot disagree with the element's mapping of
+/// the same longhand.
+fn lower_pseudo(
+    program: &StaticProgram,
+    target: PseudoTarget,
+    env: &Env,
+    tokens: Option<&dyn TokenSource>,
+) -> (Style, LoweringReport) {
+    let mut report = LoweringReport::default();
+    let mut style = Style::new();
+    let wanted = target.cond();
+    for (layer_index, layer) in program.layers.iter().enumerate() {
+        // The verdict is CONDITION EQUALITY: the element's own layers
+        // and the sibling pseudo targets are silence, not notes (the
+        // element walk's Excluded report is the other half of the
+        // render-target contract).
+        if layer.cond != wanted {
+            continue;
+        }
+        for (decl_index, decl) in layer.decls.iter().enumerate() {
+            let keyword = program.keyword(layer_index, decl_index).unwrap_or("");
+            style = apply_decl(
+                style,
+                decl.prop,
+                decl.val,
+                keyword,
+                env,
+                tokens,
+                &mut report,
+            );
+        }
+    }
+    (style, report)
+}
+
 /// The walk's three-way layer verdict — the interp's `Fire` shape, with
 /// the note channel folded into the report's `(what, reason)` pair.
 enum Fire {
@@ -128,7 +279,15 @@ enum Fire {
 /// render targets, containers without a context never match, attribute
 /// probes answer through the seam, the descendant `has-*` shapes stay
 /// the diagnosed boundary).
-fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
+fn decide(
+    cond: Cond,
+    env: &Env,
+    probes: Option<&dyn AttrProbe>,
+    containers: Option<&dyn ContainerProbe>,
+    structs: Option<&dyn StructProbe>,
+    descendants: Option<&dyn DescendantProbe>,
+    supports: Option<&dyn SupportsProbe>,
+) -> Fire {
     let fires = |yes: bool| if yes { Fire::Yes } else { Fire::No };
     match cond {
         Cond::Base => Fire::Yes,
@@ -204,29 +363,48 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
         Cond::PeerChecked => fires(env.peer_checked),
         Cond::Bp(bp) | Cond::Min(bp) => fires(env.viewport_rem >= bp.rem()),
         Cond::Max(bp) => fires(env.viewport_rem < bp.rem()),
-        Cond::Container { bp, name } => match (name, env.container_rem) {
-            // The unnamed question answers from the nearest eligible
-            // container; a NAMED container needs THAT container's width
-            // — the Env answers the nearest-container question only, so
-            // the named layer is excluded with its name in the reason
-            // (the interp's ContainerUnqueried boundary).
-            (None, Some(width)) => fires(width >= bp.rem()),
-            (Some(_), _) => Fire::Excluded(
-                "the named container query needs the container's own width — the Env answers \
-                 the nearest-container question only (the interp reports ContainerUnqueried)",
+        // The UNNAMED container question answers from the nearest
+        // eligible container the Env carries (the interp's decide
+        // semantics shared verbatim). The NAMED question needs THAT
+        // container's width — the seam answers it (a hit fires by the
+        // same AT-and-above / strictly-below boundary rules, an unknown
+        // container is the QUIET miss a selector that does not match
+        // is), and the sourceless forms report (the honest boundary;
+        // the interp's ContainerUnqueried note).
+        Cond::Container {
+            bp,
+            name: Some(name),
+        } => match containers {
+            Some(source) => fires(
+                source
+                    .container(name)
+                    .is_some_and(|width| width >= bp.rem()),
             ),
-            (None, None) => Fire::Excluded(
+            None => Fire::Excluded(
+                "no ContainerProbe source — the named container query needs the container's \
+                 own width (the interp reports ContainerUnqueried)",
+            ),
+        },
+        Cond::Container { bp, name: None } => match env.container_rem {
+            Some(width) => fires(width >= bp.rem()),
+            None => Fire::Excluded(
                 "no container context in the Env — the @container layer never fires (the \
                  interp reports ContainerUnqueried)",
             ),
         },
-        Cond::MaxContainer { bp, name } => match (name, env.container_rem) {
-            (None, Some(width)) => fires(width < bp.rem()),
-            (Some(_), _) => Fire::Excluded(
-                "the named container query needs the container's own width — the Env answers \
-                 the nearest-container question only (the interp reports ContainerUnqueried)",
+        Cond::MaxContainer {
+            bp,
+            name: Some(name),
+        } => match containers {
+            Some(source) => fires(source.container(name).is_some_and(|width| width < bp.rem())),
+            None => Fire::Excluded(
+                "no ContainerProbe source — the named container query needs the container's \
+                 own width (the interp reports ContainerUnqueried)",
             ),
-            (None, None) => Fire::Excluded(
+        },
+        Cond::MaxContainer { bp, name: None } => match env.container_rem {
+            Some(width) => fires(width < bp.rem()),
+            None => Fire::Excluded(
                 "no container context in the Env — the @max-* layer never fires (the interp \
                  reports ContainerUnqueried)",
             ),
@@ -256,13 +434,34 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
                  AttributeUnqueried)",
             ),
         },
-        // The descendant shapes are NOT element-own attribute bits — the
-        // plan §3.5 row keeps them the diagnosed boundary, with or
-        // without a source.
-        Cond::Has(_) | Cond::GroupHas(_) | Cond::PeerHas(_) => Fire::Excluded(
-            "the descendant has-* shape is not an attribute bit — the plan §3.5 boundary (the \
-             interp reports AttributeUnqueried)",
-        ),
+        // The descendant probes answer through their own seam (the
+        // interp's decide semantics shared verbatim): the scope
+        // discriminates the question — the element's own subtree, the
+        // group ancestor's, the peer sibling's — a YES fires, a
+        // source-answered NO is the CSS-quiet skip (a `:has()` selector
+        // that does not match), and the sourceless forms stay the
+        // reported exclusion (the interp's DescendantUnqueried note).
+        Cond::Has(fragment) => match descendants {
+            Some(source) => fires(source.has(DescendantKind::Element, fragment)),
+            None => Fire::Excluded(
+                "no DescendantProbe source — the has- layer needs the subtree's answer (the \
+                 interp reports DescendantUnqueried)",
+            ),
+        },
+        Cond::GroupHas(fragment) => match descendants {
+            Some(source) => fires(source.has(DescendantKind::Group, fragment)),
+            None => Fire::Excluded(
+                "no DescendantProbe source — the group-has- layer needs the subtree's answer \
+                 (the interp reports DescendantUnqueried)",
+            ),
+        },
+        Cond::PeerHas(fragment) => match descendants {
+            Some(source) => fires(source.has(DescendantKind::Peer, fragment)),
+            None => Fire::Excluded(
+                "no DescendantProbe source — the peer-has- layer needs the subtree's answer \
+                 (the interp reports DescendantUnqueried)",
+            ),
+        },
         // The media-feature preferences are frame state — the Env
         // answers (the interp's `decide` semantics shared verbatim: the
         // unset bit is the quiet miss a media query that does not hold
@@ -298,23 +497,32 @@ fn decide(cond: Cond, env: &Env, probes: Option<&dyn AttrProbe>) -> Fire {
             aeolus_ir::Direction::Rtl => env.direction_rtl,
         }),
         // The supports conditions answer through the interp arm's
-        // SupportsProbe seam — the render target's capability set is not
-        // frame state (the Env cannot answer it), and this walk consults
-        // no supports source: the layer is excluded and reported (the
-        // interp's `SupportsUnqueried` note on the walk's report channel).
-        Cond::Supports(_) => Fire::Excluded(
-            "no SupportsProbe source — the render target's @supports facts are not frame \
-             state (the interp reports SupportsUnqueried)",
-        ),
-        // The structural layers ask the interp arm's StructProbe seam —
-        // the element's DOM-position facts are not frame state (the Env
-        // cannot answer them), and this walk consults no structural
-        // source: the layer is excluded and reported (the interp's
-        // `StructuralUnqueried` note on the walk's report channel).
-        Cond::Structural(_) => Fire::Excluded(
-            "the structural query needs the element's DOM-position facts — the interp's \
-             StructProbe seam answers them (the interp reports StructuralUnqueried)",
-        ),
+        // SupportsProbe seam (the decide semantics shared verbatim): a
+        // YES fires, a source-answered NO is the CSS-quiet skip (an
+        // `@supports` block the render target fails), and the
+        // sourceless forms stay the reported exclusion — the render
+        // target's capability set is not frame state (the interp's
+        // SupportsUnqueried note).
+        Cond::Supports(condition) => match supports {
+            Some(source) => fires(source.supported(condition)),
+            None => Fire::Excluded(
+                "no SupportsProbe source — the render target's @supports facts are not frame \
+                 state (the interp reports SupportsUnqueried)",
+            ),
+        },
+        // The structural probes ask the interp arm's StructProbe seam
+        // (the decide semantics shared verbatim): the facts decide — an
+        // unknown field quietly misses its tests (a positional selector
+        // that cannot be evaluated never matches) — and the sourceless
+        // forms report (the element's position is not frame state; the
+        // interp's StructuralUnqueried note).
+        Cond::Structural(test) => match structs {
+            Some(source) => fires(structural_fires(test, source.structure())),
+            None => Fire::Excluded(
+                "no StructProbe source — the structural query needs the element's DOM-position \
+                 facts (the interp reports StructuralUnqueried)",
+            ),
+        },
         // The pseudo-elements style a DIFFERENT render target, never the
         // element's own cascade.
         Cond::Selection
