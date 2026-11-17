@@ -298,8 +298,8 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1804 tests with all features enabled (2026-11,
-  the pseudo-element handoff's honest sum — `cargo test --workspace --all-features`).
+  **zero** allocations). Workspace battery: 1813 tests with all features enabled (2026-11,
+  the composition-tier handoff's honest sum — `cargo test --workspace --all-features`).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -390,7 +390,7 @@ _`crates/muda-stub` is a dev-sandbox patch crate — never a dependency of a pub
 
 ## Examples
 
-The fastest way in — every crate ships runnable, headless examples:
+The fastest way in — every crate ships runnable, headless examples (the xtask generator driver is the one exception — it is a build step, not an API):
 
 ```sh
 cargo run -p aeolus-compile --example compile_pipeline  # lex → registry → longhand Program + diagnostics
@@ -444,10 +444,11 @@ cargo run -p aeolus-cli --example expand_element_states # expand --target/--inde
 cargo run -p aeolus-compile --example widget_states     # the widget states: open/inert/default element-state answers
 cargo run -p aeolus-cli --example expand_widget_states  # expand --open/--inert/--default: the facts the widget-state layers answer from
 cargo run -p aeolus-compile --example form_states       # the form states: enabled/required/optional/in-range/out-of-range answers
-cargo run -p aeolus-cli --example expand_form_states
-cargo run -p aeolus-cli --example expand_starting      # expand --starting: the starting-style frame fact on the CLI face    # expand --form-associated/--required/--range-bounded/--range-in: the facts the form-state layers answer from
+cargo run -p aeolus-cli --example expand_form_states    # expand --form-associated/--required/--range-bounded/--range-in: the facts the form-state layers answer from
+cargo run -p aeolus-cli --example expand_starting      # expand --starting: the starting-style frame fact on the CLI face
 cargo run -p aeolus-compile --example pseudo_targets    # the pseudo-element render-target tier: one cascade each, the closed set
 cargo run -p aeolus-cli --example expand_pseudo         # expand --pseudo: the render target's own cascade beside the element answer
+cargo run -p aeolus-compile --example group_peer_states # the composition tier: group-*/peer-* over the full probe-state set, the quiet miss beside the fired facts
 cargo run -p aeolus-cli --example sort                  # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
@@ -493,7 +494,6 @@ cargo run -p aeolus-compile --example named_containers
 cargo run -p aeolus-compile --example container_bounds
 cargo run -p aeolus-compile --example struct_probe  # the structural seam, facts in, layers out
 cargo run -p aeolus-compile --example starting        # the starting: variant: the @starting-style frame fact, the quiet miss beside the fired first frame
-cargo run -p aeolus-compile --example pseudo_targets
 cargo run -p aeolus-compile --example motion
 cargo run -p aeolus-compile --example shadow_plan  # the plan bridge's shadow slot, the differential walk
 cargo run -p aeolus-compile --example metamorphic  # the metamorphic checker: per-situation agreement report
@@ -556,9 +556,10 @@ cargo run -p aeolus-cli --example expand_direction  # expand --rtl: the rtl/ltr 
 cargo run -p aeolus-cli --example expand_validation  # expand --invalid/--user-*: the validation layers answer from the facts
 cargo run -p aeolus-cli --example expand_element_states  # expand --target/--indeterminate/--autofill/--read-write: the element-state layers answer from the facts
 cargo run -p aeolus-cli --example expand_widget_states   # expand --open/--inert/--default: the widget-state layers answer from the facts
-cargo run -p aeolus-cli --example expand_form_states
-cargo run -p aeolus-cli --example expand_starting      # expand --starting: the starting-style frame fact on the CLI face  # expand --form-associated/--required/--range-bounded/--range-in: the form-state layers answer from the facts
+cargo run -p aeolus-cli --example expand_form_states    # expand --form-associated/--required/--range-bounded/--range-in: the form-state layers answer from the facts
+cargo run -p aeolus-cli --example expand_starting      # expand --starting: the starting-style frame fact on the CLI face
 cargo run -p aeolus-cli --example expand_pseudo       # expand --pseudo: the render target's own cascade beside the element answer
+cargo run -p aeolus-cli --example expand_group_peer   # expand --group-active/--peer-disabled/...: the composition-tier facts on the CLI face
 cargo run -p aeolus-cli --example expand_preferences  # expand --reduced-motion/--more-contrast/--forced-colors/--print/--inverted-colors/--noscript: the facts the preference layers answer from
 cargo run -p aeolus-cli --example sort              # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-cli --example cn                # the cn face: IR-level merge, the rightmost-wins answer
