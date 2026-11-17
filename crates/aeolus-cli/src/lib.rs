@@ -28,15 +28,15 @@
 
 use aeolus_compile::{
     ClassKeywords, Config, ContainerBound, ContainerState, DescendantFact, DescendantKind,
-    DescendantState, Env, RustSheet, RustStrings, SourceFile, StructFacts, SupportsState,
-    build as build_artifact, compile, compile_theme, emit_plan, emit_plan_theme, emit_rust,
-    emit_rust_theme, interp_containers, interp_containers_descendants,
+    DescendantState, Env, PseudoTarget, RustSheet, RustStrings, SourceFile, StructFacts,
+    SupportsState, build as build_artifact, compile, compile_theme, emit_plan, emit_plan_theme,
+    emit_rust, emit_rust_theme, interp_containers, interp_containers_descendants,
     interp_containers_descendants_supports, interp_containers_struct,
     interp_containers_struct_descendants, interp_containers_struct_descendants_supports,
     interp_containers_struct_supports, interp_containers_supports, interp_descendants,
-    interp_descendants_supports, interp_struct, interp_struct_descendants,
-    interp_struct_descendants_supports, interp_struct_supports, interp_supports, interp_theme,
-    interp_theme_containers, interp_theme_containers_descendants,
+    interp_descendants_supports, interp_pseudo, interp_pseudo_theme, interp_struct,
+    interp_struct_descendants, interp_struct_descendants_supports, interp_struct_supports,
+    interp_supports, interp_theme, interp_theme_containers, interp_theme_containers_descendants,
     interp_theme_containers_descendants_supports, interp_theme_containers_struct,
     interp_theme_containers_struct_descendants,
     interp_theme_containers_struct_descendants_supports, interp_theme_containers_struct_supports,
@@ -445,6 +445,16 @@ struct Args {
     any_pointer_coarse: bool,
     any_pointer_none: bool,
     portrait: bool,
+    /// The media-feature remainder flags (`expand` only): the last two
+    /// v4.1.17 static variants' frame facts — `--inverted-colors` the
+    /// user agent's inverted-colours answer ([`Cond::Media`]'s
+    /// `inverted-colors:`), `--noscript` the scripting feature's
+    /// `none` value (`noscript:`). The capability flags' sibling —
+    /// frame state like every preference bit, one flag per FACT (the
+    /// `--portrait` precedent); unset is the quiet miss a media query
+    /// that does not hold is.
+    inverted_colors: bool,
+    scripting_none: bool,
     /// The direction probe flag (`expand` only): the text-direction
     /// fact the interp's [`Env`] answers the `rtl:` layers from — the
     /// same frame state the capability flags assert. Unset is the
@@ -536,6 +546,15 @@ struct Args {
     /// The `--empty` flag (`expand` only): the childless-element fact
     /// the `empty:` layer answers from.
     empty: bool,
+    /// The `--pseudo <target>` face (`expand` only): the pseudo-element
+    /// RENDER TARGET whose own cascade the walk resolves beside the
+    /// element answer (the [`PseudoTarget`] seam's consumer face — the
+    /// element walk reports the pseudo layers as its exclusions, this
+    /// answers the render target's effective declarations). The
+    /// spelling parses through the closed set (`selection` |
+    /// `placeholder` | `before` | `after` | `marker` | `first-letter` |
+    /// `first-line` | `file` | `backdrop` | `details-content`).
+    pseudo: Option<String>,
     /// The `--fail-on <mode>` finding gate (`plan`): which typed
     /// diagnostic kinds turn the exit code 1. `None` rides the
     /// command's own default (`plan` emits first: `none`).
@@ -561,6 +580,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut any_pointer_coarse = false;
     let mut any_pointer_none = false;
     let mut portrait = false;
+    let mut inverted_colors = false;
+    let mut scripting_none = false;
     let mut direction_rtl = false;
     let mut validation_invalid = false;
     let mut user_validated = false;
@@ -580,6 +601,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut supports: Vec<String> = Vec::new();
     let mut child: Option<(usize, usize)> = None;
     let mut empty = false;
+    let mut pseudo: Option<String> = None;
     let mut fail_on: Option<String> = None;
     let mut positional = Vec::new();
     let mut i = 0usize;
@@ -598,6 +620,20 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
                             err,
                             "--theme needs a value (shadcn|shadcn-dark|default|<path>)"
                         );
+                        return None;
+                    }
+                }
+            }
+            // The pseudo-element render-target face (`expand` only): a
+            // VALUE flag — the spelling the closed [`PseudoTarget`] set
+            // parses (unknown spellings are a usage error, the caller's
+            // honest refusal).
+            "--pseudo" if allow.contains(&"pseudo") => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => pseudo = Some(v.clone()),
+                    None => {
+                        let _ = writeln!(err, "--pseudo needs a render-target spelling");
                         return None;
                     }
                 }
@@ -629,6 +665,12 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             }
             "--portrait" if allow.contains(&"portrait") => {
                 portrait = true;
+            }
+            "--inverted-colors" if allow.contains(&"inverted-colors") => {
+                inverted_colors = true;
+            }
+            "--noscript" if allow.contains(&"noscript") => {
+                scripting_none = true;
             }
             "--rtl" if allow.contains(&"rtl") => {
                 direction_rtl = true;
@@ -888,6 +930,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         any_pointer_coarse,
         any_pointer_none,
         portrait,
+        inverted_colors,
+        scripting_none,
         direction_rtl,
         validation_invalid,
         user_validated,
@@ -907,6 +951,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         supports,
         child,
         empty,
+        pseudo,
         fail_on,
         positional,
     })
@@ -1287,6 +1332,7 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "theme",
             "json",
             "dark",
+            "pseudo",
             "container",
             "has",
             "supports",
@@ -1304,6 +1350,8 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "any-pointer-coarse",
             "any-pointer-none",
             "portrait",
+            "inverted-colors",
+            "noscript",
             "rtl",
             "invalid",
             "user-valid",
@@ -1327,6 +1375,24 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         let _ = writeln!(err, "expand needs a class string\n{USAGE}");
         return 2;
     }
+    // The `--pseudo` face: the spelling parses through the closed
+    // [`PseudoTarget`] set — an unknown spelling is a usage error (the
+    // honest refusal), never a silently-ignored flag.
+    let pseudo_target = match &args.pseudo {
+        Some(spelling) => match PseudoTarget::from_name(spelling) {
+            Some(target) => Some(target),
+            None => {
+                let _ = writeln!(
+                    err,
+                    "--pseudo needs a render-target spelling \
+                     (selection|placeholder|before|after|marker|first-letter|first-line|\
+                     file|backdrop|details-content), got {spelling:?}"
+                );
+                return 2;
+            }
+        },
+        None => None,
+    };
     let classes = args.positional.join(" ");
     let config = Config::default();
     // The table stays in scope: the themed walk resolves the token forms
@@ -1361,6 +1427,8 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         any_pointer_coarse: args.any_pointer_coarse,
         any_pointer_none: args.any_pointer_none,
         portrait: args.portrait,
+        inverted_colors: args.inverted_colors,
+        scripting_none: args.scripting_none,
         direction_rtl: args.direction_rtl,
         validation_invalid: args.validation_invalid,
         user_validated: args.user_validated,
@@ -1612,6 +1680,30 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         let cond = *interped.conds.get(index)?;
         last.get(&(cond, decl.prop)).copied()
     };
+    // The `--pseudo` face's answer: the render target's OWN cascade
+    // (the [`interp_pseudo`]/[`interp_pseudo_theme`] walk beside the
+    // element answer — the element walk reports the pseudo layers as
+    // its exclusions, this resolves the render target's effective
+    // declarations). An unresolved cascade (the themeless token
+    // boundary) reports on stderr and the element answer stands — the
+    // honest-failure path, never a panic.
+    let pseudo_interped = pseudo_target.and_then(|target| {
+        let walk = match &table {
+            Some(table) => interp_pseudo_theme(&compiled.program, table, &env, target),
+            None => interp_pseudo(&compiled.program, target),
+        };
+        match walk {
+            Ok(interped) => Some((target, interped)),
+            Err(e) => {
+                let _ = writeln!(
+                    err,
+                    "error: ::{} cascade unresolved: {e}",
+                    target.spelling()
+                );
+                None
+            }
+        }
+    });
     if args.json {
         let decls: Vec<String> = interped
             .decls
@@ -1630,11 +1722,35 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             .iter()
             .map(|note| format!("\"{}\"", json_escape(&note.to_string())))
             .collect();
+        // The pseudo answer rides the object only when `--pseudo` asked
+        // for it (the shape stays back-compatible without the flag).
+        let pseudo_json = pseudo_interped.as_ref().map(|(target, pseudo)| {
+            let decls: Vec<String> = pseudo
+                .decls
+                .iter()
+                .enumerate()
+                .map(|(index, decl)| {
+                    let cond = pseudo.conds.get(index).copied();
+                    let text = cond.and_then(|cond| last.get(&(cond, decl.prop)).copied());
+                    format!(
+                        "{{\"prop\":\"{}\",\"value\":\"{}\"}}",
+                        json_escape(decl.prop.name()),
+                        json_escape(&value_text(decl.val, text))
+                    )
+                })
+                .collect();
+            format!(
+                "{{\"target\":\"{}\",\"declarations\":[{}]}}",
+                json_escape(target.spelling()),
+                decls.join(",")
+            )
+        });
         let _ = writeln!(
             out,
-            "{{\"declarations\":[{}],\"notes\":[{}]}}",
+            "{{\"declarations\":[{}],\"notes\":[{}]{}}}",
             decls.join(","),
-            notes.join(",")
+            notes.join(","),
+            pseudo_json.map_or_else(String::new, |pseudo| format!(",\"pseudo\":{pseudo}"))
         );
     } else {
         for (index, decl) in interped.decls.iter().enumerate() {
@@ -1647,6 +1763,23 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         }
         for note in &interped.notes {
             let _ = writeln!(out, "note: {note}");
+        }
+        if let Some((target, pseudo)) = &pseudo_interped {
+            let _ = writeln!(
+                out,
+                "::{} (the pseudo-element cascade — the render target's own answer)",
+                target.spelling()
+            );
+            for (index, decl) in pseudo.decls.iter().enumerate() {
+                let cond = pseudo.conds.get(index).copied();
+                let text = cond.and_then(|cond| last.get(&(cond, decl.prop)).copied());
+                let _ = writeln!(
+                    out,
+                    "  {} = {}",
+                    decl.prop.name(),
+                    value_text(decl.val, text)
+                );
+            }
         }
     }
     // The compile-level boundaries (themeless tokens, modifiers) are
@@ -2468,11 +2601,16 @@ USAGE:
   aeolus fmt     [--check] <file>                            one file's class strings into the canonical order;
                                                              --check prints the drift report and exits 1 (CI gate)
   aeolus expand  [--theme <spec>] [--dark] [--reduced-motion] [--more-contrast]
-                 [--less-contrast] [--forced-colors] [--print] [--container name=rem]
+                 [--less-contrast] [--forced-colors] [--print] [--inverted-colors]
+                 [--noscript] [--container name=rem]
                  [--has kind=fragment] [--supports condition] [--child i/n] [--empty]
-                 [--json] <classes...>
+                 [--pseudo <target>] [--json] <classes...>
                                                              effective declarations (the interp (c) arm);
-                                                             --container names the bounds the named
+                                                             --pseudo resolves the named pseudo-element
+                                                             render target's own cascade beside the
+                                                             element answer (selection|placeholder|
+                                                             before|after|marker|first-letter|first-line|
+                                                             file|backdrop|details-content), --container names the bounds the named
                                                              @container layers resolve from, --has carries
                                                              the subtree facts the has-*:/group-has-*:/
                                                              peer-has-*: layers answer from (kind is
