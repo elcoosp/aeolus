@@ -250,7 +250,7 @@ Pay only for the dynamism you use:
 | `data-*:` `aria-*:`                                        | typed `AttrProbe` bits (`tw_probes`), CSS selector semantics          | ✅                                                            |
 | `has-*:` `group-has-*:` `peer-has-*:`                      | typed `Cond::Has` + `DescendantProbe` subtree facts (`tw`-side `*_descendants` walks), CSS `:has()` semantics | ✅                                                            |
 | `supports-*:` `supports-[…]:`                              | typed `Cond::Supports` + `SupportsProbe` capability facts (`tw`-side `*_supports` walks), CSS `@supports` semantics | ✅                                                            |
-| `motion-*:` `contrast-*:` `forced-colors:` `print:`        | typed `Cond::Media` bits, `Env` preference facts (frame state — no probe seam), CSS media-query semantics | ✅                                                            |
+| `motion-*:` `contrast-*:` `forced-colors:` `print:` `inverted-colors:` `noscript:` | typed `Cond::Media` bits, `Env` preference facts (frame state — no probe seam), CSS media-query semantics | ✅                                                            |
 | `pointer-*:` `any-pointer-*:` `portrait:` `landscape:`     | typed `Cond::Media` bits, `Env` capability facts (the same frame-state tier; `landscape:` the `portrait:` complement), CSS media-query semantics | ✅                                                            |
 | `ltr:` `rtl:`                                              | typed `Cond::Dir` bit, one `Env` direction fact (`ltr:` the `rtl:` complement), CSS `:where(:dir(…))` selector semantics | ✅                                                            |
 | `valid:` `invalid:` `user-valid:` `user-invalid:`          | typed `Cond` states, two `Env` facts (the constraint pair + the `user-` interaction gate), CSS `:pseudo` selector semantics | ✅                                                            |
@@ -258,7 +258,7 @@ Pay only for the dynamism you use:
 | `open:` `inert:` `default:`                                | typed `Cond` states, one affirmative `Env` fact each (the v0.x `State` surface's own slots — the v0.x-gap closure the element-state landing documented), CSS `:is([open], :popover-open, :open)`/`:is([inert], [inert] *)`/`:default` selector semantics | ✅                                                            |
 | `enabled:` `required:` `optional:` `in-range:` `out-of-range:` | typed `Cond` states, the two-fact answers (the membership fact `form_associated`/`range_bounded` beside the pair's shared state bit `required_field`/`range_in` — the matches-neither boundary evidence 27 documented closes), CSS `:pseudo` selector semantics | ✅                                                            |
 | `@md/card:` named containers                               | typed `Cond` + `ContainerProbe` bounds seam, CLI `expand --container` | ✅ (`tw_container` measures; the walk consumes)               |
-| `selection:` `placeholder:`                                | `PseudoTarget` scoped cascades                                        | ✅                                                            |
+| `selection:` `placeholder:` `before:` `after:` `marker:` `first-letter:` `first-line:` `file:` `backdrop:` `details-content:` | the `PseudoTarget` render-target tier (10 targets, the closed set): the element walks exclude, `interp_pseudo` resolves the target's own cascade, the CSS arm renders the upstream heads (`marker:` the four-selector disjunction; `before:`/`after:` the injected `content: var(--tw-content)` line), CLI `expand --pseudo`, `file:` lands the v0.x plan, the rest the typed `PlanNoteKind::PseudoElement` boundary | ✅                                                            |
 | `transition-*` `duration-*` `ease-*` `delay-*` `animate-*` | five motion longhands, v4 default-theme texts                         | ✅ pipeline (GPUI `with_animation` needs id+state — reported) |
 | arbitrary selectors, unsupported forms                     | precise per-form reason + suggested alternative                       | 🛑 diagnosed, never silent                                    |
 
@@ -270,6 +270,7 @@ aeolus sort "block p-4 mx-2 hover:block"              # canonical registry order
 aeolus fmt src/widget.rs                              # one file's class strings into the canonical order (--check = the CI drift gate)
 aeolus explain "p-4 flex-col" --theme shadcn          # class → the Rust tokens it emits
 aeolus expand "hidden dark:block" --dark              # effective declarations under a probe Env
+aeolus expand --pseudo before "before:p-8"            # the pseudo-element render target's own cascade
 aeolus expand --has element=*:focus "has-focus:p-8"   # the subtree facts the has-* layers answer from
 aeolus build src/ --theme shadcn-dark --out app.css   # whole project → ONE stylesheet
 aeolus plan "p-4 hover:px-8" --theme shadcn | jq .    # the V1 lane's plan bridge → the same snapshot JSON
@@ -295,8 +296,8 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1771 tests with all features enabled (2026-11,
-  the form-state handoff's honest sum — `cargo test --workspace --all-features`).
+  **zero** allocations). Workspace battery: 1804 tests with all features enabled (2026-11,
+  the pseudo-element handoff's honest sum — `cargo test --workspace --all-features`).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -429,7 +430,7 @@ cargo run -p aeolus-cli --example expand_descendants    # expand --has: the subt
 cargo run -p aeolus-compile --example supports          # the supports seam: the @supports family answers
 cargo run -p aeolus-cli --example expand_supports       # expand --supports: the capability facts the supports layers answer from
 cargo run -p aeolus-compile --example preferences       # the preference families: the media-feature tier answers
-cargo run -p aeolus-cli --example expand_preferences    # expand --reduced-motion/--more-contrast/--forced-colors/--print: the facts the preference layers answer from
+cargo run -p aeolus-cli --example expand_preferences    # expand --reduced-motion/--more-contrast/--forced-colors/--print/--inverted-colors/--noscript: the facts the preference layers answer from
 cargo run -p aeolus-compile --example capabilities      # the capability tier: pointer/orientation media-feature answers
 cargo run -p aeolus-cli --example expand_capabilities   # expand --pointer-fine/--portrait: the facts the capability layers answer from
 cargo run -p aeolus-compile --example direction         # the direction family: ltr/rtl selector-side answers
@@ -442,6 +443,8 @@ cargo run -p aeolus-compile --example widget_states     # the widget states: ope
 cargo run -p aeolus-cli --example expand_widget_states  # expand --open/--inert/--default: the facts the widget-state layers answer from
 cargo run -p aeolus-compile --example form_states       # the form states: enabled/required/optional/in-range/out-of-range answers
 cargo run -p aeolus-cli --example expand_form_states    # expand --form-associated/--required/--range-bounded/--range-in: the facts the form-state layers answer from
+cargo run -p aeolus-compile --example pseudo_targets    # the pseudo-element render-target tier: one cascade each, the closed set
+cargo run -p aeolus-cli --example expand_pseudo         # expand --pseudo: the render target's own cascade beside the element answer
 cargo run -p aeolus-cli --example sort                  # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
@@ -503,6 +506,7 @@ cargo run -p aeolus-compile --example capabilities      # the capability tier: p
 cargo run -p aeolus-compile --example element_states    # the element states: target/indeterminate/autofill/read-only answers
 cargo run -p aeolus-compile --example widget_states     # the widget states: open/inert/default element-state answers
 cargo run -p aeolus-compile --example form_states       # the form states: enabled/required/optional/in-range/out-of-range answers
+cargo run -p aeolus-compile --example pseudo_targets    # the pseudo-element render-target tier: one cascade each, the closed set
 # codegen & runtime
 cargo run -p aeolus-codegen --example text_emit
 cargo run -p aeolus-codegen-gpui --example conformance
@@ -549,7 +553,8 @@ cargo run -p aeolus-cli --example expand_validation  # expand --invalid/--user-*
 cargo run -p aeolus-cli --example expand_element_states  # expand --target/--indeterminate/--autofill/--read-write: the element-state layers answer from the facts
 cargo run -p aeolus-cli --example expand_widget_states   # expand --open/--inert/--default: the widget-state layers answer from the facts
 cargo run -p aeolus-cli --example expand_form_states  # expand --form-associated/--required/--range-bounded/--range-in: the form-state layers answer from the facts
-cargo run -p aeolus-cli --example expand_preferences  # expand --reduced-motion/--more-contrast/--forced-colors/--print: the preference layers answer from the facts
+cargo run -p aeolus-cli --example expand_pseudo       # expand --pseudo: the render target's own cascade beside the element answer
+cargo run -p aeolus-cli --example expand_preferences  # expand --reduced-motion/--more-contrast/--forced-colors/--print/--inverted-colors/--noscript: the facts the preference layers answer from
 cargo run -p aeolus-cli --example sort              # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-cli --example cn                # the cn face: IR-level merge, the rightmost-wins answer
 # the shadcn program tables
