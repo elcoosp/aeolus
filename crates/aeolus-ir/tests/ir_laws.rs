@@ -341,3 +341,36 @@ fn condition_specificity_matches_the_v4_cascade_ranks() {
     assert_eq!(Cond::Hover.source_text(), Some("hover"));
     assert_eq!(Cond::Base.source_text(), None);
 }
+
+#[test]
+fn parent_relative_compositions_rank_and_spell_with_their_family() {
+    // The composition probes ride rank 3 beside the landed group/peer
+    // pair, and each reconstructs its closed spelling (the
+    // validation/element-state arm's shape — the bare-variant table).
+    for (cond, text) in [
+        (Cond::GroupActive, "group-active"),
+        (Cond::GroupFocusVisible, "group-focus-visible"),
+        (Cond::GroupFocusWithin, "group-focus-within"),
+        (Cond::GroupDisabled, "group-disabled"),
+        (Cond::GroupVisited, "group-visited"),
+        (Cond::GroupChecked, "group-checked"),
+        (Cond::PeerActive, "peer-active"),
+        (Cond::PeerFocusVisible, "peer-focus-visible"),
+        (Cond::PeerFocusWithin, "peer-focus-within"),
+        (Cond::PeerDisabled, "peer-disabled"),
+        (Cond::PeerVisited, "peer-visited"),
+        (Cond::PeerChecked, "peer-checked"),
+    ] {
+        assert_eq!(
+            cond.specificity(),
+            Cond::GroupHover.specificity(),
+            "{text} ranks with the parent-relative tier"
+        );
+        assert_eq!(cond.source(), Some(text), "{text} round-trips source()");
+        assert_eq!(
+            cond.source_text(),
+            Some(text),
+            "{text} round-trips source_text()"
+        );
+    }
+}
