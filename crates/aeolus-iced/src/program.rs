@@ -270,7 +270,7 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             }
             PlanNoteKind::GradientRow => ("background-image".to_string(), boundary.help()),
             PlanNoteKind::ShadowPreset => ("box-shadow".to_string(), boundary.help()),
-            PlanNoteKind::HasFragment { inner } => (format!("has:{inner}"), boundary.help()),
+            PlanNoteKind::HasFragment { inner, .. } => (format!("has:{inner}"), boundary.help()),
             PlanNoteKind::SupportsCondition { cond } => {
                 (format!("supports:{cond}"), boundary.help())
             }
