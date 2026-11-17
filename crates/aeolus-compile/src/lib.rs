@@ -261,7 +261,7 @@ pub use sort::{SortKey, Sorted, SortedClass, sort, sort_with};
 pub use statics::emit_static;
 pub use style_walk::{
     StyleWalk, program_style, program_style_probes_containers_struct_descendants_supports,
-    program_style_struct, program_style_with,
+    program_style_pseudo, program_style_pseudo_theme, program_style_struct, program_style_with,
 };
 // The "did you mean" seam (the P5 row's tooling-parity half): the
 // audited tables as suggestion sources — the trait the host folds its
