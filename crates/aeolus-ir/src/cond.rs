@@ -58,7 +58,10 @@ impl Bp {
 
 /// The element's own DOM-position tests — the structural variants
 /// (`first:`, `last:`, `odd:`, `even:`, `only:`, `empty:`, `nth-N:`,
-/// `nth-last-N:`). `Copy`, `const`-constructible, no heap: the payload
+/// `nth-last-N:`), plus the type-relative OF-TYPE tier the same family
+/// grew (`first-of-type:`, `last-of-type:`, `only-of-type:`,
+/// `nth-of-type-N:`, `nth-last-of-type-N:`). `Copy`,
+/// `const`-constructible, no heap: the payload
 /// is the ordinal itself, so the static form stays a `static` item end
 /// to end.
 ///
@@ -67,6 +70,13 @@ impl Bp {
 /// second even. `Nth(-1)` is a legal fold (the v0.x oracle's
 /// `parse_nth` accepts every `i32`) that renders a selector CSS never
 /// matches — the honest spelling pass, never a refusal.
+///
+/// The of-type arms read the SAME 1-based semantics in the
+/// TYPE-relative dimension: the element's position among its parent's
+/// same-type siblings (`:first-of-type`, `:nth-of-type(N)`, ...). What
+/// "same type" means is the HOST's own reading — the interp's
+/// `StructFacts` seam value carries the type-relative facts beside the
+/// child-index ones, never a tag string.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Structural {
     /// `first:` (`:first-child`) — the parent's first element child.
@@ -86,6 +96,29 @@ pub enum Structural {
     /// `nth-last-N:` (`:nth-last-child(N)`) — the Nth child counting
     /// from the end, N 1-based.
     NthLast(i32),
+    /// `first-of-type:` (`:first-of-type`) — the parent's first element
+    /// child OF THE ELEMENT'S OWN TYPE (the tailwindcss v4.1.17
+    /// `variants.ts` `staticVariant('first-of-type', ['&:first-of-type'])`,
+    /// the structural family's type-relative slice).
+    FirstOfType,
+    /// `last-of-type:` (`:last-of-type`) — the parent's final element
+    /// child of the element's own type (the same forms block's
+    /// `staticVariant('last-of-type', ['&:last-of-type'])`).
+    LastOfType,
+    /// `only-of-type:` (`:only-of-type`) — the parent's single element
+    /// child of the element's own type (the same forms block's
+    /// `staticVariant('only-of-type', ['&:only-of-type'])`).
+    OnlyOfType,
+    /// `nth-of-type-N:` (`:nth-of-type(N)`) — the Nth child of the
+    /// element's own type, N 1-based (the `variants.ts`
+    /// `functional('nth-of-type', …)` registration; the ordinal
+    /// grammar is the child-index family's own `parse_nth` — every
+    /// `i32`, the bracketed selector forms staying outside).
+    NthOfType(i32),
+    /// `nth-last-of-type-N:` (`:nth-last-of-type(N)`) — the Nth child
+    /// of the element's own type counting from the type's end, N
+    /// 1-based (the `functional('nth-last-of-type', …)` registration).
+    NthLastOfType(i32),
 }
 
 /// The user-agent preference/media-type facts the media-feature
@@ -559,6 +592,18 @@ pub enum Cond {
     /// one fact per question, and a renderer derives its own
     /// media-query form from the bit.
     Media(Pref),
+    /// `starting:` — the element is in its starting-style frame
+    /// (`@starting-style`; the tailwindcss v4.1.17 `variants.ts`
+    /// `staticVariant('starting', ['@starting-style'])` registration —
+    /// the transition's first frame, the media-feature tier's at-rule
+    /// sibling whose `Env` reading the pseudo-element landing
+    /// deliberately deferred: an at-rule block WRAPS the rule, the
+    /// `@media` shape, never a selector conjunct). The fact is FRAME
+    /// STATE the host answers — the element's first-render gate beside
+    /// the transition — one affirmative `Env` bit, an unset bit the
+    /// QUIET miss a frame the element is not in is (the media facts'
+    /// own reading, no probe seam and no sourceless note).
+    Starting,
 }
 
 impl Cond {
@@ -650,7 +695,11 @@ impl Cond {
             | Cond::Min(_)
             | Cond::Max(_)
             | Cond::Supports(_)
-            | Cond::Media(_) => 4,
+            | Cond::Media(_)
+            // The starting-style at-rule sorts BESIDE the media forms —
+            // the conditional-rule tier's own shape (`@starting-style`
+            // wraps the rule the way `@media` does).
+            | Cond::Starting => 4,
             Cond::Container { .. } | Cond::MaxContainer { .. } => 5,
         }
     }
@@ -715,6 +764,10 @@ impl Cond {
             // The direction spellings are CLOSED (the Direction enum's
             // own table) — the condition reconstructs its text.
             Cond::Dir(dir) => Some(dir.source()),
+            // The starting-style spelling is a bare variant: the
+            // condition names its own closed text (the validation
+            // arm's shape).
+            Cond::Starting => Some("starting"),
             Cond::GroupHover => Some("group-hover"),
             Cond::GroupFocus => Some("group-focus"),
             Cond::PeerHover => Some("peer-hover"),
