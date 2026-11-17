@@ -543,6 +543,19 @@ struct Args {
     /// [`StructFacts`] the interp's structural seam answers the
     /// `first:`/`last:`/`odd:`/`even:`/`only:`/`nth-*:` layers from.
     child: Option<(usize, usize)>,
+    /// The `--child-of-type i/n` facts (`expand` only): the element's
+    /// 0-based position among its same-type siblings and the parent's
+    /// same-type child count — the [`StructFacts`] type dimension the
+    /// of-type layers (`first-of-type:`/`last-of-type:`/`only-of-type:`/
+    /// `nth-of-type-*:`/`nth-last-of-type-*:`) answer from. Independent
+    /// of `--child`: a facts value that carries one dimension and not
+    /// the other answers only the tests that dimension encodes.
+    child_of_type: Option<(usize, usize)>,
+    /// The `--starting` flag (`expand` only): the starting-style frame
+    /// fact the `starting:` layer answers from (the transition's first
+    /// frame, the host's first-render gate — one flag per FACT, the
+    /// `--portrait` precedent).
+    starting: bool,
     /// The `--empty` flag (`expand` only): the childless-element fact
     /// the `empty:` layer answers from.
     empty: bool,
@@ -600,6 +613,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut supports: Vec<String> = Vec::new();
     let mut child: Option<(usize, usize)> = None;
+    let mut child_of_type: Option<(usize, usize)> = None;
+    let mut starting = false;
     let mut empty = false;
     let mut pseudo: Option<String> = None;
     let mut fail_on: Option<String> = None;
@@ -641,6 +656,13 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--summary" if allow.contains(&"summary") => summary = true,
             "--json" if allow.contains(&"json") => json = true,
             "--dark" if allow.contains(&"dark") => dark = true,
+            // The starting-style frame fact (`expand` only): one flag per
+            // FACT — the `--starting` gate the `starting:` layer answers
+            // from (the capability flags' sibling).
+            "--starting" if allow.contains(&"starting") => {
+                starting = true;
+            }
+
             "--empty" if allow.contains(&"empty") => empty = true,
             "--reduced-motion" if allow.contains(&"reduced-motion") => {
                 reduced_motion = true;
@@ -810,6 +832,37 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
                     }
                 }
             }
+            // The type-relative structural facts (`expand` only): the
+            // `--child` flag's sibling for the of-type tier — the same
+            // i/n grammar, the same honest-window rule, the answer
+            // riding the `StructFacts` type dimension the of-type
+            // layers read.
+            "--child-of-type" if allow.contains(&"child-of-type") => {
+                i += 1;
+                let Some(value) = rest.get(i) else {
+                    let _ = writeln!(
+                        err,
+                        "--child-of-type needs index/count (e.g. --child-of-type 0/2)"
+                    );
+                    return None;
+                };
+                let Some((index, count)) = value.split_once('/') else {
+                    let _ = writeln!(err, "--child-of-type needs index/count, got {value:?}");
+                    return None;
+                };
+                match (index.parse::<usize>(), count.parse::<usize>()) {
+                    (Ok(index), Ok(count)) if count > 0 && index < count => {
+                        child_of_type = Some((index, count));
+                    }
+                    _ => {
+                        let _ = writeln!(
+                            err,
+                            "--child-of-type needs a 0-based index below a positive count, got {value:?}"
+                        );
+                        return None;
+                    }
+                }
+            }
             "--has" if allow.contains(&"has") => {
                 i += 1;
                 let Some(value) = rest.get(i) else {
@@ -950,6 +1003,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         has,
         supports,
         child,
+        child_of_type,
+        starting,
         empty,
         pseudo,
         fail_on,
@@ -1337,6 +1392,8 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "has",
             "supports",
             "child",
+            "child-of-type",
+            "starting",
             "empty",
             "reduced-motion",
             "more-contrast",
@@ -1429,6 +1486,7 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         portrait: args.portrait,
         inverted_colors: args.inverted_colors,
         scripting_none: args.scripting_none,
+        starting_style: args.starting,
         direction_rtl: args.direction_rtl,
         validation_invalid: args.validation_invalid,
         user_validated: args.user_validated,
@@ -1456,22 +1514,39 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         .map(|(name, rem)| ContainerBound { name, rem: *rem })
         .collect();
     let state = ContainerState::new(&bounds);
-    // The DOM-position facts ride the `--child i/n` / `--empty` flags:
-    // the same facts value the `StructProbe` seam documents, borrowed
-    // from the parsed args. Without either, `expand` keeps the
-    // sourceless shape — structural layers report instead of answering.
+    // The DOM-position facts ride the `--child i/n` / `--child-of-type
+    // i/n` / `--empty` flags: the same facts value the `StructProbe`
+    // seam documents, borrowed from the parsed args — the child-index
+    // dimension and the type-relative dimension are independent
+    // answers (a flag set without its sibling leaves that dimension
+    // `None`, the of-type tests quietly missing). Without any,
+    // `expand` keeps the sourceless shape — structural layers report
+    // instead of answering.
     let facts = if args.empty {
         StructFacts {
             index: None,
             sibling_count: None,
+            type_index: None,
+            type_sibling_count: None,
             empty: true,
         }
     } else {
-        args.child.map_or(StructFacts::UNKNOWN, |(index, count)| {
-            StructFacts::new(index, count)
-        })
+        match (args.child, args.child_of_type) {
+            (Some((index, count)), Some((type_index, type_count))) => {
+                StructFacts::with_type(index, count, type_index, type_count)
+            }
+            (Some((index, count)), None) => StructFacts::new(index, count),
+            (None, Some((type_index, type_count))) => StructFacts {
+                index: None,
+                sibling_count: None,
+                type_index: Some(type_index),
+                type_sibling_count: Some(type_count),
+                empty: false,
+            },
+            (None, None) => StructFacts::UNKNOWN,
+        }
     };
-    let structs_used = args.empty || args.child.is_some();
+    let structs_used = args.empty || args.child.is_some() || args.child_of_type.is_some();
     // The subtree facts ride the `--has kind=fragment` flags: the same
     // facts value the `DescendantProbe` seam documents, borrowed from
     // the parsed args (the strings outlive the walk). Without any,
@@ -2600,11 +2675,17 @@ USAGE:
   aeolus sort    [--json] <classes...>                       registry-order class sort (the §5.5 parity line)
   aeolus fmt     [--check] <file>                            one file's class strings into the canonical order;
                                                              --check prints the drift report and exits 1 (CI gate)
-  aeolus expand  [--theme <spec>] [--dark] [--reduced-motion] [--more-contrast]
-                 [--less-contrast] [--forced-colors] [--print] [--inverted-colors]
-                 [--noscript] [--container name=rem]
-                 [--has kind=fragment] [--supports condition] [--child i/n] [--empty]
-                 [--pseudo <target>] [--json] <classes...>
+  aeolus expand  [--theme <spec>] [--json] [--dark] [--reduced-motion]
+                 [--more-contrast] [--less-contrast] [--forced-colors] [--print]
+                 [--pointer-fine] [--pointer-coarse] [--pointer-none]
+                 [--any-pointer-fine] [--any-pointer-coarse] [--any-pointer-none]
+                 [--portrait] [--inverted-colors] [--noscript] [--starting] [--rtl]
+                 [--invalid] [--user-valid] [--user-invalid] [--target]
+                 [--indeterminate] [--autofill] [--read-write] [--open] [--inert]
+                 [--default] [--form-associated] [--required] [--range-bounded]
+                 [--range-in] [--container name=rem] [--has kind=fragment]
+                 [--supports condition] [--child i/n] [--child-of-type i/n] [--empty]
+                 [--pseudo <target>] <classes...>
                                                              effective declarations (the interp (c) arm);
                                                              --pseudo resolves the named pseudo-element
                                                              render target's own cascade beside the
@@ -2614,9 +2695,12 @@ USAGE:
                                                              @container layers resolve from, --has carries
                                                              the subtree facts the has-*:/group-has-*:/
                                                              peer-has-*: layers answer from (kind is
-                                                             element|group|peer), --child/--empty
+                                                             element|group|peer), --child/--child-of-type/--empty
                                                              carry the structural facts the first:/last:/odd:/
-                                                             even:/only:/nth-*:/empty: layers answer from
+                                                             even:/only:/nth-*:/empty:/first-of-type:/last-of-type:/
+                                                             only-of-type:/nth-of-type-*:/nth-last-of-type-*: layers
+                                                             answer from (the child-index and type-relative
+                                                             dimensions are independent answers)
   aeolus build   [--theme <spec>] [--out <path>] [--fail-on <mode>] [--json] <files/dirs...>
                                                              one stylesheet for the whole project
                                                              (scan → dedupe → registry-ordered rules
