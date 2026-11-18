@@ -18,8 +18,9 @@ use lsp_types::{
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentColorParams,
     DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
     DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
-    FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability, FullDocumentDiagnosticReport,
-    Hover, HoverContents, HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind,
+    ExecuteCommandOptions, ExecuteCommandParams, FoldingRange, FoldingRangeParams,
+    FoldingRangeProviderCapability, FullDocumentDiagnosticReport, GotoDefinitionParams, Hover,
+    HoverContents, HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind,
     InlayHintLabel, InlayHintOptions, InlayHintParams, InlayHintServerCapabilities,
     InlayHintTooltip, LinkedEditingRangeParams, LinkedEditingRangeServerCapabilities,
     LinkedEditingRanges, Location, MarkupContent, MarkupKind, NumberOrString, OneOf,
@@ -126,6 +127,13 @@ impl Session {
     /// silently. Without a loader the notification stays the quiet
     /// drop every unhandled notification is.
     pub fn with_theme_loader(mut self, loader: impl crate::ThemeLoader + 'static) -> Self {
+        // The loader's URI is the goto-definition face's origin too: the
+        // file the session's tables come from is the file the token
+        // definitions jump into. The face stays dark until the FIRST
+        // load lands (the built-in bake is no file); the watched-file
+        // handler re-notes on every load (idempotent — one loader, one
+        // file).
+        self.engine.note_theme_origin(loader.uri());
         self.theme = Some(Arc::new(loader));
         self
     }
@@ -259,6 +267,46 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                         value: hover.contents,
                     }),
                     range: hover.range.map(wire_range),
+                })
+                .unwrap_or(Value::Null)
+            });
+            respond(request.id, result)
+        }
+        "textDocument/definition" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The token goto-definition face: the cursor's token class
+            // answers the theme file's own declaration site — the
+            // engine's provenance path (or the wired store's), byte-true
+            // in the UTF-16 pairs. A URI the `Uri` parser rejects
+            // answers the protocol's own null (the publish half's own
+            // rule: the wire gave it, no editor can have named it
+            // either).
+            let answer = serde_json::from_value::<GotoDefinitionParams>(request.params)
+                .ok()
+                .and_then(|params| {
+                    let position = params.text_document_position_params.position;
+                    session.engine.definition(
+                        params
+                            .text_document_position_params
+                            .text_document
+                            .uri
+                            .as_str(),
+                        position.line,
+                        position.character,
+                    )
+                });
+            let result = answer.map(|definition| {
+                // A URI the `Uri` parser rejects answers the protocol's
+                // own null (the publish half's own rule: the wire gave
+                // it, no editor can have named it either).
+                let Ok(uri) = lsp_types::Uri::from_str(&definition.uri) else {
+                    return Value::Null;
+                };
+                serde_json::to_value(Location {
+                    uri,
+                    range: wire_range(definition.range),
                 })
                 .unwrap_or(Value::Null)
             });
@@ -688,6 +736,42 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "workspace/executeCommand" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The server's command surface (LSP 3.16's
+            // workspace/executeCommand): the CLOSED command table the
+            // capability advertises, the sort face invoked as a
+            // command. The unknown command and the missing argument
+            // answer the protocol's own null — the state machine's
+            // quiet vocabulary (no invented command runs, the honest
+            // boundary the table's closedness keeps); the known one
+            // rides the engine's own `format` answer, the edits the
+            // formatting request answers byte for byte.
+            let Ok(params) = serde_json::from_value::<ExecuteCommandParams>(request.params) else {
+                return respond(request.id, Some(Value::Null));
+            };
+            if params.command != "aeolus.sortDocument" {
+                return respond(request.id, Some(Value::Null));
+            }
+            let Some(argument) = params.arguments.first().and_then(|value| value.as_str()) else {
+                return respond(request.id, Some(Value::Null));
+            };
+            let edits = session
+                .engine
+                .format(argument)
+                .iter()
+                .map(|edit| TextEdit {
+                    range: wire_range(edit.range),
+                    new_text: edit.new_text.clone(),
+                })
+                .collect::<Vec<_>>();
+            respond(
+                request.id,
+                Some(serde_json::to_value(edits).unwrap_or(Value::Null)),
+            )
+        }
         "textDocument/prepareRename" => {
             if !session.initialized {
                 return Handled::default();
@@ -1049,6 +1133,9 @@ fn handle_notification(session: &mut Session, notification: Notification) -> Han
             let Ok(tokens) = loader.load() else {
                 return Handled::default();
             };
+            // The origin rides the loader's URI (the definitions jump
+            // into the file the tables come from — idempotent).
+            session.engine.note_theme_origin(loader.uri());
             // The engine's own contract: equal content is the
             // byte-neutral no-op (the pool keeps serving, nothing
             // republishes), a real swap retires the pool it invalidates.
@@ -1229,6 +1316,12 @@ fn previous_result_ids(params: &Value) -> Option<Vec<(String, String)>> {
 fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
+        // The token goto-definition face: the cursor's token class
+        // answers the theme file's own declaration site (the theme
+        // pass's provenance scan, or the wired host store's). The plain
+        // `true` form: the answer is the engine's own walk, no options
+        // object.
+        definition_provider: Some(OneOf::Left(true)),
         color_provider: Some(ColorProviderCapability::Simple(true)),
         // The quick fixes: every answer is the pipeline's own
         // correction (the audited tables' spellings) with the edit over
@@ -1281,6 +1374,16 @@ fn server_capabilities() -> ServerCapabilities {
         // answer is the engine's whole-document walk, no options
         // object.
         document_formatting_provider: Some(OneOf::Left(true)),
+        // The server's command surface: `aeolus.sortDocument`, the
+        // class-sort seam's editor face invoked as a command (the
+        // protocol's own extension point for client-driven server
+        // work — a keybinding, a refactoring menu). The table is
+        // CLOSED and advertised: one command, the sort face, no
+        // resolve round-trip.
+        execute_command_provider: Some(ExecuteCommandOptions {
+            commands: vec!["aeolus.sortDocument".to_string()],
+            work_done_progress_options: WorkDoneProgressOptions::default(),
+        }),
         // The outline face: one symbol per candidate class, document
         // order (the engine's whole-document walk — no hierarchical
         // tree, no options object; the plain `true` form).
