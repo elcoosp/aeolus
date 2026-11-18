@@ -356,3 +356,12 @@ harness = false
 [[bench]]
 name = "walk_observer"
 harness = false
+
+# The pooled-path walk channel's benchmarks (the walk face threaded
+# through the dyn cache): the observed miss (the walk lowers, observed)
+# beside the observed hit (the pool answers, the channel silent) and
+# the themed miss — the cache's own economics kept visible beside the
+# face's.
+[[bench]]
+name = "pooled_walk"
+harness = false
