@@ -38,7 +38,7 @@
 //!
 //! # Why the walk runs IN the pipeline
 //!
-//! The slot WRITE is the plan bridge's own [`PlanWriter`] — one arm per
+//! The slot WRITE is the plan bridge's own `PlanWriter` — one arm per
 //! registry longhand family, the row-table keyword texts resolving the
 //! `Val::Kw` slots the bare IR cannot. Re-running it here means the
 //! string-side plan (`emit_plan`) and the program-side style fold
@@ -261,7 +261,7 @@ pub fn program_style_with(
 
 /// [`program_style`] with the interp's FULL probe surface wired — the
 /// widest program-lane entry (the
-/// [`interp_probes_containers_struct_descendants_supports`]'s own
+/// `interp_probes_containers_struct_descendants_supports`'s own
 /// naming, the program lane's `*_with` token tail kept): the five
 /// probe seams the walk's `decide` verdicts already consult, all
 /// optional.
@@ -337,7 +337,7 @@ pub fn program_style_probes_containers_struct_descendants_supports(
 /// LONGHAND into [`StyleWalk::refusals`] — the style fold's report
 /// shape, never a hard error and never a silent transparent colour;
 /// [`program_style_pseudo_theme`] carries the source they resolve
-/// from. The fold runs through the SAME [`PlanWriter`] the element
+/// from. The fold runs through the SAME `PlanWriter` the element
 /// walk uses, so a longhand the v0.x slots cannot carry reports its
 /// typed [`PlanNoteKind`] boundary instead of vanishing.
 ///
@@ -374,7 +374,7 @@ pub fn program_style_pseudo_theme(
 }
 
 /// The pseudo-target fold: the interp arm's own-cascade verdict
-/// (condition equality) over the SAME [`PlanWriter`] the element walk
+/// (condition equality) over the SAME `PlanWriter` the element walk
 /// writes through. The keyword annotations are flattened in
 /// layer-major order across ALL layers (the same accumulation
 /// [`StaticProgram::keyword`] reads back), so `index` advances over
