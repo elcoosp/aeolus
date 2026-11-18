@@ -33,6 +33,17 @@ fn analyze_document(bencher: Bencher) {
     });
 }
 
+/// The re-answer path over the session's pool: the SAME engine, the
+/// same document re-analyzed (the keystroke that changed nothing) —
+/// every ScanHit rides the cache instead of re-lowering (the dyn-cache
+/// slice's latency half, the engine's own ride).
+#[divan::bench]
+fn analyze_warm_pool(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    bencher.bench(|| lsp.analyze("file:///card.rs"));
+}
+
 /// The per-cursor-move path: the hover resolution over the SAME
 /// document, cursor inside the second string's class.
 #[divan::bench]
