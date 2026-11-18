@@ -207,6 +207,24 @@ fn document_highlights_walk(bencher: Bencher) {
     bencher.bench(|| lsp.document_highlights("file:///card.rs", line, character));
 }
 
+/// The rename path (the rename face's second half): the highlights'
+/// own walk with the edits riding — the cost a rename gesture pays per
+/// keystroke of the new spelling (the prepare half is the locator's
+/// span answer, the walk's first read).
+#[divan::bench]
+fn rename_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("flex-col").expect("the fixture holds") + 2;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.rename("file:///card.rs", line, character, "flex-row"));
+}
+
 /// The format-on-save path (the class-sort seam's editor face): the
 /// document's class strings through the themeless sort walk — the
 /// registry's read side and the variant fold per string, the canonical
