@@ -749,7 +749,7 @@ impl<S: DynStore> DynCache<S> {
     /// the empty input), reported on every call.
     pub fn compile(&self, input: &str, config: &Config) -> Result<Compiled, CompileError> {
         self.cached(input, DynIdentity::of(*config), || {
-            crate::run(input, *config, None, &Customs::new())
+            crate::run(input, *config, None, &Customs::new(), None)
         })
     }
 
@@ -768,7 +768,7 @@ impl<S: DynStore> DynCache<S> {
     ) -> Result<Compiled, CompileError> {
         let identity = DynIdentity::themed(*config, tokens);
         self.cached(input, identity, || {
-            crate::run(input, *config, Some(tokens), &Customs::new())
+            crate::run(input, *config, Some(tokens), &Customs::new(), None)
         })
     }
 
@@ -787,7 +787,7 @@ impl<S: DynStore> DynCache<S> {
     ) -> Result<Compiled, CompileError> {
         let identity = DynIdentity::custom(*config, customs);
         self.cached(input, identity, || {
-            crate::run(input, *config, None, customs)
+            crate::run(input, *config, None, customs, None)
         })
     }
 
@@ -807,7 +807,7 @@ impl<S: DynStore> DynCache<S> {
     ) -> Result<Compiled, CompileError> {
         let identity = DynIdentity::themed_custom(*config, tokens, customs);
         self.cached(input, identity, || {
-            crate::run(input, *config, Some(tokens), customs)
+            crate::run(input, *config, Some(tokens), customs, None)
         })
     }
 
