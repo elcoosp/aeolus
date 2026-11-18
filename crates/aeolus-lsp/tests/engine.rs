@@ -32,6 +32,7 @@
 use aeolus_compile::Config;
 use aeolus_lsp::{
     AeolusEngine, EngineCompletion, EngineCompletionKind, EngineConfig, EngineSemanticKind,
+    ThemeError,
 };
 use aeolus_theme::{ThemeSource, TokenTable};
 
@@ -48,6 +49,40 @@ const DOC: &str =
 /// The engine with the default (shadcn baked) theme.
 fn engine() -> AeolusEngine {
     AeolusEngine::new(EngineConfig::default())
+}
+
+// ---------------------------------------------------------------------------
+// The config: the default's typed boundary
+// ---------------------------------------------------------------------------
+
+#[test]
+fn try_default_answers_the_baked_shape() {
+    // The fallible constructor rides the same bake `Default` panics on
+    // (the two-lane contract the CLI's own theme loading keeps): the
+    // typed path answers the themed engine's shape, byte-identically.
+    let typed = EngineConfig::try_default().expect("the built-in shadcn bake parses and bakes");
+    assert!(typed.tokens.is_some(), "the bake's table rides");
+    let mut typed_engine = AeolusEngine::new(typed);
+    let mut default_engine = engine();
+    typed_engine.open("file:///card.rs", DOC, 1);
+    default_engine.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("\"p-4").expect("the fixture holds") + 2;
+    let (line, character) = line_character_of(DOC, offset);
+    assert_eq!(
+        typed_engine.hover("file:///card.rs", line, character),
+        default_engine.hover("file:///card.rs", line, character),
+        "the typed default answers the panicking one's questions identically"
+    );
+}
+
+#[test]
+fn try_default_rides_the_reexported_error() {
+    // The signature pin: the fallible constructor returns the theme
+    // pass's OWN error, re-exported beside the config (the
+    // no-manifest-add discipline — the host names it through
+    // `aeolus_lsp`).
+    let constructor: fn() -> Result<EngineConfig, ThemeError> = EngineConfig::try_default;
+    assert!(constructor().is_ok(), "the built-in bake parses");
 }
 
 // ---------------------------------------------------------------------------
