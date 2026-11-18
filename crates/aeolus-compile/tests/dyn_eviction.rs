@@ -93,6 +93,7 @@ impl DynObserver for Recording {
         let tag = match reason {
             EvictReason::Rotation => "rotation",
             EvictReason::StaleTwin => "stale-twin",
+            EvictReason::Invalidated => "invalidated",
         };
         self.events
             .lock()
