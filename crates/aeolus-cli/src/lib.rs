@@ -27,23 +27,40 @@
 //!   ([`ThemeSpecError`]), never bare strings.
 
 use aeolus_compile::{
-    ClassKeywords, Config, ContainerBound, ContainerState, DescendantFact, DescendantKind,
-    DescendantState, Env, PseudoTarget, RustSheet, RustStrings, SourceFile, StructFacts,
-    SupportsState, build as build_artifact, compile, compile_theme, emit_plan, emit_plan_theme,
-    emit_rust, emit_rust_theme, interp_containers, interp_containers_descendants,
+    AttrBit, AttrKind, AttrState, ClassKeywords, Config, ContainerBound, ContainerState,
+    DescendantFact, DescendantKind, DescendantState, Env, PseudoTarget, RustSheet, RustStrings,
+    SourceFile, StructFacts, SupportsState, build as build_artifact, compile, compile_theme,
+    compile_theme_with, compile_with, customs_from_css, emit_plan, emit_plan_theme, emit_rust,
+    emit_rust_theme, interp_containers, interp_containers_descendants,
     interp_containers_descendants_supports, interp_containers_struct,
     interp_containers_struct_descendants, interp_containers_struct_descendants_supports,
     interp_containers_struct_supports, interp_containers_supports, interp_descendants,
-    interp_descendants_supports, interp_pseudo, interp_pseudo_theme, interp_struct,
+    interp_descendants_supports, interp_probes, interp_probes_containers,
+    interp_probes_containers_descendants, interp_probes_containers_descendants_supports,
+    interp_probes_containers_struct, interp_probes_containers_struct_descendants,
+    interp_probes_containers_struct_descendants_supports, interp_probes_containers_struct_supports,
+    interp_probes_containers_supports, interp_probes_descendants,
+    interp_probes_descendants_supports, interp_probes_struct, interp_probes_struct_descendants,
+    interp_probes_struct_descendants_supports, interp_probes_struct_supports,
+    interp_probes_supports, interp_pseudo, interp_pseudo_theme, interp_struct,
     interp_struct_descendants, interp_struct_descendants_supports, interp_struct_supports,
     interp_supports, interp_theme, interp_theme_containers, interp_theme_containers_descendants,
     interp_theme_containers_descendants_supports, interp_theme_containers_struct,
     interp_theme_containers_struct_descendants,
     interp_theme_containers_struct_descendants_supports, interp_theme_containers_struct_supports,
     interp_theme_containers_supports, interp_theme_descendants, interp_theme_descendants_supports,
-    interp_theme_struct, interp_theme_struct_descendants, interp_theme_struct_descendants_supports,
-    interp_theme_struct_supports, interp_theme_supports, keyword_texts, scan, scan_rust_strings,
-    sort,
+    interp_theme_probes, interp_theme_probes_containers,
+    interp_theme_probes_containers_descendants,
+    interp_theme_probes_containers_descendants_supports, interp_theme_probes_containers_struct,
+    interp_theme_probes_containers_struct_descendants,
+    interp_theme_probes_containers_struct_descendants_supports,
+    interp_theme_probes_containers_struct_supports, interp_theme_probes_containers_supports,
+    interp_theme_probes_descendants, interp_theme_probes_descendants_supports,
+    interp_theme_probes_struct, interp_theme_probes_struct_descendants,
+    interp_theme_probes_struct_descendants_supports, interp_theme_probes_struct_supports,
+    interp_theme_probes_supports, interp_theme_struct, interp_theme_struct_descendants,
+    interp_theme_struct_descendants_supports, interp_theme_struct_supports, interp_theme_supports,
+    keyword_texts, keyword_texts_with, scan, scan_rust_strings, sort,
 };
 use aeolus_core::color::ParseError;
 use aeolus_core::plan::diff;
@@ -546,6 +563,29 @@ struct Args {
     /// `display:grid` spelling and the paren-wrapped `(display:grid)`
     /// land the SAME payload the variant folded.
     supports: Vec<String>,
+    /// The `--data name[=value]` / `--aria name[=value]` facts (`expand`
+    /// only, repeatable): the attribute bits the interp's attribute
+    /// seam ([`aeolus_compile::AttrProbe`]) answers the element-own
+    /// `data-*`/`aria-*` layers from — one row per fact across both
+    /// families, the kind naming the family. A bare fact is the
+    /// presence spelling (the bare `data-state:` layer's answer; the
+    /// bare `aria-*:` layer names "true" — the fold's own reading, the
+    /// fact asserts it); the `name=value` form is the value spelling
+    /// the bracketed layers compare. Without any, `expand` keeps the
+    /// sourceless shape — attribute layers report the
+    /// `AttributeUnqueried` note instead of answering.
+    attrs: Vec<(AttrKind, String, String)>,
+    /// The `--custom <path>` face (`expand` only): a CSS file's
+    /// `@custom-variant`/`@utility` statements, registered onto the
+    /// same typed `Customs` surface the theme pass reads
+    /// ([`aeolus_compile::customs_from_css`]) so the walk answers the
+    /// project's own vocabulary — the aliases fold onto the typed
+    /// `Cond` surface (the walk answers them from the probe facts the
+    /// built-ins ride) and the applied utilities join the lookup with
+    /// their composite bodies compiled at registration. A missing file
+    /// or a typed [`aeolus_compile::CustomCssError`] is the usage
+    /// error (exit 2), never a half-registered vocabulary.
+    custom: Option<String>,
     /// The `--child i/n` facts (`expand` only): the element's 0-based
     /// child index and the parent's element-child count — the
     /// [`StructFacts`] the interp's structural seam answers the
@@ -622,6 +662,64 @@ struct Args {
     positional: Vec<String>,
 }
 
+/// The attribute-probe fact grammar (`--data`/`--aria`): `name` — the
+/// presence spelling — or `name=value` — the value spelling, split at
+/// the FIRST `=` (a second `=` rides the value, the fold's own
+/// bracketed-form split). Names keep the attribute-name charset the
+/// fold enforces (ASCII letters, digits, `-`, `_`); values are
+/// non-empty selector-safe text (no quotes, no backslash) — the same
+/// refusals the variant fold carries, so no renderer can emit a
+/// broken selector from a CLI fact. The BARE fact's value is the
+/// family's own reading: the bare `aria-*:` spelling names "true"
+/// (the corpus renders `[aria-busy="true"]`, the fold's own note), the
+/// bare `data-*:` spelling is the presence row — its empty value can
+/// never answer a value probe (the fold refuses empty values), so the
+/// presence fact stays exactly that. A malformed fact is a CLI input
+/// error (`None` → exit 2), never a half-answered layer.
+fn attr_fact(
+    flag: &str,
+    value: &str,
+    kind: AttrKind,
+    err: &mut dyn Write,
+) -> Option<(AttrKind, String, String)> {
+    let (name, given) = match value.split_once('=') {
+        Some((name, value)) => (name, Some(value)),
+        None => (value, None),
+    };
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        let _ = writeln!(
+            err,
+            "--{flag} needs an attribute name (ASCII letters, digits, `-`, `_`), got {value:?}"
+        );
+        return None;
+    }
+    if let Some(v) = given
+        && (v.is_empty() || v.contains('"') || v.contains('\\'))
+    {
+        let _ = writeln!(
+            err,
+            "--{flag} value must be non-empty selector-safe text (no quotes, no backslash), \
+             got {value:?}"
+        );
+        return None;
+    }
+    let fact_value = given.map_or_else(
+        || {
+            if matches!(kind, AttrKind::Aria) {
+                "true".to_string()
+            } else {
+                String::new()
+            }
+        },
+        str::to_string,
+    );
+    Some((kind, name.to_string(), fact_value))
+}
+
 fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<Args> {
     let mut theme = "shadcn".to_string();
     let mut theme_given = false;
@@ -660,6 +758,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut viewport_rem = 0.0f32;
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut supports: Vec<String> = Vec::new();
+    let mut attrs: Vec<(AttrKind, String, String)> = Vec::new();
+    let mut custom: Option<String> = None;
     let mut child: Option<(usize, usize)> = None;
     let mut child_of_type: Option<(usize, usize)> = None;
     let mut starting = false;
@@ -774,40 +874,40 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             "--peer-focus" if allow.contains(&"peer-focus") => {
                 peer_focus = true;
             }
-            "--group-focus-visible" if allow.contains(&"group_focus_visible") => {
+            "--group-focus-visible" if allow.contains(&"group-focus-visible") => {
                 group_focus_visible = true;
             }
-            "--group-focus-within" if allow.contains(&"group_focus_within") => {
+            "--group-focus-within" if allow.contains(&"group-focus-within") => {
                 group_focus_within = true;
             }
-            "--group-active" if allow.contains(&"group_active") => {
+            "--group-active" if allow.contains(&"group-active") => {
                 group_active = true;
             }
-            "--group-disabled" if allow.contains(&"group_disabled") => {
+            "--group-disabled" if allow.contains(&"group-disabled") => {
                 group_disabled = true;
             }
-            "--group-visited" if allow.contains(&"group_visited") => {
+            "--group-visited" if allow.contains(&"group-visited") => {
                 group_visited = true;
             }
-            "--group-checked" if allow.contains(&"group_checked") => {
+            "--group-checked" if allow.contains(&"group-checked") => {
                 group_checked = true;
             }
-            "--peer-focus-visible" if allow.contains(&"peer_focus_visible") => {
+            "--peer-focus-visible" if allow.contains(&"peer-focus-visible") => {
                 peer_focus_visible = true;
             }
-            "--peer-focus-within" if allow.contains(&"peer_focus_within") => {
+            "--peer-focus-within" if allow.contains(&"peer-focus-within") => {
                 peer_focus_within = true;
             }
-            "--peer-active" if allow.contains(&"peer_active") => {
+            "--peer-active" if allow.contains(&"peer-active") => {
                 peer_active = true;
             }
-            "--peer-disabled" if allow.contains(&"peer_disabled") => {
+            "--peer-disabled" if allow.contains(&"peer-disabled") => {
                 peer_disabled = true;
             }
-            "--peer-visited" if allow.contains(&"peer_visited") => {
+            "--peer-visited" if allow.contains(&"peer-visited") => {
                 peer_visited = true;
             }
-            "--peer-checked" if allow.contains(&"peer_checked") => {
+            "--peer-checked" if allow.contains(&"peer-checked") => {
                 peer_checked = true;
             }
 
@@ -1072,6 +1172,51 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
                 };
                 supports.push(condition.to_string());
             }
+            // The attribute-probe facts (`expand` only, repeatable):
+            // VALUE flags — `--data name[=value]` / `--aria name[=value]`,
+            // one fact per flag across both families (the kind names
+            // the family). The grammar is the fold's own
+            // ([`attr_fact`]): a bare fact is the presence spelling,
+            // the `name=value` form the value spelling, a malformed
+            // fact a CLI input error, exit 2.
+            "--data" if allow.contains(&"data") => {
+                i += 1;
+                let Some(value) = rest.get(i) else {
+                    let _ = writeln!(
+                        err,
+                        "--data needs name or name=value (e.g. --data state=open)"
+                    );
+                    return None;
+                };
+                let fact = attr_fact("data", value, AttrKind::Data, err)?;
+                attrs.push(fact);
+            }
+            "--aria" if allow.contains(&"aria") => {
+                i += 1;
+                let Some(value) = rest.get(i) else {
+                    let _ = writeln!(
+                        err,
+                        "--aria needs name or name=value (e.g. --aria busy=true)"
+                    );
+                    return None;
+                };
+                let fact = attr_fact("aria", value, AttrKind::Aria, err)?;
+                attrs.push(fact);
+            }
+            // The custom-authoring seam's CLI face (`expand` only): a
+            // VALUE flag — the CSS file whose `@custom-variant`/
+            // `@utility` statements join the compile walk (the load
+            // and the typed refusals are the caller's honest report).
+            "--custom" if allow.contains(&"custom") => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => custom = Some(v.clone()),
+                    None => {
+                        let _ = writeln!(err, "--custom needs a CSS path");
+                        return None;
+                    }
+                }
+            }
             "--container" if allow.contains(&"container") => {
                 i += 1;
                 let Some(value) = rest.get(i) else {
@@ -1176,6 +1321,8 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         viewport_rem,
         has,
         supports,
+        attrs,
+        custom,
         child,
         child_of_type,
         starting,
@@ -1575,7 +1722,12 @@ fn last_keyword_texts(annotations: &[ClassKeywords]) -> HashMap<(Cond, Prop), &'
 /// typed boundaries whose diagnostics the compile walk reports (exit 1
 /// findings, the render still carries what lowered). `--dark` lifts the
 /// mode tier; the probe states rest. `--json` renders the same report
-/// as one object: the declarations array plus the notes.
+/// as one object: the declarations array plus the notes. The probe
+/// seams ride their fact flags: `--data`/`--aria` the attribute bits
+/// (the [`aeolus_compile::AttrProbe`] seam), `--has` the subtree facts,
+/// `--supports` the capability facts, `--container`/`--width` the
+/// bounds, `--child` the DOM position — the walk shape widens with the
+/// asserted families, the dispatch matrix the seam family spells out.
 fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     #[cfg(feature = "tracing")]
     let _expand_span = tracing::debug_span!("aeolus_expand").entered();
@@ -1593,6 +1745,9 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "supports",
             "child",
             "child-of-type",
+            "data",
+            "aria",
+            "custom",
             "starting",
             "hover",
             "focus",
@@ -1607,18 +1762,18 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "group-focus",
             "peer-hover",
             "peer-focus",
-            "group_focus_visible",
-            "group_focus_within",
-            "group_active",
-            "group_disabled",
-            "group_visited",
-            "group_checked",
-            "peer_focus_visible",
-            "peer_focus_within",
-            "peer_active",
-            "peer_disabled",
-            "peer_visited",
-            "peer_checked",
+            "group-focus-visible",
+            "group-focus-within",
+            "group-active",
+            "group-disabled",
+            "group-visited",
+            "group-checked",
+            "peer-focus-visible",
+            "peer-focus-within",
+            "peer-active",
+            "peer-disabled",
+            "peer-visited",
+            "peer-checked",
             "empty",
             "reduced-motion",
             "more-contrast",
@@ -1677,16 +1832,54 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
     };
     let classes = args.positional.join(" ");
     let config = Config::default();
+    // The custom seam rides the `--custom <path>` flag: a CSS file's
+    // `@custom-variant`/`@utility` statements register onto the same
+    // typed `Customs` surface the theme pass reads
+    // ([`customs_from_css`]), the compile walk consults beside the
+    // registry. A missing file or a typed `CustomCssError` renders at
+    // stderr and takes the exit code — the honest-failure path, never
+    // a half-registered vocabulary.
+    let customs = match &args.custom {
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(css) => match customs_from_css(&css, &config) {
+                Ok(customs) => Some(customs),
+                Err(e) => {
+                    let _ = writeln!(err, "--custom {path}: {e}");
+                    return 2;
+                }
+            },
+            Err(e) => {
+                let _ = writeln!(err, "--custom {path}: {e}");
+                return 2;
+            }
+        },
+        None => None,
+    };
     // The table stays in scope: the themed walk resolves the token forms
     // through it ([`interp_theme`]), the themeless walk refuses them (the
-    // typed boundary the exit-1 findings carry).
-    let (compiled, table) = if args.theme_given {
-        let Some(table) = token_table_or_report(&args.theme, err) else {
-            return 2;
-        };
-        (compile_theme(&classes, &table, &config), Some(table))
-    } else {
-        (compile(&classes, &config), None)
+    // typed boundary the exit-1 findings carry). The customs ride the
+    // same four-shape split: `compile_with`/`compile_theme_with` when
+    // the `--custom` vocabulary registered, the plain forms otherwise —
+    // one compile entry per (customs, theme) combination, the customs
+    // consulted beside the registry, never instead of it.
+    let (compiled, table) = match (&customs, args.theme_given) {
+        (Some(customs), true) => {
+            let Some(table) = token_table_or_report(&args.theme, err) else {
+                return 2;
+            };
+            (
+                compile_theme_with(&classes, &table, customs, &config),
+                Some(table),
+            )
+        }
+        (Some(customs), false) => (compile_with(&classes, customs, &config), None),
+        (None, true) => {
+            let Some(table) = token_table_or_report(&args.theme, err) else {
+                return 2;
+            };
+            (compile_theme(&classes, &table, &config), Some(table))
+        }
+        (None, false) => (compile(&classes, &config), None),
     };
     let compiled = match compiled {
         Ok(compiled) => compiled,
@@ -1824,7 +2017,261 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
     let conditions: Vec<&str> = args.supports.iter().map(String::as_str).collect();
     let target_state = SupportsState::new(&conditions);
     let supports_used = !args.supports.is_empty();
-    let interped = if supports_used {
+    // The attribute-probe facts ride the `--data name[=value]` /
+    // `--aria name[=value]` flags: the same bits value the
+    // `AttrProbe` seam documents, borrowed from the parsed args (the
+    // strings outlive the walk). Without any, `expand` keeps the
+    // sourceless shape — attribute layers report the
+    // `AttributeUnqueried` note instead of answering.
+    let bits: Vec<AttrBit<'_>> = args
+        .attrs
+        .iter()
+        .map(|(kind, name, value)| AttrBit {
+            kind: *kind,
+            name,
+            value,
+        })
+        .collect();
+    let attr_state = AttrState::new(&bits);
+    let attrs_used = !args.attrs.is_empty();
+    let interped = if attrs_used {
+        if supports_used {
+            if descendants_used {
+                match (&table, bounds.is_empty(), structs_used) {
+                    (Some(table), false, true) => {
+                        interp_theme_probes_containers_struct_descendants_supports(
+                            &compiled.program,
+                            table,
+                            &env,
+                            &attr_state,
+                            &state,
+                            &facts,
+                            &tree_state,
+                            &target_state,
+                        )
+                    }
+                    (Some(table), false, false) => {
+                        interp_theme_probes_containers_descendants_supports(
+                            &compiled.program,
+                            table,
+                            &env,
+                            &attr_state,
+                            &state,
+                            &tree_state,
+                            &target_state,
+                        )
+                    }
+                    (Some(table), true, true) => interp_theme_probes_struct_descendants_supports(
+                        &compiled.program,
+                        table,
+                        &env,
+                        &attr_state,
+                        &facts,
+                        &tree_state,
+                        &target_state,
+                    ),
+                    (Some(table), true, false) => interp_theme_probes_descendants_supports(
+                        &compiled.program,
+                        table,
+                        &env,
+                        &attr_state,
+                        &tree_state,
+                        &target_state,
+                    ),
+                    (None, false, true) => interp_probes_containers_struct_descendants_supports(
+                        &compiled.program,
+                        &env,
+                        &attr_state,
+                        &state,
+                        &facts,
+                        &tree_state,
+                        &target_state,
+                    ),
+                    (None, false, false) => interp_probes_containers_descendants_supports(
+                        &compiled.program,
+                        &env,
+                        &attr_state,
+                        &state,
+                        &tree_state,
+                        &target_state,
+                    ),
+                    (None, true, true) => interp_probes_struct_descendants_supports(
+                        &compiled.program,
+                        &env,
+                        &attr_state,
+                        &facts,
+                        &tree_state,
+                        &target_state,
+                    ),
+                    (None, true, false) => interp_probes_descendants_supports(
+                        &compiled.program,
+                        &env,
+                        &attr_state,
+                        &tree_state,
+                        &target_state,
+                    ),
+                }
+            } else {
+                match (&table, bounds.is_empty(), structs_used) {
+                    (Some(table), false, true) => interp_theme_probes_containers_struct_supports(
+                        &compiled.program,
+                        table,
+                        &env,
+                        &attr_state,
+                        &state,
+                        &facts,
+                        &target_state,
+                    ),
+                    (Some(table), false, false) => interp_theme_probes_containers_supports(
+                        &compiled.program,
+                        table,
+                        &env,
+                        &attr_state,
+                        &state,
+                        &target_state,
+                    ),
+                    (Some(table), true, true) => interp_theme_probes_struct_supports(
+                        &compiled.program,
+                        table,
+                        &env,
+                        &attr_state,
+                        &facts,
+                        &target_state,
+                    ),
+                    (Some(table), true, false) => interp_theme_probes_supports(
+                        &compiled.program,
+                        table,
+                        &env,
+                        &attr_state,
+                        &target_state,
+                    ),
+                    (None, false, true) => interp_probes_containers_struct_supports(
+                        &compiled.program,
+                        &env,
+                        &attr_state,
+                        &state,
+                        &facts,
+                        &target_state,
+                    ),
+                    (None, false, false) => interp_probes_containers_supports(
+                        &compiled.program,
+                        &env,
+                        &attr_state,
+                        &state,
+                        &target_state,
+                    ),
+                    (None, true, true) => interp_probes_struct_supports(
+                        &compiled.program,
+                        &env,
+                        &attr_state,
+                        &facts,
+                        &target_state,
+                    ),
+                    (None, true, false) => {
+                        interp_probes_supports(&compiled.program, &env, &attr_state, &target_state)
+                    }
+                }
+            }
+        } else if descendants_used {
+            match (&table, bounds.is_empty(), structs_used) {
+                (Some(table), false, true) => interp_theme_probes_containers_struct_descendants(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &attr_state,
+                    &state,
+                    &facts,
+                    &tree_state,
+                ),
+                (Some(table), false, false) => interp_theme_probes_containers_descendants(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &attr_state,
+                    &state,
+                    &tree_state,
+                ),
+                (Some(table), true, true) => interp_theme_probes_struct_descendants(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &attr_state,
+                    &facts,
+                    &tree_state,
+                ),
+                (Some(table), true, false) => interp_theme_probes_descendants(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &attr_state,
+                    &tree_state,
+                ),
+                (None, false, true) => interp_probes_containers_struct_descendants(
+                    &compiled.program,
+                    &env,
+                    &attr_state,
+                    &state,
+                    &facts,
+                    &tree_state,
+                ),
+                (None, false, false) => interp_probes_containers_descendants(
+                    &compiled.program,
+                    &env,
+                    &attr_state,
+                    &state,
+                    &tree_state,
+                ),
+                (None, true, true) => interp_probes_struct_descendants(
+                    &compiled.program,
+                    &env,
+                    &attr_state,
+                    &facts,
+                    &tree_state,
+                ),
+                (None, true, false) => {
+                    interp_probes_descendants(&compiled.program, &env, &attr_state, &tree_state)
+                }
+            }
+        } else {
+            match (&table, bounds.is_empty(), structs_used) {
+                (Some(table), false, true) => interp_theme_probes_containers_struct(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &attr_state,
+                    &state,
+                    &facts,
+                ),
+                (Some(table), false, false) => interp_theme_probes_containers(
+                    &compiled.program,
+                    table,
+                    &env,
+                    &attr_state,
+                    &state,
+                ),
+                (Some(table), true, true) => {
+                    interp_theme_probes_struct(&compiled.program, table, &env, &attr_state, &facts)
+                }
+                (Some(table), true, false) => {
+                    interp_theme_probes(&compiled.program, table, &env, &attr_state)
+                }
+                (None, false, true) => interp_probes_containers_struct(
+                    &compiled.program,
+                    &env,
+                    &attr_state,
+                    &state,
+                    &facts,
+                ),
+                (None, false, false) => {
+                    interp_probes_containers(&compiled.program, &env, &attr_state, &state)
+                }
+                (None, true, true) => {
+                    interp_probes_struct(&compiled.program, &env, &attr_state, &facts)
+                }
+                (None, true, false) => interp_probes(&compiled.program, &env, &attr_state),
+            }
+        }
+    } else if supports_used {
         if descendants_used {
             match (&table, bounds.is_empty(), structs_used) {
                 (Some(table), false, true) => interp_theme_containers_struct_descendants_supports(
@@ -1998,8 +2445,15 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
     // The contract renders through the error's own channel instead of
     // an expect: the typed failure writes to stderr and takes the exit
     // code, the sibling walk's shape — an honest-failure path, never a
-    // panic the contract's wording had to argue cannot happen.
-    let last = match keyword_texts(&classes, &config) {
+    // panic the contract's wording had to argue cannot happen. The
+    // customs ride the same split: the applied utilities' row texts
+    // come from the registration's own compiled bodies
+    // ([`keyword_texts_with`]), the plain walk otherwise.
+    let texts = match &customs {
+        Some(customs) => keyword_texts_with(&classes, customs, &config),
+        None => keyword_texts(&classes, &config),
+    };
+    let last = match texts {
         Ok(texts) => last_keyword_texts(&texts),
         Err(e) => {
             let _ = writeln!(err, "error: {e}");
@@ -2944,7 +3398,8 @@ USAGE:
                  [--indeterminate] [--autofill] [--read-write] [--open] [--inert]
                  [--default] [--form-associated] [--required] [--range-bounded]
                  [--range-in] [--container name=rem] [--width rem] [--has kind=fragment]
-                 [--supports condition] [--child i/n] [--child-of-type i/n] [--empty]
+                 [--supports condition] [--data name[=value]] [--aria name[=value]]
+                 [--custom <path.css>] [--child i/n] [--child-of-type i/n] [--empty]
                  [--pseudo <target>] <classes...>
                                                              effective declarations (the interp (c) arm);
                                                              --pseudo resolves the named pseudo-element
@@ -2963,7 +3418,16 @@ USAGE:
                                                              dimensions are independent answers),
                                                              --width carries the viewport width (rem)
                                                              the sm:..2xl: breakpoint layers and the
-                                                             max-*: forms answer from
+                                                             max-*: forms answer from, --data/--aria
+                                                             carry the attribute bits the data-*:/
+                                                             aria-*: layers answer from (name for
+                                                             the presence spelling, name=value for
+                                                             the value spelling; the bare aria fact
+                                                             asserts the fold's own true reading),
+                                                             --custom carries a CSS file's
+                                                             @custom-variant/@utility statements
+                                                             (the aliases fold onto the typed Cond
+                                                             surface, the utilities join the lookup)
   aeolus build   [--theme <spec>] [--out <path>] [--fail-on <mode>] [--json] <files/dirs...>
                                                              one stylesheet for the whole project
                                                              (scan → dedupe → registry-ordered rules
