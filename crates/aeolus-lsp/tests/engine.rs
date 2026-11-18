@@ -1232,6 +1232,102 @@ fn format_is_pure_and_gates_on_the_document_map() {
 }
 
 // ---------------------------------------------------------------------------
+// The rename face (the wire's prepareRename + rename): the candidate
+// span under the cursor, the textual occurrences' edits
+// ---------------------------------------------------------------------------
+
+#[test]
+fn prepare_rename_answers_the_candidates_span() {
+    // The cursor inside a candidate answers its byte-true range (the
+    // full spelling — the highlights' own raw-text contract).
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let start = DOC.find("p-4").expect("the fixture holds");
+    let (line, character) = line_character_of(DOC, start + 1);
+    let range = lsp
+        .prepare_rename("file:///card.rs", line, character)
+        .expect("the cursor inside a candidate answers the span");
+    let (start_line, start_character) = line_character_of(DOC, start);
+    let (end_line, end_character) = line_character_of(DOC, start + "p-4".len());
+    assert_eq!(range.start.line, start_line, "{range:?}");
+    assert_eq!(range.start.character, start_character, "{range:?}");
+    assert_eq!(range.end.line, end_line, "{range:?}");
+    assert_eq!(range.end.character, end_character, "{range:?}");
+}
+
+#[test]
+fn prepare_rename_outside_a_candidate_answers_none() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    assert!(
+        lsp.prepare_rename("file:///card.rs", 0, 2).is_none(),
+        "the cursor on `fn` answers none (the protocol's cannot-rename)"
+    );
+    assert!(
+        lsp.prepare_rename("file:///never-opened.rs", 0, 0)
+            .is_none(),
+        "the unknown URI answers none"
+    );
+}
+
+#[test]
+fn rename_edits_every_textual_occurrence() {
+    // One edit per occurrence of the cursor's candidate (the
+    // highlights' own walk), the new spelling riding every edit.
+    const DOC_RN: &str =
+        "fn r() {\n    let a = \"flex-col\";\n    let b = \"not-a-root flex-col\";\n}\n";
+    let mut lsp = engine();
+    lsp.open("file:///rename.rs", DOC_RN, 1);
+    let offset = DOC_RN.find("flex-col").expect("the fixture holds") + 2;
+    let (line, character) = line_character_of(DOC_RN, offset);
+    let edits = lsp.rename("file:///rename.rs", line, character, "flex-row");
+    assert_eq!(edits.len(), 2, "one edit per textual occurrence: {edits:?}");
+    assert!(
+        edits.iter().all(|edit| edit.new_text == "flex-row"),
+        "every occurrence rides the new spelling: {edits:?}"
+    );
+}
+
+#[test]
+fn rename_under_a_variant_replaces_the_whole_spelling() {
+    // The candidate span IS the whole spelling: a cursor inside a
+    // variant tail renames the full token (`hover:flex-col` is one
+    // raw text, the highlights' own equality).
+    const DOC_RN: &str = "fn r() {\n    let b = \"hover:flex-col\";\n}\n";
+    let mut lsp = engine();
+    lsp.open("file:///variant.rs", DOC_RN, 1);
+    let hit = DOC_RN.find("hover:flex-col").expect("the fixture holds");
+    let offset = DOC_RN.find("flex-col").expect("the fixture holds") + 2;
+    let (line, character) = line_character_of(DOC_RN, offset);
+    let edits = lsp.rename("file:///variant.rs", line, character, "flex-row");
+    assert_eq!(edits.len(), 1, "{edits:?}");
+    let (start_line, start_character) = line_character_of(DOC_RN, hit);
+    let (end_line, end_character) = line_character_of(DOC_RN, hit + "hover:flex-col".len());
+    assert_eq!(edits[0].range.start.line, start_line, "{edits:?}");
+    assert_eq!(edits[0].range.start.character, start_character, "{edits:?}");
+    assert_eq!(edits[0].range.end.line, end_line, "{edits:?}");
+    assert_eq!(edits[0].range.end.character, end_character, "{edits:?}");
+}
+
+#[test]
+fn rename_guards_the_empty_name_and_the_unknown_uri() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("p-4").expect("the fixture holds") + 1;
+    let (line, character) = line_character_of(DOC, offset);
+    assert!(
+        lsp.rename("file:///card.rs", line, character, "")
+            .is_empty(),
+        "the empty name answers no edits (never a deletion walk)"
+    );
+    assert!(
+        lsp.rename("file:///never-opened.rs", line, character, "px-8")
+            .is_empty(),
+        "the unknown URI answers empty"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The helpers
 // ---------------------------------------------------------------------------
 
