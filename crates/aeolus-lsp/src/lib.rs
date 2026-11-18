@@ -101,6 +101,10 @@ pub use crate::server::{Handled, Session, handle_message, run_stdio};
 // `NoObserver` default — without adding `aeolus-compile` to its
 // manifest.
 pub use aeolus_compile::{CacheSnapshot, CacheStats, DynObserver, EvictReason, NoObserver};
+// The compile-walk observability face beside the pool's: the
+// stage-boundary channel (the walk the engine's answers ride), the
+// same no-manifest-add discipline.
+pub use aeolus_compile::{CandidateOutcome, NoWalkObserver, WalkObserver, WalkSnapshot, WalkStats};
 
 // ---------------------------------------------------------------------------
 // The wire-free types (the server maps these onto lsp_types)
