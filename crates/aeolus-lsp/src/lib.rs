@@ -68,7 +68,17 @@
 //!     symbols: the document outline generalized over EVERY open
 //!     document, the query the filter (case-insensitive substring, the
 //!     empty query riding every open candidate), URI order across the
-//!     map ([`EngineWorkspaceSymbol`]).
+//!     map ([`EngineWorkspaceSymbol`]);
+//!   * *how would every document spell it?* — the cross-document
+//!     rename: the references' own fold over the rename edits — the
+//!     cursor's candidate's textual equality over EVERY open document,
+//!     one edit per occurrence, each riding its document's URI and the
+//!     new spelling, URI order across the map ([`EngineRenameEdit`]);
+//!   * *what does the cursor expand to?* — the selection ranges: one
+//!     parent chain per requested position, the candidate span keyed
+//!     by the shared locator with the string's content span riding as
+//!     its parent, the caret's zero-width range the chain-less answer
+//!     outside any string ([`EngineSelectionRange`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -413,18 +423,60 @@ pub struct EngineWorkspaceSymbol {
     pub symbol: EngineSymbol,
 }
 
+/// One rename edit the workspace answers (the wire's
+/// `textDocument/rename` — the rename face's workspace upgrade): the
+/// byte-true range of a candidate class whose text equals the cursor's
+/// candidate, beside the URI of the open document that carries it and
+/// the new spelling the edit writes. The scope is the WHOLE document
+/// map — the references' own fold over the rename edits: URI order
+/// across the documents (sorted, whatever the open order was — the
+/// answer is pure over the map), document order within each, the new
+/// spelling riding every edit. The identity is the highlights' own
+/// TEXTUAL rule — a refused class's occurrences edit exactly like a
+/// lowered one's (no compile verdict riding: the diagnostics channel
+/// tells the truth about the NEW spelling the moment the didChange
+/// lands) — and a variant-prefixed sibling (`hover:flex-col` beside
+/// `flex-col`) is a DIFFERENT spelling, renamed whole.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineRenameEdit {
+    /// The carrying document's URI (the wire's `changes` map key).
+    pub uri: String,
+    /// The occurrence's range (the editor replaces the spelling).
+    pub range: EngineRange,
+    /// The new spelling (every occurrence rides the same one).
+    pub new_text: String,
+}
+
+/// One selection range the editor expands to (the wire's
+/// `textDocument/selectionRange`): the requested position's byte-true
+/// range with the range CONTAINING it riding as the parent — the
+/// expand-selection walk's own chain. The engine answers the chain
+/// from the SAME locator the hover, the highlights, the references and
+/// the rename walk (the candidate span keyed by the cursor), the
+/// class string's own content span the chain's head (the extractor's
+/// trimmed hit — the quotes stay the editor's territory). A cursor
+/// inside the string but between classes answers the content span
+/// alone (no candidate level, no invented inner range); a cursor
+/// outside any string answers the protocol's own minimal range — the
+/// position's zero-width caret, no parent.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineSelectionRange {
+    /// The selection's range (the editor selects it).
+    pub range: EngineRange,
+    /// The containing range (the next expand step), the chain's head
+    /// answering `None`.
+    pub parent: Option<Box<EngineSelectionRange>>,
+}
+
 /// One open document the engine keeps: the current text and the LSP's
 /// version tag (the change-detection key the wire contract rides).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Document {
+pub(crate) struct Document {
     /// The document's current text, verbatim.
-    pub text: String,
+    pub(crate) text: String,
     /// The LSP's version tag for the text.
-    pub version: i32,
+    pub(crate) version: i32,
 }
 
-/// The document map — `uri → Document`. The engine's own storage; the
-/// `#[doc(hidden)]` export keeps the type nameable without growing the
-/// documented surface.
-#[doc(hidden)]
-pub type DocumentMap = HashMap<String, Document>;
+/// The document map — `uri → Document`. The engine's own storage.
+pub(crate) type DocumentMap = HashMap<String, Document>;
