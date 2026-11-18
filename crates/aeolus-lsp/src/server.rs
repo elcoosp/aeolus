@@ -17,18 +17,18 @@ use lsp_types::{
     DiagnosticServerCapabilities, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentColorParams, DocumentDiagnosticParams,
     DocumentDiagnosticReport, DocumentDiagnosticReportResult, DocumentFormattingParams,
-    DocumentHighlight, DocumentHighlightParams, FullDocumentDiagnosticReport, Hover, HoverContents,
-    HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind, InlayHintLabel,
-    InlayHintOptions, InlayHintParams, InlayHintServerCapabilities, InlayHintTooltip,
-    MarkupContent, MarkupKind, NumberOrString, OneOf, PrepareRenameResponse,
+    DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, FullDocumentDiagnosticReport,
+    Hover, HoverContents, HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind,
+    InlayHintLabel, InlayHintOptions, InlayHintParams, InlayHintServerCapabilities,
+    InlayHintTooltip, MarkupContent, MarkupKind, NumberOrString, OneOf, PrepareRenameResponse,
     PublishDiagnosticsParams, RelatedFullDocumentDiagnosticReport, RenameParams, SemanticToken,
     SemanticTokenType, SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend,
     SemanticTokensOptions, SemanticTokensParams, SemanticTokensServerCapabilities,
-    ServerCapabilities, ServerInfo, TextDocumentPositionParams, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkDoneProgressOptions,
-    WorkspaceEdit,
+    ServerCapabilities, ServerInfo, SymbolKind, TextDocumentPositionParams,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
+    WorkDoneProgressOptions, WorkspaceEdit,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -561,6 +561,51 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/documentSymbol" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The outline face (LSP 3.16's documentSymbol): the engine's
+            // whole-document answer — one symbol per candidate class,
+            // the semantic legend's verdict mapped onto the protocol's
+            // kinds (a lowered class is the protocol's own `Class`; a
+            // refused one stays `String` — the raw spelling, not a
+            // compiled class, and no custom SymbolKind exists to name
+            // the boundary). The shape rides the protocol's own JSON
+            // names directly: the typed `DocumentSymbol` carries a
+            // deprecated field the literal construction would trip (the
+            // workspace's zero-allow bar), and the wire quads pin the
+            // exact keys beside. The whole spelling is the name, so the
+            // selection range rides the candidate's own span.
+            let answer = serde_json::from_value::<DocumentSymbolParams>(request.params)
+                .ok()
+                .map(|params| {
+                    session
+                        .engine
+                        .document_symbols(params.text_document.uri.as_str())
+                        .iter()
+                        .map(|symbol| {
+                            let kind = match symbol.kind {
+                                crate::EngineSemanticKind::Lowered => SymbolKind::CLASS,
+                                crate::EngineSemanticKind::Refused => SymbolKind::STRING,
+                            };
+                            let range = wire_range(symbol.range);
+                            json!({
+                                "name": symbol.name,
+                                "detail": symbol.detail,
+                                "kind": kind,
+                                "range": range,
+                                "selectionRange": range,
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |symbols| Some(Value::Array(symbols)),
+            );
+            respond(request.id, result)
+        }
         _ => Handled::default(),
     }
 }
@@ -733,8 +778,8 @@ fn respond(id: RequestId, result: Option<Value>) -> Handled {
 
 /// The advertised capabilities: hover, completion, colour swatches, the
 /// semantic tokens, the inlay hints, the quick fixes, the document
-/// highlights, the canonical-order formatting and full-text sync. The
-/// engine never
+/// highlights, the rename face, the canonical-order formatting, the
+/// document-symbol outline and full-text sync. The engine never
 /// forks the pipeline, so the capability surface is the pipeline's own
 /// honesty contract at the editor.
 fn server_capabilities() -> ServerCapabilities {
@@ -764,6 +809,10 @@ fn server_capabilities() -> ServerCapabilities {
         // answer is the engine's whole-document walk, no options
         // object.
         document_formatting_provider: Some(OneOf::Left(true)),
+        // The outline face: one symbol per candidate class, document
+        // order (the engine's whole-document walk — no hierarchical
+        // tree, no options object; the plain `true` form).
+        document_symbol_provider: Some(OneOf::Left(true)),
         // The inline answers (LSP 3.17): the engine's hints are final —
         // no resolve round-trip (the completion's own contract), the
         // label and tooltip ride the hint itself.
