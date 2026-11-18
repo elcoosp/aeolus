@@ -293,7 +293,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 | `aeolus check`                             | unknown classes with suggestions, unsupported utilities with reasons, `cn()` conflicts with winner attribution; `--fail-on` exit codes                                                |
 | `aeolus fmt`                               | the class-sort seam's file face: one file's class strings into the canonical order (`sort`'s batch form — stdout rewrite, the file untouched); `--check` prints `path:line:col "before" -> "after"` per out-of-order string and exits 1 — the CI drift gate |
 | `cargo xtask gen-tables` / `verify-tables` | regenerate & drift-gate the committed artifacts: roots index, [docs/REGISTRY.md](docs/REGISTRY.md), [docs/CONFORMANCE.md](docs/CONFORMANCE.md), the GPUI capability table — a stale row fails plain `cargo test` |
-| `aeolus-lsp` (the LSP server)              | editor hover, diagnostics, completion and colour swatches over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location, `completion` at the typing edge (registry spellings, theme tokens, the closed variant set — the compiler's own audited tables), `documentColor` swatches (the table's resolved light-tier rgba), `documentDiagnostic` pull (LSP 3.17 — the SAME findings the push channel publishes, recomputed on demand), `semanticTokens` (LSP 3.16 — every candidate's compile outcome onto the legend: lowered `class`, refused the custom `refused` type), `colorPresentation` (the picker's spellings — the table walked backwards, every root/token/opacity-step that re-resolves to the picked colour), `inlayHint` (LSP 3.17 — every lowered class rides one hint at its end: the CSS arm's own declarations compacted, the hover's markdown as the tooltip; a refused class never hints), `codeAction` quick fixes (the "did you mean" seam — every correction a spelling the pipeline lowers, the variant prefix and `/modifier` tail composed back on), `documentHighlight` (the cursor's class, every occurrence in the file) and `formatting` (the class-sort seam's editor face — one edit per out-of-order class string, the canonical order as the new text, an already-canonical string answering nothing: the format-on-save no-op); the session's compiles ride the bounded `DynCache` pool — the keystroke repeat is the cheap path, the observability face on `AeolusEngine::with_observer`; `bin/aeolus-lsp` speaks stdio JSON-RPC |
+| `aeolus-lsp` (the LSP server)              | editor hover, diagnostics, completion and colour swatches over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location, `completion` at the typing edge (registry spellings, theme tokens, the closed variant set — the compiler's own audited tables), `documentColor` swatches (the table's resolved light-tier rgba), `documentDiagnostic` pull (LSP 3.17 — the SAME findings the push channel publishes, recomputed on demand), `semanticTokens` (LSP 3.16 — every candidate's compile outcome onto the legend: lowered `class`, refused the custom `refused` type), `colorPresentation` (the picker's spellings — the table walked backwards, every root/token/opacity-step that re-resolves to the picked colour), `inlayHint` (LSP 3.17 — every lowered class rides one hint at its end: the CSS arm's own declarations compacted, the hover's markdown as the tooltip; a refused class never hints), `codeAction` quick fixes (the "did you mean" seam — every correction a spelling the pipeline lowers, the variant prefix and `/modifier` tail composed back on), `documentHighlight` (the cursor's class, every occurrence in the file), `rename` (the rename face — `prepareRename`'s candidate span under the cursor, `rename`'s one edit per textual occurrence of that candidate, the highlights' own raw-text equality) and `formatting` (the class-sort seam's editor face — one edit per out-of-order class string, the canonical order as the new text, an already-canonical string answering nothing: the format-on-save no-op); the session's compiles ride the bounded `DynCache` pool — the keystroke repeat is the cheap path, the observability face on `AeolusEngine::with_observer`; `bin/aeolus-lsp` speaks stdio JSON-RPC |
 
 ## Correctness & performance
 
@@ -305,8 +305,8 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1987 tests with all features enabled (2026-11,
-  the eviction-face handoff's honest sum — `cargo test --workspace --all-features`).
+  **zero** allocations). Workspace battery: 2007 tests with all features enabled (2026-11,
+  the rename handoff's honest sum — `cargo test --workspace --all-features`).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -316,8 +316,10 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 | Warm dynamic (`ClassCell` hit)         | ~405 ns                     | ≤ 20 ns                                              |
 
 ¹ divan, release profile, Linux CI — method & caveats in [BENCHMARKS.md](reports/08-benchmarks/BENCHMARKS.md).
-² Contract from the [V1 plan §4](docs/AEOLUS_V1_ARCHITECTURE.md); the P0 `iai-callgrind`/criterion gates
-replace targets with measured numbers before 1.0. Structural guarantees (no parse/hash/locks on the
+² Contract from the [V1 plan §4](docs/AEOLUS_V1_ARCHITECTURE.md); the P0 divan
+gates replace targets with measured numbers before 1.0 (the `iai-callgrind`
+instruction-count golden stays the flagged nightly half). Structural guarantees
+(no parse/hash/locks on the
 static path) hold by construction today.
 
 ## Feature flags
@@ -345,7 +347,7 @@ differential oracle — no big-bang migration.
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | **P0** Prove it         | iai/criterion gates vs hand-written builders; replace §4 targets                                                                                  | ✅ the stable half landed 2026-11 — `benches/perf_contract` (the walk beside the hand-written chains, parity-pinned; walk 1.07 µs vs hand 84 ns on the button string, clone 70 ns, cell warm 908 ns) — the iai-callgrind instruction-count golden stays nightly |
 | **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (213 rows) · `aeolus-ir` (146 longhands)                                                                          | ✅ landed                      |
-| **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all four emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
+| **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all five emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
 | **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill; shadow tier (`shadow-*` → GPUI's own `Vec<BoxShadow>`) | ✅ landed                      |
 | **P4** Env & state      | frame `Env`, dark/breakpoints, state layers, `AttrProbe` host seam                                                                                | ✅ landed                      |
 | **P5** Ecosystem        | gpui-rsx integration PR (`lower_class` seam ready), **LSP landed 2026-11** (`aeolus-lsp`: hover, diagnostics, completion and colour swatches over the same pipeline), gpui-component bridge, docs book, public benchmarks, **1.0-rc** | 🔜 next — the LSP row is in |
@@ -371,7 +373,7 @@ differential oracle — no big-bang migration.
 | `aeolus-data`    | the registry as data: 213 audited rows → generated roots index, docs, sort order                                       |
 | `aeolus-ir`      | `Copy` longhand IR: `Prop`/`Val`/`Decl`/`Layer`/`Program` + `PropMask` bitset algebra                                  |
 | `aeolus-theme`   | CSS-first `ThemeSource` → tiered `TokenTable`s; `@source` directives                                                   |
-| `aeolus-compile` | the pipeline: `compile`/`cn`/`overlay`, 4 emit arms, `Customs`, `DynCache`, `sort`, `scan`/`build`, `emit_plan` bridge |
+| `aeolus-compile` | the pipeline: `compile`/`cn`/`overlay`, 5 emit arms, `Customs`, `DynCache`, `sort`, `scan`/`build`, `emit_plan` bridge |
 
 **Emit & runtime**
 
@@ -389,7 +391,7 @@ differential oracle — no big-bang migration.
 | `aeolus-gpui` + five backend crates | see [Backends](#backends) — plan lane + V1 static-program lane each                             |
 | `aeolus-shadcn`                     | shadcn `new-york-v4` class tables verbatim + per-backend wrappers + the closed-world program tables (`ButtonPrograms`, the F6 fix) |
 | `aeolus-cli`                        | `resolve` `css` `diff` `cn` `check` `explain` `sort` `fmt` `expand` `build` `plan` — zero external crates    |
-| `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges, hover signatures, completion from the audited tables, colour swatches, `documentDiagnostic` pull; the session's compiles ride the bounded `DynCache` pool, `with_observer` the face) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) |
+| `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges, hover signatures, completion from the audited tables, colour swatches, `documentDiagnostic` pull, the rename face — `prepareRename`'s span, `rename`'s per-occurrence edits; the session's compiles ride the bounded `DynCache` pool, `with_observer` the face) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) |
 | `xtask`                             | `gen-tables` / `verify-tables` drift gates for the committed artifacts (+ the §3.7 `gen-gpui-caps` / `verify-gpui-caps` pair)                          |
 | `aeolus-core`                       | v0.x `Resolver` + `StylePlan`: the runtime lane and the differential oracle — **publish-ready** |
 
@@ -434,6 +436,7 @@ cargo run -p aeolus-lsp --example lsp_inlay_hints       # the inline hints: the 
 cargo run -p aeolus-lsp --example lsp_code_actions      # the quick fixes + the click-to-find highlights
 cargo run -p aeolus-lsp --example lsp_document_highlights  # the click-to-find highlights: every occurrence whose text equals the cursor's
 cargo run -p aeolus-lsp --example lsp_format            # the canonical-order formatting: one edit per out-of-order string
+cargo run -p aeolus-lsp --example lsp_rename            # the rename face: prepareRename's span, one edit per occurrence
 cargo run -p aeolus-cli --example fmt                   # the fmt command's file face: the drift report + the rewrite
 cargo run -p aeolus-compile --example descendants       # the descendant-probe seam: the has-* family answers
 cargo run -p aeolus-cli --example expand_descendants    # expand --has: the subtree facts the has-* layers answer from
@@ -454,6 +457,7 @@ cargo run -p aeolus-cli --example expand_widget_states  # expand --open/--inert/
 cargo run -p aeolus-compile --example form_states       # the form states: enabled/required/optional/in-range/out-of-range answers
 cargo run -p aeolus-cli --example expand_form_states    # expand --form-associated/--required/--range-bounded/--range-in: the facts the form-state layers answer from
 cargo run -p aeolus-cli --example expand_starting      # expand --starting: the starting-style frame fact on the CLI face
+cargo run -p aeolus-cli --example expand_interaction_states  # the interaction-state flags: hover/focus/active beside the composition founders
 cargo run -p aeolus-compile --example pseudo_targets    # the pseudo-element render-target tier: one cascade each, the closed set
 cargo run -p aeolus-cli --example expand_pseudo         # expand --pseudo: the render target's own cascade beside the element answer
 cargo run -p aeolus-compile --example group_peer_states # the composition tier: group-*/peer-* over the full probe-state set, the quiet miss beside the fired facts
@@ -501,6 +505,8 @@ cargo run -p aeolus-compile --example composites  # the composite grammar: calc(
 cargo run -p aeolus-compile --example attr_variants
 cargo run -p aeolus-compile --example probes
 cargo run -p aeolus-compile --example style_walk_probes  # the program lane's widest walk: the probe seams answer headless
+cargo run -p aeolus-compile --example style_walk_pseudo  # the program lane's pseudo-target face: the render targets' own cascades
+cargo run -p aeolus-compile --example group_peer_states  # the composition tier: group-*/peer-* over the full probe-state set
 cargo run -p aeolus-compile --example suggest  # the suggestion seam: the diagnostic-keyed composition
 cargo run -p aeolus-compile --example plan_bridge
 cargo run -p aeolus-compile --example sort_order
@@ -529,6 +535,9 @@ cargo run -p aeolus-compile --example pseudo_targets    # the pseudo-element ren
 # codegen & runtime
 cargo run -p aeolus-codegen --example text_emit
 cargo run -p aeolus-codegen-gpui --example conformance
+cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
+cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
+cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
 cargo run -p aeolus-rt --example class_cell
 cargo run -p aeolus-rt --example static_walk
 cargo run -p aeolus-rt --example style_face  # the host surface's own style face: the methods beside the free walks
@@ -536,6 +545,7 @@ cargo run -p aeolus-rt --example probe_face   # the host surface's probe face: t
 cargo run -p aeolus-rt --example cell_observer  # the view cell's observability face: the pool's seam joined, one stats handle across pool + cells
 cargo run -p aeolus-rt --example program_overlay
 cargo run -p aeolus-macro --example frozen_program  # the tw!/cn! surface: the frozen program, printed
+cargo run -p aeolus-macro --example variants  # variants!/tw_cn!/theme!: the cva tables + the baked theme
 # GPUI
 cargo run -p aeolus-gpui --example ring
 cargo run -p aeolus-gpui --example grad
@@ -579,6 +589,7 @@ cargo run -p aeolus-cli --example expand_element_states  # expand --target/--ind
 cargo run -p aeolus-cli --example expand_widget_states   # expand --open/--inert/--default: the widget-state layers answer from the facts
 cargo run -p aeolus-cli --example expand_form_states    # expand --form-associated/--required/--range-bounded/--range-in: the form-state layers answer from the facts
 cargo run -p aeolus-cli --example expand_starting      # expand --starting: the starting-style frame fact on the CLI face
+cargo run -p aeolus-cli --example expand_interaction_states  # the interaction-state flags: hover/focus/active beside the composition founders
 cargo run -p aeolus-cli --example expand_pseudo       # expand --pseudo: the render target's own cascade beside the element answer
 cargo run -p aeolus-cli --example expand_group_peer   # expand --group-active/--peer-disabled/...: the composition-tier facts on the CLI face
 cargo run -p aeolus-cli --example expand_preferences  # expand --reduced-motion/--more-contrast/--forced-colors/--print/--inverted-colors/--noscript: the facts the preference layers answer from
@@ -598,6 +609,7 @@ cargo run -p aeolus-lsp --example lsp_inlay_hints  # the inlayHint answers: the 
 cargo run -p aeolus-lsp --example lsp_code_actions  # the codeAction quick fixes + the documentHighlight occurrences
 cargo run -p aeolus-lsp --example lsp_document_highlights  # the click-to-find highlights: every occurrence whose text equals the cursor's
 cargo run -p aeolus-lsp --example lsp_format  # the formatting answer: the canonical-order edits, applied
+cargo run -p aeolus-lsp --example lsp_rename  # the rename face: the candidate's span beside the per-occurrence edits
 cargo run -p aeolus-lsp --example lsp_cache  # the engine's pool ride: the keystroke repeat is the cheap path
 cargo run -p aeolus-lsp --bin aeolus-lsp  # the stdio server (an editor spawns this)
 # the generator driver's library face
