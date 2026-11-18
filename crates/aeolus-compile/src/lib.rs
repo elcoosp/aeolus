@@ -189,8 +189,10 @@ mod statics;
 mod style_walk;
 mod suggest;
 mod variant;
+mod walk_observer;
 
 use std::fmt;
+use std::sync::Arc;
 
 use aeolus_data::LookupError;
 use aeolus_data::registry::lookup_detailed;
@@ -246,6 +248,7 @@ pub use interp::{
     interp_theme_struct_descendants_supports, interp_theme_struct_supports, interp_theme_supports,
     structural_fires,
 };
+pub use walk_observer::{CandidateOutcome, NoWalkObserver, WalkObserver, WalkSnapshot, WalkStats};
 
 pub use metamorphic::{
     MetamorphicMismatch, MetamorphicNote, MetamorphicReport, SituationReport, metamorphic_check,
@@ -1942,7 +1945,7 @@ impl miette::Diagnostic for CompileError {
 /// # Ok::<(), aeolus_compile::CompileError>(())
 /// ```
 pub fn compile(input: &str, config: &Config) -> Result<Compiled, CompileError> {
-    run(input, *config, None, &Customs::new())
+    run(input, *config, None, &Customs::new(), None)
 }
 
 /// [`compile`] with the custom-authoring seam supplied (plan §5.4's
@@ -1980,7 +1983,7 @@ pub fn compile_with(
         variants = customs.variants().len(),
         "compile_with: the custom seam is supplied"
     );
-    run(input, *config, None, customs)
+    run(input, *config, None, customs, None)
 }
 
 /// Compile a class string with the theme pass supplied (plan §3.2's
@@ -2020,7 +2023,7 @@ pub fn compile_theme(
         tier = ?tokens.tier(),
         "compile_theme: the theme pass is supplied"
     );
-    run(input, *config, Some(tokens), &Customs::new())
+    run(input, *config, Some(tokens), &Customs::new(), None)
 }
 
 /// [`compile_theme`] with the custom-authoring seam supplied: colour
@@ -2054,7 +2057,57 @@ pub fn compile_theme_with(
         variants = customs.variants().len(),
         "compile_theme_with: the theme pass and the custom seam are supplied"
     );
-    run(input, *config, Some(tokens), customs)
+    run(input, *config, Some(tokens), customs, None)
+}
+
+/// The compile walk with the observability seam attached (the dyn-cache
+/// face's twin, pointed at the walk): the SAME one-walk pipeline every
+/// entry point drives, its stage boundaries reported to the observer as
+/// it assembles — the lexer's totals ([`WalkObserver::on_lexed`]), the
+/// per-candidate fold/read verdict ([`WalkObserver::on_candidate`], the
+/// typed [`CandidateOutcome`]) and the assembly's layer count
+/// ([`WalkObserver::on_assembled`]). The theme pass and the custom
+/// seam ride their own `Option`/reference slots (the four plain
+/// entries are this function with no observer: byte-identical — the
+/// differential pins it; the seam adds a channel, never changes a
+/// decision).
+///
+/// ```no_run
+/// use std::sync::Arc;
+///
+/// use aeolus_compile::{compile_observed, Config, Customs, WalkObserver, WalkStats};
+///
+/// let stats = Arc::new(WalkStats::new());
+/// let compiled = compile_observed(
+///     "p-4 flex",
+///     None,
+///     &Customs::new(),
+///     &Config::default(),
+///     Arc::clone(&stats) as Arc<dyn WalkObserver>,
+/// )?;
+/// assert!(compiled.diagnostics.is_empty());
+/// let snap = stats.snapshot();
+/// assert_eq!((snap.candidates, snap.lowered, snap.decls), (2, 2, 5));
+/// # Ok::<(), aeolus_compile::CompileError>(())
+/// ```
+///
+/// # Errors
+/// [`CompileError::Empty`] — the empty input, the caller bug every
+/// entry names; the per-class misses ride [`Compiled::diagnostics`]
+/// and the observer's [`CandidateOutcome::Missed`] arm, never this.
+pub fn compile_observed(
+    input: &str,
+    tokens: Option<&TokenTable>,
+    customs: &Customs,
+    config: &Config,
+    observer: Arc<dyn WalkObserver>,
+) -> Result<Compiled, CompileError> {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+        input_len = input.len(),
+        "compile_observed: the walk is observed"
+    );
+    run(input, *config, tokens, customs, Some(&*observer))
 }
 
 /// Merge already-compiled programs, RIGHTMOST WINS per longhand — the
@@ -2452,9 +2505,14 @@ fn run(
     config: Config,
     tokens: Option<&TokenTable>,
     customs: &Customs,
+    observer: Option<&dyn walk_observer::WalkObserver>,
 ) -> Result<Compiled, CompileError> {
     // The internal walk takes the Copy config by value (clippy's
     // trivially-copy pass-by-ref); the public API keeps the reference.
+    // The observer rides the same shape: `None` is the every-public-
+    // constructor default (byte-neutral — the differential pins it),
+    // `Some` the observability face the `compile_observed` entry
+    // drives.
     #[cfg(feature = "tracing")]
     tracing::debug!(input_len = input.len(), "compile: lex -> lookup -> lower");
 
@@ -2483,6 +2541,14 @@ fn run(
         });
     }
 
+    // The observability seam's stage hook: the lexer's totals ride
+    // before the candidate walk (the degraded failures are the
+    // artifact's own diagnostics — the per-token channel never
+    // double-reports them as candidates).
+    if let Some(observed) = observer {
+        observed.on_lexed(candidates.len(), degraded.len());
+    }
+
     // Stages 2-4: fold the variant stack, read the registry, lower each
     // matched row. Conditions group first-seen; the specificity sort is
     // the assembly step's. The modifier normalizes once per candidate:
@@ -2495,196 +2561,103 @@ fn run(
     // silent drop when NO row took the class).
     let mut conds: Vec<Cond> = Vec::new();
     let mut groups: Vec<Vec<Decl>> = Vec::new();
+    // The observability seam's per-candidate deltas: the declarations
+    // total so far (the two extend sites add to it) and the diagnostics
+    // watermark at the candidate's start — the outcome the walk reports
+    // is the DELTA over the candidate's own body, never a recount.
+    let mut total_decls = 0usize;
     for candidate in &candidates {
+        let (diag_start, decls_start) = (diagnostics.len(), total_decls);
         #[cfg(feature = "tracing")]
         tracing::trace!(raw = %candidate.raw, "candidate");
 
-        if candidate.important {
-            diagnostics.push(Diagnostic::new(
-                candidate.span,
-                candidate.raw,
-                DiagnosticKind::UnsupportedImportant,
-            ));
-            continue;
-        }
-        let cond = match variant::fold(&candidate.variants, customs) {
-            Ok(cond) => cond,
-            Err(miss) => {
-                diagnostics.push(variant_diagnostic(candidate, &miss));
-                continue;
+        let outcome: CandidateOutcome = 'candidate: {
+            if candidate.important {
+                diagnostics.push(Diagnostic::new(
+                    candidate.span,
+                    candidate.raw,
+                    DiagnosticKind::UnsupportedImportant,
+                ));
+                break 'candidate CandidateOutcome::Missed {
+                    diagnostics: diagnostics.len() - diag_start,
+                };
             }
-        };
-        // The registry read side, with the value pass's fraction
-        // re-attachment (the audited oracle's F1: the raw `/modifier`
-        // is the DENOMINATOR for fraction-shaped rows — `w-1/2` lexes
-        // body `w-1` plus raw modifier `2`, and the fraction is `1/2`).
-        // The first lookup runs on the lexed body; on a miss with a raw
-        // modifier riding, the JOINED body retries — the registry's own
-        // fraction shape accepts the joined suffix, and the modifier is
-        // SPENT (no opacity rides it). `effective_body` is the body the
-        // value pass and the diagnostics read.
-        let joined = candidate
-            .modifier
-            .map(|modifier| format!("{}/{}", candidate.body, modifier));
-        let (rows, effective_body, fraction_ride) = match &joined {
-            // The joined body reads FIRST (the sizing family's own
-            // precedence — a bare `w-1` also reads as spacing, so the
-            // denominator reading must win the arm choice when a raw
-            // modifier rides); a joined miss falls back to the lexed
-            // body and the modifier goes through the opacity gate.
-            Some(text) => match lookup_detailed(text) {
-                Ok(retried) => (Ok(retried), text.as_str(), true),
-                Err(_) => (lookup_detailed(candidate.body), candidate.body, false),
-            },
-            None => (lookup_detailed(candidate.body), candidate.body, false),
-        };
-        // The modifier gate, AFTER the read side: a fraction ride is not
-        // an opacity modifier. Everything else normalizes as before —
-        // unparseable/var-named modifiers always, parseable modifiers
-        // without the theme pass too (the boundary is the theme-less
-        // default).
-        let alpha = if fraction_ride {
-            None
-        } else {
-            match candidate.modifier {
-                None => None,
-                Some(modifier) => match normalize_modifier(modifier).filter(|_| tokens.is_some()) {
-                    Some(alpha) => Some(alpha),
-                    None => {
-                        diagnostics.push(Diagnostic::new(
-                            candidate.span,
-                            candidate.raw,
-                            DiagnosticKind::UnsupportedModifier {
-                                modifier: modifier.to_string(),
-                            },
-                        ));
-                        continue;
-                    }
+            let cond = match variant::fold(&candidate.variants, customs) {
+                Ok(cond) => cond,
+                Err(miss) => {
+                    diagnostics.push(variant_diagnostic(candidate, &miss));
+                    break 'candidate CandidateOutcome::Missed {
+                        diagnostics: diagnostics.len() - diag_start,
+                    };
+                }
+            };
+            // The registry read side, with the value pass's fraction
+            // re-attachment (the audited oracle's F1: the raw `/modifier`
+            // is the DENOMINATOR for fraction-shaped rows — `w-1/2` lexes
+            // body `w-1` plus raw modifier `2`, and the fraction is `1/2`).
+            // The first lookup runs on the lexed body; on a miss with a raw
+            // modifier riding, the JOINED body retries — the registry's own
+            // fraction shape accepts the joined suffix, and the modifier is
+            // SPENT (no opacity rides it). `effective_body` is the body the
+            // value pass and the diagnostics read.
+            let joined = candidate
+                .modifier
+                .map(|modifier| format!("{}/{}", candidate.body, modifier));
+            let (rows, effective_body, fraction_ride) = match &joined {
+                // The joined body reads FIRST (the sizing family's own
+                // precedence — a bare `w-1` also reads as spacing, so the
+                // denominator reading must win the arm choice when a raw
+                // modifier rides); a joined miss falls back to the lexed
+                // body and the modifier goes through the opacity gate.
+                Some(text) => match lookup_detailed(text) {
+                    Ok(retried) => (Ok(retried), text.as_str(), true),
+                    Err(_) => (lookup_detailed(candidate.body), candidate.body, false),
                 },
-            }
-        };
-        let mut produced = 0usize;
-        let mut deferred: Vec<&'static str> = Vec::new();
-        let mut reported = false;
-        match rows {
-            Ok(rows) => {
-                for row in rows {
-                    match lower::row_to_decls(
-                        *row,
-                        effective_body,
-                        candidate.negative,
-                        alpha,
-                        tokens,
-                        config,
-                        candidate.arbitrary,
-                    ) {
-                        Ok(decls) => {
-                            let idx = match conds.iter().position(|&c| c == cond) {
-                                Some(idx) => idx,
-                                None => {
-                                    conds.push(cond);
-                                    groups.push(Vec::new());
-                                    conds.len() - 1
-                                }
-                            };
-                            produced += decls.len();
-                            groups[idx].extend(decls);
-                        }
-                        Err(reject) => {
-                            reported = true;
-                            // The arbitrary boundary set defers: the
-                            // sibling rows share one miss, and the
-                            // report renders once, deduped, below.
-                            if let (true, lower::Reject::Value { reason }) =
-                                (candidate.arbitrary.is_some(), &reject)
-                                && arbitrary::is_boundary_reason(reason)
-                            {
-                                if !deferred.contains(reason) {
-                                    deferred.push(reason);
-                                }
-                                continue;
+                None => (lookup_detailed(candidate.body), candidate.body, false),
+            };
+            // The modifier gate, AFTER the read side: a fraction ride is not
+            // an opacity modifier. Everything else normalizes as before —
+            // unparseable/var-named modifiers always, parseable modifiers
+            // without the theme pass too (the boundary is the theme-less
+            // default).
+            let alpha = if fraction_ride {
+                None
+            } else {
+                match candidate.modifier {
+                    None => None,
+                    Some(modifier) => {
+                        match normalize_modifier(modifier).filter(|_| tokens.is_some()) {
+                            Some(alpha) => Some(alpha),
+                            None => {
+                                diagnostics.push(Diagnostic::new(
+                                    candidate.span,
+                                    candidate.raw,
+                                    DiagnosticKind::UnsupportedModifier {
+                                        modifier: modifier.to_string(),
+                                    },
+                                ));
+                                break 'candidate CandidateOutcome::Missed {
+                                    diagnostics: diagnostics.len() - diag_start,
+                                };
                             }
-                            // The sibling-row gate's non-arbitrary
-                            // half: a shape miss on a row whose ROOT
-                            // another row already took stays quiet —
-                            // the bare `ring`/`border`/`outline` roots
-                            // carry a colour-sibling row whose
-                            // arbitrary arm accepts the bare root but
-                            // has no group to lower, and that refusal
-                            // must not shadow the class the width row
-                            // lowered. Value rejects with any OTHER
-                            // reason (token overflow, non-finite)
-                            // still report: they name a real boundary,
-                            // not a shape miss.
-                            if produced > 0
-                                && matches!(
-                                    reject,
-                                    lower::Reject::Value {
-                                        reason: lower::REASON_SHAPE_MISMATCH
-                                    }
-                                )
-                            {
-                                continue;
-                            }
-                            diagnostics.push(reject_diagnostic(
-                                candidate,
-                                effective_body,
-                                reject,
-                                candidate.modifier,
-                            ));
                         }
                     }
                 }
-                // The catch-all: an arbitrary candidate whose NO row
-                // took (every sibling skipped silently) and that no
-                // other report answered still reports — the
-                // no-silent-failures rule, applied to the class gate's
-                // quiet half. Deferred boundaries render here, deduped
-                // (one class, one boundary).
-                if candidate.arbitrary.is_some() && produced == 0 {
-                    if !deferred.is_empty() {
-                        for reason in deferred {
-                            diagnostics.push(Diagnostic::new(
-                                candidate.span,
-                                candidate.raw,
-                                DiagnosticKind::UnsupportedValue {
-                                    body: effective_body.to_string(),
-                                    reason,
-                                },
-                            ));
-                        }
-                    } else if !reported {
-                        diagnostics.push(Diagnostic::new(
-                            candidate.span,
-                            candidate.raw,
-                            DiagnosticKind::UnsupportedValue {
-                                body: effective_body.to_string(),
-                                reason: arbitrary::REASON_ARBITRARY_UNIT,
-                            },
-                        ));
-                    }
-                }
-            }
-            // The registry is the oracle; the customs are additive
-            // surface consulted on the registry's unknown-root miss
-            // only. A registered custom utility lowers through the SAME
-            // group/cond assembly and the SAME typed boundary set. On a
-            // custom miss the MORE SPECIFIC report wins: a custom shape
-            // rejection names the custom root and its forms (the
-            // built-in side said unknown-root — it never saw the
-            // registration), while a double miss keeps the built-in
-            // UnknownRoot (the two are byte-identical; the differential
-            // pins it).
-            Err(builtin_err) => match customs.lookup(candidate.body) {
-                Ok(utilities) => {
-                    for utility in utilities {
-                        match custom::utility_to_decls(
-                            utility,
-                            candidate.body,
+            };
+            let mut produced = 0usize;
+            let mut deferred: Vec<&'static str> = Vec::new();
+            let mut reported = false;
+            match rows {
+                Ok(rows) => {
+                    for row in rows {
+                        match lower::row_to_decls(
+                            *row,
+                            effective_body,
                             candidate.negative,
                             alpha,
                             tokens,
                             config,
+                            candidate.arbitrary,
                         ) {
                             Ok(decls) => {
                                 let idx = match conds.iter().position(|&c| c == cond) {
@@ -2695,9 +2668,46 @@ fn run(
                                         conds.len() - 1
                                     }
                                 };
+                                produced += decls.len();
+                                total_decls += decls.len();
                                 groups[idx].extend(decls);
                             }
                             Err(reject) => {
+                                reported = true;
+                                // The arbitrary boundary set defers: the
+                                // sibling rows share one miss, and the
+                                // report renders once, deduped, below.
+                                if let (true, lower::Reject::Value { reason }) =
+                                    (candidate.arbitrary.is_some(), &reject)
+                                    && arbitrary::is_boundary_reason(reason)
+                                {
+                                    if !deferred.contains(reason) {
+                                        deferred.push(reason);
+                                    }
+                                    continue;
+                                }
+                                // The sibling-row gate's non-arbitrary
+                                // half: a shape miss on a row whose ROOT
+                                // another row already took stays quiet —
+                                // the bare `ring`/`border`/`outline` roots
+                                // carry a colour-sibling row whose
+                                // arbitrary arm accepts the bare root but
+                                // has no group to lower, and that refusal
+                                // must not shadow the class the width row
+                                // lowered. Value rejects with any OTHER
+                                // reason (token overflow, non-finite)
+                                // still report: they name a real boundary,
+                                // not a shape miss.
+                                if produced > 0
+                                    && matches!(
+                                        reject,
+                                        lower::Reject::Value {
+                                            reason: lower::REASON_SHAPE_MISMATCH
+                                        }
+                                    )
+                                {
+                                    continue;
+                                }
                                 diagnostics.push(reject_diagnostic(
                                     candidate,
                                     effective_body,
@@ -2707,15 +2717,102 @@ fn run(
                             }
                         }
                     }
+                    // The catch-all: an arbitrary candidate whose NO row
+                    // took (every sibling skipped silently) and that no
+                    // other report answered still reports — the
+                    // no-silent-failures rule, applied to the class gate's
+                    // quiet half. Deferred boundaries render here, deduped
+                    // (one class, one boundary).
+                    if candidate.arbitrary.is_some() && produced == 0 {
+                        if !deferred.is_empty() {
+                            for reason in deferred {
+                                diagnostics.push(Diagnostic::new(
+                                    candidate.span,
+                                    candidate.raw,
+                                    DiagnosticKind::UnsupportedValue {
+                                        body: effective_body.to_string(),
+                                        reason,
+                                    },
+                                ));
+                            }
+                        } else if !reported {
+                            diagnostics.push(Diagnostic::new(
+                                candidate.span,
+                                candidate.raw,
+                                DiagnosticKind::UnsupportedValue {
+                                    body: effective_body.to_string(),
+                                    reason: arbitrary::REASON_ARBITRARY_UNIT,
+                                },
+                            ));
+                        }
+                    }
                 }
-                Err(custom_err) => {
-                    let err = match custom_err {
-                        LookupError::ShapeRejected { .. } => custom_err,
-                        LookupError::UnknownRoot { .. } => builtin_err,
-                    };
-                    diagnostics.push(lookup_diagnostic(candidate, err));
+                // The registry is the oracle; the customs are additive
+                // surface consulted on the registry's unknown-root miss
+                // only. A registered custom utility lowers through the SAME
+                // group/cond assembly and the SAME typed boundary set. On a
+                // custom miss the MORE SPECIFIC report wins: a custom shape
+                // rejection names the custom root and its forms (the
+                // built-in side said unknown-root — it never saw the
+                // registration), while a double miss keeps the built-in
+                // UnknownRoot (the two are byte-identical; the differential
+                // pins it).
+                Err(builtin_err) => match customs.lookup(candidate.body) {
+                    Ok(utilities) => {
+                        for utility in utilities {
+                            match custom::utility_to_decls(
+                                utility,
+                                candidate.body,
+                                candidate.negative,
+                                alpha,
+                                tokens,
+                                config,
+                            ) {
+                                Ok(decls) => {
+                                    let idx = match conds.iter().position(|&c| c == cond) {
+                                        Some(idx) => idx,
+                                        None => {
+                                            conds.push(cond);
+                                            groups.push(Vec::new());
+                                            conds.len() - 1
+                                        }
+                                    };
+                                    total_decls += decls.len();
+                                    groups[idx].extend(decls);
+                                }
+                                Err(reject) => {
+                                    diagnostics.push(reject_diagnostic(
+                                        candidate,
+                                        effective_body,
+                                        reject,
+                                        candidate.modifier,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    Err(custom_err) => {
+                        let err = match custom_err {
+                            LookupError::ShapeRejected { .. } => custom_err,
+                            LookupError::UnknownRoot { .. } => builtin_err,
+                        };
+                        diagnostics.push(lookup_diagnostic(candidate, err));
+                    }
+                },
+            }
+            if total_decls > decls_start {
+                CandidateOutcome::Lowered {
+                    decls: total_decls - decls_start,
+                    diagnostics: diagnostics.len() - diag_start,
                 }
-            },
+            } else {
+                CandidateOutcome::Missed {
+                    diagnostics: diagnostics.len() - diag_start,
+                }
+            }
+        };
+        if let Some(observed) = observer {
+            observed.on_candidate(candidate.raw, outcome);
         }
     }
 
@@ -2733,6 +2830,11 @@ fn run(
         layers.push(Layer::new(cond, decls));
     }
     let layers: &'static [Layer] = Box::leak(layers.into_boxed_slice());
+    // The observability seam's assembly hook: the sorted layer count,
+    // the walk's last word before the artifact returns.
+    if let Some(observed) = observer {
+        observed.on_assembled(layers.len());
+    }
     #[cfg(feature = "tracing")]
     tracing::debug!(layers = layers.len(), "program interned");
     Ok(Compiled {
