@@ -29,8 +29,8 @@ use aeolus_theme::{ThemeError, TokenTable};
 use crate::{
     DocumentMap, EngineCodeAction, EngineColour, EngineColourPresentation, EngineCompletion,
     EngineCompletionKind, EngineDiagnostic, EngineHighlight, EngineHover, EngineInlayHint,
-    EnginePosition, EngineRange, EngineReference, EngineSemanticKind, EngineSemanticToken,
-    EngineSymbol, EngineTextEdit, EngineWorkspaceSymbol,
+    EnginePosition, EngineRange, EngineReference, EngineRenameEdit, EngineSelectionRange,
+    EngineSemanticKind, EngineSemanticToken, EngineSymbol, EngineTextEdit, EngineWorkspaceSymbol,
 };
 
 // ---------------------------------------------------------------------------
@@ -798,30 +798,154 @@ impl AeolusEngine {
         Some(range_of(text, start, end))
     }
 
-    /// The rename edits (the wire's `textDocument/rename`): ONE edit
-    /// per textual occurrence of the cursor's candidate — the
-    /// highlights' own walk, the new spelling riding every edit. The
-    /// face is TEXTUAL (the highlights' own contract, no compile
-    /// verdict riding): the diagnostics channel tells the truth about
-    /// the NEW spelling's compile the moment the didChange lands. An
-    /// empty new name answers NO edits (never a deletion walk — the
+    /// The rename edits (the wire's `textDocument/rename` — the rename
+    /// face's workspace upgrade): ONE edit per textual occurrence of
+    /// the cursor's candidate over EVERY open document — the
+    /// references' own fold over the rename edits, the new spelling
+    /// riding every edit beside the URI of the document that carries
+    /// it ([`EngineRenameEdit`]: URI order across the documents
+    /// (sorted, whatever the open order was — the answer is pure over
+    /// the hash map), document order within each). The face is TEXTUAL
+    /// (the highlights' own contract, no compile verdict riding): the
+    /// diagnostics channel tells the truth about the NEW spelling's
+    /// compile the moment the didChange lands. An empty new name
+    /// answers NO edits anywhere (never a deletion walk — the
     /// protocol's own validity clause, the quiet shape). Deterministic
-    /// and pure over the document map; an unknown URI answers empty.
+    /// and pure over the document map; an unknown cursor URI and a
+    /// cursor outside any candidate answer empty.
     pub fn rename(
         &self,
         uri: &str,
         line: u32,
         character: u32,
         new_name: &str,
-    ) -> Vec<EngineTextEdit> {
+    ) -> Vec<EngineRenameEdit> {
         if new_name.is_empty() {
             return Vec::new();
         }
-        self.document_highlights(uri, line, character)
-            .into_iter()
-            .map(|highlight| EngineTextEdit {
-                range: highlight.range,
-                new_text: new_name.to_string(),
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let Some(offset) = offset_of(text, line, character) else {
+            return Vec::new();
+        };
+        // The candidate under the cursor: the shared locator's walk
+        // (the hover's own), the raw text the equality keys on.
+        let Some((start, end)) = candidate_span_at(text, offset) else {
+            return Vec::new();
+        };
+        let raw = &text[start..end];
+        // URI order across the map (the determinism pin), document
+        // order within each — one scan per document, no parallel
+        // matcher (the references' own walk, generalized onto the
+        // rename edits).
+        let mut uris: Vec<&String> = self.documents.keys().collect();
+        uris.sort();
+        let mut out = Vec::new();
+        for key in uris {
+            let text = self.documents[key].text.as_str();
+            for hit in scan_rust_strings(text) {
+                let (candidates, _) = parse_class_string(&hit.text);
+                for candidate in candidates {
+                    if candidate.raw != raw {
+                        continue;
+                    }
+                    let range = range_of(
+                        text,
+                        hit.offset + candidate.span.0,
+                        hit.offset + candidate.span.1,
+                    );
+                    out.push(EngineRenameEdit {
+                        uri: key.clone(),
+                        range,
+                        new_text: new_name.to_string(),
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
+    // The selection-range answer
+    // -----------------------------------------------------------------------
+
+    /// The expand-selection walk (the wire's
+    /// `textDocument/selectionRange`): ONE parent chain per requested
+    /// position, request order kept — the protocol's own 1:1 contract.
+    /// The chain answers from the SAME locator the hover, the
+    /// highlights, the references and the rename walk: a cursor inside
+    /// a candidate answers the candidate's byte-true span
+    /// ([`EngineSelectionRange::range`]) with the class string's own
+    /// content span riding as its parent (the extractor's trimmed hit
+    /// — the quotes stay the editor's territory); a cursor inside the
+    /// string but between classes answers the content span alone (no
+    /// candidate level, no invented inner range); a cursor outside any
+    /// string answers the protocol's own minimal range — the
+    /// position's zero-width caret, no parent. The zero-width caret is
+    /// also the unknown URI's answer (one per requested position: the
+    /// contract holds wherever the cursor was). Deterministic and pure
+    /// over the document map.
+    pub fn selection_ranges(
+        &self,
+        uri: &str,
+        positions: &[EnginePosition],
+    ) -> Vec<EngineSelectionRange> {
+        // The zero-width caret: the protocol's own minimal range, at
+        // the REQUESTED position (the wire's own units — no byte
+        // round-trip can widen it).
+        let caret = |position: &EnginePosition| EngineSelectionRange {
+            range: EngineRange {
+                start: *position,
+                end: *position,
+            },
+            parent: None,
+        };
+        let Some(doc) = self.documents.get(uri) else {
+            return positions.iter().map(caret).collect();
+        };
+        let text = doc.text.as_str();
+        positions
+            .iter()
+            .map(|position| {
+                let Some(offset) = offset_of(text, position.line, position.character) else {
+                    return caret(position);
+                };
+                // The chain's two levels, one scan (the shared
+                // locator's own shape): the candidate containing the
+                // cursor, and the string content span containing it.
+                let Some(hit) = scan_rust_strings(text)
+                    .into_iter()
+                    .find(|hit| offset >= hit.offset && offset < hit.offset + hit.text.len())
+                else {
+                    return caret(position);
+                };
+                let content = range_of(text, hit.offset, hit.offset + hit.text.len());
+                let local = offset.saturating_sub(hit.offset);
+                let (candidates, _) = parse_class_string(&hit.text);
+                let Some(span) = candidates
+                    .iter()
+                    .find(|candidate| local >= candidate.span.0 && local < candidate.span.1)
+                    .map(|candidate| {
+                        (hit.offset + candidate.span.0, hit.offset + candidate.span.1)
+                    })
+                else {
+                    // Between classes: the content span is the chain's
+                    // head — no candidate level, no invented inner
+                    // range.
+                    return EngineSelectionRange {
+                        range: content,
+                        parent: None,
+                    };
+                };
+                EngineSelectionRange {
+                    range: range_of(text, span.0, span.1),
+                    parent: Some(Box::new(EngineSelectionRange {
+                        range: content,
+                        parent: None,
+                    })),
+                }
             })
             .collect()
     }
