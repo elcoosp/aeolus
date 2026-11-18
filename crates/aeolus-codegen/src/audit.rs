@@ -16,7 +16,7 @@
 //! at a project instead of a backend: the rows are a FUNCTION of the
 //! capability's own predicates (`tier`/`reason` — the GPUI impl reads
 //! the generated table the emit gates run), so an audit can never drift
-//! from what the emitter actually does. Where [`Conformance::of`] walks
+//! from what the emitter actually does. Where [`Conformance::of`](crate::conformance::Conformance::of) walks
 //! [`Prop::ALL`] (the backend-wide ceiling the docs page publishes),
 //! this module walks a program's OWN longhands: a project that never
 //! names a refused longhand scores full, and the report names the
