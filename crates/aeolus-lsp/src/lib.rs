@@ -65,7 +65,12 @@
 //!   diagnostics, hover requests answer from the engine,
 //!   shutdown/exit close cleanly) that the stdio transport's thin loop
 //!   ([`run_stdio`]) feeds. The state machine is testable without a
-//!   pipe — the tests drive `handle_message` message by message.
+//!   pipe — the tests drive `handle_message` message by message. The
+//!   transport observability face ([`TransportObserver`], wired
+//!   through [`Session::with_observer`] — the loop's observed twin is
+//!   [`run_stdio_observed`]) streams the machine's own per-message
+//!   verdicts (the answers, the quiet drops, the publishes, the exit)
+//!   to a host handle; the answers themselves stay byte-identical.
 //!
 //! The engine is pure over its document map: open → change → analyze
 //! is deterministic, an unknown URI answers empty, and every position
@@ -90,9 +95,19 @@ use std::fmt;
 
 mod engine;
 mod server;
+mod transport_observer;
 
 pub use crate::engine::{AeolusEngine, EngineConfig};
-pub use crate::server::{Handled, Session, handle_message, run_stdio};
+pub use crate::server::{Handled, Session, handle_message, run_stdio, run_stdio_observed};
+// The transport observability face (the wire half's own seam): the
+// state machine's per-message verdicts — the answered/quiet requests,
+// the published/exit/silent notifications — wired through
+// `Session::with_observer` (the loop's face beside the pool/walk
+// re-exports' no-manifest-add discipline).
+pub use crate::transport_observer::{
+    NoTransportObserver, NotificationOutcome, RequestOutcome, TransportObserver, TransportSnapshot,
+    TransportStats,
+};
 // The observability face the engine's pool rides (the compile crate's
 // seam, nameable HERE — the rt crate's re-export precedent): a host
 // consuming the LSP crate implements `DynObserver`, totals the
