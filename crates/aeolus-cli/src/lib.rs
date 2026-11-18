@@ -556,6 +556,33 @@ struct Args {
     /// frame, the host's first-render gate — one flag per FACT, the
     /// `--portrait` precedent).
     starting: bool,
+    /// The interaction-state flags (`expand` only): the element-own
+    /// facts the interp's [`Env`] answers the founding state family's
+    /// layers from (`hover:`/`focus:`/`focus-visible:`/`focus-within:`/
+    /// `active:`/`disabled:`/`visited:`/`checked:`/
+    /// `placeholder-shown:`) — element state like the state bits, one
+    /// flag per FACT (the `--indeterminate` precedent). Unset is the
+    /// quiet miss a selector that does not match is.
+    hover: bool,
+    focus: bool,
+    focus_visible: bool,
+    focus_within: bool,
+    active: bool,
+    disabled: bool,
+    visited: bool,
+    checked: bool,
+    placeholder_shown: bool,
+    /// The composition tier's founding flags (`expand` only): the
+    /// `group-hover`/`group-focus`/`peer-hover`/`peer-focus` facts the
+    /// twelve `*-focus-visible`/`*-focus-within`/`*-active`/… flags
+    /// complete — element state one relation up (a `.group` ancestor's
+    /// or `.peer` sibling's own bit), one flag per FACT (the
+    /// composition flags' own precedent). Unset is the quiet miss a
+    /// selector that does not match is.
+    group_hover: bool,
+    group_focus: bool,
+    peer_hover: bool,
+    peer_focus: bool,
     group_focus_visible: bool,
     group_focus_within: bool,
     group_active: bool,
@@ -627,6 +654,19 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut child: Option<(usize, usize)> = None;
     let mut child_of_type: Option<(usize, usize)> = None;
     let mut starting = false;
+    let mut hover = false;
+    let mut focus = false;
+    let mut focus_visible = false;
+    let mut focus_within = false;
+    let mut active = false;
+    let mut disabled = false;
+    let mut visited = false;
+    let mut checked = false;
+    let mut placeholder_shown = false;
+    let mut group_hover = false;
+    let mut group_focus = false;
+    let mut peer_hover = false;
+    let mut peer_focus = false;
     let mut group_focus_visible = false;
     let mut group_focus_within = false;
     let mut group_active = false;
@@ -685,6 +725,45 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
             // from (the capability flags' sibling).
             "--starting" if allow.contains(&"starting") => {
                 starting = true;
+            }
+            "--hover" if allow.contains(&"hover") => {
+                hover = true;
+            }
+            "--focus" if allow.contains(&"focus") => {
+                focus = true;
+            }
+            "--focus-visible" if allow.contains(&"focus-visible") => {
+                focus_visible = true;
+            }
+            "--focus-within" if allow.contains(&"focus-within") => {
+                focus_within = true;
+            }
+            "--active" if allow.contains(&"active") => {
+                active = true;
+            }
+            "--disabled" if allow.contains(&"disabled") => {
+                disabled = true;
+            }
+            "--visited" if allow.contains(&"visited") => {
+                visited = true;
+            }
+            "--checked" if allow.contains(&"checked") => {
+                checked = true;
+            }
+            "--placeholder-shown" if allow.contains(&"placeholder-shown") => {
+                placeholder_shown = true;
+            }
+            "--group-hover" if allow.contains(&"group-hover") => {
+                group_hover = true;
+            }
+            "--group-focus" if allow.contains(&"group-focus") => {
+                group_focus = true;
+            }
+            "--peer-hover" if allow.contains(&"peer-hover") => {
+                peer_hover = true;
+            }
+            "--peer-focus" if allow.contains(&"peer-focus") => {
+                peer_focus = true;
             }
             "--group-focus-visible" if allow.contains(&"group_focus_visible") => {
                 group_focus_visible = true;
@@ -1065,6 +1144,19 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         child,
         child_of_type,
         starting,
+        hover,
+        focus,
+        focus_visible,
+        focus_within,
+        active,
+        disabled,
+        visited,
+        checked,
+        placeholder_shown,
+        group_hover,
+        group_focus,
+        peer_hover,
+        peer_focus,
         group_focus_visible,
         group_focus_within,
         group_active,
@@ -1466,6 +1558,19 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "child",
             "child-of-type",
             "starting",
+            "hover",
+            "focus",
+            "focus-visible",
+            "focus-within",
+            "active",
+            "disabled",
+            "visited",
+            "checked",
+            "placeholder-shown",
+            "group-hover",
+            "group-focus",
+            "peer-hover",
+            "peer-focus",
             "group_focus_visible",
             "group_focus_within",
             "group_active",
@@ -1571,6 +1676,19 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         inverted_colors: args.inverted_colors,
         scripting_none: args.scripting_none,
         starting_style: args.starting,
+        hover: args.hover,
+        focus: args.focus,
+        focus_visible: args.focus_visible,
+        focus_within: args.focus_within,
+        active: args.active,
+        disabled: args.disabled,
+        visited: args.visited,
+        checked: args.checked,
+        placeholder_shown: args.placeholder_shown,
+        group_hover: args.group_hover,
+        group_focus: args.group_focus,
+        peer_hover: args.peer_hover,
+        peer_focus: args.peer_focus,
         group_focus_visible: args.group_focus_visible,
         group_focus_within: args.group_focus_within,
         group_active: args.group_active,
@@ -2776,6 +2894,9 @@ USAGE:
                  [--pointer-fine] [--pointer-coarse] [--pointer-none]
                  [--any-pointer-fine] [--any-pointer-coarse] [--any-pointer-none]
                  [--portrait] [--inverted-colors] [--noscript] [--starting] [--rtl]
+                 [--hover] [--focus] [--focus-visible] [--focus-within] [--active]
+                 [--disabled] [--visited] [--checked] [--placeholder-shown]
+                 [--group-hover] [--group-focus] [--peer-hover] [--peer-focus]
                  [--group-focus-visible] [--group-focus-within] [--group-active] [--group-disabled] [--group-visited] [--group-checked]
                  [--peer-focus-visible] [--peer-focus-within] [--peer-active] [--peer-disabled] [--peer-visited] [--peer-checked]
                  [--invalid] [--user-valid] [--user-invalid] [--target]
