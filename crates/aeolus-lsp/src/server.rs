@@ -22,10 +22,11 @@ use lsp_types::{
     InlayHintLabel, InlayHintOptions, InlayHintParams, InlayHintServerCapabilities,
     InlayHintTooltip, Location, MarkupContent, MarkupKind, NumberOrString, OneOf,
     PrepareRenameResponse, PublishDiagnosticsParams, ReferenceParams,
-    RelatedFullDocumentDiagnosticReport, RenameParams, SemanticToken, SemanticTokenType,
-    SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-    SemanticTokensParams, SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo,
-    SymbolKind, TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    RelatedFullDocumentDiagnosticReport, RenameParams, SelectionRange, SelectionRangeParams,
+    SelectionRangeProviderCapability, SemanticToken, SemanticTokenType, SemanticTokens,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
+    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SymbolKind,
+    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
     TextDocumentSyncOptions, TextEdit, Uri, WorkDoneProgressOptions, WorkspaceEdit,
     WorkspaceSymbolParams,
 };
@@ -651,11 +652,16 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             if !session.initialized {
                 return Handled::default();
             }
-            // The rename face's second half: one edit per textual
-            // occurrence of the cursor's candidate (the highlights' own
-            // walk), the new spelling riding every edit — per document
-            // (the map is the scope), the engine's own empty-name guard
-            // keeping the deletion walk out.
+            // The rename face's second half (the workspace upgrade): one
+            // edit per textual occurrence of the cursor's candidate over
+            // EVERY open document (the references' own fold — the
+            // highlights' walk generalized), the new spelling riding
+            // every edit, the engine's own empty-name guard keeping the
+            // deletion walk out. The FULL changes map answers: one key
+            // per carrying document (the edit lists ride URI order, the
+            // engine's own grouping), a URI the `Uri` parser rejects
+            // skipping its key (the references half's own rule) — never
+            // the requesting URI's edits alone, the workspace's edit.
             let answer = serde_json::from_value::<RenameParams>(request.params)
                 .ok()
                 .map(|params| {
@@ -667,18 +673,21 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                         position.character,
                         &params.new_name,
                     );
-                    // The per-document edit list rides the codeAction
-                    // arm's own single-shot map shape (the `Uri` key the
-                    // protocol's changes table names).
-                    let edits = edits
-                        .iter()
-                        .map(|edit| TextEdit {
+                    let mut changes: HashMap<String, Vec<TextEdit>> = HashMap::new();
+                    for edit in &edits {
+                        changes.entry(edit.uri.clone()).or_default().push(TextEdit {
                             range: wire_range(edit.range),
                             new_text: edit.new_text.clone(),
-                        })
-                        .collect::<Vec<_>>();
+                        });
+                    }
+                    // The wire names the keys with parsed `Uri`s: a URI
+                    // the parser rejects was never a document the editor
+                    // could have named either (the publish half's own
+                    // rule), so its key skips the map.
                     WorkspaceEdit {
-                        changes: Some(HashMap::from([(uri, edits)])),
+                        changes: Some(HashMap::from_iter(changes.into_iter().filter_map(
+                            |(key, list)| Uri::from_str(&key).ok().map(|parsed| (parsed, list)),
+                        ))),
                         ..WorkspaceEdit::default()
                     }
                 });
@@ -781,6 +790,40 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/selectionRange" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The expand-selection walk (LSP 3.16's selectionRange): the
+            // engine's parent chains, one per requested position, request
+            // order kept — the protocol's own 1:1 contract the wire keeps
+            // (the answer's length IS the request's). The chain rides the
+            // protocol's own `parent` key (the wire_selection mapping's
+            // recursion — the content span the chain's head, `None`).
+            let answer = serde_json::from_value::<SelectionRangeParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let positions = params
+                        .positions
+                        .iter()
+                        .map(|position| crate::EnginePosition {
+                            line: position.line,
+                            character: position.character,
+                        })
+                        .collect::<Vec<_>>();
+                    session
+                        .engine
+                        .selection_ranges(params.text_document.uri.as_str(), &positions)
+                        .iter()
+                        .map(wire_selection)
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |ranges| Some(serde_json::to_value(ranges).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
         _ => Handled::default(),
     }
 }
@@ -855,6 +898,19 @@ fn wire_range(range: crate::EngineRange) -> lsp_types::Range {
             line: range.end.line,
             character: range.end.character,
         },
+    }
+}
+
+/// One engine selection chain onto the protocol's `SelectionRange` —
+/// the parent chain riding the protocol's own `parent` key (the
+/// recursion bottoms at the chain's head, `None`).
+fn wire_selection(selection: &crate::EngineSelectionRange) -> SelectionRange {
+    SelectionRange {
+        range: wire_range(selection.range),
+        parent: selection
+            .parent
+            .as_ref()
+            .map(|parent| Box::new(wire_selection(parent))),
     }
 }
 
@@ -986,11 +1042,19 @@ fn server_capabilities() -> ServerCapabilities {
         workspace_symbol_provider: Some(OneOf::Left(true)),
         // The rename face: the candidate span under the cursor
         // (`prepareRename` — the hover locator's own walk) beside the
-        // per-occurrence edits (`rename` — the highlights' walk with
-        // the new spelling riding each). The plain `true` form: the
-        // answers are the engine's own textual walks, no prepare gate
-        // options object.
+        // per-occurrence edits (`rename` — the references' fold over
+        // the rename edits: the highlights' walk generalized over the
+        // WHOLE document map, one edit per occurrence, each riding its
+        // document's URI). The plain `true` form: the answers are the
+        // engine's own textual walks, no prepare gate options object.
         rename_provider: Some(OneOf::Left(true)),
+        // The expand-selection walk (LSP 3.16's selectionRange): one
+        // parent chain per requested position — the candidate span the
+        // shared locator keys, the string's content span its parent,
+        // the caret's zero-width range the chain-less answer. The
+        // plain `true` form: the answer is the engine's own walk, no
+        // options object.
+        selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
         // The class-sort seam's editor face: one edit per out-of-order
         // class string, the sort seam's canonical join as the new text
         // (an already-canonical string answers no edit — the no-op
