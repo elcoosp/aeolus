@@ -208,6 +208,65 @@ fn document_highlights_walk(bencher: Bencher) {
     bencher.bench(|| lsp.document_highlights("file:///card.rs", line, character));
 }
 
+/// The cross-document references answer (the engine's first
+/// cross-document question): the cursor's candidate walked across
+/// every open document — ONE here, the highlights' own scope.
+#[divan::bench]
+fn references_one_document(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("flex-col").expect("the fixture holds") + 2;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.references("file:///card.rs", line, character));
+}
+
+/// The SAME query over EIGHT open documents (the map's own scaling
+/// story: one scan per document, the URI sort beside — the editor
+/// session's realistic open set).
+#[divan::bench]
+fn references_eight_documents(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    for index in 0..8 {
+        lsp.open(&format!("file:///card-{index}.rs"), DOC, 1);
+    }
+    let offset = DOC.find("flex-col").expect("the fixture holds") + 2;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.references("file:///card-0.rs", line, character));
+}
+
+/// The workspace-symbol answer (the references fold's second
+/// consumer): the outline walk over EVERY open document with the EMPTY
+/// query riding every open candidate — the filter's identity shape.
+#[divan::bench]
+fn workspace_symbols_all_query(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    for index in 0..8 {
+        lsp.open(&format!("file:///card-{index}.rs"), DOC, 1);
+    }
+    bencher.bench(|| lsp.workspace_symbols(""));
+}
+
+/// The SAME walk under a real filter (the editor's typed prefix) — the
+/// substring test's own cost beside the walk.
+#[divan::bench]
+fn workspace_symbols_filtered_query(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    for index in 0..8 {
+        lsp.open(&format!("file:///card-{index}.rs"), DOC, 1);
+    }
+    bencher.bench(|| lsp.workspace_symbols("bg-"));
+}
+
 /// The rename path (the rename face's second half): the highlights'
 /// own walk with the edits riding — the cost a rename gesture pays per
 /// keystroke of the new spelling (the prepare half is the locator's
