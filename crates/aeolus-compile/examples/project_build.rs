@@ -1,5 +1,5 @@
 //! The project-build seam end to end (architecture plan §2's approach
-//! C / the P6 row's `cargo aeolus build`): a synthetic three-file
+//! C / the P6 row's `aeolus build`): a synthetic three-file
 //! project scanned, deduped, compiled and rendered as ONE stylesheet —
 //! the theme vars block first (`:root`/`.dark`), then the
 //! globally-deduped rules in the registry's canonical order, with the
