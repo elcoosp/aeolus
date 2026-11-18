@@ -13,8 +13,9 @@
 
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use aeolus_compile::{CacheStats, Config, DynCache, DynObserver};
+use aeolus_compile::{CacheStats, Config, DynCache, DynObserver, TwoGenStore};
 use divan::Bencher;
 
 fn main() {
@@ -101,4 +102,39 @@ fn hit_recording_observer(bencher: Bencher) {
 fn cache_stats_snapshot(bencher: Bencher) {
     let stats = Arc::new(CacheStats::new());
     bencher.bench(|| stats.snapshot());
+}
+
+/// The rotation's observation-free shape: churn through a cap-2 store
+/// with NO observer wired — the report Vec does not exist, the rotation
+/// drops the discarded generation exactly as it did before the face
+/// existed (the face's cost is the events, and only beside an observer).
+#[divan::bench]
+fn rotation_no_observer(bencher: Bencher) {
+    let cache = DynCache::with_store(TwoGenStore::with_cap(2));
+    let config = Config::default();
+    let n = AtomicU32::new(0);
+    bencher.bench(|| {
+        let v = n.fetch_add(1, Ordering::Relaxed) + 1;
+        cache
+            .compile(&format!("p-{v} gap-{v}"), &config)
+            .expect("non-empty input compiles")
+    });
+}
+
+/// The worst case on the COLD path: the same churn with a recording
+/// observer wired — every rotation reports the discarded generation's
+/// keys, each an allocation and a formatted line under the store's
+/// released lock.
+#[divan::bench]
+fn rotation_recording_observer(bencher: Bencher) {
+    let cache = DynCache::with_store(TwoGenStore::with_cap(2))
+        .with_observer(Arc::new(Recording(Mutex::new(Vec::new()))));
+    let config = Config::default();
+    let n = AtomicU32::new(0);
+    bencher.bench(|| {
+        let v = n.fetch_add(1, Ordering::Relaxed) + 1;
+        cache
+            .compile(&format!("p-{v} gap-{v}"), &config)
+            .expect("non-empty input compiles")
+    });
 }
