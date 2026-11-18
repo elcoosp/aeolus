@@ -72,6 +72,23 @@ fn expand_state_facts(bencher: Bencher) {
     bencher.bench(|| compiled.interp(&env).expect("no theme forms"));
 }
 
+/// The breakpoint families' CLI face (the `--width rem` viewport fact):
+/// the base/state/breakpoint mix the cascade composes — the min forms
+/// fire at the asserted width, the max form rides its strictly-below
+/// edge, the unasserted tier waits — the same AT/strictly-below
+/// boundary read the other fact walks keep.
+const BREAKPOINTS: &str = "p-4 md:p-8 hover:p-12 xl:p-16 max-md:p-2";
+
+#[divan::bench]
+fn expand_viewport_facts(bencher: Bencher) {
+    let compiled = compile(BREAKPOINTS, &Config::default()).expect("non-empty input compiles");
+    let env = Env {
+        viewport_rem: 48.0,
+        ..Env::default()
+    };
+    bencher.bench(|| compiled.interp(&env).expect("no theme forms"));
+}
+
 /// The descendant-probe seam's CLI face (the `--has` facts): the same
 /// Button-shaped program through the `*_descendants` walk, the fact
 /// table hit and the note path beside it.
