@@ -24,13 +24,13 @@ use aeolus_data::ValueKind;
 use aeolus_data::rows::ROWS;
 use aeolus_ir::{Cond, Val};
 use aeolus_syntax::parse_class_string;
-use aeolus_theme::TokenTable;
+use aeolus_theme::{ThemeError, TokenTable};
 
 use crate::{
     DocumentMap, EngineCodeAction, EngineColour, EngineColourPresentation, EngineCompletion,
     EngineCompletionKind, EngineDiagnostic, EngineHighlight, EngineHover, EngineInlayHint,
-    EnginePosition, EngineRange, EngineSemanticKind, EngineSemanticToken, EngineSymbol,
-    EngineTextEdit,
+    EnginePosition, EngineRange, EngineReference, EngineSemanticKind, EngineSemanticToken,
+    EngineSymbol, EngineTextEdit, EngineWorkspaceSymbol,
 };
 
 // ---------------------------------------------------------------------------
@@ -64,21 +64,32 @@ impl EngineConfig {
             compile: Config::default(),
         }
     }
+
+    /// The CLI-parity default, fallible: the built-in shadcn bake with
+    /// the theme pass's OWN typed error. `Default` rides this
+    /// constructor's documented-panic shape (the embedded palette is an
+    /// internal invariant — the build panics only on drift the suite
+    /// pins); a host that prefers the typed boundary calls THIS and
+    /// names the `ThemeError` the bake can carry, the same two-lane
+    /// contract the CLI's own theme loading keeps.
+    pub fn try_default() -> Result<Self, ThemeError> {
+        let source = aeolus_theme::ThemeSource::shadcn()?;
+        let table = TokenTable::baked(&source)?;
+        Ok(Self {
+            tokens: Some(table),
+            compile: Config::default(),
+        })
+    }
 }
 
 impl Default for EngineConfig {
     /// The CLI-parity default: the built-in shadcn bake. The embedded
     /// palette is an internal invariant (the macro's freeze walk rides
     /// the same construction), so the build panics only on drift the
-    /// suite pins.
+    /// suite pins — the fallible path is
+    /// [`EngineConfig::try_default`].
     fn default() -> Self {
-        let source =
-            aeolus_theme::ThemeSource::shadcn().expect("the built-in shadcn source parses");
-        let table = TokenTable::baked(&source).expect("the baked shadcn table builds");
-        Self {
-            tokens: Some(table),
-            compile: Config::default(),
-        }
+        Self::try_default().expect("the built-in shadcn bake parses and bakes")
     }
 }
 
@@ -706,6 +717,69 @@ impl AeolusEngine {
     }
 
     // -----------------------------------------------------------------------
+    // The cross-document references answer
+    // -----------------------------------------------------------------------
+
+    /// The workspace's occurrences of the candidate under the cursor:
+    /// the document highlights' textual equality over EVERY open
+    /// document — the engine's first cross-document answer. Each
+    /// occurrence rides its document's URI beside its byte-true range:
+    /// URI order across the documents (sorted, whatever the open order
+    /// was — the answer is pure over the hash map), document order
+    /// within each (the extraction seam's scan order). The identity is
+    /// TEXTUAL — a refused class's occurrences answer exactly like a
+    /// lowered one's (no compile verdict riding) — and the cursor's own
+    /// occurrence rides the answer: a class spelling has no declaration
+    /// site among the open documents (the theme CSS the config bakes is
+    /// not one), so every occurrence is a reference and the wire's
+    /// `includeDeclaration` context rides unanswered (the honest
+    /// boundary the server documents). Deterministic and pure over the
+    /// document map; an unknown URI and a cursor outside any candidate
+    /// answer empty.
+    pub fn references(&self, uri: &str, line: u32, character: u32) -> Vec<EngineReference> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let Some(offset) = offset_of(text, line, character) else {
+            return Vec::new();
+        };
+        // The candidate under the cursor: the shared locator's walk
+        // (the hover's own), the raw text the equality keys on.
+        let Some((start, end)) = candidate_span_at(text, offset) else {
+            return Vec::new();
+        };
+        let raw = &text[start..end];
+        // URI order across the map (the determinism pin), document
+        // order within each — one scan per document, no parallel
+        // matcher (the highlights' own walk, generalized).
+        let mut uris: Vec<&String> = self.documents.keys().collect();
+        uris.sort();
+        let mut out = Vec::new();
+        for key in uris {
+            let text = self.documents[key].text.as_str();
+            for hit in scan_rust_strings(text) {
+                let (candidates, _) = parse_class_string(&hit.text);
+                for candidate in candidates {
+                    if candidate.raw != raw {
+                        continue;
+                    }
+                    let range = range_of(
+                        text,
+                        hit.offset + candidate.span.0,
+                        hit.offset + candidate.span.1,
+                    );
+                    out.push(EngineReference {
+                        uri: key.clone(),
+                        range,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
     // The rename face
     // -----------------------------------------------------------------------
 
@@ -840,35 +914,54 @@ impl AeolusEngine {
         };
         let text = doc.text.as_str();
         self.compiled_candidates(text, |raw, span, compiled| {
-            let (kind, detail) = if compiled.diagnostics.is_empty() {
-                // The lowered symbol: the CSS arm's own declarations
-                // compacted to the single-line label (the hint label's
-                // own rendering — one answer shape at a third surface).
-                let sheet = match &self.config.tokens {
-                    Some(table) => emit_css_theme(raw, table, &self.config.compile),
-                    None => emit_css(raw, &self.config.compile),
-                };
-                let Ok(sheet) = sheet else {
-                    return None;
-                };
-                (EngineSemanticKind::Lowered, compact_css(&sheet))
-            } else {
-                // The refused symbol: the first finding's stable code —
-                // the outline names the boundary, the diagnostics
-                // publish the prose.
-                let code = compiled
-                    .diagnostics
-                    .first()
-                    .map_or_else(String::new, |diagnostic| diagnostic.kind.code().to_string());
-                (EngineSemanticKind::Refused, code)
-            };
-            Some(EngineSymbol {
-                name: raw.to_string(),
-                range: range_of(text, span.0, span.1),
-                detail,
-                kind,
-            })
+            self.outline_symbol(raw, span, text, compiled)
         })
+    }
+
+    // -----------------------------------------------------------------------
+    // The cross-document workspace-symbol answer
+    // -----------------------------------------------------------------------
+
+    /// The workspace's outline: every candidate class across EVERY open
+    /// document whose spelling matches the query — the document
+    /// symbols' outline contract generalized over the whole map (the
+    /// references fold's second consumer, the engine's second
+    /// cross-document answer). The QUERY is the filter: a
+    /// case-insensitive substring on the candidate's raw spelling (the
+    /// variant prefixes included — `bg-` matches
+    /// `hover:bg-primary/90`), and the EMPTY query filters nothing —
+    /// every open candidate rides (the protocol's own shape: the query
+    /// is a filter, an empty filter is the identity). Each match rides
+    /// the outline entry (the spelling the NAME, its byte-true range,
+    /// the legend's own verdict and the pipeline's own detail line —
+    /// the shared `document_symbols` walk, no parallel scaffold) beside
+    /// its document's URI: URI order across the documents (sorted,
+    /// whatever the open order was — the answer is pure over the hash
+    /// map), document order within each (the extraction seam's scan
+    /// order). Deterministic and pure over the document map; a miss
+    /// answers empty.
+    pub fn workspace_symbols(&self, query: &str) -> Vec<EngineWorkspaceSymbol> {
+        let needle = query.to_lowercase();
+        // URI order across the map (the determinism pin), document
+        // order within each — the outline walk per document, the
+        // filter riding the fold.
+        let mut uris: Vec<&String> = self.documents.keys().collect();
+        uris.sort();
+        let mut out = Vec::new();
+        for key in uris {
+            let text = self.documents[key].text.as_str();
+            out.extend(self.compiled_candidates(text, |raw, span, compiled| {
+                if !needle.is_empty() && !raw.to_lowercase().contains(&needle) {
+                    return None;
+                }
+                let symbol = self.outline_symbol(raw, span, text, compiled)?;
+                Some(EngineWorkspaceSymbol {
+                    uri: key.clone(),
+                    symbol,
+                })
+            }));
+        }
+        out
     }
 
     // -----------------------------------------------------------------------
@@ -908,6 +1001,44 @@ impl AeolusEngine {
             }
         }
         out
+    }
+
+    /// One candidate's outline entry — the document-symbol answer's
+    /// per-candidate half, SHARED with the workspace-symbol answer (the
+    /// two outlines are one shape at two scopes; the scaffold lives
+    /// once). The lowered candidate renders the compact CSS (the hint
+    /// label's own rendering); the refused one the first finding's
+    /// stable code. A sheet miss skips the candidate (`None` — the
+    /// walker carries none of the boundaries).
+    fn outline_symbol(
+        &self,
+        raw: &str,
+        span: (usize, usize),
+        text: &str,
+        compiled: &Compiled,
+    ) -> Option<EngineSymbol> {
+        let (kind, detail) = if compiled.diagnostics.is_empty() {
+            let sheet = match &self.config.tokens {
+                Some(table) => emit_css_theme(raw, table, &self.config.compile),
+                None => emit_css(raw, &self.config.compile),
+            };
+            let Ok(sheet) = sheet else {
+                return None;
+            };
+            (EngineSemanticKind::Lowered, compact_css(&sheet))
+        } else {
+            let code = compiled
+                .diagnostics
+                .first()
+                .map_or_else(String::new, |diagnostic| diagnostic.kind.code().to_string());
+            (EngineSemanticKind::Refused, code)
+        };
+        Some(EngineSymbol {
+            name: raw.to_string(),
+            range: range_of(text, span.0, span.1),
+            detail,
+            kind,
+        })
     }
 }
 
