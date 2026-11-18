@@ -36,6 +36,7 @@ impl DynObserver for EvictionWatch {
         match reason {
             EvictReason::Rotation => println!("    evict (rotation)      {input}"),
             EvictReason::StaleTwin => println!("    evict (stale twin)    {input}"),
+            EvictReason::Invalidated => println!("    evict (invalidated)   {input}"),
         }
     }
 }
