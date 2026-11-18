@@ -1499,14 +1499,16 @@ fn rename_outside_a_candidate_answers_no_changes() {
     let result = response
         .result
         .expect("the workspace edit carries a result");
-    // The document rides the map with an EMPTY edit list (the code
-    // action arm's single-shot map shape — no guessed edit, the honest
-    // no-op the editor applies as nothing).
-    let edits = &result["changes"][uri()];
-    assert!(
-        edits.is_array() && edits.as_array().is_some_and(Vec::is_empty),
-        "no occurrences, an empty edit list: {result}"
-    );
+    // No candidate, no edits anywhere (the workspace walk's own guard):
+    // the changes map answers EMPTY — no keys, no edits, the honest
+    // no-op the editor applies as nothing (the single-document shape's
+    // one-key-with-an-empty-list rode the per-document walk; the
+    // cross-document walk's scope is the whole map, and nothing to
+    // change means no keys).
+    let changes = result["changes"]
+        .as_object()
+        .unwrap_or_else(|| panic!("the changes map rides the answer: {result}"));
+    assert!(changes.is_empty(), "no occurrences, no keys: {result}");
 }
 
 #[test]
