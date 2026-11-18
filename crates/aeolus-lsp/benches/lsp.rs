@@ -236,3 +236,14 @@ fn format_walk(bencher: Bencher) {
     lsp.open("file:///card.rs", DOC, 1);
     bencher.bench(|| lsp.format("file:///card.rs"));
 }
+
+/// The outline path (LSP 3.16's documentSymbol): the per-candidate
+/// compile walk naming every class — the legend's verdict beside the
+/// compact-CSS detail — the cost an outline panel pays per didOpen
+/// (and per edit's re-outline).
+#[divan::bench]
+fn document_symbols_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    bencher.bench(|| lsp.document_symbols("file:///card.rs"));
+}
