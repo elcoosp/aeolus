@@ -5,10 +5,13 @@
 //! own byte-true span (the full spelling, variant prefixes included —
 //! the highlights' raw-text contract), `rename` rides ONE edit per
 //! textual occurrence of the cursor's candidate, the new spelling on
-//! every edit — the highlights' own walk, purely textual, no compile
-//! verdict riding (the diagnostics channel tells the truth about the
-//! NEW spelling the moment the didChange lands). The stdio server
-//! itself is `cargo run -p aeolus-lsp --bin aeolus-lsp` (the
+//! every edit — the references' own fold over the rename edits (the
+//! workspace upgrade: one edit per occurrence over EVERY open document,
+//! each riding its document's URI), purely textual, no compile verdict
+//! riding (the diagnostics channel tells the truth about the NEW
+//! spelling the moment the didChange lands). The cross-document ride
+//! over an open SET is `lsp_workspace_rename`'s own demo; the stdio
+//! server itself is `cargo run -p aeolus-lsp --bin aeolus-lsp` (the
 //! transport's thin shell over the same engine).
 //!
 //! ```sh
