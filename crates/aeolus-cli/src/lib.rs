@@ -523,6 +523,14 @@ struct Args {
     /// the NAMED containers' widths the interp's container seam answers
     /// the `@md/card:` layers from.
     containers: Vec<(String, f32)>,
+    /// The `--width rem` viewport fact (`expand` only): the viewport
+    /// width the interp's [`Env`] answers the breakpoint families from
+    /// (`sm:`…`2xl:` the min forms fire AT and above their breakpoint's
+    /// rem, `max-sm:`… the max forms strictly below it) — frame state
+    /// like the media-feature facts. The unset flag stays the resting
+    /// env's zero-width viewport (no min breakpoint fires, the quiet
+    /// miss a below-breakpoint viewport is).
+    viewport_rem: f32,
     /// The `--has kind=fragment` facts (`expand` only, repeatable): the
     /// subtree facts the interp's descendant seam answers the
     /// `has-*`/`group-has-*`/`peer-has-*` layers from — the kind names
@@ -649,6 +657,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
     let mut range_bounded = false;
     let mut range_in = false;
     let mut containers: Vec<(String, f32)> = Vec::new();
+    let mut viewport_rem = 0.0f32;
     let mut has: Vec<(DescendantKind, String)> = Vec::new();
     let mut supports: Vec<String> = Vec::new();
     let mut child: Option<(usize, usize)> = None;
@@ -1094,6 +1103,31 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
                     }
                 }
             }
+            // The viewport-width fact (`expand` only): a VALUE flag —
+            // the width in rem the breakpoint families answer from (the
+            // `--container` arm's sibling: the same f32 slot, the same
+            // honest window — a non-finite or negative spelling is a
+            // CLI input error, not a half-answered layer).
+            "--width" if allow.contains(&"width") => {
+                i += 1;
+                let Some(value) = rest.get(i) else {
+                    let _ = writeln!(err, "--width needs a rem value (e.g. --width 48)");
+                    return None;
+                };
+                match value.parse::<f32>() {
+                    Ok(rem) if rem.is_finite() && rem >= 0.0 => {
+                        viewport_rem = rem;
+                    }
+                    Ok(rem) => {
+                        let _ = writeln!(err, "--width must be a finite rem >= 0, got {rem:?}");
+                        return None;
+                    }
+                    Err(_) => {
+                        let _ = writeln!(err, "--width must parse as f32 rem, got {value:?}");
+                        return None;
+                    }
+                }
+            }
             other => {
                 if other.starts_with("--") && other != "--" {
                     let _ = writeln!(err, "unknown flag {other:?} for this command");
@@ -1139,6 +1173,7 @@ fn parse_flags(rest: &[String], err: &mut dyn Write, allow: &[&str]) -> Option<A
         range_bounded,
         range_in,
         containers,
+        viewport_rem,
         has,
         supports,
         child,
@@ -1553,6 +1588,7 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
             "dark",
             "pseudo",
             "container",
+            "width",
             "has",
             "supports",
             "child",
@@ -1715,6 +1751,11 @@ fn cmd_expand(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
         required_field: args.required_field,
         range_bounded: args.range_bounded,
         range_in: args.range_in,
+        // The viewport width rides the `--width rem` flag: the frame
+        // fact the breakpoint families answer from (the unset flag
+        // keeps the resting env's zero-width viewport, `Env::default`
+        // — no min breakpoint fires).
+        viewport_rem: args.viewport_rem,
         ..Env::default()
     };
     // The NAMED containers' widths ride the `--container name=rem`
@@ -2902,7 +2943,7 @@ USAGE:
                  [--invalid] [--user-valid] [--user-invalid] [--target]
                  [--indeterminate] [--autofill] [--read-write] [--open] [--inert]
                  [--default] [--form-associated] [--required] [--range-bounded]
-                 [--range-in] [--container name=rem] [--has kind=fragment]
+                 [--range-in] [--container name=rem] [--width rem] [--has kind=fragment]
                  [--supports condition] [--child i/n] [--child-of-type i/n] [--empty]
                  [--pseudo <target>] <classes...>
                                                              effective declarations (the interp (c) arm);
@@ -2919,7 +2960,10 @@ USAGE:
                                                              even:/only:/nth-*:/empty:/first-of-type:/last-of-type:/
                                                              only-of-type:/nth-of-type-*:/nth-last-of-type-*: layers
                                                              answer from (the child-index and type-relative
-                                                             dimensions are independent answers)
+                                                             dimensions are independent answers),
+                                                             --width carries the viewport width (rem)
+                                                             the sm:..2xl: breakpoint layers and the
+                                                             max-*: forms answer from
   aeolus build   [--theme <spec>] [--out <path>] [--fail-on <mode>] [--json] <files/dirs...>
                                                              one stylesheet for the whole project
                                                              (scan → dedupe → registry-ordered rules
