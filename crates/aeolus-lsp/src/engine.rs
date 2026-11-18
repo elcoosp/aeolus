@@ -27,7 +27,8 @@ use aeolus_theme::TokenTable;
 use crate::{
     DocumentMap, EngineCodeAction, EngineColour, EngineColourPresentation, EngineCompletion,
     EngineCompletionKind, EngineDiagnostic, EngineHighlight, EngineHover, EngineInlayHint,
-    EnginePosition, EngineRange, EngineSemanticKind, EngineSemanticToken, EngineTextEdit,
+    EnginePosition, EngineRange, EngineSemanticKind, EngineSemanticToken, EngineSymbol,
+    EngineTextEdit,
 };
 
 // ---------------------------------------------------------------------------
@@ -765,6 +766,59 @@ impl AeolusEngine {
             });
         }
         out
+    }
+
+    // -----------------------------------------------------------------------
+    // The document-symbol answer
+    // -----------------------------------------------------------------------
+
+    /// The document's outline: every candidate class the extraction
+    /// seam's strings carry, one symbol each — the spelling the NAME,
+    /// its byte-true range, the semantic legend's own verdict (the
+    /// same classification the highlighter feeds, no parallel matcher)
+    /// and the pipeline's own detail line (a lowered class renders the
+    /// compact CSS the inlay hint's label carries; a refused one the
+    /// stable code the diagnostics key on — the detail names the WHY
+    /// without re-rendering the refusal prose). The walk is the shared
+    /// per-candidate compile ([`AeolusEngine::compiled_candidates`]),
+    /// document order (the extraction seam's scan order) — the wire's
+    /// outline answer, deterministic and pure over the document map; an
+    /// unknown URI answers empty.
+    pub fn document_symbols(&self, uri: &str) -> Vec<EngineSymbol> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        self.compiled_candidates(text, |raw, span, compiled| {
+            let (kind, detail) = if compiled.diagnostics.is_empty() {
+                // The lowered symbol: the CSS arm's own declarations
+                // compacted to the single-line label (the hint label's
+                // own rendering — one answer shape at a third surface).
+                let sheet = match &self.config.tokens {
+                    Some(table) => emit_css_theme(raw, table, &self.config.compile),
+                    None => emit_css(raw, &self.config.compile),
+                };
+                let Ok(sheet) = sheet else {
+                    return None;
+                };
+                (EngineSemanticKind::Lowered, compact_css(&sheet))
+            } else {
+                // The refused symbol: the first finding's stable code —
+                // the outline names the boundary, the diagnostics
+                // publish the prose.
+                let code = compiled
+                    .diagnostics
+                    .first()
+                    .map_or_else(String::new, |diagnostic| diagnostic.kind.code().to_string());
+                (EngineSemanticKind::Refused, code)
+            };
+            Some(EngineSymbol {
+                name: raw.to_string(),
+                range: range_of(text, span.0, span.1),
+                detail,
+                kind,
+            })
+        })
     }
 
     // -----------------------------------------------------------------------
