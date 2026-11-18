@@ -80,7 +80,7 @@ use std::sync::{Arc, RwLock};
 use aeolus_ir::Program;
 use aeolus_theme::TokenTable;
 
-use crate::{CompileError, Compiled, Config, Customs, Diagnostic};
+use crate::{CompileError, Compiled, Config, Customs, Diagnostic, WalkObserver};
 
 /// Default bound on the current generation of [`TwoGenStore`] — the v0.x
 /// `DEFAULT_CACHE_CAP` heritage number: the shadcn v1 surface resolves to
@@ -769,6 +769,70 @@ impl<S: DynStore> DynCache<S> {
         let identity = DynIdentity::themed(*config, tokens);
         self.cached(input, identity, || {
             crate::run(input, *config, Some(tokens), &Customs::new(), None)
+        })
+    }
+
+    /// [`compile_observed`](crate::compile_observed) over the cache:
+    /// the walk face's channel threaded through the pooled path — a
+    /// MISS lowers through the observed walk (the stage events stream
+    /// exactly as the free entry reports them), a HIT answers from the
+    /// pool and streams NOTHING (no walk ran — the channel reports
+    /// lowerings, not answers, which is the cache's reason for
+    /// existing kept intact). The observer is a per-call argument, the
+    /// free entry's own shape: the host keeps the handle (the
+    /// built-in [`WalkStats`](crate::WalkStats) rides an `Arc` beside the cache's cache
+    /// face's `CacheStats` — the two faces answer different questions
+    /// over the same session).
+    ///
+    /// The cache key is the same configuration fingerprint composed
+    /// with the class string the plain [`compile`](Self::compile)
+    /// probes — the face adds a channel, never a key: an observed and
+    /// an unobserved session pool into the SAME slots (the
+    /// byte-identity differential pins it).
+    ///
+    /// # Errors
+    /// The same [`CompileError`] as [`compile`](Self::compile) (only
+    /// the empty input), reported on every call; the walk's per-class
+    /// misses ride [`Compiled::diagnostics`] and the observer's
+    /// `CandidateOutcome::Missed` arm, never this.
+    pub fn compile_observed(
+        &self,
+        input: &str,
+        config: &Config,
+        observer: Arc<dyn WalkObserver>,
+    ) -> Result<Compiled, CompileError> {
+        self.cached(input, DynIdentity::of(*config), || {
+            crate::run(input, *config, None, &Customs::new(), Some(&*observer))
+        })
+    }
+
+    /// [`compile_theme`](Self::compile_theme) over the cache with the
+    /// walk face's channel: the themed miss lowers through the
+    /// observed walk (the theme table's tier consults ride the table's
+    /// own face beside — a wired `TokenTable` streams them), the
+    /// themed hit answers from the pool and streams nothing. The
+    /// identity is the same themed fingerprint the plain themed entry
+    /// probes, so observed and unobserved themed sessions pool into
+    /// the same slots (the differential pins it).
+    ///
+    /// # Errors
+    /// The same [`CompileError`] as [`compile_theme`](Self::compile_theme).
+    pub fn compile_theme_observed(
+        &self,
+        input: &str,
+        tokens: &TokenTable,
+        config: &Config,
+        observer: Arc<dyn WalkObserver>,
+    ) -> Result<Compiled, CompileError> {
+        let identity = DynIdentity::themed(*config, tokens);
+        self.cached(input, identity, || {
+            crate::run(
+                input,
+                *config,
+                Some(tokens),
+                &Customs::new(),
+                Some(&*observer),
+            )
         })
     }
 
