@@ -56,11 +56,16 @@ use aeolus_core::{Color, ParseError, TailwindTheme, shadcn_css};
 use aeolus_ir::Val;
 
 mod observer;
+mod provenance;
 mod source;
 
 pub use observer::{
     NoThemeObserver, ResolveOutcome, RgbaOutcome, ThemeObserver, ThemeSnapshot, ThemeStats,
 };
+// The token-provenance face (the goto-definition half's source): the
+// declaration sites the light sheet's own CSS carries, one scan over the
+// SAME text the reader parsed.
+pub use provenance::{TokenOrigin, TokenProvenance};
 pub use source::{SourceDirective, source_directives};
 
 /// Which value form a [`TokenTable`] resolves tokens to (plan §3.4's
@@ -91,6 +96,11 @@ pub struct ThemeSource {
     /// scanner surface — the inline literals and the walked/pruned
     /// paths a host's class scan consults).
     sources: Vec<SourceDirective>,
+    /// The token origins the light CSS's own declarations carry (the
+    /// provenance face): the scan over the SAME text the reader parsed.
+    /// Empty for the built-in palettes — the compiler's own data, no
+    /// file to jump to.
+    origins: TokenProvenance,
 }
 
 impl ThemeSource {
@@ -107,6 +117,16 @@ impl ThemeSource {
     /// when an `@source` statement is malformed (the typed scan
     /// contract — never a guessed registration).
     pub fn from_css(light_css: &str, dark_css: Option<&str>) -> Result<Self, ThemeError> {
+        Self::build(light_css, dark_css, true)
+    }
+
+    /// The construction the public entry points share. `scan` names the
+    /// provenance half: the host-called [`ThemeSource::from_css`] scans
+    /// the light sheet it was handed (the origins a goto-definition face
+    /// answers through); the built-in palettes construct with the scan
+    /// OFF — the compiler's own data, no file to jump to, no origin
+    /// answered.
+    fn build(light_css: &str, dark_css: Option<&str>, scan: bool) -> Result<Self, ThemeError> {
         #[cfg(feature = "tracing")]
         tracing::debug!(light_len = light_css.len(), "theme source: parse light css");
         let sources = source_directives(light_css)?;
@@ -124,10 +144,21 @@ impl ThemeSource {
                 )
             }
         };
+        // The provenance scan rides the reader's OWN names (the single
+        // source of truth — the scan invents none), and answers only
+        // what the light sheet declares: a seeded palette name the file
+        // never declares stays dark.
+        let origins = if scan {
+            let names = light.color_names();
+            provenance::scan(light_css, &names)
+        } else {
+            TokenProvenance::default()
+        };
         Ok(Self {
             light,
             dark,
             sources,
+            origins,
         })
     }
 
@@ -138,7 +169,7 @@ impl ThemeSource {
     /// [`ThemeError::Parse`] when the embedded palette does not parse
     /// (unreachable for the compile-time data; handled honestly anyway).
     pub fn shadcn() -> Result<Self, ThemeError> {
-        Self::from_css(shadcn_css::LIGHT, None)
+        Self::build(shadcn_css::LIGHT, None, false)
     }
 
     /// The shadcn neutral palette, light AND dark (T1's shape: the
@@ -148,7 +179,7 @@ impl ThemeSource {
     /// [`ThemeError::Parse`] when the embedded palettes do not parse
     /// (unreachable for the compile-time data; handled honestly anyway).
     pub fn shadcn_dark() -> Result<Self, ThemeError> {
-        Self::from_css(shadcn_css::LIGHT, Some(shadcn_css::DARK))
+        Self::build(shadcn_css::LIGHT, Some(shadcn_css::DARK), false)
     }
 
     /// The parsed light theme.
@@ -167,6 +198,17 @@ impl ThemeSource {
     /// consults. Empty for the built-in palettes.
     pub fn sources(&self) -> &[SourceDirective] {
         &self.sources
+    }
+
+    /// The token origins the light sheet's own declarations carry (the
+    /// provenance face): the scan over the SAME text [`ThemeSource::from_css`]
+    /// parsed — the `--color-{name}` / `--{name}` declaration sites,
+    /// byte-true, keyed by the reader's own names. Empty for the
+    /// built-in palettes (no file to jump to), and a token the sheet
+    /// does not declare answers no origin (the seeded palette names —
+    /// the honest dark, never a guessed span).
+    pub fn provenance(&self) -> &TokenProvenance {
+        &self.origins
     }
 }
 
@@ -353,6 +395,10 @@ pub struct TokenTable {
     pairs: Vec<(Color, Color)>,
     /// Per token: the pair slot it forms, when a dark value exists.
     pair_of: Vec<Option<u16>>,
+    /// The token origins the source's own scan carried (the provenance
+    /// face): shared behind the `Arc` so a clone rides the same map.
+    /// Empty for the built-in palettes.
+    origins: Arc<TokenProvenance>,
     /// The wired theme observer, `None` the every-constructor default
     /// (the seam adds a channel, never turns one on by surprise).
     observer: Option<Arc<dyn ThemeObserver>>,
@@ -463,6 +509,7 @@ impl TokenTable {
             dark,
             pairs,
             pair_of,
+            origins: Arc::new(source.provenance().clone()),
             observer: None,
         })
     }
@@ -503,6 +550,23 @@ impl TokenTable {
     /// contract).
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.names.iter().map(String::as_str)
+    }
+
+    /// The token origins the table's source carried (the provenance
+    /// face): the declaration sites the source's own light sheet
+    /// declares, keyed by the table's own names. The goto-definition
+    /// half's read face — the engine answers through it; a token the
+    /// source does not declare (a seeded palette name) answers no
+    /// origin, the honest dark.
+    pub fn provenance(&self) -> &TokenProvenance {
+        &self.origins
+    }
+
+    /// The origin one token name answers (the provenance's own lookup,
+    /// on the table). `None` — the honest dark — for a token the
+    /// source's light sheet does not declare.
+    pub fn origin(&self, name: &str) -> Option<&TokenOrigin> {
+        self.origins.origin(name)
     }
 
     /// The stable id of a colour token name (`"primary"`, `"red-500"`) —
