@@ -31,6 +31,7 @@ use crate::{
     EngineCompletionKind, EngineDiagnostic, EngineHighlight, EngineHover, EngineInlayHint,
     EnginePosition, EngineRange, EngineReference, EngineRenameEdit, EngineSelectionRange,
     EngineSemanticKind, EngineSemanticToken, EngineSymbol, EngineTextEdit, EngineWorkspaceSymbol,
+    RethemeOutcome,
 };
 
 // ---------------------------------------------------------------------------
@@ -184,6 +185,42 @@ impl AeolusEngine {
         self
     }
 
+    /// The theme lifecycle's seam: swap the table the answers ride.
+    /// The config's `tokens` slot replaces wholesale (`None` the
+    /// theme-less boundary, `Some` the themed walk), and the swap
+    /// retires the pool it invalidates — every pooled row was lowered
+    /// under the OUTGOING table, so [`DynCache::clear`] (the compile
+    /// crate's invalidation seam) empties it rather than letting dead
+    /// rows linger until rotation. The equality fast-path keeps the
+    /// no-op save cheap: a candidate table whose CONTENT equals the
+    /// riding one (tier, names and resolved colours — a re-bake of the
+    /// same css, a fresh object) answers [`RethemeOutcome::Unchanged`]
+    /// and touches NOTHING (the pool keeps serving, the answers stay
+    /// byte-identical — the differential pins). A real swap answers
+    /// [`RethemeOutcome::Swapped`].
+    ///
+    /// The document map rides untouched: the answers re-derive lazily
+    /// from the strings (the same purity every other answer keeps), so
+    /// a swap is pure over the documents and the caller decides what
+    /// republishes (the wire half republishes EVERY open document's
+    /// diagnostics on a swap, nothing on the no-op). Deterministic and
+    /// pure over the configuration; a failed source construction never
+    /// reaches here — the loader's `Err` keeps the riding table (the
+    /// wire's own contract).
+    pub fn retheme(&mut self, tokens: Option<TokenTable>) -> RethemeOutcome {
+        let changed = match (&self.config.tokens, &tokens) {
+            (Some(riding), Some(candidate)) => !tokens_equal(riding, candidate),
+            (None, None) => false,
+            _ => true,
+        };
+        if !changed {
+            return RethemeOutcome::Unchanged;
+        }
+        self.config.tokens = tokens;
+        self.cache.clear();
+        RethemeOutcome::Swapped
+    }
+
     /// Open a document (the wire's didOpen): the text replaces any
     /// previous state for the URI.
     pub fn open(&mut self, uri: &str, text: &str, version: i32) {
@@ -218,6 +255,18 @@ impl AeolusEngine {
     /// The document's version tag, when it is open.
     pub fn version(&self, uri: &str) -> Option<i32> {
         self.documents.get(uri).map(|doc| doc.version)
+    }
+
+    /// The open documents' URIs, sorted (the cross-document answers'
+    /// own determinism contract — the answer is pure over the hash
+    /// map). The theme lifecycle's republish walk rides it (the wire
+    /// half's swap republishes every open document's diagnostics, URI
+    /// order), and a host embedding the engine with its own push
+    /// channel needs the same set.
+    pub fn documents(&self) -> Vec<String> {
+        let mut uris: Vec<String> = self.documents.keys().cloned().collect();
+        uris.sort();
+        uris
     }
 
     /// The pipeline answer over the session's pool: the themed walk when
@@ -711,6 +760,53 @@ impl AeolusEngine {
                     hit.offset + candidate.span.1,
                 );
                 out.push(EngineHighlight { range });
+            }
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
+    // The linked-editing answer
+    // -----------------------------------------------------------------------
+
+    /// The simultaneous-edit face (the wire's
+    /// `textDocument/linkedEditingRange`): every textual occurrence of
+    /// the cursor's candidate IN THE REQUESTING document, as the plain
+    /// ranges the client edits together (the cursor's own occurrence
+    /// rides, document order kept — the extraction seam's scan order).
+    /// The identity is the highlights' TEXTUAL equality (a refused
+    /// candidate's occurrences answer exactly like a lowered one's —
+    /// no compile verdict riding; a variant-prefixed sibling is a
+    /// DIFFERENT spelling), and the scope stays same-file: the
+    /// cross-document fold is the RENAME face's answer, one face one
+    /// scope. Deterministic and pure over the document map; an unknown
+    /// URI and a cursor outside any candidate answer empty.
+    pub fn linked_ranges(&self, uri: &str, line: u32, character: u32) -> Vec<EngineRange> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let Some(offset) = offset_of(text, line, character) else {
+            return Vec::new();
+        };
+        // The candidate under the cursor: the shared locator's walk
+        // (the hover's own), the raw text the equality keys on.
+        let Some((start, end)) = candidate_span_at(text, offset) else {
+            return Vec::new();
+        };
+        let raw = &text[start..end];
+        let mut out = Vec::new();
+        for hit in scan_rust_strings(text) {
+            let (candidates, _) = parse_class_string(&hit.text);
+            for candidate in candidates {
+                if candidate.raw != raw {
+                    continue;
+                }
+                out.push(range_of(
+                    text,
+                    hit.offset + candidate.span.0,
+                    hit.offset + candidate.span.1,
+                ));
             }
         }
         out
@@ -1221,6 +1317,60 @@ fn range_of(text: &str, start: usize, end: usize) -> EngineRange {
             character: end_character,
         },
     }
+}
+
+/// Two tables with the SAME answers — the retheme's equality
+/// fast-path. The comparison rides the table's own public getters
+/// (tier, names and the resolved rgba per id beside the pair surface):
+/// two tables equal under it lower to byte-identical programs (the
+/// tier arms choose the same `Val` shapes, the ids resolve the same
+/// colours), which is the contract the no-op save's `Unchanged` needs.
+/// The tier rides FIRST: a baked and a runtime table over the same css
+/// carry the same colours but answer different `Val` forms (the
+/// literal beside the token), so content equality is tier equality
+/// too.
+fn tokens_equal(riding: &TokenTable, candidate: &TokenTable) -> bool {
+    if riding.tier() != candidate.tier() || riding.len() != candidate.len() {
+        return false;
+    }
+    for (slot, riding_name) in riding.names().enumerate() {
+        let Some(candidate_id) = candidate.id(riding_name) else {
+            return false;
+        };
+        if slot != usize::from(candidate_id) {
+            // Sorted-name order is the id contract: the same names in
+            // the same order resolve the same ids, and the same ids
+            // are what a pooled row's `Val::Tok`/`Val::ModePair`
+            // carries.
+            return false;
+        }
+        let id = candidate_id;
+        if riding.light_rgba(id) != candidate.light_rgba(id) {
+            return false;
+        }
+        let riding_dark = riding.has_dark(id);
+        if riding_dark != candidate.has_dark(id) {
+            return false;
+        }
+        if riding_dark && riding.dark_rgba(id) != candidate.dark_rgba(id) {
+            return false;
+        }
+    }
+    if riding.pairs() != candidate.pairs() {
+        return false;
+    }
+    for slot in 0..riding.pairs() {
+        let Ok(index) = u16::try_from(slot) else {
+            // `Val::ModePair`'s slot is a u16 (the IR's own bound): a
+            // pair table beyond it is outside the model the equality
+            // serves.
+            return false;
+        };
+        if riding.pair_at(index) != candidate.pair_at(index) {
+            return false;
+        }
+    }
+    true
 }
 
 /// The protocol's position → byte offset, UTF-16 columns counted per
