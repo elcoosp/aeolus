@@ -98,6 +98,15 @@ cargo +nightly fuzz run compile_interp_emit -- -max_total_time=60
 The backend crates resolve their framework deps from pinned git revs —
 no `repos/` checkout is needed.
 
+Regeneration duty (the committed artifacts): editing a registry row, the
+GPUI capability verdicts or the read-side tables means regenerating what
+the rows render — `cargo xtask gen-tables` (roots index,
+`docs/REGISTRY.md`) and `cargo xtask gen-gpui-caps`
+(`caps_generated.rs`), each with its `verify-*` drift gate. A stale row
+fails plain `cargo test` (the drift gates pin the bytes), so the
+regeneration is not optional; the verify walks are also runnable
+standalone via the same aliases.
+
 ## Reporting bugs / security
 
 Bugs: GitHub issues with a reproducing class string or CSS snippet.
