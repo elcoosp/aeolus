@@ -116,7 +116,10 @@ use aeolus_theme::{ResolveError, TokenTable};
 /// questions a backend can answer about the element's current situation).
 ///
 /// Every field defaults to the CSS "does not match" answer: states off,
-/// the viewport at zero rem (no breakpoint matches), no container
+/// the viewport at zero rem (no min-width breakpoint fires — the
+/// `max-*:` forms read the same slot's complement, so a below-breakpoint
+/// layer fires at the resting env exactly like it does below its
+/// breakpoint), no container
 /// context (container layers never match — reported under the
 /// sourceless forms, answered per name through the
 /// [`ContainerProbe`] seam under the `*_containers` forms). A backend
