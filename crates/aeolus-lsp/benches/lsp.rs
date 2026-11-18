@@ -267,10 +267,11 @@ fn workspace_symbols_filtered_query(bencher: Bencher) {
     bencher.bench(|| lsp.workspace_symbols("bg-"));
 }
 
-/// The rename path (the rename face's second half): the highlights'
-/// own walk with the edits riding — the cost a rename gesture pays per
-/// keystroke of the new spelling (the prepare half is the locator's
-/// span answer, the walk's first read).
+/// The rename path (the rename face's second half): the references'
+/// fold over the rename edits — the cursor's candidate walked across
+/// every open document with the new spelling riding each occurrence —
+/// the cost a rename gesture pays per invocation (the prepare half is
+/// the locator's span answer, the walk's first read).
 #[divan::bench]
 fn rename_walk(bencher: Bencher) {
     let mut lsp = AeolusEngine::new(EngineConfig::default());
@@ -283,6 +284,54 @@ fn rename_walk(bencher: Bencher) {
         .map(|ch| ch.len_utf16() as u32)
         .sum::<u32>();
     bencher.bench(|| lsp.rename("file:///card.rs", line, character, "flex-row"));
+}
+
+/// The SAME rename over EIGHT open documents (the references arm's own
+/// scaling story, the edits riding the map: one scan per document
+/// beside the URI sort — the editor session's realistic open set).
+#[divan::bench]
+fn rename_eight_documents(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    for index in 0..8 {
+        lsp.open(&format!("file:///card-{index}.rs"), DOC, 1);
+    }
+    let offset = DOC.find("flex-col").expect("the fixture holds") + 2;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.rename("file:///card-0.rs", line, character, "flex-row"));
+}
+
+/// The expand-selection path (LSP 3.16's selectionRange): the shared
+/// locator's walk building the parent chains — the candidate span the
+/// cursor keys, the string's content span its parent — the cost a
+/// multi-cursor expand pays per invocation.
+#[divan::bench]
+fn selection_ranges_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("flex-col").expect("the fixture holds") + 2;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| {
+        lsp.selection_ranges(
+            "file:///card.rs",
+            &[
+                aeolus_lsp::EnginePosition { line, character },
+                aeolus_lsp::EnginePosition {
+                    line: 0,
+                    character: 2,
+                },
+            ],
+        )
+    });
 }
 
 /// The format-on-save path (the class-sort seam's editor face): the
