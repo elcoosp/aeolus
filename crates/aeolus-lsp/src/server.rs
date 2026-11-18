@@ -18,11 +18,12 @@ use lsp_types::{
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentColorParams,
     DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
     DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
-    FullDocumentDiagnosticReport, Hover, HoverContents, HoverProviderCapability, InitializeResult,
-    InlayHint, InlayHintKind, InlayHintLabel, InlayHintOptions, InlayHintParams,
-    InlayHintServerCapabilities, InlayHintTooltip, LinkedEditingRangeParams,
-    LinkedEditingRangeServerCapabilities, LinkedEditingRanges, Location, MarkupContent, MarkupKind,
-    NumberOrString, OneOf, PrepareRenameResponse, PublishDiagnosticsParams, ReferenceParams,
+    FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability, FullDocumentDiagnosticReport,
+    Hover, HoverContents, HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind,
+    InlayHintLabel, InlayHintOptions, InlayHintParams, InlayHintServerCapabilities,
+    InlayHintTooltip, LinkedEditingRangeParams, LinkedEditingRangeServerCapabilities,
+    LinkedEditingRanges, Location, MarkupContent, MarkupKind, NumberOrString, OneOf,
+    PrepareRenameResponse, PublishDiagnosticsParams, ReferenceParams,
     RelatedFullDocumentDiagnosticReport, RenameParams, SelectionRange, SelectionRangeParams,
     SelectionRangeProviderCapability, SemanticToken, SemanticTokenType, SemanticTokens,
     SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
@@ -890,6 +891,88 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/foldingRange" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The outline folding face (LSP 3.16's foldingRange): one
+            // fold per extracted class string, document order — the
+            // engine's whole-document walk. The columns ride (the
+            // client folds the exact span) and no `kind` rides (a
+            // plain region fold, the client's own default).
+            let answer = serde_json::from_value::<FoldingRangeParams>(request.params)
+                .ok()
+                .map(|params| {
+                    session
+                        .engine
+                        .folding_ranges(params.text_document.uri.as_str())
+                        .iter()
+                        .map(|fold| FoldingRange {
+                            start_line: fold.start.line,
+                            start_character: Some(fold.start.character),
+                            end_line: fold.end.line,
+                            end_character: Some(fold.end.character),
+                            kind: None,
+                            collapsed_text: None,
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |folds| Some(serde_json::to_value(folds).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
+        "workspace/diagnostic" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The workspace-wide pull (LSP 3.17's workspace/diagnostic):
+            // every open document's report beside its result identity —
+            // the engine's answer, wire-shaped. lsp-types 0.97 carries
+            // no typed shape for the workspace report, so the items
+            // ride the json! form (the workspace-symbol answer's own
+            // wire precedent): `full` re-lists the findings, `unchanged`
+            // echoes the identity the client sent and carries none.
+            let answer = previous_result_ids(&request.params).map(|previous| {
+                // The engine's answer rides borrowed string pairs (the
+                // wire-free signature); the parsed ids lend theirs.
+                let previous = previous
+                    .iter()
+                    .map(|(uri, id)| (uri.as_str(), id.as_str()))
+                    .collect::<Vec<_>>();
+                let items = session
+                    .engine
+                    .workspace_diagnostics(&previous)
+                    .iter()
+                    .map(|report| match &report.outcome {
+                        crate::EngineWorkspaceOutcome::Full { diagnostics } => {
+                            let findings =
+                                diagnostics.iter().map(wire_diagnostic).collect::<Vec<_>>();
+                            json!({
+                                "uri": report.uri,
+                                "kind": "full",
+                                "resultId": report.result_id,
+                                "items": findings,
+                            })
+                        }
+                        crate::EngineWorkspaceOutcome::Unchanged => {
+                            json!({
+                                "uri": report.uri,
+                                "kind": "unchanged",
+                                "resultId": report.result_id,
+                            })
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                json!({ "items": items })
+            });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                Some,
+            );
+            respond(request.id, result)
+        }
         _ => Handled::default(),
     }
 }
@@ -1120,12 +1203,29 @@ fn respond(id: RequestId, result: Option<Value>) -> Handled {
     }
 }
 
+/// The workspace-pull params' `previousResultIds` — the client's cache
+/// keys, walked off the raw JSON (lsp-types 0.97 carries no typed shape
+/// for the workspace report). The spec's own shape: the array each of
+/// whose entries carries the document `uri` and the `value` string the
+/// client cached under. `None` — the params are malformed (the key
+/// missing, an entry shapeless): the protocol's own empty answer rides.
+fn previous_result_ids(params: &Value) -> Option<Vec<(String, String)>> {
+    let ids = params.get("previousResultIds")?.as_array()?;
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let uri = id.get("uri")?.as_str()?.to_string();
+        let value = id.get("value")?.as_str()?.to_string();
+        out.push((uri, value));
+    }
+    Some(out)
+}
+
 /// The advertised capabilities: hover, completion, colour swatches, the
 /// semantic tokens, the inlay hints, the quick fixes, the document
 /// highlights, the rename face, the canonical-order formatting, the
-/// document-symbol outline and full-text sync. The engine never
-/// forks the pipeline, so the capability surface is the pipeline's own
-/// honesty contract at the editor.
+/// document-symbol outline, the folding ranges and full-text sync. The
+/// engine never forks the pipeline, so the capability surface is the
+/// pipeline's own honesty contract at the editor.
 fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -1185,6 +1285,12 @@ fn server_capabilities() -> ServerCapabilities {
         // order (the engine's whole-document walk — no hierarchical
         // tree, no options object; the plain `true` form).
         document_symbol_provider: Some(OneOf::Left(true)),
+        // The outline folding face (LSP 3.16's foldingRange): one fold
+        // per extracted class string — the shape-level walk, no compile
+        // verdict riding (the highlights' textual family). The plain
+        // `true` form: the answer is the engine's own walk, no options
+        // object.
+        folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
         // The inline answers (LSP 3.17): the engine's hints are final —
         // no resolve round-trip (the completion's own contract), the
         // label and tooltip ride the hint itself.
@@ -1212,12 +1318,15 @@ fn server_capabilities() -> ServerCapabilities {
         )),
         // The pull model rides beside the push channel: the client can
         // ask any time (the refresh path, a newly focused file) and the
-        // engine recomputes — per document, no cross-file model, no
-        // workspace-wide pull (the document map is the answer's scope).
+        // engine recomputes — per document, no cross-file model. The
+        // workspace-wide pull rides beside it (LSP 3.17's
+        // workspace/diagnostic): every open document's report beside
+        // its result identity, the unchanged verdict the client's
+        // cache answers from.
         diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
             identifier: None,
             inter_file_dependencies: false,
-            workspace_diagnostics: false,
+            workspace_diagnostics: true,
             ..DiagnosticOptions::default()
         })),
         completion_provider: Some(CompletionOptions {
