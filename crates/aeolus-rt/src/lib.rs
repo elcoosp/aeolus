@@ -79,12 +79,16 @@ pub use aeolus_compile::{
 pub use aeolus_core::plan::ResolvedStyle;
 // The observability face BOTH dynamic slots carry: the bounded pool's
 // seam (`DynObserver`, the `NoObserver` every-constructor default, the
-// built-in `CacheStats` collector and its `CacheSnapshot`) and the
-// composed-key vocabulary (`session_key` — the identity prefix and the
-// input verbatim, the `DynStore` probe's own grammar) the pool's and
-// the view cell's decisions report under. A host consuming THIS crate
-// names the face without adding `aeolus-compile` to its manifest.
-pub use aeolus_compile::{CacheSnapshot, CacheStats, DynObserver, NoObserver, session_key};
+// built-in `CacheStats` collector and its `CacheSnapshot`, and the
+// eviction face's typed `EvictReason` — what the pool's rotation drops
+// and stale-twin clears, under the same wire-up) and the composed-key
+// vocabulary (`session_key` — the identity prefix and the input
+// verbatim, the `DynStore` probe's own grammar) the pool's and the view
+// cell's decisions report under. A host consuming THIS crate names the
+// face without adding `aeolus-compile` to its manifest.
+pub use aeolus_compile::{
+    CacheSnapshot, CacheStats, DynObserver, EvictReason, NoObserver, session_key,
+};
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
 pub use containers::MeasuredContainers;
