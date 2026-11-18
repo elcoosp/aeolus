@@ -163,6 +163,7 @@ fn the_built_in_stats_answer_the_session() {
             hits: 3,
             misses: 3,
             stores: 3,
+            evictions: 0,
         },
         "three distinct strings lowered once and hit once each"
     );
@@ -200,6 +201,7 @@ fn one_stats_object_spans_the_pool_and_the_cells() {
             hits: 2,
             misses: 3,
             stores: 3,
+            evictions: 0,
         },
         "the shared handle totals the WHOLE app's decisions — the \
          bounded pool beside the view cells"
