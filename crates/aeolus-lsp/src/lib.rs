@@ -115,14 +115,23 @@ use std::fmt;
 
 mod engine;
 mod server;
+mod theme_loader;
 mod transport_observer;
 
 pub use crate::engine::{AeolusEngine, EngineConfig};
+// The theme lifecycle's loader seam beside the retheme answer (the
+// reload handoff): the host's own statement of where the NEXT table
+// comes from (`ThemeLoader`, the disk form `FileThemeLoader`), wired
+// through `Session::with_theme_loader` — the watched-files wire half
+// drives it, the engine's `retheme` is the answer it lands on.
+pub use crate::theme_loader::{FileThemeLoader, ThemeLoader};
 // The theme pass's typed error beside the config that can carry it
 // (the `EngineConfig::try_default` host's own boundary, nameable
 // without adding `aeolus-theme` to its manifest — the faces'
 // no-manifest-add discipline).
-pub use crate::server::{Handled, Session, handle_message, run_stdio, run_stdio_observed};
+pub use crate::server::{
+    Handled, Session, handle_message, run_stdio, run_stdio_observed, run_stdio_with_theme,
+};
 pub use aeolus_theme::ThemeError;
 // The transport observability face (the wire half's own seam): the
 // state machine's per-message verdicts — the answered/quiet requests,
@@ -168,6 +177,23 @@ pub struct EngineRange {
     pub start: EnginePosition,
     /// One past the range's last position.
     pub end: EnginePosition,
+}
+
+/// What [`AeolusEngine::retheme`] did — the typed outcome the theme
+/// lifecycle's callers key on (never prose to parse, the observer
+/// faces' own rule).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RethemeOutcome {
+    /// The table swapped: the pool retired ([`DynCache::clear`] — the
+    /// compile crate's invalidation seam), every later answer rides
+    /// the NEW table, and the wire half republishes every open
+    /// document's diagnostics.
+    Swapped,
+    /// The candidate table equals the riding one (names, tiers and
+    /// resolved colours — the no-op save's re-bake): nothing swaps,
+    /// nothing republishes, the pool keeps serving — the byte-neutral
+    /// no-op the differential pins.
+    Unchanged,
 }
 
 /// One finding the engine publishes: the pipeline's typed diagnostic
