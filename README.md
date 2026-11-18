@@ -255,7 +255,7 @@ Pay only for the dynamism you use:
 | `group-*` / `peer-*` (incl. named, `*-has-*`)              | parent-tier typed `Cond`s                                             | ✅                                                            |
 | `dark:`                                                    | T1 pair index / `Env.dark`                                            | ✅ branch-free                                                |
 | `sm:` … `2xl:` (and the `max-*:` complements)              | `Env.viewport_rem` compare, CLI `expand --width`                      | ✅ 1 compare                                                  |
-| `data-*:` `aria-*:`                                        | typed `AttrProbe` bits (`tw_probes`), CSS selector semantics          | ✅                                                            |
+| `data-*:` `aria-*:`                                        | typed `AttrProbe` bits (`tw_probes`), CLI `expand --data/--aria`, CSS selector semantics | ✅                                                            |
 | `has-*:` `group-has-*:` `peer-has-*:`                      | typed `Cond::Has` + `DescendantProbe` subtree facts (`tw`-side `*_descendants` walks), CSS `:has()` semantics | ✅                                                            |
 | `supports-*:` `supports-[…]:`                              | typed `Cond::Supports` + `SupportsProbe` capability facts (`tw`-side `*_supports` walks), CSS `@supports` semantics | ✅                                                            |
 | `motion-*:` `contrast-*:` `forced-colors:` `print:` `inverted-colors:` `noscript:` | typed `Cond::Media` bits, `Env` preference facts (frame state — no probe seam), CSS media-query semantics | ✅                                                            |
@@ -282,6 +282,7 @@ aeolus explain "p-4 flex-col" --theme shadcn          # class → the Rust token
 aeolus expand "hidden dark:block" --dark              # effective declarations under a probe Env
 aeolus expand --pseudo before "before:p-8"            # the pseudo-element render target's own cascade
 aeolus expand --has element=*:focus "has-focus:p-8"   # the subtree facts the has-* layers answer from
+aeolus expand "data-[state=open]:flex" --data state=open  # the attribute bits the data-*/aria-* layers answer from
 aeolus build src/ --theme shadcn-dark --out app.css   # whole project → ONE stylesheet
 aeolus plan "p-4 hover:px-8" --theme shadcn | jq .    # the V1 lane's plan bridge → the same snapshot JSON
 aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · diff · cn also available
@@ -306,8 +307,8 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 2007 tests with all features enabled (2026-11,
-  the rename handoff's honest sum — `cargo test --workspace --all-features`).
+  **zero** allocations). Workspace battery: 2042 tests with all features enabled (2026-11,
+  the attribute/custom handoff's honest sum — `cargo test --workspace --all-features`).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -461,6 +462,9 @@ cargo run -p aeolus-compile --example form_states       # the form states: enabl
 cargo run -p aeolus-cli --example expand_form_states    # expand --form-associated/--required/--range-bounded/--range-in: the facts the form-state layers answer from
 cargo run -p aeolus-cli --example expand_starting      # expand --starting: the starting-style frame fact on the CLI face
 cargo run -p aeolus-cli --example expand_interaction_states  # the interaction-state flags: hover/focus/active beside the composition founders
+cargo run -p aeolus-cli --example expand_attr         # the attribute-probe families: the fact table the data-*/aria-* layers answer from
+cargo run -p aeolus-cli --example expand_custom       # the custom-authoring seam: the @custom-variant/@utility vocabulary headless
+cargo run -p aeolus-cli --example build               # the build face: whole-project scan → ONE stylesheet
 cargo run -p aeolus-compile --example pseudo_targets    # the pseudo-element render-target tier: one cascade each, the closed set
 cargo run -p aeolus-cli --example expand_pseudo         # expand --pseudo: the render target's own cascade beside the element answer
 cargo run -p aeolus-compile --example group_peer_states # the composition tier: group-*/peer-* over the full probe-state set, the quiet miss beside the fired facts
@@ -596,6 +600,9 @@ cargo run -p aeolus-cli --example expand_starting      # expand --starting: the 
 cargo run -p aeolus-cli --example expand_interaction_states  # the interaction-state flags: hover/focus/active beside the composition founders
 cargo run -p aeolus-cli --example expand_pseudo       # expand --pseudo: the render target's own cascade beside the element answer
 cargo run -p aeolus-cli --example expand_group_peer   # expand --group-active/--peer-disabled/...: the composition-tier facts on the CLI face
+cargo run -p aeolus-cli --example expand_attr         # the attribute-probe families: the fact table the data-*/aria-* layers answer from
+cargo run -p aeolus-cli --example expand_custom       # the custom-authoring seam: the project's own vocabulary headless
+cargo run -p aeolus-cli --example build               # the build face: scan → dedupe → the sheet, --out written
 cargo run -p aeolus-cli --example expand_preferences  # expand --reduced-motion/--more-contrast/--forced-colors/--print/--inverted-colors/--noscript: the facts the preference layers answer from
 cargo run -p aeolus-cli --example sort              # the sort face: canonical order beside the miss channel
 cargo run -p aeolus-cli --example cn                # the cn face: IR-level merge, the rightmost-wins answer
