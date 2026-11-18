@@ -50,6 +50,13 @@ divan = "0.1"
 name = "tokens"
 harness = false
 
+# The theme-resolution observability face's own cost: the unobserved
+# baseline beside the built-in counter and a worst-case recorder, per
+# channel (the compile crate's observer benches' three-arm shape).
+[[bench]]
+name = "observer"
+harness = false
+
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
