@@ -20,13 +20,14 @@ use lsp_types::{
     DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, FullDocumentDiagnosticReport,
     Hover, HoverContents, HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind,
     InlayHintLabel, InlayHintOptions, InlayHintParams, InlayHintServerCapabilities,
-    InlayHintTooltip, MarkupContent, MarkupKind, NumberOrString, OneOf, PrepareRenameResponse,
-    PublishDiagnosticsParams, RelatedFullDocumentDiagnosticReport, RenameParams, SemanticToken,
-    SemanticTokenType, SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend,
-    SemanticTokensOptions, SemanticTokensParams, SemanticTokensServerCapabilities,
-    ServerCapabilities, ServerInfo, SymbolKind, TextDocumentPositionParams,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
-    WorkDoneProgressOptions, WorkspaceEdit,
+    InlayHintTooltip, Location, MarkupContent, MarkupKind, NumberOrString, OneOf,
+    PrepareRenameResponse, PublishDiagnosticsParams, ReferenceParams,
+    RelatedFullDocumentDiagnosticReport, RenameParams, SemanticToken, SemanticTokenType,
+    SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    SemanticTokensParams, SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo,
+    SymbolKind, TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncOptions, TextEdit, Uri, WorkDoneProgressOptions, WorkspaceEdit,
+    WorkspaceSymbolParams,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -97,12 +98,6 @@ impl Session {
     pub fn with_observer(mut self, observer: impl TransportObserver + 'static) -> Self {
         self.observer = Some(Arc::new(observer));
         self
-    }
-
-    /// The session's engine (a host embedding the state machine reads
-    /// the pipeline answers directly).
-    pub fn engine(&self) -> &AeolusEngine {
-        &self.engine
     }
 }
 
@@ -551,6 +546,49 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/references" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The workspace's occurrences (LSP 3.16's references): the
+            // engine's first cross-document answer — the highlights'
+            // textual equality over every open document, each riding its
+            // `Location` (the URI the wire gave, the range it jumps to),
+            // URI order across the map. The `includeDeclaration` context
+            // rides unanswered: a class spelling has no declaration site
+            // among the open documents (the theme CSS the config bakes
+            // is not one), so every occurrence IS a reference — the
+            // boundary the engine's rustdoc carries. A URI the `Uri`
+            // parser rejects skips its quad (the publish half's own
+            // rule: the wire gave it, no editor can have named it
+            // either).
+            let answer = serde_json::from_value::<ReferenceParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let position = params.text_document_position.position;
+                    session
+                        .engine
+                        .references(
+                            params.text_document_position.text_document.uri.as_str(),
+                            position.line,
+                            position.character,
+                        )
+                        .into_iter()
+                        .filter_map(|reference| {
+                            let uri = Uri::from_str(&reference.uri).ok()?;
+                            Some(Location {
+                                uri,
+                                range: wire_range(reference.range),
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |locations| Some(serde_json::to_value(locations).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
         "textDocument/formatting" => {
             if !session.initialized {
                 return Handled::default();
@@ -686,6 +724,54 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                                 "range": range,
                                 "selectionRange": range,
                             })
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |symbols| Some(Value::Array(symbols)),
+            );
+            respond(request.id, result)
+        }
+        "workspace/symbol" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The workspace's outline (LSP 3.16's workspace/symbol):
+            // the document symbols' contract over EVERY open document —
+            // the query the filter (case-insensitive substring on the
+            // spelling, the empty query riding every open candidate),
+            // each match a `SymbolInformation` quad over its
+            // `Location`, URI order across the map. The quad rides the
+            // protocol's own JSON names directly (the documentSymbol
+            // arm's own shape — the typed struct's deprecated field
+            // stays out of the literal), the verdict mapping the
+            // outline's own (a lowered class `Class`, a refused one
+            // `String`). A URI the `Uri` parser rejects skips its quad
+            // (the publish half's own rule); the flat symbols answer —
+            // no hierarchical `WorkspaceSymbol[]`, the outline's own
+            // document-order shape.
+            let answer = serde_json::from_value::<WorkspaceSymbolParams>(request.params)
+                .ok()
+                .map(|params| {
+                    session
+                        .engine
+                        .workspace_symbols(&params.query)
+                        .into_iter()
+                        .filter_map(|workspace_symbol| {
+                            let uri = Uri::from_str(&workspace_symbol.uri).ok()?;
+                            let kind = match workspace_symbol.symbol.kind {
+                                crate::EngineSemanticKind::Lowered => SymbolKind::CLASS,
+                                crate::EngineSemanticKind::Refused => SymbolKind::STRING,
+                            };
+                            Some(json!({
+                                "name": workspace_symbol.symbol.name,
+                                "kind": kind,
+                                "location": {
+                                    "uri": uri,
+                                    "range": wire_range(workspace_symbol.symbol.range),
+                                },
+                            }))
                         })
                         .collect::<Vec<_>>()
                 });
@@ -884,6 +970,20 @@ fn server_capabilities() -> ServerCapabilities {
         // cursor's candidate, document order, no compile verdict
         // riding.
         document_highlight_provider: Some(OneOf::Left(true)),
+        // The workspace's occurrences: the highlights' textual equality
+        // over EVERY open document (the engine's first cross-document
+        // answer), each riding its `Location`, URI order across the
+        // map. The plain `true` form: the answer is the engine's own
+        // walk, no options object.
+        references_provider: Some(OneOf::Left(true)),
+        // The workspace's outline: the document symbols' contract over
+        // EVERY open document, the query the filter (case-insensitive
+        // substring, the empty query riding every open candidate), URI
+        // order across the map. The plain `true` form: the answer is
+        // the engine's own filtered walk, no options object (no
+        // resolve round-trip — the symbols are final, the outline's
+        // own contract).
+        workspace_symbol_provider: Some(OneOf::Left(true)),
         // The rename face: the candidate span under the cursor
         // (`prepareRename` — the hover locator's own walk) beside the
         // per-occurrence edits (`rename` — the highlights' walk with
