@@ -26,11 +26,12 @@ use aeolus_ir::{Cond, Val};
 use aeolus_syntax::parse_class_string;
 use aeolus_theme::{ThemeError, TokenTable};
 
+use crate::token_origins::{TokenOrigins, origin_range};
 use crate::{
     DocumentMap, EngineCodeAction, EngineColour, EngineColourPresentation, EngineCompletion,
-    EngineCompletionKind, EngineDiagnostic, EngineHighlight, EngineHover, EngineInlayHint,
-    EnginePosition, EngineRange, EngineReference, EngineRenameEdit, EngineSelectionRange,
-    EngineSemanticKind, EngineSemanticToken, EngineSymbol, EngineTextEdit,
+    EngineCompletionKind, EngineDefinition, EngineDiagnostic, EngineHighlight, EngineHover,
+    EngineInlayHint, EnginePosition, EngineRange, EngineReference, EngineRenameEdit,
+    EngineSelectionRange, EngineSemanticKind, EngineSemanticToken, EngineSymbol, EngineTextEdit,
     EngineWorkspaceDiagnostic, EngineWorkspaceOutcome, EngineWorkspaceSymbol, RethemeOutcome,
 };
 
@@ -53,6 +54,15 @@ pub struct EngineConfig {
     /// The compile seam's own knobs (the spacing strategy, the rem
     /// size) — the engine never forks pipeline semantics.
     pub compile: Config,
+    /// The origin URI the goto-definition face names (the wire's
+    /// `Location.uri`): the file the config's table was parsed from —
+    /// the `--theme` file's URI a host passes at construction, the
+    /// wired [`ThemeLoader`](crate::ThemeLoader)'s URI the wire half
+    /// composes in. `None` keeps the face dark (the honest default:
+    /// the built-in shadcn bake is no file), and the provenance scan
+    /// answers only what that file itself declares — a seeded palette
+    /// name rides no origin either way.
+    pub theme_origin: Option<String>,
 }
 
 impl EngineConfig {
@@ -63,7 +73,21 @@ impl EngineConfig {
         Self {
             tokens,
             compile: Config::default(),
+            theme_origin: None,
         }
+    }
+
+    /// The config with the goto-definition face's origin URI named (the
+    /// host's own statement of where the table's tokens live): the file
+    /// [`TokenTable::provenance`](aeolus_theme::TokenTable::provenance)
+    /// scans answer through it, byte-true. A host with a table built
+    /// from [`ThemeSource::from_css`](aeolus_theme::ThemeSource::from_css)
+    /// names the URI that CSS lives at; a host whose tokens live
+    /// somewhere else wires a [`TokenOrigins`] store on the ENGINE
+    /// instead (the store rides first).
+    pub fn with_theme_origin(mut self, uri: impl Into<String>) -> Self {
+        self.theme_origin = Some(uri.into());
+        self
     }
 
     /// The CLI-parity default, fallible: the built-in shadcn bake with
@@ -79,6 +103,10 @@ impl EngineConfig {
         Ok(Self {
             tokens: Some(table),
             compile: Config::default(),
+            // The built-in bake is no file: the goto-definition face
+            // stays dark until the host names an origin (or the wire
+            // half's loader composes one in).
+            theme_origin: None,
         })
     }
 }
@@ -124,6 +152,11 @@ pub struct AeolusEngine {
     /// [`AeolusEngine::with_walk_observer`]; a miss lowers through the
     /// observed walk, a hit streams nothing).
     walk: Option<Arc<dyn WalkObserver>>,
+    /// The wired token-origins store, `None` the every-constructor
+    /// default — the goto-definition half's host override
+    /// ([`AeolusEngine::with_token_origins`]): the store rides FIRST,
+    /// the config's own provenance path the built-in fallback.
+    origins: Option<Arc<dyn TokenOrigins>>,
 }
 
 impl std::fmt::Debug for AeolusEngine {
@@ -136,6 +169,7 @@ impl std::fmt::Debug for AeolusEngine {
             .field("documents", &self.documents.len())
             .field("cache", &self.cache)
             .field("walk", &self.walk.is_some())
+            .field("origins", &self.origins.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -148,7 +182,24 @@ impl AeolusEngine {
             documents: DocumentMap::new(),
             cache: DynCache::new(),
             walk: None,
+            origins: None,
         }
+    }
+
+    /// The engine with a host-supplied token-origins store — the
+    /// goto-definition half's override seam (the
+    /// [`ThemeLoader`](crate::ThemeLoader) precedent: the host's own
+    /// statement of where a resource lives, the built-in a consumer of
+    /// the seam, never its definition), chained after `new` like the
+    /// observer faces. The store rides FIRST: a wired store's answer IS
+    /// the definition (the engine's config path — the riding table's
+    /// own provenance under [`EngineConfig::theme_origin`] — the
+    /// fallback a store-less session keeps). The compile gate rides
+    /// ahead of every source: a class the walk refused carries no
+    /// token, whatever the store knows.
+    pub fn with_token_origins(mut self, origins: impl TokenOrigins + 'static) -> Self {
+        self.origins = Some(Arc::new(origins));
+        self
     }
 
     /// The engine with a host-supplied observer — the compile seam's
@@ -219,6 +270,15 @@ impl AeolusEngine {
         self.config.tokens = tokens;
         self.cache.clear();
         RethemeOutcome::Swapped
+    }
+
+    /// The wire half's origin note: the wired loader's URI names the
+    /// file the session's tables come from — the goto-definition face's
+    /// origin (the config's own default stays `None` until a loader
+    /// rides: the built-in bake is no file). Idempotent — one loader,
+    /// one file, the URI fixed for the loader's life.
+    pub(crate) fn note_theme_origin(&mut self, uri: &str) {
+        self.config.theme_origin = Some(uri.to_string());
     }
 
     /// Open a document (the wire's didOpen): the text replaces any
@@ -388,6 +448,53 @@ impl AeolusEngine {
         Some(EngineHover {
             contents: lowered_markdown(raw, cond, &sheet),
             range: Some(range),
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // The goto-definition answer
+    // -----------------------------------------------------------------------
+
+    /// The definition site the cursor's token class answers: the theme
+    /// file's own declaration, byte-true in the wire's UTF-16 pairs.
+    /// The identity rides the compiler's own vocabulary — the candidate
+    /// under the cursor (the shared locator, the hover's own walk) must
+    /// lower cleanly, its utility half must decompose onto a
+    /// colour-group root whose remainder the riding table carries (the
+    /// colour presentations' own composition walked backwards), and the
+    /// site is the theme pass's provenance scan under the config's
+    /// origin URI — or the wired host store's answer, which rides
+    /// FIRST. Every miss is honest: a refused class, a non-token class,
+    /// a token the file does not declare (the seeded palette names), a
+    /// theme-less config, an unnamed origin — all answer `None`, never
+    /// a guessed span. Deterministic and pure over the document map; an
+    /// unknown URI answers `None`.
+    pub fn definition(&self, uri: &str, line: u32, character: u32) -> Option<EngineDefinition> {
+        let doc = self.documents.get(uri)?;
+        let text = doc.text.as_str();
+        let offset = offset_of(text, line, character)?;
+        let (start, end) = candidate_span_at(text, offset)?;
+        let raw = &text[start..end];
+        // The compile gate rides ahead of every origin source: a
+        // refused class carries no token — the diagnostics publish it,
+        // the definition stays dark.
+        let compiled = self.compiled(raw).ok()?;
+        if !compiled.diagnostics.is_empty() {
+            return None;
+        }
+        let table = self.config.tokens.as_ref()?;
+        let token = token_under(raw, table)?;
+        // The host store rides first (the wired override); the config's
+        // own provenance path — the table's scan under the named
+        // origin — the fallback.
+        if let Some(store) = &self.origins {
+            return store.definition(token);
+        }
+        let origin = table.origin(token)?;
+        let theme_uri = self.config.theme_origin.as_ref()?;
+        Some(EngineDefinition {
+            uri: theme_uri.clone(),
+            range: origin_range(origin),
         })
     }
 
@@ -1385,6 +1492,37 @@ fn candidate_span_at(text: &str, offset: usize) -> Option<(usize, usize)> {
         .iter()
         .find(|candidate| local >= candidate.span.0 && local < candidate.span.1)?;
     Some((hit.offset + candidate.span.0, hit.offset + candidate.span.1))
+}
+
+/// The token one lowered candidate's utility half names: the variant
+/// stack's tail (the last `:` segment), the `/opacity` modifier
+/// presentation stripped, decomposed onto the registry's colour-group
+/// roots — the colour presentations' own composition walked backwards,
+/// the SAME rows and roots, never a parallel matcher. The remainder
+/// must verify through the riding table (`TokenTable::id`) — a class
+/// the table cannot name (a non-colour root, an arbitrary value's own
+/// colon) answers None, the honest miss.
+fn token_under<'t>(raw: &'t str, table: &'t TokenTable) -> Option<&'t str> {
+    let utility = raw.rsplit(':').next()?;
+    let utility = utility.split('/').next()?;
+    for row in ROWS {
+        if !COLOUR_GROUPS.contains(&row.group) {
+            continue;
+        }
+        let Some(rest) = utility
+            .strip_prefix(row.root)
+            .and_then(|tail| tail.strip_prefix('-'))
+        else {
+            continue;
+        };
+        if rest.is_empty() {
+            continue;
+        }
+        if table.id(rest).is_some() {
+            return Some(rest);
+        }
+    }
+    None
 }
 
 /// Byte offset → `(line, character-UTF16)` for the offset's own
