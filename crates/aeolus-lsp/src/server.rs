@@ -20,12 +20,13 @@ use lsp_types::{
     DocumentHighlight, DocumentHighlightParams, FullDocumentDiagnosticReport, Hover, HoverContents,
     HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind, InlayHintLabel,
     InlayHintOptions, InlayHintParams, InlayHintServerCapabilities, InlayHintTooltip,
-    MarkupContent, MarkupKind, NumberOrString, OneOf, PublishDiagnosticsParams,
-    RelatedFullDocumentDiagnosticReport, SemanticToken, SemanticTokenType, SemanticTokens,
-    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
-    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, TextDocumentPositionParams,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
-    WorkDoneProgressOptions, WorkspaceEdit,
+    MarkupContent, MarkupKind, NumberOrString, OneOf, PrepareRenameResponse,
+    PublishDiagnosticsParams, RelatedFullDocumentDiagnosticReport, RenameParams, SemanticToken,
+    SemanticTokenType, SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend,
+    SemanticTokensOptions, SemanticTokensParams, SemanticTokensServerCapabilities,
+    ServerCapabilities, ServerInfo, TextDocumentPositionParams, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkDoneProgressOptions,
+    WorkspaceEdit,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -143,16 +144,7 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                         kind: MarkupKind::Markdown,
                         value: hover.contents,
                     }),
-                    range: hover.range.map(|range| lsp_types::Range {
-                        start: lsp_types::Position {
-                            line: range.start.line,
-                            character: range.start.character,
-                        },
-                        end: lsp_types::Position {
-                            line: range.end.line,
-                            character: range.end.character,
-                        },
-                    }),
+                    range: hover.range.map(wire_range),
                 })
                 .unwrap_or(Value::Null)
             });
@@ -170,16 +162,7 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                         .document_colours(params.text_document.uri.as_str())
                         .iter()
                         .map(|swatch| ColorInformation {
-                            range: lsp_types::Range {
-                                start: lsp_types::Position {
-                                    line: swatch.range.start.line,
-                                    character: swatch.range.start.character,
-                                },
-                                end: lsp_types::Position {
-                                    line: swatch.range.end.line,
-                                    character: swatch.range.end.character,
-                                },
-                            },
+                            range: wire_range(swatch.range),
                             // The protocol's colour model is rgba
                             // itself (0..1 fractions) — the resolved
                             // bytes map channel for channel.
@@ -411,16 +394,7 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                             // The edit over the finding's own range (the
                             // wire's TextEdit pair, the mapping the push
                             // channel's ranges ride).
-                            let edit_range = lsp_types::Range {
-                                start: lsp_types::Position {
-                                    line: action.diagnostic.range.start.line,
-                                    character: action.diagnostic.range.start.character,
-                                },
-                                end: lsp_types::Position {
-                                    line: action.diagnostic.range.end.line,
-                                    character: action.diagnostic.range.end.character,
-                                },
-                            };
+                            let edit_range = wire_range(action.diagnostic.range);
                             CodeActionOrCommand::CodeAction(CodeAction {
                                 title: action.title.clone(),
                                 // The kind the editors filter on: the
@@ -477,16 +451,7 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                         )
                         .iter()
                         .map(|highlight| DocumentHighlight {
-                            range: lsp_types::Range {
-                                start: lsp_types::Position {
-                                    line: highlight.range.start.line,
-                                    character: highlight.range.start.character,
-                                },
-                                end: lsp_types::Position {
-                                    line: highlight.range.end.line,
-                                    character: highlight.range.end.character,
-                                },
-                            },
+                            range: wire_range(highlight.range),
                             kind: None,
                         })
                         .collect::<Vec<_>>()
@@ -517,16 +482,7 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                         .format(params.text_document.uri.as_str())
                         .iter()
                         .map(|edit| TextEdit {
-                            range: lsp_types::Range {
-                                start: lsp_types::Position {
-                                    line: edit.range.start.line,
-                                    character: edit.range.start.character,
-                                },
-                                end: lsp_types::Position {
-                                    line: edit.range.end.line,
-                                    character: edit.range.end.character,
-                                },
-                            },
+                            range: wire_range(edit.range),
                             new_text: edit.new_text.clone(),
                         })
                         .collect::<Vec<_>>()
@@ -534,6 +490,74 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             let result = answer.map_or(
                 Some(Value::Null), // malformed params: the protocol's own empty answer
                 |edits| Some(serde_json::to_value(edits).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
+        "textDocument/prepareRename" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The rename face's first half: the renameable span under
+            // the cursor — the candidate's own byte-true range, the
+            // full spelling the highlights' raw-text contract names. A
+            // cursor outside any candidate answers null (the protocol's
+            // cannot-rename), the same shape a malformed-params request
+            // rides.
+            let answer = serde_json::from_value::<TextDocumentPositionParams>(request.params)
+                .ok()
+                .and_then(|params| {
+                    let position = params.position;
+                    session.engine.prepare_rename(
+                        params.text_document.uri.as_str(),
+                        position.line,
+                        position.character,
+                    )
+                })
+                .map(|range| PrepareRenameResponse::Range(wire_range(range)));
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params and the no-candidate cursor: the protocol's own null
+                |span| Some(serde_json::to_value(span).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
+        "textDocument/rename" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The rename face's second half: one edit per textual
+            // occurrence of the cursor's candidate (the highlights' own
+            // walk), the new spelling riding every edit — per document
+            // (the map is the scope), the engine's own empty-name guard
+            // keeping the deletion walk out.
+            let answer = serde_json::from_value::<RenameParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let position = params.text_document_position.position;
+                    let uri = params.text_document_position.text_document.uri;
+                    let edits = session.engine.rename(
+                        uri.as_str(),
+                        position.line,
+                        position.character,
+                        &params.new_name,
+                    );
+                    // The per-document edit list rides the codeAction
+                    // arm's own single-shot map shape (the `Uri` key the
+                    // protocol's changes table names).
+                    let edits = edits
+                        .iter()
+                        .map(|edit| TextEdit {
+                            range: wire_range(edit.range),
+                            new_text: edit.new_text.clone(),
+                        })
+                        .collect::<Vec<_>>();
+                    WorkspaceEdit {
+                        changes: Some(HashMap::from([(uri, edits)])),
+                        ..WorkspaceEdit::default()
+                    }
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |edit| Some(serde_json::to_value(edit).unwrap_or(Value::Null)),
             );
             respond(request.id, result)
         }
@@ -597,6 +621,23 @@ fn handle_notification(session: &mut Session, notification: Notification) -> Han
 // The publish + respond helpers
 // ---------------------------------------------------------------------------
 
+/// The engine's byte-true range onto the protocol's own — the ONE
+/// mapping every range-shaped answer rides (the hover's, the colours',
+/// the quick fixes', the highlights', the edits' and the findings'
+/// ranges; one conversion, owned once here).
+fn wire_range(range: crate::EngineRange) -> lsp_types::Range {
+    lsp_types::Range {
+        start: lsp_types::Position {
+            line: range.start.line,
+            character: range.start.character,
+        },
+        end: lsp_types::Position {
+            line: range.end.line,
+            character: range.end.character,
+        },
+    }
+}
+
 /// One engine finding onto the protocol's Diagnostic — the mapping BOTH
 /// channels share (the push channel's publish and the pull channel's
 /// report; one walk, two transports, one render). The findings are the
@@ -604,16 +645,7 @@ fn handle_notification(session: &mut Session, notification: Notification) -> Han
 /// CLI's own honesty contract at the editor).
 fn wire_diagnostic(finding: &crate::EngineDiagnostic) -> lsp_types::Diagnostic {
     lsp_types::Diagnostic {
-        range: lsp_types::Range {
-            start: lsp_types::Position {
-                line: finding.range.start.line,
-                character: finding.range.start.character,
-            },
-            end: lsp_types::Position {
-                line: finding.range.end.line,
-                character: finding.range.end.character,
-            },
-        },
+        range: wire_range(finding.range),
         severity: Some(lsp_types::DiagnosticSeverity::WARNING),
         code: Some(NumberOrString::String(finding.code.clone())),
         message: finding.message.clone(),
@@ -718,6 +750,13 @@ fn server_capabilities() -> ServerCapabilities {
         // cursor's candidate, document order, no compile verdict
         // riding.
         document_highlight_provider: Some(OneOf::Left(true)),
+        // The rename face: the candidate span under the cursor
+        // (`prepareRename` — the hover locator's own walk) beside the
+        // per-occurrence edits (`rename` — the highlights' walk with
+        // the new spelling riding each). The plain `true` form: the
+        // answers are the engine's own textual walks, no prepare gate
+        // options object.
+        rename_provider: Some(OneOf::Left(true)),
         // The class-sort seam's editor face: one edit per out-of-order
         // class string, the sort seam's canonical join as the new text
         // (an already-canonical string answers no edit — the no-op
