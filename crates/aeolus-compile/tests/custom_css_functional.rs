@@ -274,7 +274,15 @@ fn unknown_property_and_form_refuse() {
         &config,
     )
     .expect_err("a fixed header cannot carry a functional body");
-    assert!(matches!(err, CustomCssError::Body { .. }));
+    // The no-`@apply` shape answers its own message (the variant's
+    // weak-error fix: the two body refusals are distinguishable).
+    let CustomCssError::Body { message, .. } = err else {
+        panic!("the body refusal");
+    };
+    assert!(
+        message.contains("no `@apply`"),
+        "the `@apply`-less shape names itself: {message}"
+    );
 }
 
 #[test]
