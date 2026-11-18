@@ -101,11 +101,11 @@ no `repos/` checkout is needed.
 Regeneration duty (the committed artifacts): editing a registry row, the
 GPUI capability verdicts or the read-side tables means regenerating what
 the rows render — `cargo xtask gen-tables` (roots index,
-`docs/REGISTRY.md`) and `cargo xtask gen-gpui-caps`
-(`caps_generated.rs`), each with its `verify-*` drift gate. A stale row
-fails plain `cargo test` (the drift gates pin the bytes), so the
-regeneration is not optional; the verify walks are also runnable
-standalone via the same aliases.
+`docs/REGISTRY.md`, `docs/CONFORMANCE.md`) and `cargo xtask
+gen-gpui-caps` (`caps_generated.rs`), each with its `verify-*` drift
+gate. A stale row fails plain `cargo test` (the drift gates pin the
+bytes), so the regeneration is not optional; the verify walks are also
+runnable standalone via the same aliases.
 
 ## Reporting bugs / security
 
