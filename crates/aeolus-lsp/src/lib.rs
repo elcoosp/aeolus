@@ -54,7 +54,11 @@
 //!     rides one edit over its content span, the class-sort seam's own
 //!     canonical join as the new text — the no-op contract a
 //!     format-on-save rides, an already-canonical string answering
-//!     nothing ([`EngineTextEdit`]).
+//!     nothing ([`EngineTextEdit`]);
+//!   * *what classes live here?* — the document symbols: every
+//!     candidate class as an outline entry — the spelling the name, its
+//!     byte-true range, the legend's own verdict and the pipeline's own
+//!     detail line ([`EngineSymbol`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -314,6 +318,30 @@ pub struct EngineTextEdit {
     /// The canonical order the sort seam answers (single-space join —
     /// the whitespace run does not survive the canonical form).
     pub new_text: String,
+}
+
+/// One outline symbol the editor's document tree rides (the wire's
+/// `textDocument/documentSymbol` answer): one per candidate class the
+/// extraction seam's strings carry — the spelling as the NAME, its
+/// byte-true range, the semantic legend's own verdict (the same
+/// classification the highlighter feeds: a clean lower, a typed
+/// refusal) and the detail line the pipeline's own output carries (the
+/// lowered class's compact CSS — the inlay hint's label — a refused
+/// one's stable code beside). Document order: the extraction seam's
+/// scan order, candidates within a string left to right.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineSymbol {
+    /// The candidate's spelling (`"p-4"`, `"hover:bg-primary/90"`).
+    pub name: String,
+    /// The candidate's byte-true range (the editor's outline jumps
+    /// here).
+    pub range: EngineRange,
+    /// The pipeline's own detail line: the compact CSS the class
+    /// lowers to, or the refusal's stable machine code.
+    pub detail: String,
+    /// The compile verdict — the semantic legend's own two answers
+    /// (the wire half maps each onto its protocol kind).
+    pub kind: EngineSemanticKind,
 }
 
 /// One open document the engine keeps: the current text and the LSP's
