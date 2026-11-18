@@ -655,6 +655,53 @@ impl AeolusEngine {
     }
 
     // -----------------------------------------------------------------------
+    // The rename face
+    // -----------------------------------------------------------------------
+
+    /// The renameable span under the cursor (the wire's
+    /// `textDocument/prepareRename`): the candidate's own byte-true
+    /// range — the full spelling INCLUDING its variant prefixes (the
+    /// highlights' raw-text contract: `hover:flex-col` is one token,
+    /// renamed whole). `None` outside any candidate — the protocol's
+    /// cannot-rename answer the editor renders. Deterministic and pure
+    /// over the document map; an unknown URI answers none.
+    pub fn prepare_rename(&self, uri: &str, line: u32, character: u32) -> Option<EngineRange> {
+        let doc = self.documents.get(uri)?;
+        let text = doc.text.as_str();
+        let offset = offset_of(text, line, character)?;
+        let (start, end) = candidate_span_at(text, offset)?;
+        Some(range_of(text, start, end))
+    }
+
+    /// The rename edits (the wire's `textDocument/rename`): ONE edit
+    /// per textual occurrence of the cursor's candidate — the
+    /// highlights' own walk, the new spelling riding every edit. The
+    /// face is TEXTUAL (the highlights' own contract, no compile
+    /// verdict riding): the diagnostics channel tells the truth about
+    /// the NEW spelling's compile the moment the didChange lands. An
+    /// empty new name answers NO edits (never a deletion walk — the
+    /// protocol's own validity clause, the quiet shape). Deterministic
+    /// and pure over the document map; an unknown URI answers empty.
+    pub fn rename(
+        &self,
+        uri: &str,
+        line: u32,
+        character: u32,
+        new_name: &str,
+    ) -> Vec<EngineTextEdit> {
+        if new_name.is_empty() {
+            return Vec::new();
+        }
+        self.document_highlights(uri, line, character)
+            .into_iter()
+            .map(|highlight| EngineTextEdit {
+                range: highlight.range,
+                new_text: new_name.to_string(),
+            })
+            .collect()
+    }
+
+    // -----------------------------------------------------------------------
     // The formatting answer
     // -----------------------------------------------------------------------
 
