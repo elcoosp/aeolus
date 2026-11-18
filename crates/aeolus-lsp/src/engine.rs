@@ -13,10 +13,12 @@
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
+use std::sync::Arc;
 
 use aeolus_compile::{
     COLOUR_GROUPS, CompileError, Compiled, Config, CssSheet, Diagnostic, DynCache, DynObserver,
-    KNOWN_VARIANTS, ScanHit, emit_css, emit_css_theme, scan_rust_strings, sort, suggest_for,
+    KNOWN_VARIANTS, ScanHit, WalkObserver, emit_css, emit_css_theme, scan_rust_strings, sort,
+    suggest_for,
 };
 use aeolus_data::ValueKind;
 use aeolus_data::rows::ROWS;
@@ -88,7 +90,6 @@ impl Default for EngineConfig {
 /// the position conversions. One engine per server session (the wire
 /// half owns it); a host embedding the engine directly rides the same
 /// two questions without the transport.
-#[derive(Debug)]
 pub struct AeolusEngine {
     /// The engine's pipeline configuration.
     config: EngineConfig,
@@ -106,6 +107,25 @@ pub struct AeolusEngine {
     /// (the cache never changes a decision — the compile crate's own
     /// differential contract).
     cache: DynCache,
+    /// The wired walk observer, `None` the every-constructor default
+    /// (the compile seam's walk face over the pooled path — see
+    /// [`AeolusEngine::with_walk_observer`]; a miss lowers through the
+    /// observed walk, a hit streams nothing).
+    walk: Option<Arc<dyn WalkObserver>>,
+}
+
+impl std::fmt::Debug for AeolusEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The wired walk observer is a host handle, not printable state
+        // — the honest Debug names the session view and whether one rides
+        // (the compile crate's cache Debug's own rule).
+        f.debug_struct("AeolusEngine")
+            .field("config", &self.config)
+            .field("documents", &self.documents.len())
+            .field("cache", &self.cache)
+            .field("walk", &self.walk.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl AeolusEngine {
@@ -115,6 +135,7 @@ impl AeolusEngine {
             config,
             documents: DocumentMap::new(),
             cache: DynCache::new(),
+            walk: None,
         }
     }
 
@@ -130,6 +151,25 @@ impl AeolusEngine {
     /// changes a decision.
     pub fn with_observer(mut self, observer: impl DynObserver + 'static) -> Self {
         self.cache = self.cache.with_observer(observer);
+        self
+    }
+
+    /// The engine with a host-supplied walk observer — the compile
+    /// seam's WALK face joined over the pooled path (the
+    /// [`DynCache::compile_observed`] shape, chained after `new`: the
+    /// built-in [`WalkStats`](aeolus_compile::WalkStats) rides an `Arc`
+    /// the host keeps a handle to). Every analyze/hover/complete
+    /// answer the pool MISSES lowers through the observed walk — the
+    /// lex totals, the per-candidate verdicts and the assembly count
+    /// stream in lowering order — while a HIT answers from the pool
+    /// and streams nothing (the channel reports lowerings, not
+    /// answers). The cache face (`with_observer`) answers "what did
+    /// the pool decide"; this face answers "what did the walk do when
+    /// the pool missed" — one host can wire both and read one session
+    /// from the two vocabularies. The observer adds a channel; it
+    /// never changes a decision.
+    pub fn with_walk_observer(mut self, observer: impl WalkObserver + 'static) -> Self {
+        self.walk = Some(Arc::new(observer));
         self
     }
 
@@ -177,9 +217,19 @@ impl AeolusEngine {
     /// diagnostics the miss stored; only the empty input errors, and
     /// errors are never cached).
     fn compiled(&self, raw: &str) -> Result<Compiled, CompileError> {
-        match &self.config.tokens {
-            Some(table) => self.cache.compile_theme(raw, table, &self.config.compile),
-            None => self.cache.compile(raw, &self.config.compile),
+        match (&self.config.tokens, &self.walk) {
+            (Some(table), Some(walk)) => self.cache.compile_theme_observed(
+                raw,
+                table,
+                &self.config.compile,
+                Arc::clone(walk),
+            ),
+            (Some(table), None) => self.cache.compile_theme(raw, table, &self.config.compile),
+            (None, Some(walk)) => {
+                self.cache
+                    .compile_observed(raw, &self.config.compile, Arc::clone(walk))
+            }
+            (None, None) => self.cache.compile(raw, &self.config.compile),
         }
     }
 
