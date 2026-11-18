@@ -34,8 +34,8 @@ pub trait ThemeLoader: Send + Sync + 'static {
 
     /// The next table. `Err` keeps the riding table untouched (the
     /// session publishes nothing — nothing changed), `Ok` rides the
-    /// engine's [`AeolusEngine::retheme`] contract (equal content the
-    /// byte-neutral no-op).
+    /// engine's [`crate::AeolusEngine::retheme`] contract (equal content
+    /// the byte-neutral no-op).
     ///
     /// # Errors
     /// Whatever the source's own construction carries
