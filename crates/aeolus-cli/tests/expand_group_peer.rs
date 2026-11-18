@@ -55,6 +55,40 @@ fn the_unset_facts_stay_the_quiet_miss() {
 }
 
 #[test]
+fn the_founding_composition_flags_assert_their_facts() {
+    // The four founding members join the tier: hover/focus on both
+    // relations — the facts the composition family's own first four
+    // conds ride (the `--group-active` precedent).
+    for (flag, class, expected) in [
+        ("--group-hover", "p-4 group-hover:p-8", "padding-top = 2rem"),
+        ("--group-focus", "p-4 group-focus:p-8", "padding-top = 2rem"),
+        ("--peer-hover", "p-4 peer-hover:p-2", "padding-top = 0.5rem"),
+        ("--peer-focus", "p-4 peer-focus:p-2", "padding-top = 0.5rem"),
+    ] {
+        let lines = expand_lines(&["expand", flag, class]);
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains(expected),
+            "{flag} answers the asserted fact: {joined}"
+        );
+    }
+}
+
+#[test]
+fn the_founding_flags_unset_stay_the_quiet_miss() {
+    let lines = expand_lines(&["expand", "p-4 group-hover:p-8 peer-focus:p-2"]);
+    let joined = lines.join("\n");
+    assert!(
+        joined.contains("padding-top = 1rem"),
+        "the base declaration answers; the founding layers wait: {joined}"
+    );
+    assert!(
+        !joined.contains("padding-top = 2rem") && !joined.contains("padding-top = 0.5rem"),
+        "no founding layer fired on the resting face: {joined}"
+    );
+}
+
+#[test]
 fn every_composition_flag_parses() {
     // The closed flag set: each spelling parses (the fold's own set).
     let flags = [
@@ -70,6 +104,10 @@ fn every_composition_flag_parses() {
         "--peer-disabled",
         "--peer-visited",
         "--peer-checked",
+        "--group-hover",
+        "--group-focus",
+        "--peer-hover",
+        "--peer-focus",
     ];
     for flag in flags {
         let lines = expand_lines(&["expand", flag, "p-4"]);
