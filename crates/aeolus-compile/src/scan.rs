@@ -1,6 +1,6 @@
 //! The project-build seam (architecture plan §2's approach C —
 //! "whole-project scan + one generated file: scan sources, emit one
-//! global artifact, dedupe globally" — and the P6 row's `cargo aeolus
+//! global artifact, dedupe globally" — and the P6 row's `aeolus
 //! build`): many source files in, ONE stylesheet out.
 //!
 //! ```text
