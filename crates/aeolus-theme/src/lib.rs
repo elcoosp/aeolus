@@ -50,12 +50,17 @@
 //! carry the same honesty.
 
 use std::fmt;
+use std::sync::Arc;
 
 use aeolus_core::{Color, ParseError, TailwindTheme, shadcn_css};
 use aeolus_ir::Val;
 
+mod observer;
 mod source;
 
+pub use observer::{
+    NoThemeObserver, ResolveOutcome, RgbaOutcome, ThemeObserver, ThemeSnapshot, ThemeStats,
+};
 pub use source::{SourceDirective, source_directives};
 
 /// Which value form a [`TokenTable`] resolves tokens to (plan §3.4's
@@ -328,7 +333,13 @@ impl miette::Diagnostic for ResolveError {
 /// source did — and snapshots `Color`s into a flat store); ids ride
 /// compiled `Program`s, so they are a contract: sorted-name order,
 /// test-pinned stable across rebuilds.
-#[derive(Clone, Debug)]
+///
+/// Observability rides the table too ([`TokenTable::with_observer`],
+/// the theme-resolution seam): a wired [`ThemeObserver`] sees every
+/// `resolve`/`resolve_rgba` verdict in caller order — the compile
+/// walk's per-declaration consults included, since its lowering calls
+/// the same primitives on the table it is handed.
+#[derive(Clone)]
 pub struct TokenTable {
     tier: Tier,
     /// Sorted, deduplicated token names — index IS the id.
@@ -342,6 +353,22 @@ pub struct TokenTable {
     pairs: Vec<(Color, Color)>,
     /// Per token: the pair slot it forms, when a dark value exists.
     pair_of: Vec<Option<u16>>,
+    /// The wired theme observer, `None` the every-constructor default
+    /// (the seam adds a channel, never turns one on by surprise).
+    observer: Option<Arc<dyn ThemeObserver>>,
+}
+
+impl fmt::Debug for TokenTable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The wired observer is a host handle, not printable state — the
+        // honest Debug names the tier/id surface and whether one rides.
+        f.debug_struct("TokenTable")
+            .field("tier", &self.tier)
+            .field("tokens", &self.names.len())
+            .field("pairs", &self.pairs.len())
+            .field("observer", &self.observer.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl TokenTable {
@@ -436,12 +463,29 @@ impl TokenTable {
             dark,
             pairs,
             pair_of,
+            observer: None,
         })
     }
 
     /// The tier this table resolves to (set at build time).
     pub fn tier(&self) -> Tier {
         self.tier
+    }
+
+    /// The table with a host-supplied [`ThemeObserver`] — the
+    /// theme-resolution seam's wire-up, chained after ANY construction
+    /// path (`baked` and `runtime` both start observation-free, so
+    /// `TokenTable::runtime(&source).with_observer(...)` is the
+    /// composed shape; the built-in [`ThemeStats`] rides an `Arc` the
+    /// host keeps a handle to). Every later `resolve`/`resolve_rgba`
+    /// on the table (or a clone of it — the wiring rides `Clone`)
+    /// streams its verdict to the observer in caller order, the typed
+    /// outcome beside the typed refusals. The observer adds a channel;
+    /// it never changes an answer — the differential pins the observed
+    /// table's answers identical to the plain table's.
+    pub fn with_observer(mut self, observer: impl ThemeObserver + 'static) -> Self {
+        self.observer = Some(Arc::new(observer));
+        self
     }
 
     /// How many colour tokens the table carries.
@@ -532,40 +576,64 @@ impl TokenTable {
     ///
     /// # Errors
     /// [`ResolveError`] per the three cases above.
+    ///
+    /// A wired observer ([`TokenTable::with_observer`]) sees the
+    /// verdict: the tier arm that answered (or the typed refusal) as
+    /// [`ResolveOutcome`], fired after the answer is computed and
+    /// before the call returns.
     pub fn resolve(&self, id: u16, alpha: Option<f32>) -> Result<Val, ResolveError> {
         #[cfg(feature = "tracing")]
         tracing::trace!(id, ?alpha, tier = ?self.tier, "token resolve");
         let idx = usize::from(id);
         if idx >= self.names.len() {
-            return Err(ResolveError::UnknownId(id));
+            let error = ResolveError::UnknownId(id);
+            if let Some(observer) = self.observer.as_deref() {
+                observer.on_resolve(id, alpha, ResolveOutcome::Missed(error));
+            }
+            return Err(error);
         }
-        match self.tier {
-            Tier::Runtime => Ok(Val::Tok {
-                id,
-                alpha: alpha.unwrap_or(1.0),
-            }),
+        let (answer, outcome) = match self.tier {
+            Tier::Runtime => (
+                Ok(Val::Tok {
+                    id,
+                    alpha: alpha.unwrap_or(1.0),
+                }),
+                ResolveOutcome::TokCarried,
+            ),
             Tier::Baked => match alpha {
                 None => match self.pair_of[idx] {
-                    Some(slot) => Ok(Val::ModePair(slot)),
-                    None => Ok(Val::Rgba(self.light[idx].gamut_map().to_rgba8())),
+                    Some(slot) => (Ok(Val::ModePair(slot)), ResolveOutcome::ModePair),
+                    None => (
+                        Ok(Val::Rgba(self.light[idx].gamut_map().to_rgba8())),
+                        ResolveOutcome::Literal,
+                    ),
                 },
                 Some(a) => {
                     if !a.is_finite() {
-                        return Err(ResolveError::AlphaNotFinite(a));
+                        let error = ResolveError::AlphaNotFinite(a);
+                        (Err(error), ResolveOutcome::Missed(error))
+                    } else if self.pair_of[idx].is_some() {
+                        let error = ResolveError::AlphaOnPair;
+                        (Err(error), ResolveOutcome::Missed(error))
+                    } else {
+                        let a = a.clamp(0.0, 1.0);
+                        (
+                            Ok(Val::Rgba(
+                                self.light[idx]
+                                    .mix_with_transparent(a * 100.0)
+                                    .gamut_map()
+                                    .to_rgba8(),
+                            )),
+                            ResolveOutcome::Literal,
+                        )
                     }
-                    if self.pair_of[idx].is_some() {
-                        return Err(ResolveError::AlphaOnPair);
-                    }
-                    let a = a.clamp(0.0, 1.0);
-                    Ok(Val::Rgba(
-                        self.light[idx]
-                            .mix_with_transparent(a * 100.0)
-                            .gamut_map()
-                            .to_rgba8(),
-                    ))
                 }
             },
+        };
+        if let Some(observer) = self.observer.as_deref() {
+            observer.on_resolve(id, alpha, outcome);
         }
+        answer
     }
 
     /// Resolve a token id to its CONCRETE sRGB colour under one mode —
@@ -590,25 +658,50 @@ impl TokenTable {
     ///
     /// # Errors
     /// [`ResolveError`] per the three cases above.
+    ///
+    /// A wired observer ([`TokenTable::with_observer`]) sees the mode
+    /// answer as [`RgbaOutcome`], fired after the answer is computed
+    /// and before the call returns.
     pub fn resolve_rgba(&self, id: u16, alpha: f32, dark: bool) -> Result<[u8; 4], ResolveError> {
         #[cfg(feature = "tracing")]
         tracing::trace!(id, alpha, dark, tier = ?self.tier, "token resolve rgba");
         if !alpha.is_finite() {
-            return Err(ResolveError::AlphaNotFinite(alpha));
+            let error = ResolveError::AlphaNotFinite(alpha);
+            if let Some(observer) = self.observer.as_deref() {
+                observer.on_resolve_rgba(id, alpha, dark, RgbaOutcome::Missed(error));
+            }
+            return Err(error);
         }
         let idx = usize::from(id);
         if idx >= self.names.len() {
-            return Err(ResolveError::UnknownId(id));
+            let error = ResolveError::UnknownId(id);
+            if let Some(observer) = self.observer.as_deref() {
+                observer.on_resolve_rgba(id, alpha, dark, RgbaOutcome::Missed(error));
+            }
+            return Err(error);
         }
         if self.tier == Tier::Baked && self.pair_of[idx].is_some() {
-            return Err(ResolveError::AlphaOnPair);
+            let error = ResolveError::AlphaOnPair;
+            if let Some(observer) = self.observer.as_deref() {
+                observer.on_resolve_rgba(id, alpha, dark, RgbaOutcome::Missed(error));
+            }
+            return Err(error);
         }
         let base = match (dark, &self.dark[idx]) {
             (true, Some(dark_color)) => dark_color,
             _ => &self.light[idx],
         };
         let a = alpha.clamp(0.0, 1.0);
-        Ok(base.mix_with_transparent(a * 100.0).gamut_map().to_rgba8())
+        let answer = Ok(base.mix_with_transparent(a * 100.0).gamut_map().to_rgba8());
+        if let Some(observer) = self.observer.as_deref() {
+            let outcome = if self.tier == Tier::Runtime {
+                RgbaOutcome::ModeHalf
+            } else {
+                RgbaOutcome::Literal
+            };
+            observer.on_resolve_rgba(id, alpha, dark, outcome);
+        }
+        answer
     }
 }
 
