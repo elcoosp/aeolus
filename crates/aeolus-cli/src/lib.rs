@@ -26,12 +26,15 @@
 //!   the reason, and theme-spec failures are typed
 //!   ([`ThemeSpecError`]), never bare strings.
 
+use aeolus_codegen::audit::{AuditReport, ClassAudit};
+use aeolus_codegen::conformance::Capability as _;
+use aeolus_codegen_gpui::Caps;
 use aeolus_compile::{
-    AttrBit, AttrKind, AttrState, ClassKeywords, Config, ContainerBound, ContainerState,
-    DescendantFact, DescendantKind, DescendantState, Env, PseudoTarget, RustSheet, RustStrings,
-    SourceFile, StructFacts, SupportsState, build as build_artifact, compile, compile_theme,
-    compile_theme_with, compile_with, customs_from_css, emit_plan, emit_plan_theme, emit_rust,
-    emit_rust_theme, interp_containers, interp_containers_descendants,
+    AttrBit, AttrKind, AttrState, ClassKeywords, CompileError, Config, ContainerBound,
+    ContainerState, DescendantFact, DescendantKind, DescendantState, Env, PseudoTarget, RustSheet,
+    RustStrings, SourceFile, StructFacts, SupportsState, build as build_artifact, compile,
+    compile_theme, compile_theme_with, compile_with, customs_from_css, emit_plan, emit_plan_theme,
+    emit_rust, emit_rust_theme, interp_containers, interp_containers_descendants,
     interp_containers_descendants_supports, interp_containers_struct,
     interp_containers_struct_descendants, interp_containers_struct_descendants_supports,
     interp_containers_struct_supports, interp_containers_supports, interp_descendants,
@@ -419,6 +422,7 @@ where
         "expand" => cmd_expand(rest, out, err),
         "build" => cmd_build(rest, out, err),
         "plan" => cmd_plan(rest, out, err),
+        "audit" => cmd_audit(rest, out, err),
         other => {
             let _ = writeln!(err, "unknown command {other:?}\n{USAGE}");
             2
@@ -3369,6 +3373,261 @@ fn json_escape(s: &str) -> String {
     out
 }
 
+/// One class string's capability audit against the GPUI backend (the
+/// `audit` command's library seam, the example's driver): the compile
+/// walk's own themed program through the codegen seam's
+/// [`ClassAudit::of`] — one tiered row per observed longhand, the
+/// generated table's own boundary reasons riding. The whole-string
+/// [`CompileError`] (the empty-input caller bug) is the only error; the
+/// per-class misses ride the program as diagnostics and the audit reads
+/// the longhands that DID lower (the pipeline's honest degradation).
+///
+/// # Errors
+/// [`CompileError::Empty`] — the empty class string (per-class
+/// diagnostics never surface here; the callers skip empty strings
+/// upstream).
+pub fn audit_string(raw: &str, table: &TokenTable) -> Result<ClassAudit, CompileError> {
+    let compiled = compile_theme(raw, table, &Config::default())?;
+    Ok(ClassAudit::of(raw, &compiled.program, &Caps))
+}
+
+/// `audit` (the §5.1 capability-audit face — the conformance score's
+/// PROJECT-SIZED twin): the scan seam's class strings from the given
+/// sources through the V1 compile walk into the codegen seam's
+/// per-longhand tiered rows against the GPUI backend ([`Caps`], the
+/// generated table the emit gates run — the macro's own audit gate
+/// reads the same verdicts). The report names, per class string, the
+/// longhands that degrade and the capability's own typed boundary
+/// reason — the "which of my classes cost me what" answer the
+/// backend-wide conformance page cannot point at.
+///
+/// The report face never gates by default (`--fail-on` defaults to
+/// `none`, exit 0): the refused/polyfill rows are INFORMATION — a
+/// project that chooses the polyfill tier or lives with a refused
+/// longhand is not a failure. `--fail-on refused|polyfill|any` turns
+/// the same report into the CI gate, keyed on the TIER (never on the
+/// prose). `--theme` rides the V1 theme pass exactly like `explain`
+/// (the default shadcn bake, a CSS path, `shadcn-dark`); the audit
+/// reads the longhands the THEMED walk lowers, so token slots answer
+/// like the app's own build does.
+///
+/// The correctness story stays `check`'s job: a class the pipeline
+/// refuses rides its diagnostic channel upstream of this face, and the
+/// audit reports the tiers of what lowered — the two channels never
+/// blur (the same split `fmt` documents: the misses never block).
+fn cmd_audit(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    #[cfg(feature = "tracing")]
+    let _audit_span = tracing::debug_span!("aeolus_audit").entered();
+    // audit accepts --theme, --fail-on and --json (the check grammar).
+    let mut fail_on = "none".to_string();
+    let mut theme_spec = "shadcn".to_string();
+    let mut json = false;
+    let mut files: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--theme" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => theme_spec.clone_from(v),
+                    None => {
+                        let _ = writeln!(err, "--theme needs a value");
+                        return 2;
+                    }
+                }
+            }
+            "--fail-on" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) if matches!(v.as_str(), "refused" | "polyfill" | "any" | "none") => {
+                        fail_on.clone_from(v);
+                    }
+                    _ => {
+                        let _ = writeln!(err, "--fail-on takes refused|polyfill|any|none");
+                        return 2;
+                    }
+                }
+            }
+            "--json" => json = true,
+            other if other.starts_with("--") => {
+                let _ = writeln!(err, "unknown flag {other:?}");
+                return 2;
+            }
+            other => files.push(other.to_string()),
+        }
+        i += 1;
+    }
+    if files.is_empty() {
+        let _ = writeln!(err, "audit takes at least one file");
+        return 2;
+    }
+    let Some(table) = token_table_or_report(&theme_spec, err) else {
+        return 2;
+    };
+    // The distinct-class walk: the scan seam's strings per file, the
+    // FIRST occurrence keeping the path/line/col attribution (a class
+    // used forty times audits once). The audit is per CLASS STRING (the
+    // compile walk's own unit — the tw! call site's shape), never per
+    // candidate.
+    let mut audits: Vec<ClassAudit> = Vec::new();
+    let mut positions: HashMap<String, String> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for path in &files {
+        let Ok(source) = std::fs::read_to_string(path) else {
+            let _ = writeln!(err, "error: cannot read {path}");
+            return 2;
+        };
+        for hit in scan_rust_strings(&source) {
+            if positions.contains_key(&hit.text) {
+                continue;
+            }
+            let Ok(audit) = audit_string(&hit.text, &table) else {
+                // Only the empty input errors here; the extractor's
+                // prose pre-filter keeps those out anyway.
+                continue;
+            };
+            let (line, col) = line_character(&source, hit.offset);
+            positions.insert(hit.text.clone(), format!("{path}:{line}:{col}"));
+            order.push(hit.text.clone());
+            audits.push(audit);
+        }
+    }
+    let report = AuditReport::new(Caps.name(), audits);
+    // The gate: keyed on the TIER counts (never on the prose).
+    let fires = match fail_on.as_str() {
+        "refused" => report.count(aeolus_codegen::conformance::Tier::Refused) > 0,
+        "polyfill" => report.count(aeolus_codegen::conformance::Tier::Polyfill) > 0,
+        "any" => {
+            report.count(aeolus_codegen::conformance::Tier::Refused) > 0
+                || report.count(aeolus_codegen::conformance::Tier::Polyfill) > 0
+        }
+        _ => false,
+    };
+    if json {
+        write_audit_json(&report, &order, out);
+    } else {
+        write_audit_text(&report, &order, &positions, out);
+    }
+    i32::from(fires)
+}
+
+/// The tier's word (the report's and the JSON's spelling — the
+/// conformance table's own vocabulary).
+fn audit_tier_word(tier: aeolus_codegen::conformance::Tier) -> &'static str {
+    match tier {
+        aeolus_codegen::conformance::Tier::Native => "native",
+        aeolus_codegen::conformance::Tier::Polyfill => "polyfill",
+        aeolus_codegen::conformance::Tier::Refused => "refused",
+    }
+}
+
+/// The text report: the non-native classes with their per-longhand
+/// boundaries (the "why"), then the summary line — the observed-set
+/// score the conformance arithmetic computes, exit 0 by default (the
+/// gate modes opt in).
+fn write_audit_text(
+    report: &AuditReport,
+    order: &[String],
+    positions: &HashMap<String, String>,
+    out: &mut dyn Write,
+) {
+    use aeolus_codegen::conformance::Tier;
+    for raw in order {
+        let Some(class) = report.classes().iter().find(|c| c.raw() == raw) else {
+            continue;
+        };
+        if class.worst() == Some(Tier::Native) {
+            continue;
+        }
+        let at = positions.get(raw).map(String::as_str).unwrap_or("");
+        let _ = writeln!(
+            out,
+            "{at} \"{raw}\" — {} longhand{}, worst {}",
+            class.rows().len(),
+            if class.rows().len() == 1 { "" } else { "s" },
+            match class.worst() {
+                Some(tier) => audit_tier_word(tier),
+                None => "—",
+            },
+        );
+        for row in class.rows() {
+            if row.tier == Tier::Native {
+                continue;
+            }
+            let _ = match row.reason {
+                Some(reason) => writeln!(
+                    out,
+                    "    {}: {} — {reason}",
+                    row.prop.name(),
+                    audit_tier_word(row.tier)
+                ),
+                None => writeln!(
+                    out,
+                    "    {}: {}",
+                    row.prop.name(),
+                    audit_tier_word(row.tier)
+                ),
+            };
+        }
+    }
+    let _ = writeln!(
+        out,
+        "audit: {} strings, {} longhand rows — {} native, {} polyfill, {} refused — {:.2}% expressible ({})",
+        order.len(),
+        report.total_rows(),
+        report.count(Tier::Native),
+        report.count(Tier::Polyfill),
+        report.count(Tier::Refused),
+        report.score(),
+        report.backend(),
+    );
+}
+
+/// The JSON report: one object — the backend, the score, the native
+/// share, one entry per class string with its rows (the same
+/// arithmetic the text form prints; the hand-rolled shape the `--json`
+/// flags carry — the CLI pulls no serde).
+fn write_audit_json(report: &AuditReport, order: &[String], out: &mut dyn Write) {
+    let classes: Vec<String> = order
+        .iter()
+        .filter_map(|raw| {
+            let class = report.classes().iter().find(|c| c.raw() == raw)?;
+            let rows: Vec<String> = class
+                .rows()
+                .iter()
+                .map(|row| {
+                    format!(
+                        "{{\"prop\":\"{}\",\"tier\":\"{}\",\"reason\":{}}}",
+                        row.prop.name(),
+                        audit_tier_word(row.tier),
+                        match row.reason {
+                            Some(reason) => format!("\"{}\"", json_escape(reason)),
+                            None => "null".to_string(),
+                        }
+                    )
+                })
+                .collect();
+            Some(format!(
+                "{{\"raw\":\"{}\",\"worst\":\"{}\",\"rows\":[{}]",
+                json_escape(class.raw()),
+                match class.worst() {
+                    Some(tier) => audit_tier_word(tier),
+                    None => "none",
+                },
+                rows.join(","),
+            ))
+        })
+        .collect();
+    let _ = writeln!(
+        out,
+        "{{\"backend\":\"{}\",\"score\":{:.2},\"native_score\":{:.2},\"classes\":[{}]}}",
+        report.backend(),
+        report.score(),
+        report.native_score(),
+        classes.join(","),
+    );
+}
+
 const USAGE: &str = "\
 aeolus — Tailwind v4 class compiler, headless surface
 
@@ -3437,15 +3696,21 @@ USAGE:
                                                              the backends consume, as the same snapshot
                                                              JSON `resolve` prints; slot-boundary notes
                                                              and per-class misses report on stderr
+  aeolus audit   [--theme <spec>] [--fail-on <mode>] [--json] <files...>
+                                                             capability audit (§5.1's project-sized twin):
+                                                             per-class longhand tiers against the GPUI
+                                                             backend — the refused/polyfill rows name the
+                                                             generated table's own boundary reason
 
 THEME: shadcn (default) | shadcn-dark | default | <path-to-css>
-       (`explain`/`build`/`plan` accept shadcn | shadcn-dark | <path> — the V1 theme pass;
+       (`explain`/`build`/`plan`/`audit` accept shadcn | shadcn-dark | <path> — the V1 theme pass;
        without --theme, build/plan keep the colour tokens as typed boundaries)
        (`check` reads a --theme CSS path's @source registrations (§5.4): inline
        candidates join the lint, walked paths join the scan set relative to the
        theme CSS's directory, `not` paths prune the registrations — a file the
        operator passed explicitly survives the prune)
 FAIL-ON: unknown | unsupported | conflict (check only) | any | none
-         (default: check unknown; build/plan none)
+         audit: refused | polyfill | any | none
+         (default: check unknown; build/plan/audit none)
 EXIT: 0 success · 1 findings · 2 usage/theme/IO error
 ";
