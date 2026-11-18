@@ -131,7 +131,7 @@ pub fn lower_program_probes_containers_struct_descendants_supports(
 /// targets stay SILENT here — the element walk's
 /// [`InterpNote::PseudoElement`] note reports them on ITS side.
 ///
-/// Theme-token longhands ([`Val::Tok`]/[`Val::ModePair`]) refuse into
+/// Theme-token longhands (`Val::Tok`/`Val::ModePair`) refuse into
 /// the report here: pass a source through [`lower_program_pseudo_theme`]
 /// when the program carries them (the runtime tier's explicit slow
 /// lane).
