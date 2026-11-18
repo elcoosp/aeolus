@@ -1,4 +1,21 @@
+# Changelog
+
+All notable changes to Aeolus are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ## [Unreleased]
+
+### 🚀 Features — the theme lifecycle (M1) and the linked-editing face (M2)
+
+- **The theme lifecycle on `crates/aeolus-lsp` + the pool invalidation seam on `crates/aeolus-compile`** — the editor's `app.css` save button re-themes a live session. Every engine answer rode the table the config fixed AT CONSTRUCTION (a designer rebrand meant restarting the server — the one lifecycle boundary the engine's faces never crossed); the landing adds the seam at every layer. The compile crate's pool gains its invalidation face: `DynStore::invalidate_all` (the default a no-op — a store that cannot drop wholesale keeps the honest reading of "nothing I hold can go stale"), the built-in `TwoGenStore` reporting one typed `EvictReason::Invalidated` per retired key AFTER its lock drops (the rotation's own deadlock-freedom rule), `DynCache::clear` the cache-level face (a clear retires the memory, never a decision — the next probe of a cleared string a miss that re-lowers to the same bytes), and `EvictReason::Invalidated` the variant distinct from `Rotation` (a host counting drops reads the deliberate retirement, not churn). The engine gains `AeolusEngine::retheme(tokens) -> RethemeOutcome`: the config's token slot swaps wholesale, the pool retired through the compile crate's own seam, and the equality fast-path keeps the no-op save cheap — a candidate table whose TIER, names and resolved colours equal the riding one answers `RethemeOutcome::Unchanged` and touches NOTHING (the pool keeps serving, the answers byte-identical, the differential pinned); the tier rides the equality FIRST (a baked and a runtime table over the same css carry the same colours but answer different `Val` shapes). The wire half drives it: `Session::with_theme_loader` wires ONE `ThemeLoader` (the host's own statement of where the NEXT table comes from — `FileThemeLoader` the disk form that reads FRESH every load, the notification IS the freshness signal), the `workspace/didChangeWatchedFiles` event naming the loader's URI re-bakes and re-themes (a failed load keeping the riding table — the typed `ThemeError` lane, nothing republishes; an equal-content success the byte-neutral no-op; a real swap republishing EVERY open document's diagnostics in URI order through the engine's new `documents()` accessor). The binary face rides the same loader: `aeolus-lsp --theme <path>` bakes the startup table through the loader's OWN first read (one construction path; a bad file a startup error naming its `ThemeError` before the transport starts) and the same loader watches the session (`run_stdio_with_theme` the loop's themed twin). Tests: `crates/aeolus-compile/tests/dyn_cache_clear.rs` (3 pins, RED-first) + `crates/aeolus-lsp/tests/theme_reload.rs` (11 pins, RED-first — the swap retires the pool and the new table answers, the equal-content retheme the no-op the pool survives, the themeless boundary honest, the disk loader's read, the wire's retheme/no-op/unrelated/loader-less/failure lanes, the swap's republish over every open document). Bench: `theme_bake`/`retheme_swap`/`retheme_unchanged` join `benches/lsp.rs`. Example: `examples/lsp_theme_reload.rs` (a host's own loader, the rebrand save, the no-op save, the failure lane, headless).
+- **`textDocument/linkedEditingRange` on `crates/aeolus-lsp`** — the simultaneous-edit face, the highlights' textual equality rendered as the client's edit-together ranges. The editor's multi-cursor class edit had no answer: the rename face moves a spelling to a NEW one, the highlights answer to a human, but the protocol's linked-editing gesture — "give me every range that must change together when I type here" — went unanswered. The landing answers from the machinery the engine owns: the cursor's candidate located once through the shared `candidate_span_at` locator (the hover's own walk), then the highlights' textual-equality fold over the extraction seam's strings — every occurrence of that raw spelling in the REQUESTING document riding one plain `EngineRange`, the cursor's own included, document order kept (the extraction seam's scan order). The identity is TEXTUAL, the rename face's own token rule (a variant-prefixed sibling a DIFFERENT spelling that links alone; a refused candidate's occurrences answering exactly like a lowered one's — no compile verdict riding), and the scope stays same-file (the cross-document fold IS the rename face's answer — one face, one scope). Wire-up: the `linked_editing_range_provider` capability (the plain `true` form), the `textDocument/linkedEditingRange` arm mapping the answer onto the protocol's own `LinkedEditingRanges` shape through the shared `wire_range` conversion — no `word_pattern` rides (the ranges ARE the contract, the engine's textual identity needs no regex re-statement). Tests: `crates/aeolus-lsp/tests/linked_ranges.rs` (10 pins, RED-first — the plain-spelling occurrences in document order, the variant sibling linking alone, the refused ride, the between-classes gap's honest empty, the unknown URI, the byte-true UTF-16 columns over the accented neighbour, and the wire's ranges quads/capability advertisement/pre-handshake gate/malformed null). Bench: `linked_ranges_walk` joins `benches/lsp.rs` (~1.27 µs — the compile verdict nowhere on the path). Example: `examples/lsp_linked_ranges.rs` (the plain pair, the variant sibling, the refused ride, the gap's empty, headless).
+
+### 🛠 Fixed — docs drift (this handoff)
+
+- `CHANGELOG.md` — the release link ref still named the `aeolus-rs` org the 0.11.0 handoff itself retired (the manifest's `repository` URL fix's own entry documents the rename): the `[0.1.0]` ref now names `elcoosp/aeolus`, the home every consumer page already reads.
+- `CHANGELOG.md` — the file opened BARE (`## [Unreleased]` with no `# Changelog` header): the Keep-a-Changelog header + intro lived mid-file at the legacy block's start, where a 0.14-era merge had left it. The header + intro now open the file, and the legacy block's start carries the honest separator ("Legacy history — the pre-0.14 file, merged verbatim") instead of a second `# Changelog`.
+- `README.md` — the example index was missing this handoff's two demos (`lsp_theme_reload`, `lsp_linked_ranges`) in BOTH index blocks; the LSP rows (the tooling table's `aeolus-lsp` row and the crate map's) name the theme lifecycle and the linked-editing face; the evidence index files records 46/47 beside 45; the workspace battery count re-measured post-handoff.
 
 ### 🚀 Features — the rename face's workspace upgrade (M1) and the expand-selection walk (M2)
 
@@ -1106,11 +1123,9 @@
 
 - *(compile)* The colour-parser dep and the grammar bench
 - *(deps)* Lock the aeolus-core edge for the compile seam
-# Changelog
+---
 
-All notable changes to Aeolus are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
-adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## Legacy history (the pre-0.14 file, merged verbatim)
 
 ## [0.14.0] - 2026-11-10
 
@@ -2412,4 +2427,4 @@ compiler goes from research prototype to publishable. **Publishable today:
 - Structured variants (`has-[…]`, `data-[…]`, `aria-*`, `[&_svg]`) —
   parser extension beyond the v1 scope decision.
 
-[0.1.0]: https://github.com/aeolus-rs/aeolus/releases/tag/v0.1.0
+[0.1.0]: https://github.com/elcoosp/aeolus/releases/tag/v0.1.0
