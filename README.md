@@ -324,7 +324,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 2196 tests with all features enabled (2026-11,
+  **zero** allocations). Workspace battery: 2235 tests with all features enabled (2026-11,
   the folding-face handoff's honest sum — `cargo test --workspace --all-features`; the
   folding face's and the workspace pull's two batteries beside the standing pins).
 
@@ -411,7 +411,7 @@ differential oracle — no big-bang migration.
 | `aeolus-gpui` + five backend crates | see [Backends](#backends) — plan lane + V1 static-program lane each                             |
 | `aeolus-shadcn`                     | shadcn `new-york-v4` class tables verbatim + per-backend wrappers + the closed-world program tables (`ButtonPrograms`, the F6 fix) |
 | `aeolus-cli`                        | `resolve` `css` `diff` `cn` `check` `explain` `sort` `fmt` `expand` `build` `plan` `audit` — zero external crates    |
-| `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges, hover signatures, completion from the audited tables, colour swatches, `documentDiagnostic` pull, the rename face — `prepareRename`'s span, `rename`'s per-occurrence edits, the `documentSymbol` outline; the cross-document answers — `references` (the highlights' equality over every open document), `workspace/symbol` (the outline over the whole map, the query the filter) and the cross-document `rename` (the references' fold over the rename edits, one edit per occurrence over every open document, the full `changes` map at the wire); the expand-selection walk (`textDocument/selectionRange` — one parent chain per position, the content span the chain's head, the caret's zero-width range the chain-less answer) and the linked-editing face (`textDocument/linkedEditingRange` — the highlights' textual equality as the client's edit-together ranges, same-file)); the theme lifecycle rides beside them (the watched-files event naming the wired `ThemeLoader`'s URI re-themes the session, `Session::with_theme_loader` the face, `run_stdio_with_theme` the themed loop); the outline folding face and the workspace-wide pull beside them (`textDocument/foldingRange` — one fold per class string, the multi-line raw-string form the real fold; `workspace/diagnostic` — the pull over every open document beside its result identity, a matching previous id the unchanged verdict the client's cache answers from); the session's compiles ride the bounded `DynCache` pool, `with_observer` the face) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) + the transport face (`TransportObserver`/`TransportStats` on `Session::with_observer`, `run_stdio_observed` the observed loop) |
+| `aeolus-lsp`                        | the P5 LSP row: headless engine (extraction seam → V1 compile walk → UTF-16 ranges, hover signatures, completion from the audited tables, colour swatches, `documentDiagnostic` pull, the rename face — `prepareRename`'s span, `rename`'s per-occurrence edits, the `documentSymbol` outline; the cross-document answers — `references` (the highlights' equality over every open document), `workspace/symbol` (the outline over the whole map, the query the filter) and the cross-document `rename` (the references' fold over the rename edits, one edit per occurrence over every open document, the full `changes` map at the wire); the expand-selection walk (`textDocument/selectionRange` — one parent chain per position, the content span the chain's head, the caret's zero-width range the chain-less answer) and the linked-editing face (`textDocument/linkedEditingRange` — the highlights' textual equality as the client's edit-together ranges, same-file)); the theme lifecycle rides beside them (the watched-files event naming the wired `ThemeLoader`'s URI re-themes the session, `Session::with_theme_loader` the face, `run_stdio_with_theme` the themed loop); the outline folding face and the workspace-wide pull beside them (`textDocument/foldingRange` — one fold per class string, the multi-line raw-string form the real fold; `workspace/diagnostic` — the pull over every open document beside its result identity, a matching previous id the unchanged verdict the client's cache answers from); the token goto-definition face (`textDocument/definition` — the cursor's token class answers the theme file's own `--color-{name}`/`--{name}` declaration, the theme pass's provenance scan byte-true (comments, quoted strings and `var()` references are not declarations; a seeded token the file never declares answers no origin) under the config's named origin URI, `TokenOrigins` the host store that rides first) and the server's command surface (`workspace/executeCommand` — `aeolus.sortDocument`, the sort face as a command, the closed table advertised, an unknown command the protocol's null); the session's compiles ride the bounded `DynCache` pool, `with_observer` the face) + stdio JSON-RPC state machine (`bin/aeolus-lsp`) + the transport face (`TransportObserver`/`TransportStats` on `Session::with_observer`, `run_stdio_observed` the observed loop) |
 | `xtask`                             | `gen-tables` / `verify-tables` drift gates for the committed artifacts (+ the §3.7 `gen-gpui-caps` / `verify-gpui-caps` pair)                          |
 | `aeolus-core`                       | v0.x `Resolver` + `StylePlan`: the runtime lane and the differential oracle — **publish-ready** |
 
@@ -469,6 +469,8 @@ cargo run -p aeolus-lsp --example lsp_theme_reload  # the theme lifecycle: the w
 cargo run -p aeolus-lsp --example lsp_linked_ranges  # the linked-editing face: the edit-together ranges per cursor
 cargo run -p aeolus-lsp --example lsp_folding_ranges  # the folding face: one fold per class string, the raw-string form the real fold
 cargo run -p aeolus-lsp --example lsp_workspace_diagnostics  # the workspace pull: the result identity, the unchanged verdict beside the recompute
+cargo run -p aeolus-lsp --example lsp_definition  # the goto-definition face: the token class's declaration in the theme file
+cargo run -p aeolus-lsp --example lsp_execute_command  # the command surface: aeolus.sortDocument as a command, the closed table's nulls
 cargo run -p aeolus-cli --example expand_viewport       # expand --width: the viewport fact the sm:..2xl: layers answer from
 cargo run -p aeolus-lsp --example lsp_symbols           # the outline face: one symbol per candidate class, the verdict beside the name
 cargo run -p aeolus-cli --example fmt                   # the fmt command's file face: the drift report + the rewrite
@@ -664,6 +666,8 @@ cargo run -p aeolus-lsp --example lsp_theme_reload  # the theme lifecycle: the w
 cargo run -p aeolus-lsp --example lsp_linked_ranges  # the linked-editing face: the edit-together ranges per cursor
 cargo run -p aeolus-lsp --example lsp_folding_ranges  # the folding face: one fold per class string, document order
 cargo run -p aeolus-lsp --example lsp_workspace_diagnostics  # the workspace pull: identities, the unchanged verdict beside the recompute
+cargo run -p aeolus-lsp --example lsp_definition  # the goto-definition face: the token class's declaration in the theme file
+cargo run -p aeolus-lsp --example lsp_execute_command  # the command surface: aeolus.sortDocument as a command
 cargo run -p aeolus-lsp --example lsp_symbols  # the outline face: one symbol per candidate, the verdict beside the name
 cargo run -p aeolus-cli --example expand_viewport  # expand --width: the viewport fact the breakpoint layers answer from
 cargo run -p aeolus-lsp --example lsp_cache  # the engine's pool ride: the keystroke repeat is the cheap path
@@ -708,6 +712,7 @@ cargo run -p xtask --example drift_walkthrough  # list + verify-tables through t
 - [44 — cross-document rename](reports/10-tdd-evidence/44-cross-document-rename.md) · [45 — lsp selection ranges](reports/10-tdd-evidence/45-lsp-selection-ranges.md)
 - [46 — theme reload](reports/10-tdd-evidence/46-theme-reload.md) · [47 — lsp linked editing ranges](reports/10-tdd-evidence/47-linked-editing-ranges.md)
 - [48 — the outline folding face](reports/10-tdd-evidence/48-outline-folding-face.md) · [49 — the workspace-wide pull](reports/10-tdd-evidence/49-workspace-pull.md)
+- [50 — the token goto-definition face](reports/10-tdd-evidence/50-token-definition.md) · [51 — the command surface](reports/10-tdd-evidence/51-execute-command.md)
 
 </details>
 
