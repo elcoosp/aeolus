@@ -321,7 +321,10 @@ impl<'t> Resolver<'t> {
         }
     }
 
-    /// Resolve pre-parsed tokens (used by the cache and by tests).
+    /// Resolve pre-parsed tokens — the token-split half of
+    /// [`Resolver::resolve`] (its single in-file caller; the tests
+    /// drive the split directly, the cache rides `resolve`'s own
+    /// lexing).
     pub fn resolve_tokens(&self, tokens: Vec<ClassToken<'_>>) -> Resolution {
         let mut warnings = Vec::new();
         let mut base = Bucket::default();
