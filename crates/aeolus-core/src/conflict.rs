@@ -405,9 +405,14 @@ pub fn cn(classes: &[&str]) -> String {
         parsed
     };
 
-    // Pair tokens with their original raw text for output.
+    // Pair tokens with their original raw text for output. The pairing
+    // is a CORRECTNESS invariant, not a debug-only one: a lexer that
+    // returned a different token count would mislabel every merged
+    // class's raw text (or index out of bounds) — the honest refusal
+    // path above keeps the desync out, this assert keeps the release
+    // build honest if the lexer's contract ever drifts.
     let raws: Vec<&str> = joined.split_ascii_whitespace().collect();
-    debug_assert_eq!(raws.len(), parsed.len());
+    assert_eq!(raws.len(), parsed.len());
 
     let mut taken: HashSet<(String, bool, &'static str)> = HashSet::new();
     let mut kept: Vec<Option<&str>> = vec![None; parsed.len()];
