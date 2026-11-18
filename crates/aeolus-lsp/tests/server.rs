@@ -1540,3 +1540,106 @@ fn rename_malformed_params_answers_null() {
         "malformed params: the protocol's own empty answer"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The document-symbol quads (the outline face, the wire's
+// `textDocument/documentSymbol`): the capability advertisement, the
+// answer shape, the lifecycle gate, the malformed-params null
+// ---------------------------------------------------------------------------
+
+/// The symbols request the harness reuses (the whole-document answer —
+/// no cursor, the params carry the text document alone).
+fn symbols_request(id: i32, uri: &str) -> Message {
+    request(
+        id,
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": uri } }),
+    )
+}
+
+#[test]
+fn initialize_advertises_document_symbols() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("initialize answers a response");
+    };
+    let result = response.result.expect("the capabilities carry a result");
+    assert_eq!(
+        result["capabilities"]["documentSymbolProvider"], true,
+        "the outline face rides the advertisement: {result}"
+    );
+}
+
+#[test]
+fn document_symbol_answers_the_outline() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, DOC));
+    let handled = handle_message(&mut session, symbols_request(30, &uri()));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("documentSymbol answers a response");
+    };
+    let result = response.result.expect("the outline carries a result");
+    let symbols = result.as_array().expect("the answer is the symbol list");
+    assert_eq!(symbols.len(), 2, "one symbol per candidate: {result}");
+    // The lowered class: the protocol's own Class kind, the compact CSS
+    // the detail line carries, the candidate's byte-true span both as
+    // the range and the selection (the whole spelling is the name).
+    let lowered = &symbols[0];
+    assert_eq!(lowered["name"], "p-4", "{result}");
+    assert_eq!(lowered["kind"], 5, "SymbolKind::CLASS: {result}");
+    assert!(
+        lowered["detail"]
+            .as_str()
+            .is_some_and(|d| d.contains("padding-top")),
+        "the detail is the CSS arm's own declarations: {result}"
+    );
+    assert_eq!(lowered["range"]["start"]["line"], 1, "{result}");
+    assert_eq!(lowered["selectionRange"], lowered["range"], "{result}");
+    // The refused candidate: the STRING kind (the raw spelling, not a
+    // compiled class — no custom SymbolKind exists, the honest
+    // degradation), the stable code the detail line names.
+    let refused = &symbols[1];
+    assert_eq!(refused["name"], "not-a-root", "{result}");
+    assert_eq!(refused["kind"], 15, "SymbolKind::STRING: {result}");
+    assert_eq!(
+        refused["detail"], "aeolus::compile::unknown_root",
+        "{result}"
+    );
+}
+
+#[test]
+fn document_symbol_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(&mut session, symbols_request(31, &uri()));
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
+
+#[test]
+fn document_symbol_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(
+            32,
+            "textDocument/documentSymbol",
+            json!({"textDocument": "not-an-object"}),
+        ),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers");
+    };
+    assert_eq!(
+        response.result,
+        Some(serde_json::Value::Null),
+        "malformed params: the protocol's own empty answer"
+    );
+}
