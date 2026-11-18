@@ -58,7 +58,17 @@
 //!   * *what classes live here?* — the document symbols: every
 //!     candidate class as an outline entry — the spelling the name, its
 //!     byte-true range, the legend's own verdict and the pipeline's own
-//!     detail line ([`EngineSymbol`]).
+//!     detail line ([`EngineSymbol`]);
+//!   * *where else is this spelled, workspace-wide?* — the cross-document
+//!     references: the highlights' textual equality over EVERY open
+//!     document, each occurrence riding its document's URI, URI order
+//!     across the map (the engine's first cross-document answer)
+//!     ([`EngineReference`]);
+//!   * *which spellings does the workspace carry?* — the workspace
+//!     symbols: the document outline generalized over EVERY open
+//!     document, the query the filter (case-insensitive substring, the
+//!     empty query riding every open candidate), URI order across the
+//!     map ([`EngineWorkspaceSymbol`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -98,7 +108,12 @@ mod server;
 mod transport_observer;
 
 pub use crate::engine::{AeolusEngine, EngineConfig};
+// The theme pass's typed error beside the config that can carry it
+// (the `EngineConfig::try_default` host's own boundary, nameable
+// without adding `aeolus-theme` to its manifest — the faces'
+// no-manifest-add discipline).
 pub use crate::server::{Handled, Session, handle_message, run_stdio, run_stdio_observed};
+pub use aeolus_theme::ThemeError;
 // The transport observability face (the wire half's own seam): the
 // state machine's per-message verdicts — the answered/quiet requests,
 // the published/exit/silent notifications — wired through
@@ -324,6 +339,24 @@ pub struct EngineHighlight {
     pub range: EngineRange,
 }
 
+/// One reference the workspace answers (the wire's
+/// `textDocument/references` — the engine's first cross-document
+/// answer): the byte-true range of a candidate class whose text equals
+/// the cursor's candidate, beside the URI of the open document that
+/// carries it. The identity is the highlights' own textual rule — a
+/// refused class's occurrences answer exactly like a lowered one's (no
+/// compile verdict riding) — and the scope is the WHOLE document map,
+/// the highlights' per-document walk generalized: URI order across the
+/// documents (sorted, whatever the open order was — the answer is pure
+/// over the map), document order within each.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineReference {
+    /// The carrying document's URI (the wire's `Location.uri`).
+    pub uri: String,
+    /// The occurrence's range (the editor jumps here).
+    pub range: EngineRange,
+}
+
 /// One edit the formatter rides (the class-sort seam's editor face —
 /// the wire's `textDocument/formatting` answer): the string content's
 /// byte-true range and the sort seam's canonical join as the new text.
@@ -361,6 +394,23 @@ pub struct EngineSymbol {
     /// The compile verdict — the semantic legend's own two answers
     /// (the wire half maps each onto its protocol kind).
     pub kind: EngineSemanticKind,
+}
+
+/// One workspace symbol the engine answers (the wire's
+/// `workspace/symbol` — the references fold's second consumer): the
+/// document symbols' outline entry beside the URI of the open document
+/// that carries it. The scope is the WHOLE document map — URI order
+/// across the documents (sorted, whatever the open order was — the
+/// answer is pure over the map), document order within each; the
+/// query is the filter, case-insensitive substring on the spelling,
+/// the empty query riding every open candidate (the protocol's own
+/// shape).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineWorkspaceSymbol {
+    /// The carrying document's URI (the wire's `Location.uri`).
+    pub uri: String,
+    /// The outline entry (the document symbols' own shape).
+    pub symbol: EngineSymbol,
 }
 
 /// One open document the engine keeps: the current text and the LSP's
