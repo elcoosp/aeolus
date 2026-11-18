@@ -130,3 +130,52 @@ fn expand_supports_facts(bencher: Bencher) {
     bencher
         .bench(|| interp_supports(&compiled.program, &env, &target).expect("the program resolves"));
 }
+
+/// The attribute-probe seam's CLI face (the `--data`/`--aria` facts):
+/// the same Button-shaped program through the `*_probes` walk, the
+/// bit-table hit (the fired `data-[state=open]`/`aria-busy` layers)
+/// beside the base-only arms — the widest dispatch the attribute facts
+/// ride on the CLI face.
+const ATTR_BUTTON: &str =
+    "inline-flex items-center gap-2 data-[state=open]:px-3 aria-busy:opacity-50";
+
+#[divan::bench]
+fn expand_attr_facts(bencher: Bencher) {
+    use aeolus_compile::{AttrBit, AttrKind, AttrState, interp_probes};
+    let compiled = compile(ATTR_BUTTON, &Config::default()).expect("non-empty input compiles");
+    let bits = [
+        AttrBit {
+            kind: AttrKind::Data,
+            name: "state",
+            value: "open",
+        },
+        AttrBit {
+            kind: AttrKind::Aria,
+            name: "busy",
+            value: "true",
+        },
+    ];
+    let attrs = AttrState::new(&bits);
+    let env = Env::default();
+    bencher.bench(|| interp_probes(&compiled.program, &env, &attrs).expect("the program resolves"));
+}
+
+/// The custom-authoring seam's CLI face (the `--custom <path>`
+/// vocabulary): the registered utility's class through the
+/// `compile_with` entry — the composite body's longhands riding the
+/// same lookup the registry rows take, the per-invocation compile the
+/// CLI's own shape (the expand face compiles fresh every run).
+#[divan::bench]
+fn expand_custom_utility(bencher: Bencher) {
+    use aeolus_compile::{compile_with, customs_from_css};
+    let css = "@utility brand-badge { @apply rounded-md px-2 py-0.5; }\n";
+    let customs = customs_from_css(css, &Config::default()).expect("the statements register");
+    bencher.bench(|| {
+        compile_with(
+            "brand-badge bg-white rounded-md",
+            &customs,
+            &Config::default(),
+        )
+        .expect("non-empty input compiles")
+    });
+}
