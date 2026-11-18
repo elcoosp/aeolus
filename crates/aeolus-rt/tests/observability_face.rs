@@ -82,6 +82,7 @@ fn the_shared_handle_spans_pool_and_cells_through_the_runtime_surface() {
             hits: 1,
             misses: 2,
             stores: 2,
+            evictions: 0,
         },
         "one handle, two surfaces, one budget — the runtime crate's own \
          names"
