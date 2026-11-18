@@ -89,6 +89,10 @@ pub use aeolus_core::plan::ResolvedStyle;
 pub use aeolus_compile::{
     CacheSnapshot, CacheStats, DynObserver, EvictReason, NoObserver, session_key,
 };
+// The compile-walk observability face beside the pool's (the walk seam's
+// own twin): the stage-boundary channel a host reads when it drives the
+// compile walk itself — the same no-manifest-add discipline.
+pub use aeolus_compile::{CandidateOutcome, NoWalkObserver, WalkObserver, WalkSnapshot, WalkStats};
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
 pub use containers::MeasuredContainers;
