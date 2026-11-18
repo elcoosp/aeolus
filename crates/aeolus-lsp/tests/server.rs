@@ -556,8 +556,9 @@ fn initialize_advertises_the_pull_diagnostics() {
         "the engine answers per document — no cross-file model"
     );
     assert_eq!(
-        provider["workspaceDiagnostics"], false,
-        "no workspace-wide pull: the document map is the answer's scope"
+        provider["workspaceDiagnostics"], true,
+        "the workspace-wide pull rides beside the document pull: every open \
+         document's report beside its result identity"
     );
 }
 
