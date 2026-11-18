@@ -660,3 +660,13 @@ Run: `cargo bench -p aeolus-lsp -- theme_bake retheme linked_ranges` (divan 0.1.
 | `retheme_swap` | **120.5 µs** | the whole save: bake + `DynCache::clear` + the strings re-lowered under the new table |
 | `retheme_unchanged` | **119.8 µs** | the no-op save: bake + the tier/names/colours equality walk (the pool keeps serving) |
 | `linked_ranges_walk` | **1.27 µs** | the simultaneous-edit answer: the locator's scan + the textual fold over the document's strings |
+
+## The outline folding face + the workspace-wide pull (2026-11-18, sandbox)
+
+Run: `cargo bench -p aeolus-lsp` (divan 0.1.21), release profile, median of 100. The folding arm prices the extraction seam alone — the scan and the per-hit UTF-16 range translation, no compile verdict on the path (the highlights' textual family). The workspace-pull arms price the pull channel's workspace half: the full walk is the identity fingerprint plus the pooled analyze per open document, the unchanged arm the fingerprint beside the skipped recompute (the retheme fast-path's equality shape at the pull channel).
+
+| Bench | Median | What it prices |
+| --- | --- | --- |
+| `folding_ranges_walk` | **538.8 ns** | the folding answer: the extraction scan + the range translation over the three-string fixture |
+| `workspace_diagnostics_pull` | **1.67 µs** | the full pull over one open document: the content fingerprint + the pooled analyze |
+| `workspace_diagnostics_unchanged` | **265.9 ns** | the quiet pull: the fingerprint matches, the recompute skipped wholesale |
