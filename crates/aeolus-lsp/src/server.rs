@@ -14,14 +14,15 @@ use lsp_types::{
     CodeActionProviderCapability, Color, ColorInformation, ColorPresentation,
     ColorPresentationParams, ColorProviderCapability, CompletionItem, CompletionItemKind,
     CompletionList, CompletionOptions, CompletionParams, DiagnosticOptions,
-    DiagnosticServerCapabilities, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentColorParams, DocumentDiagnosticParams,
-    DocumentDiagnosticReport, DocumentDiagnosticReportResult, DocumentFormattingParams,
-    DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, FullDocumentDiagnosticReport,
-    Hover, HoverContents, HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind,
-    InlayHintLabel, InlayHintOptions, InlayHintParams, InlayHintServerCapabilities,
-    InlayHintTooltip, Location, MarkupContent, MarkupKind, NumberOrString, OneOf,
-    PrepareRenameResponse, PublishDiagnosticsParams, ReferenceParams,
+    DiagnosticServerCapabilities, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentColorParams,
+    DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
+    DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
+    FullDocumentDiagnosticReport, Hover, HoverContents, HoverProviderCapability, InitializeResult,
+    InlayHint, InlayHintKind, InlayHintLabel, InlayHintOptions, InlayHintParams,
+    InlayHintServerCapabilities, InlayHintTooltip, LinkedEditingRangeParams,
+    LinkedEditingRangeServerCapabilities, LinkedEditingRanges, Location, MarkupContent, MarkupKind,
+    NumberOrString, OneOf, PrepareRenameResponse, PublishDiagnosticsParams, ReferenceParams,
     RelatedFullDocumentDiagnosticReport, RenameParams, SelectionRange, SelectionRangeParams,
     SelectionRangeProviderCapability, SemanticToken, SemanticTokenType, SemanticTokens,
     SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
@@ -35,6 +36,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::RethemeOutcome;
 use crate::engine::{AeolusEngine, EngineConfig};
 use crate::transport_observer::{NotificationOutcome, RequestOutcome, TransportObserver};
 
@@ -62,6 +64,12 @@ pub struct Session {
     /// [`handle_message`](crate::handle_message) streams the whole
     /// loop's traffic.
     observer: Option<Arc<dyn TransportObserver>>,
+    /// The wired theme loader, `None` the every-constructor default —
+    /// the theme lifecycle's face ([`Session::with_theme_loader`]): the
+    /// watched-files notification that names the loader's URI re-themes
+    /// the engine (a session without one rides the notification
+    /// silently, the session's answers staying the construction's).
+    theme: Option<Arc<dyn crate::ThemeLoader>>,
 }
 
 impl std::fmt::Debug for Session {
@@ -73,6 +81,7 @@ impl std::fmt::Debug for Session {
             // The wired observer is a host handle, not printable state —
             // the table Debug's own rule: the wired-ness only.
             .field("observer", &self.observer.is_some())
+            .field("theme", &self.theme.as_ref().map(crate::ThemeLoader::uri))
             .finish()
     }
 }
@@ -85,6 +94,7 @@ impl Session {
             initialized: false,
             shutdown: false,
             observer: None,
+            theme: None,
         }
     }
 
@@ -98,6 +108,24 @@ impl Session {
     /// one handle totals several sessions.
     pub fn with_observer(mut self, observer: impl TransportObserver + 'static) -> Self {
         self.observer = Some(Arc::new(observer));
+        self
+    }
+
+    /// Wire the theme lifecycle's loader (the reload seam's wire half,
+    /// chained after `new` like the observer faces): the loader owns
+    /// ONE watched URI, and the `workspace/didChangeWatchedFiles`
+    /// notification naming it re-themes the session — `load` runs, the
+    /// typed [`ThemeError`](crate::ThemeError) failure keeps the
+    /// riding table (nothing republishes — nothing changed), an equal-
+    /// content success is the byte-neutral no-op
+    /// ([`RethemeOutcome::Unchanged`]), and a real swap
+    /// ([`RethemeOutcome::Swapped`]) republishes EVERY open document's
+    /// diagnostics (URI order — the push channel's own determinism).
+    /// A watched-files event for a URI the loader does not own rides
+    /// silently. Without a loader the notification stays the quiet
+    /// drop every unhandled notification is.
+    pub fn with_theme_loader(mut self, loader: impl crate::ThemeLoader + 'static) -> Self {
+        self.theme = Some(Arc::new(loader));
         self
     }
 }
@@ -547,6 +575,44 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/linkedEditingRange" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The simultaneous-edit answer (LSP 3.16's
+            // linkedEditingRange): the engine's same-file occurrences
+            // of the cursor's candidate, each riding its byte-true
+            // range — the client edits them together. No
+            // `word_pattern` rides: the ranges ARE the contract (the
+            // engine's textual identity needs no regex re-statement).
+            let answer = serde_json::from_value::<LinkedEditingRangeParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let position = params.text_document_position_params.position;
+                    LinkedEditingRanges {
+                        ranges: session
+                            .engine
+                            .linked_ranges(
+                                params
+                                    .text_document_position_params
+                                    .text_document
+                                    .uri
+                                    .as_str(),
+                                position.line,
+                                position.character,
+                            )
+                            .iter()
+                            .map(|range| wire_range(*range))
+                            .collect(),
+                        word_pattern: None,
+                    }
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |ranges| Some(serde_json::to_value(ranges).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
         "textDocument/references" => {
             if !session.initialized {
                 return Handled::default();
@@ -829,7 +895,9 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
 }
 
 /// One notification: the document lifecycle (didOpen/didChange/didClose
-/// publish diagnostics) and the exit. Everything else rides silently.
+/// publish diagnostics), the theme lifecycle (the watched-files event
+/// naming the wired loader's URI re-themes the session) and the exit.
+/// Everything else rides silently.
 fn handle_notification(session: &mut Session, notification: Notification) -> Handled {
     match notification.method.as_str() {
         "textDocument/didOpen" => {
@@ -871,6 +939,51 @@ fn handle_notification(session: &mut Session, notification: Notification) -> Han
             // The protocol's own contract: a closed document publishes
             // an EMPTY diagnostic set so the editor clears its squiggles.
             publish(&mut session.engine, uri.as_str())
+        }
+        "workspace/didChangeWatchedFiles" => {
+            let Ok(params) =
+                serde_json::from_value::<DidChangeWatchedFilesParams>(notification.params)
+            else {
+                return Handled::default();
+            };
+            // The theme lifecycle's face: the session's loader owns ONE
+            // watched uri. No loader (the every-constructor default) or
+            // an event for a file it does not own rides silently — the
+            // quiet vocabulary every unhandled notification keeps.
+            let Some(loader) = session.theme.clone() else {
+                return Handled::default();
+            };
+            if !params
+                .changes
+                .iter()
+                .any(|event| event.uri.as_str() == loader.uri())
+            {
+                return Handled::default();
+            }
+            // A failed load (the parse refusal, the vanished file) keeps
+            // the riding table: nothing changed, nothing republishes —
+            // the honest degradation the last good program rides.
+            let Ok(tokens) = loader.load() else {
+                return Handled::default();
+            };
+            // The engine's own contract: equal content is the
+            // byte-neutral no-op (the pool keeps serving, nothing
+            // republishes), a real swap retires the pool it invalidates.
+            if session.engine.retheme(Some(tokens)) == RethemeOutcome::Unchanged {
+                return Handled::default();
+            }
+            // The swap: every open document's findings ride the push
+            // channel again (uri order — the cross-document answers'
+            // own determinism; an unparseable uri skips its publish,
+            // the publish half's own rule).
+            let mut outgoing = Vec::new();
+            for uri in session.engine.documents() {
+                outgoing.extend(publish(&mut session.engine, &uri).outgoing);
+            }
+            Handled {
+                outgoing,
+                exit: false,
+            }
         }
         "exit" => Handled {
             outgoing: Vec::new(),
@@ -1026,6 +1139,12 @@ fn server_capabilities() -> ServerCapabilities {
         // cursor's candidate, document order, no compile verdict
         // riding.
         document_highlight_provider: Some(OneOf::Left(true)),
+        // The simultaneous-edit face (LSP 3.16's linkedEditingRange):
+        // the highlights' textual equality as the client's
+        // edit-together ranges — same-file only (the cross-document
+        // fold stays the rename face's). The plain `true` form: the
+        // answer is the engine's own walk, no options object.
+        linked_editing_range_provider: Some(LinkedEditingRangeServerCapabilities::Simple(true)),
         // The workspace's occurrences: the highlights' textual equality
         // over EVERY open document (the engine's first cross-document
         // answer), each riding its `Location`, URI order across the
@@ -1148,6 +1267,38 @@ pub fn run_stdio_observed(
     observer: impl TransportObserver + 'static,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     serve_io(Some(Arc::new(observer)))
+}
+
+/// The themed loop (the reload seam's binary face): the session's
+/// table bakes from the loader's OWN first read — one construction
+/// path, the loader seam's — and the SAME loader rides the session, so
+/// every `workspace/didChangeWatchedFiles` event naming the loader's
+/// URI re-themes the running session (the [`Session::with_theme_loader`]
+/// contract). The startup bake failure is the loop's startup error: a
+/// bad theme file names its [`ThemeError`](crate::ThemeError) before
+/// the transport starts, the CLI's own honest-failure shape — the
+/// session never starts half-themed.
+///
+/// # Errors
+/// The loader's startup bake (the typed [`ThemeError`](crate::ThemeError)
+/// through the boxed boundary) beside [`run_stdio`]'s own IO contract.
+pub fn run_stdio_with_theme(
+    loader: impl crate::ThemeLoader + 'static,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let tokens = loader.load()?;
+    let mut session = Session::new(EngineConfig::new(Some(tokens))).with_theme_loader(loader);
+    let (connection, io_threads) = Connection::stdio();
+    for message in &connection.receiver {
+        let handled = handle_message(&mut session, message);
+        for out in handled.outgoing {
+            connection.sender.send(out)?;
+        }
+        if handled.exit {
+            break;
+        }
+    }
+    io_threads.join()?;
+    Ok(())
 }
 
 /// The stdio shell both entries drive (the loop is the transport's
