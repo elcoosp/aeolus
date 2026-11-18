@@ -296,12 +296,15 @@ fn position_of(text: &str, offset: usize) -> (u32, u32) {
 /// The engine's config takes the same shapes the CLI's `--theme` takes:
 /// `None` is the theme-less boundary, the built-in default rides the
 /// shadcn bake. The config also carries the compile `Config` (the
-/// spacing knob) — the engine never forks pipeline semantics.
+/// spacing knob) — the engine never forks pipeline semantics — and the
+/// goto-definition face's origin URI (`None` the honest dark until a
+/// host or the wire half names one).
 #[test]
 fn engine_config_covers_the_compile_knob() {
     let config = EngineConfig {
         tokens: None,
         compile: Config::default(),
+        theme_origin: None,
     };
     let _ = AeolusEngine::new(config);
 }
