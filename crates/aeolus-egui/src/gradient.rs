@@ -1,13 +1,13 @@
 //! The gradient mesh-painter seam — real gradient output for egui.
 //!
-//! egui 0.37's [`Frame`] paints a solid `Color32` [`egui::RectShape`]:
+//! egui 0.37's `Frame` paints a solid `Color32` `RectShape`:
 //! no gradient brush, no custom-paint hook (the `Frame::paint` shape is
 //! a plain rect), so a gradient class used to drop with "gradients need
 //! an app-side mesh painter — reported, not faked". This module SHIPS
 //! that painter instead of asking for it:
 //!
 //! * the lowering bakes a [`GradientPaint`] payload onto
-//!   [`EguiStyle::gradient`] (positions resolved, colors converted, the
+//!   `EguiStyle::gradient` (positions resolved, colors converted, the
 //!   style's own `opacity-*` already baked into the stop alphas);
 //! * [`gradient_mesh`] builds the paint over any `Rect` — the banded
 //!   quad strip for linear (one band per adjacent stop pair), the
@@ -88,7 +88,7 @@ pub struct PaintStop {
 /// painter needs, resolved once at lowering time so the per-frame work
 /// is [`gradient_mesh`] alone.
 ///
-/// Carried on [`EguiStyle::gradient`] (`Option` — absent when no
+/// Carried on `EguiStyle::gradient` (`Option` — absent when no
 /// gradient class is in scope, `None` again on `bg-none`, the explicit
 /// background-image reset).
 #[derive(Clone, Debug, PartialEq)]
