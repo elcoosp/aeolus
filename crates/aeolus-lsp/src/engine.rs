@@ -42,10 +42,10 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct EngineConfig {
     /// The theme pass's table: `Some` — the themed walk
-    /// ([`compile_theme`], colour tokens and opacity modifiers lower
-    /// through the tiered tables); `None` — the theme-less boundary
-    /// (the tokens stay typed refusals, the honest default
-    /// [`compile`] has).
+    /// ([`aeolus_compile::compile_theme`], colour tokens and opacity
+    /// modifiers lower through the tiered tables); `None` — the
+    /// theme-less boundary (the tokens stay typed refusals, the honest
+    /// default [`aeolus_compile::compile`] has).
     pub tokens: Option<TokenTable>,
     /// The compile seam's own knobs (the spacing strategy, the rem
     /// size) — the engine never forks pipeline semantics.
@@ -364,7 +364,7 @@ impl AeolusEngine {
     /// class's primary colour — a class that writes two colour
     /// longhands paints the one the base layer carries first). The
     /// theme-less config answers empty for every token class (the
-    /// honest boundary [`compile`] itself keeps), and the keyword slots
+    /// honest boundary [`aeolus_compile::compile`] itself keeps), and the keyword slots
     /// (`transparent`, `currentColor`) stay unnamed — a CSS keyword is
     /// not a swatch. Deterministic and pure over the document map; an
     /// unknown URI answers empty.
@@ -780,7 +780,7 @@ impl AeolusEngine {
     /// compact CSS the inlay hint's label carries; a refused one the
     /// stable code the diagnostics key on — the detail names the WHY
     /// without re-rendering the refusal prose). The walk is the shared
-    /// per-candidate compile ([`AeolusEngine::compiled_candidates`]),
+    /// per-candidate compile (the engine's own `compiled_candidates` walk),
     /// document order (the extraction seam's scan order) — the wire's
     /// outline answer, deterministic and pure over the document map; an
     /// unknown URI answers empty.
