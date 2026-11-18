@@ -327,7 +327,36 @@ fn utility_without_apply_is_a_typed_refusal() {
         &Config::default(),
     )
     .expect_err("the raw body refuses");
-    assert!(matches!(err, CustomCssError::Body { .. }));
+    // The weak-error fix: the variant carries the offending statement
+    // verbatim and names the shape — a body with no `@apply` at all
+    // answers the no-`@apply` message (the mixed shape beside).
+    let CustomCssError::Body { name, message } = err else {
+        panic!("the body refusal");
+    };
+    assert_eq!(name, "brand-x");
+    assert!(
+        message.contains("no `@apply`") && message.contains("border-radius: 0.375rem"),
+        "the `@apply`-less shape names itself and carries the statement: {message}"
+    );
+}
+
+#[test]
+fn mixed_apply_body_names_the_raw_statement() {
+    // The mixed shape (`@apply` beside a raw declaration) is the
+    // message's OTHER arm: the raw statement rides verbatim, the shape
+    // named — never one prose verdict for both body refusals.
+    let err = aeolus_compile::customs_from_css(
+        "@utility brand-x { @apply rounded-md; color: red; }\n",
+        &Config::default(),
+    )
+    .expect_err("the mixed body refuses");
+    let CustomCssError::Body { message, .. } = err else {
+        panic!("the body refusal");
+    };
+    assert!(
+        message.contains("rides beside") && message.contains("color: red"),
+        "the mixed shape names the raw statement: {message}"
+    );
 }
 
 #[test]
