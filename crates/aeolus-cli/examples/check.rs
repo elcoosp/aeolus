@@ -1,5 +1,5 @@
 //! Consumer demonstration: the `check` command's library path (the P5
-//! row's "`cargo aeolus check` in CI" face) — the same lint a CI job
+//! row's "`aeolus check` in CI" face) — the same lint a CI job
 //! runs over the sources, driven in-process the way a wrapper or a
 //! pre-commit hook would. The extraction seam's strings from a source
 //! text, each candidate string resolved into typed [`Finding`]s, and
