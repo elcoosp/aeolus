@@ -55,6 +55,23 @@ fn expand_keyword_slots(bencher: Bencher) {
     bencher.bench(|| compiled.interp(&Env::default()).expect("no theme forms"));
 }
 
+/// The interaction-state flags' CLI face (the `--hover`/`--focus-visible`/
+/// `--disabled` facts): the same Button-shaped program — whose base/
+/// state layers the string already names — walked with the element-own
+/// facts asserted, the state layers riding the same front-to-back read
+/// (the winners replace the base per longhand, no extra pass).
+#[divan::bench]
+fn expand_state_facts(bencher: Bencher) {
+    let compiled = compile(BUTTON, &Config::default()).expect("non-empty input compiles");
+    let env = Env {
+        hover: true,
+        focus_visible: true,
+        disabled: true,
+        ..Env::default()
+    };
+    bencher.bench(|| compiled.interp(&env).expect("no theme forms"));
+}
+
 /// The descendant-probe seam's CLI face (the `--has` facts): the same
 /// Button-shaped program through the `*_descendants` walk, the fact
 /// table hit and the note path beside it.
