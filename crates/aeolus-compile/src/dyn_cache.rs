@@ -280,6 +280,24 @@ pub trait DynStore: Send + Sync {
     /// memory with). A store without a bound reports what it holds.
     fn resident(&self) -> usize;
 
+    /// The invalidation seam: EVERY entry leaves the store, one typed
+    /// [`EvictReason::Invalidated`] per key riding the observer the
+    /// same way the rotation's drops do (after the store's own lock
+    /// releases — the deadlock-freedom rule). The default keeps a host
+    /// store quiet: a store that cannot drop wholesale (a leak pool,
+    /// an arena that outlives sessions) keeps this body and the
+    /// cache's [`DynCache::clear`] becomes that store's no-op, the
+    /// honest reading of "nothing I hold can go stale".
+    ///
+    /// The consumer is the theme lifecycle: a re-themed session's
+    /// pooled rows were lowered under the OUTGOING table — correct for
+    /// the key they carry (the identity fingerprints the table by
+    /// address, a fresh table is a miss, never a false hit) but dead
+    /// weight until the rotation reached them. The invalidation is the
+    /// lifecycle boundary's own statement: the swap retires the pool
+    /// it invalidates, the bytes that answer stay the new table's.
+    fn invalidate_all(&self) {}
+
     /// The observability seam's composition: the cache's wired
     /// [`DynObserver`] joins the store, so the decisions only the store
     /// sees (the built-in [`TwoGenStore`]'s rotation drops and
@@ -482,6 +500,43 @@ impl DynStore for TwoGenStore {
             .read()
             .map_or(0, |inner| inner.current.len() + inner.previous.len())
     }
+
+    fn invalidate_all(&self) {
+        // The wholesale leave: both generations drain under the write
+        // lock, every resident key riding ONE typed
+        // [`EvictReason::Invalidated`] — the report collects under the
+        // lock (what left, in the map's own walk order per generation:
+        // no meaningful order exists between the two maps' keys) and
+        // fires AFTER the lock drops, the rotation's own rule.
+        let mut evicted: Vec<String> = Vec::new();
+        let Ok(mut inner) = self.inner.write() else {
+            return;
+        };
+        let previous = std::mem::take(&mut inner.previous);
+        let current = std::mem::take(&mut inner.current);
+        for (key, _) in previous {
+            evicted.push(key.to_string());
+        }
+        for (key, _) in current {
+            evicted.push(key.to_string());
+        }
+        inner.current =
+            HashMap::with_capacity_and_hasher(self.cap, std::mem::take(&mut inner.hasher));
+        // The write guard drops HERE (the callbacks stay outside the
+        // lock, the store() half's own pattern).
+        drop(inner);
+        if !evicted.is_empty() {
+            let observer: Option<Arc<dyn DynObserver>> = match self.observer.read() {
+                Ok(slot) => slot.clone(),
+                Err(poisoned) => poisoned.into_inner().clone(),
+            };
+            if let Some(observer) = observer.as_ref() {
+                for key in &evicted {
+                    observer.on_evict(key, EvictReason::Invalidated);
+                }
+            }
+        }
+    }
 }
 
 /// Which resident entry left the built-in [`TwoGenStore`], and why —
@@ -499,6 +554,14 @@ pub enum EvictReason {
     /// generation twin (the config flip-flop's cleanup; the key itself
     /// stays resident under the fresh fingerprint).
     StaleTwin,
+    /// The store's wholesale invalidation ([`DynStore::invalidate_all`]
+    /// — the theme lifecycle's swap): every resident key left at ONE
+    /// lifecycle boundary, none of them stale under their own key and
+    /// none of them the cap's pressure — the owner said the pool it
+    /// held no longer applies. Distinct from [`EvictReason::Rotation`]
+    /// so a host counting drops reads the deliberate retirement, not
+    /// churn.
+    Invalidated,
 }
 
 /// The observability seam: a host-implemented observer sees every
@@ -928,6 +991,20 @@ impl<S: DynStore> DynCache<S> {
     /// built-in store).
     pub fn resident(&self) -> usize {
         self.store.resident()
+    }
+
+    /// The invalidation face: every resident entry leaves through the
+    /// store's own [`DynStore::invalidate_all`] (the built-in store
+    /// reporting one typed [`EvictReason::Invalidated`] per key, after
+    /// its lock drops). The counters keep their totals — a clear is a
+    /// lifecycle boundary, not a rewind: the NEXT probe of a cleared
+    /// string is a miss that re-lowers, and its answer is byte-identical
+    /// to the pooled one's (the identity fingerprint never matched a
+    /// cleared key to begin with; the clear retires the memory, never a
+    /// decision). The theme lifecycle's consumer: the retheme swaps the
+    /// table and retires the rows lowered under the outgoing one.
+    pub fn clear(&self) {
+        self.store.invalidate_all();
     }
 }
 
