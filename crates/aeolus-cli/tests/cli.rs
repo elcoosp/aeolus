@@ -2020,3 +2020,105 @@ fn expand_starting_unset_stays_the_quiet_miss() {
     );
     assert!(!out.contains("note:"), "no exclusion note rides: {out}");
 }
+
+// ---------------------------------------------------------------------------
+// The interaction-state battery: the founding element-state family's
+// CLI face (the `--hover`/`--focus`/`--active`… flags)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_hover_flag_answers_the_layers() {
+    // The hover fact is the element's own answer: the flag sets the
+    // Env bit, the hover layers fire (one flag per FACT, the
+    // `--indeterminate` precedent).
+    let (code, out, err) = run_cmd(&["expand", "--hover", "p-4 hover:p-8"]);
+    assert_eq!(code, 0, "{err}");
+    // The fired layer wins the walk's per-prop read (the base 1rem is
+    // replaced, never duplicated — the winner read the interp keeps).
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+    assert!(!out.contains("padding-top = 1rem"), "{out}");
+}
+
+#[test]
+fn expand_focus_flags_answer_the_layers() {
+    // The focus pair and the within sibling: each flag asserts its own
+    // fact, its layers fire beside the resting base.
+    for (flag, class) in [
+        ("--focus", "focus:p-8"),
+        ("--focus-visible", "focus-visible:p-8"),
+        ("--focus-within", "focus-within:p-8"),
+    ] {
+        let (code, out, err) = run_cmd(&["expand", flag, class]);
+        assert_eq!(code, 0, "{flag}: {err}");
+        assert!(out.contains("padding-top = 2rem"), "{flag}: {out}");
+    }
+}
+
+#[test]
+fn expand_active_disabled_flags_answer_the_layers() {
+    // The pressed and disabled facts: the flag sets the Env bit, the
+    // layer fires.
+    for (flag, class) in [("--active", "active:p-8"), ("--disabled", "disabled:p-8")] {
+        let (code, out, err) = run_cmd(&["expand", flag, class]);
+        assert_eq!(code, 0, "{flag}: {err}");
+        assert!(out.contains("padding-top = 2rem"), "{flag}: {out}");
+    }
+}
+
+#[test]
+fn expand_visited_checked_placeholder_flags_answer_the_layers() {
+    // The visited, checked and placeholder-shown facts: the remaining
+    // element-own bits, one flag per FACT (the closed Env set).
+    for (flag, class) in [
+        ("--visited", "visited:p-8"),
+        ("--checked", "checked:p-8"),
+        ("--placeholder-shown", "placeholder-shown:p-8"),
+    ] {
+        let (code, out, err) = run_cmd(&["expand", flag, class]);
+        assert_eq!(code, 0, "{flag}: {err}");
+        assert!(out.contains("padding-top = 2rem"), "{flag}: {out}");
+    }
+}
+
+#[test]
+fn expand_without_interaction_flags_stay_the_quiet_miss() {
+    // The default Env asserts no interaction fact — the founding
+    // family's layers miss QUIETLY (never a reported exclusion; the
+    // element-state battery's own shape, unchanged by the flags).
+    for class in [
+        "hover:p-8",
+        "focus:p-8",
+        "active:p-8",
+        "disabled:p-8",
+        "placeholder-shown:p-8",
+    ] {
+        let (code, out, _) = run_cmd(&["expand", class]);
+        assert_eq!(code, 0, "{out}");
+        assert!(
+            !out.contains("never matched"),
+            "a quiet miss reports nothing: {out}"
+        );
+    }
+
+    let (code, out, _) = run_cmd(&["expand", "hover:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_interaction_flags_mix_with_the_base_and_each_other() {
+    // The flags ride the same Env the other fact flags build: the
+    // interaction layers compose with the base layer and with each
+    // other (two asserted facts fire two layers; the unasserted one
+    // waits).
+    let (code, out, _) = run_cmd(&[
+        "expand",
+        "--hover",
+        "--focus",
+        "p-4 hover:p-8 focus:mt-2 active:hidden",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+    assert!(out.contains("margin-top = 0.5rem"), "{out}");
+    assert!(!out.contains("display = none"), "{out}");
+}
