@@ -48,9 +48,16 @@
 //! probes, the store event carrying the entry's diagnostic count — with
 //! the built-in [`CacheStats`] collector answering the session's totals
 //! and hit rate, and one stats object shared across caches for the
-//! app-wide budget. The observer adds a channel; it never changes a
-//! decision (the default is the no-op [`NoObserver`], which every
-//! constructor path installs).
+//! app-wide budget. The face covers what LEAVES too: the built-in
+//! [`TwoGenStore`]'s rotation drops its discarded generation and a
+//! fresh store clears a stale twin — both ride the observer's
+//! [`DynObserver::on_evict`] with a typed [`EvictReason`] and the same
+//! composed-key vocabulary (the wire-up reaches the store through
+//! [`DynStore::attach_observer`], the seam's own composition; the
+//! callbacks fire AFTER the store's write lock drops, so a host
+//! observer can never deadlock the map it watches). The observer adds a
+//! channel; it never changes a decision (the default is the no-op
+//! [`NoObserver`], which every constructor path installs).
 //!
 //! What this slice deliberately is NOT (each documented where it
 //! belongs): caching the emit half (`emit_css` and siblings — the CSS
@@ -272,6 +279,19 @@ pub trait DynStore: Send + Sync {
     /// The resident key count (the observability view hosts budget
     /// memory with). A store without a bound reports what it holds.
     fn resident(&self) -> usize;
+
+    /// The observability seam's composition: the cache's wired
+    /// [`DynObserver`] joins the store, so the decisions only the store
+    /// sees (the built-in [`TwoGenStore`]'s rotation drops and
+    /// stale-twin clears) ride the SAME handle the hit/miss/store
+    /// stream uses — one vocabulary, one handle, the whole pool's
+    /// decisions. The default keeps the storage seam quiet: a host
+    /// store that keeps no observer simply keeps this body (the trait
+    /// is the seam; the built-ins are consumers of it too). The wire-up
+    /// happens at construction time ([`DynCache::with_observer`] — the
+    /// cache and store are built before any decision), so the store
+    /// never reports a half-wired stream.
+    fn attach_observer(&self, _observer: Arc<dyn DynObserver>) {}
 }
 
 /// The built-in [`DynStore`]: bounded two-generation rotation with
@@ -279,24 +299,36 @@ pub trait DynStore: Send + Sync {
 /// transplanted to the V1 seam's interned-`Program` model.
 ///
 /// * `current` serves hits; when it fills to the cap it becomes
-///   `previous` and a fresh current starts (the rotation);
+///   `previous` and a fresh current starts (the rotation); the entries
+///   the rotation pushes out of the map entirely (the old previous,
+///   one generation further back) ride the wired observer's
+///   [`DynObserver::on_evict`] under [`EvictReason::Rotation`];
 /// * a hit in `previous` promotes: the entry moves into `current`, so a
-///   working set that recurs within one generation gap stays hot;
+///   working set that recurs within one generation gap stays hot — a
+///   move, never an eviction, and no event rides;
 /// * a store over an existing current key replaces in place (the config
 ///   flip-flop); a store of a key that also sits in `previous` clears
-///   the stale twin, so a stale fingerprint can never resurface;
+///   the stale twin, so a stale fingerprint can never resurface — the
+///   twin's leave-taking rides [`EvictReason::StaleTwin`];
 /// * the whole map sits behind one `RwLock`: hits in `current` take the
 ///   READ lock only (the v0.x F2 lesson — "resolve_static still takes
 ///   the exclusive lock on a hit" — is the regression this seam refuses
-///   to repeat); promotions and rotations take the write lock.
+///   to repeat); promotions and rotations take the write lock, and the
+///   eviction report fires AFTER the write lock drops — the observer's
+///   callbacks never run under the store's own lock, so a host observer
+///   that re-enters the store cannot deadlock it.
 ///
 /// Hashing is std's `RandomState` (SipHash): the V1 graph stays
 /// dependency-light (the v0.x `FastHasher` stays `aeolus-core`'s), and
 /// the probe cost is noise against the pipeline pass the hit skips.
-#[derive(Debug)]
 pub struct TwoGenStore {
     cap: usize,
     inner: RwLock<TwoGenInner>,
+    /// The wired eviction observer — `None` the every-constructor
+    /// default (the observation-free rotation keeps its allocation-free
+    /// shape: the report Vec only exists beside a wired observer).
+    /// `attach_observer` swaps it at wire-up time, before any decision.
+    observer: RwLock<Option<Arc<dyn DynObserver>>>,
 }
 
 #[derive(Debug)]
@@ -327,6 +359,7 @@ impl TwoGenStore {
                 previous: HashMap::default(),
                 hasher: RandomState::new(),
             }),
+            observer: RwLock::new(None),
         }
     }
 }
@@ -337,7 +370,29 @@ impl Default for TwoGenStore {
     }
 }
 
+impl std::fmt::Debug for TwoGenStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The wired observer is a host handle, not printable state — the
+        // honest Debug names the bounds and the resident view only.
+        f.debug_struct("TwoGenStore")
+            .field("cap", &self.cap)
+            .field("resident", &self.resident())
+            .finish_non_exhaustive()
+    }
+}
+
 impl DynStore for TwoGenStore {
+    fn attach_observer(&self, observer: Arc<dyn DynObserver>) {
+        // Wire-up time only (the constructors' shape): the slot swaps
+        // wholesale, poison-tolerant (a poisoned slot still answers —
+        // the sanctioned pattern's own reading).
+        let mut slot = self
+            .observer
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *slot = Some(observer);
+    }
+
     fn probe(&self, key: &str) -> Option<CachedCompiled> {
         // Fast path: the read lock serves every current-generation hit.
         if let Some(entry) = self
@@ -350,7 +405,9 @@ impl DynStore for TwoGenStore {
         }
         // Promotion path: a previous-generation hit needs the write
         // lock (and a re-check — another thread may have promoted or
-        // rotated between the drop and the re-acquire).
+        // rotated between the drop and the re-acquire). A promotion is
+        // a MOVE between generations — nothing leaves the store, so no
+        // eviction rides.
         let mut inner = self.inner.write().ok()?;
         if let Some(entry) = inner.current.get(key).cloned() {
             return Some(entry);
@@ -361,26 +418,63 @@ impl DynStore for TwoGenStore {
     }
 
     fn store(&self, key: String, value: CachedCompiled) {
+        // The eviction report collects under the write lock (what left,
+        // in decision order: the rotation's discarded generation first —
+        // its keys ride in the map's own walk order, no meaningful order
+        // exists BETWEEN one generation's keys — then the stale twin),
+        // and fires AFTER the lock drops: the observer's callbacks never
+        // run under the store's own lock, so a host observer that
+        // re-enters the store cannot deadlock it. The report Vec only
+        // exists beside a wired observer; the observation-free rotation
+        // keeps its allocation-free shape.
+        let mut evicted: Vec<(String, EvictReason)> = Vec::new();
         let Ok(mut inner) = self.inner.write() else {
             return;
         };
         if inner.current.contains_key(key.as_str()) {
-            // Replace in place — no rotation on a config flip-flop.
-            inner.previous.remove(key.as_str());
+            // Replace in place — no rotation on a config flip-flop. The
+            // CURRENT entry is a replacement (the key stays resident);
+            // only the stale twin in `previous` actually leaves.
+            if inner.previous.remove(key.as_str()).is_some() {
+                evicted.push((key.clone(), EvictReason::StaleTwin));
+            }
             inner.current.insert(key.into(), value);
-            return;
+        } else {
+            if inner.current.len() >= self.cap {
+                // The rotation: current becomes previous, a fresh current
+                // starts. The old previous (one generation further back) is
+                // dropped from the MAP — its leaked slices stay pooled, and
+                // every key it carried rides one eviction event.
+                let current = std::mem::take(&mut inner.current);
+                let dropped = std::mem::replace(&mut inner.previous, current);
+                for (dropped_key, _) in dropped {
+                    evicted.push((dropped_key.to_string(), EvictReason::Rotation));
+                }
+                inner.current =
+                    HashMap::with_capacity_and_hasher(self.cap, std::mem::take(&mut inner.hasher));
+            }
+            if inner.previous.remove(key.as_str()).is_some() {
+                evicted.push((key.clone(), EvictReason::StaleTwin));
+            }
+            inner.current.insert(key.into(), value);
         }
-        if inner.current.len() >= self.cap {
-            // The rotation: current becomes previous, a fresh current
-            // starts. The old previous (one generation further back) is
-            // dropped from the MAP — its leaked slices stay pooled.
-            let current = std::mem::take(&mut inner.current);
-            inner.previous = current;
-            inner.current =
-                HashMap::with_capacity_and_hasher(self.cap, std::mem::take(&mut inner.hasher));
+        // The write guard drops HERE (the explicit drop keeps the
+        // callbacks outside the lock, whatever the optimizer thinks).
+        drop(inner);
+        if !evicted.is_empty() {
+            // Poison-tolerant read (the sanctioned pattern's own
+            // reading): a poisoned slot still answers with the handle
+            // it holds.
+            let observer: Option<Arc<dyn DynObserver>> = match self.observer.read() {
+                Ok(slot) => slot.clone(),
+                Err(poisoned) => poisoned.into_inner().clone(),
+            };
+            if let Some(observer) = observer.as_ref() {
+                for (dropped_key, reason) in &evicted {
+                    observer.on_evict(dropped_key, *reason);
+                }
+            }
         }
-        inner.previous.remove(key.as_str());
-        inner.current.insert(key.into(), value);
     }
 
     fn resident(&self) -> usize {
@@ -388,6 +482,23 @@ impl DynStore for TwoGenStore {
             .read()
             .map_or(0, |inner| inner.current.len() + inner.previous.len())
     }
+}
+
+/// Which resident entry left the built-in [`TwoGenStore`], and why —
+/// the typed reason the eviction face reports beside the composed key.
+/// The store's honest answer to "what did my cap cost me": a
+/// promotion ([`DynStore::probe`]'s previous-generation hit) is a move,
+/// never an eviction, and never carries a reason.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum EvictReason {
+    /// The entry's generation turned one further back and the rotation
+    /// dropped it from the map (its leaked slices stay pooled — the
+    /// eviction is the RESIDENT KEY's, never the pool's).
+    Rotation,
+    /// A fresh store of the same key cleared the stale previous-
+    /// generation twin (the config flip-flop's cleanup; the key itself
+    /// stays resident under the fresh fingerprint).
+    StaleTwin,
 }
 
 /// The observability seam: a host-implemented observer sees every
@@ -404,7 +515,12 @@ impl DynStore for TwoGenStore {
 /// string, the v0.x collision-safety rule). Every method defaults to a
 /// no-op body, so an implementor opts into the channels it wants — and
 /// [`NoObserver`], the every-constructor default, implements the trait
-/// with all of them empty.
+/// with all of them empty. The stream's ORDER: hit/miss/store ride the
+/// cache's own path (miss before the lowering, store before the probe
+/// that would hit it); the eviction events ride the store's — for one
+/// `store` call, the rotation's dropped keys first, the stale twin
+/// after — fired AFTER the store's write lock releases, so an observer
+/// may consult the cache it watches without deadlocking it.
 pub trait DynObserver: Send + Sync + 'static {
     /// A probe answered from a resident entry.
     fn on_hit(&self, _key: &str) {}
@@ -417,6 +533,15 @@ pub trait DynObserver: Send + Sync + 'static {
     /// The lowered result joined the store; `_diagnostics` is the
     /// entry's honest per-class report count.
     fn on_store(&self, _key: &str, _diagnostics: usize) {}
+
+    /// A resident entry LEFT the built-in store: `_key` is the composed
+    /// key the store itself held (the same vocabulary the probe/store
+    /// events ride), `_reason` the typed why. A promotion is a move and
+    /// never rides this channel. The store reports the decision it made
+    /// on its own authority — the cache cannot see what leaves a store
+    /// it does not implement, which is why the wire-up reaches the
+    /// store through [`DynStore::attach_observer`].
+    fn on_evict(&self, _key: &str, _reason: EvictReason) {}
 }
 
 /// The observer's every-constructor default: all channels no-op — the
@@ -443,19 +568,26 @@ impl<O: DynObserver + ?Sized> DynObserver for Arc<O> {
     fn on_store(&self, key: &str, diagnostics: usize) {
         (**self).on_store(key, diagnostics);
     }
+
+    fn on_evict(&self, key: &str, reason: EvictReason) {
+        (**self).on_evict(key, reason);
+    }
 }
 
 /// The built-in [`DynObserver`]: the session's hit/miss/store totals in
 /// one shareable handle — the counts the cache's own counters keep
 /// (hits, misses) plus the store count they don't carry, plus the
-/// sharing (one object spanning every cache the host wires it into).
-/// Atomic adds under the same `Relaxed` ordering the counters use:
-/// exact totals, no ordering claims.
+/// evictions the built-in store's rotation drops and stale-twin clears
+/// (the face's pressure number: what the cap cost the resident set),
+/// plus the sharing (one object spanning every cache the host wires it
+/// into). Atomic adds under the same `Relaxed` ordering the counters
+/// use: exact totals, no ordering claims.
 #[derive(Debug, Default)]
 pub struct CacheStats {
     hits: AtomicU64,
     misses: AtomicU64,
     stores: AtomicU64,
+    evictions: AtomicU64,
 }
 
 impl CacheStats {
@@ -471,6 +603,7 @@ impl CacheStats {
             hits: self.hits.load(Ordering::Relaxed),
             misses: self.misses.load(Ordering::Relaxed),
             stores: self.stores.load(Ordering::Relaxed),
+            evictions: self.evictions.load(Ordering::Relaxed),
         }
     }
 }
@@ -487,6 +620,10 @@ impl DynObserver for CacheStats {
     fn on_store(&self, _key: &str, _diagnostics: usize) {
         self.stores.fetch_add(1, Ordering::Relaxed);
     }
+
+    fn on_evict(&self, _key: &str, _reason: EvictReason) {
+        self.evictions.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// One observer session's totals: a `Copy` value the host holds without
@@ -500,6 +637,12 @@ pub struct CacheSnapshot {
     pub misses: u64,
     /// The lowered results that joined the store.
     pub stores: u64,
+    /// The resident entries that left the built-in store (the
+    /// rotation's discarded generation and the stale twins a fresh
+    /// store cleared) — the cap's pressure number. A store that keeps
+    /// no observer reports none (the wire-up rides
+    /// [`DynStore::attach_observer`]).
+    pub evictions: u64,
 }
 
 impl CacheSnapshot {
@@ -576,11 +719,18 @@ impl<S: DynStore> DynCache<S> {
     /// path (`new`, `with_cap` and `with_store` all start
     /// observation-free, so `with_store(...).with_observer(...)` is the
     /// composed shape; the built-in [`CacheStats`] rides an `Arc` the
-    /// host keeps a handle to). The observer adds a channel; it never
-    /// changes a decision — the differential pins every contract
-    /// byte-identical with and without one.
+    /// host keeps a handle to). The observer reaches the STORE too
+    /// ([`DynStore::attach_observer`], the seam's own composition):
+    /// the decisions only the store sees — the built-in
+    /// [`TwoGenStore`]'s rotation drops and stale-twin clears — ride
+    /// the SAME handle and vocabulary as the hit/miss/store stream, so
+    /// one stats object spans the whole pool's decisions. The observer
+    /// adds a channel; it never changes a decision — the differential
+    /// pins every contract byte-identical with and without one.
     pub fn with_observer(mut self, observer: impl DynObserver + 'static) -> Self {
-        self.observer = Arc::new(observer);
+        let observer: Arc<dyn DynObserver> = Arc::new(observer);
+        self.store.attach_observer(Arc::clone(&observer));
+        self.observer = observer;
         self
     }
 
