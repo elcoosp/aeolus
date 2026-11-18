@@ -31,8 +31,10 @@ use lsp_types::{
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use crate::engine::{AeolusEngine, EngineConfig};
+use crate::transport_observer::{NotificationOutcome, RequestOutcome, TransportObserver};
 
 // ---------------------------------------------------------------------------
 // The session state
@@ -41,7 +43,6 @@ use crate::engine::{AeolusEngine, EngineConfig};
 /// One server session: the engine behind it and the lifecycle state the
 /// loop needs. The editor's view of the session is the wire contract;
 /// the engine's view is the document map.
-#[derive(Debug)]
 pub struct Session {
     /// The engine (the pipeline answers).
     engine: AeolusEngine,
@@ -51,6 +52,27 @@ pub struct Session {
     /// Whether the client sent the shutdown request (the loop's exit
     /// is the exit NOTIFICATION, per the protocol).
     shutdown: bool,
+    /// The wired transport observer, `None` the every-constructor
+    /// default — the observability face the wire half rides
+    /// ([`Session::with_observer`]). The events are the state
+    /// machine's own answers (the outgoing verdicts), never opinions;
+    /// a session wired before its first
+    /// [`handle_message`](crate::handle_message) streams the whole
+    /// loop's traffic.
+    observer: Option<Arc<dyn TransportObserver>>,
+}
+
+impl std::fmt::Debug for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Session")
+            .field("engine", &self.engine)
+            .field("initialized", &self.initialized)
+            .field("shutdown", &self.shutdown)
+            // The wired observer is a host handle, not printable state —
+            // the table Debug's own rule: the wired-ness only.
+            .field("observer", &self.observer.is_some())
+            .finish()
+    }
 }
 
 impl Session {
@@ -60,7 +82,21 @@ impl Session {
             engine: AeolusEngine::new(config),
             initialized: false,
             shutdown: false,
+            observer: None,
         }
+    }
+
+    /// Wire the transport observability face after construction (the
+    /// table's own shape): every later
+    /// [`handle_message`](crate::handle_message) reports the machine's
+    /// verdict to the observer — the requests' answers and quiet
+    /// drops, the notifications' publish/exit/silence verdicts — while
+    /// the outgoing messages stay the plain session's, byte for byte
+    /// (the differential pins it). Sharing rides the `Arc` blanket:
+    /// one handle totals several sessions.
+    pub fn with_observer(mut self, observer: impl TransportObserver + 'static) -> Self {
+        self.observer = Some(Arc::new(observer));
+        self
     }
 
     /// The session's engine (a host embedding the state machine reads
@@ -91,11 +127,64 @@ pub struct Handled {
 /// silently (the protocol's own quiet-drop for capabilities the server
 /// does not advertise); the exit notification reports through
 /// [`Handled::exit`].
+///
+/// A session wired with an observer
+/// ([`Session::with_observer`]) streams the machine's own verdict
+/// per message — [`RequestOutcome`] for requests,
+/// [`NotificationOutcome`] for notifications — read off the SAME
+/// [`Handled`] the caller receives (outgoing messages rode, or the
+/// protocol's own quiet-drop stayed silent). The unwired session
+/// answers byte-identically: the channel adds a verdict, never a
+/// decision.
 pub fn handle_message(session: &mut Session, message: Message) -> Handled {
     match message {
-        Message::Request(request) => handle_request(session, request),
-        Message::Notification(notification) => handle_notification(session, notification),
+        Message::Request(request) => {
+            // The method rides the event (the wire's own correlation);
+            // the clone is the observed path's only cost — an unwired
+            // session keeps its zero-allocation loop.
+            let observed = session.observer.clone();
+            let method = observed.is_some().then(|| request.method.clone());
+            let handled = handle_request(session, request);
+            if let (Some(observer), Some(method)) = (observed.as_deref(), method.as_deref()) {
+                observer.on_request(method, request_outcome(&handled));
+            }
+            handled
+        }
+        Message::Notification(notification) => {
+            let observed = session.observer.clone();
+            let method = observed.is_some().then(|| notification.method.clone());
+            let handled = handle_notification(session, notification);
+            if let (Some(observer), Some(method)) = (observed.as_deref(), method.as_deref()) {
+                observer.on_notification(method, notification_outcome(&handled));
+            }
+            handled
+        }
         Message::Response(_) => Handled::default(), // the server never drives a client request
+    }
+}
+
+/// The request verdict read off the machine's own [`Handled`]: a
+/// response rode (`Answered`) or the wire stayed silent
+/// (`QuietDropped` — the pre-handshake gate, the post-shutdown gate,
+/// the unadvertised method).
+fn request_outcome(handled: &Handled) -> RequestOutcome {
+    if handled.outgoing.is_empty() {
+        RequestOutcome::QuietDropped
+    } else {
+        RequestOutcome::Answered
+    }
+}
+
+/// The notification verdict read off the machine's own [`Handled`]:
+/// the exit contract (`Exit`), the diagnostics push (`Published`) or
+/// the quiet-drop silence (`QuietDropped`).
+fn notification_outcome(handled: &Handled) -> NotificationOutcome {
+    if handled.exit {
+        NotificationOutcome::Exit
+    } else if handled.outgoing.is_empty() {
+        NotificationOutcome::QuietDropped
+    } else {
+        NotificationOutcome::Published
     }
 }
 
@@ -879,8 +968,35 @@ fn server_capabilities() -> ServerCapabilities {
 /// The transport's own IO/thread failures; the state machine itself
 /// cannot fail (every answer is deterministic over the document map).
 pub fn run_stdio() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    serve_io(None)
+}
+
+/// The observed loop: the SAME stdio shell with the transport
+/// observability face wired — every request/notification verdict the
+/// machine answers streams to the observer for the whole session's
+/// lifetime (the [`Session::with_observer`] contract, the loop the
+/// binary drives). The answers are the plain loop's, byte for byte:
+/// the channel reports the traffic, never shapes it.
+///
+/// # Errors
+/// [`run_stdio`]'s own contract, unchanged.
+pub fn run_stdio_observed(
+    observer: impl TransportObserver + 'static,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    serve_io(Some(Arc::new(observer)))
+}
+
+/// The stdio shell both entries drive (the loop is the transport's
+/// thin shell — the observer rides the session, `None` the plain
+/// loop's every-constructor default).
+fn serve_io(
+    observer: Option<Arc<dyn TransportObserver>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (connection, io_threads) = Connection::stdio();
     let mut session = Session::new(EngineConfig::default());
+    if let Some(observer) = observer {
+        session = session.with_observer(observer);
+    }
     for message in &connection.receiver {
         let handled = handle_message(&mut session, message);
         for out in handled.outgoing {
