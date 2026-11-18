@@ -574,3 +574,89 @@ fn workspace_diagnostics_unchanged(bencher: Bencher) {
         assert_eq!(outcome, aeolus_lsp::EngineWorkspaceOutcome::Unchanged);
     });
 }
+
+/// The theme fixture the definition bench's table bakes: one prefixed
+/// key and one bare shadcn key on known lines — the provenance scan's
+/// own input, the origins the jump answers through.
+const THEME: &str = concat!(
+    "@theme {\n",
+    "  --color-primary: oklch(0.205 0 0);\n",
+    "  --color-secondary: oklch(0.97 0 0);\n",
+    "}\n",
+    ":root {\n",
+    "  --muted: oklch(0.97 0 0);\n",
+    "}\n",
+);
+
+/// The goto-definition path (LSP 3.16's definition): the cursor's
+/// token class through the shared locator, the compile gate, the
+/// colour-root decomposition and the provenance lookup — the cost one
+/// ctrl-click on a theme-token class pays.
+#[divan::bench]
+fn definition_walk(bencher: Bencher) {
+    let source = aeolus_theme::ThemeSource::from_css(THEME, None).expect("the fixture parses");
+    let table = aeolus_theme::TokenTable::baked(&source).expect("the bake succeeds");
+    let mut lsp = AeolusEngine::new(
+        EngineConfig::new(Some(table)).with_theme_origin("file:///app/theme.css"),
+    );
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("bg-primary").expect("the fixture holds") + 4;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.definition("file:///card.rs", line, character));
+}
+
+/// The command surface's round trip (LSP 3.16's workspace/executeCommand):
+/// initialize and didOpen once, then the `aeolus.sortDocument` command
+/// per iteration (the params parse, the sort walk, the wire mapping and
+/// the edit serialization: what a keybinding's invocation costs).
+#[divan::bench]
+fn execute_command_sort(bencher: Bencher) {
+    use aeolus_lsp::{Session, handle_message};
+    use lsp_server::{Message, Notification, Request, RequestId};
+    use serde_json::json;
+    use std::sync::Mutex;
+
+    // The bench closure is `Fn` (the pull bench's own rule): the
+    // session rides the Mutex the document-diagnostics arm keeps.
+    let session = Mutex::new(Session::new(Default::default()));
+    let _ = handle_message(
+        &mut session.lock().expect("the bench session locks"),
+        Message::Request(Request {
+            id: RequestId::from(0),
+            method: "initialize".to_string(),
+            params: json!({"capabilities": {}}),
+        }),
+    );
+    let _ = handle_message(
+        &mut session.lock().expect("the bench session locks"),
+        Message::Notification(Notification {
+            method: "textDocument/didOpen".to_string(),
+            params: json!({
+                "textDocument": {
+                    "uri": "file:///card.rs",
+                    "languageId": "rust",
+                    "version": 1,
+                    "text": DOC,
+                }
+            }),
+        }),
+    );
+    bencher.bench(|| {
+        handle_message(
+            &mut session.lock().expect("the bench session locks"),
+            Message::Request(Request {
+                id: RequestId::from(11),
+                method: "workspace/executeCommand".to_string(),
+                params: json!({
+                    "command": "aeolus.sortDocument",
+                    "arguments": ["file:///card.rs"]
+                }),
+            }),
+        )
+    });
+}
