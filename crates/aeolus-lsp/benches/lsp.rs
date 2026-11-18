@@ -13,6 +13,7 @@
 
 use aeolus_lsp::{AeolusEngine, EngineConfig};
 use divan::Bencher;
+use lsp_server::Message;
 
 fn main() {
     divan::main();
@@ -246,4 +247,91 @@ fn document_symbols_walk(bencher: Bencher) {
     let mut lsp = AeolusEngine::new(EngineConfig::default());
     lsp.open("file:///card.rs", DOC, 1);
     bencher.bench(|| lsp.document_symbols("file:///card.rs"));
+}
+
+/// The wire face's traffic script: the didOpen publish, an answered
+/// hover, a re-publishing didChange, one quiet-dropped request and one
+/// quiet-dropped notification — the per-message mix an editor session
+/// rides at the wire (the lifecycle push, the cursor answers, the
+/// unadvertised methods).
+fn wire_script() -> Vec<Message> {
+    use lsp_server::{Notification, Request, RequestId};
+    use serde_json::json;
+
+    let hover_params = json!({
+        "textDocument": {"uri": "file:///card.rs"},
+        "position": {"line": 1, "character": 14}
+    });
+    vec![
+        Message::Notification(Notification {
+            method: "textDocument/didOpen".to_string(),
+            params: json!({
+                "textDocument": {
+                    "uri": "file:///card.rs",
+                    "languageId": "rust",
+                    "version": 1,
+                    "text": DOC,
+                }
+            }),
+        }),
+        Message::Request(Request {
+            id: RequestId::from(1),
+            method: "textDocument/hover".to_string(),
+            params: hover_params,
+        }),
+        Message::Notification(Notification {
+            method: "textDocument/didChange".to_string(),
+            params: json!({
+                "textDocument": {"uri": "file:///card.rs", "version": 2},
+                "contentChanges": [{"text": DOC}]
+            }),
+        }),
+        Message::Request(Request {
+            id: RequestId::from(2),
+            method: "textDocument/definitely-not-mine".to_string(),
+            params: json!({}),
+        }),
+        Message::Notification(Notification {
+            method: "$/setTrace".to_string(),
+            params: json!({"value": "off"}),
+        }),
+    ]
+}
+
+/// The wire face's cost, unobserved: the state machine's own verdict
+/// loop over the traffic script (the publish, the response, the quiet
+/// drops) — the baseline the observer's channel costs stand against.
+#[divan::bench]
+fn wire_session_unobserved(bencher: Bencher) {
+    use aeolus_lsp::{Session, handle_message};
+    use std::sync::Mutex;
+
+    let script = wire_script();
+    let session = Mutex::new(Session::new(Default::default()));
+    bencher.bench(|| {
+        let mut session = session.lock().expect("the bench session locks");
+        for message in &script {
+            let _ = handle_message(&mut session, message.clone());
+        }
+    });
+}
+
+/// The wire face's cost, counted: the SAME traffic over a session
+/// wired with the built-in [`TransportStats`](aeolus_lsp::TransportStats)
+/// — the channel's overhead story (one atomic add per message verdict,
+/// the answers byte-identical to the unwired loop's).
+#[divan::bench]
+fn wire_session_counted(bencher: Bencher) {
+    use aeolus_lsp::{Session, TransportStats, handle_message};
+    use std::sync::{Arc, Mutex};
+
+    let script = wire_script();
+    let stats = Arc::new(TransportStats::new());
+    let session = Mutex::new(Session::new(Default::default()).with_observer(Arc::clone(&stats)));
+    bencher.bench(|| {
+        let mut session = session.lock().expect("the bench session locks");
+        for message in &script {
+            let _ = handle_message(&mut session, message.clone());
+        }
+    });
 }
