@@ -1250,7 +1250,7 @@ impl Compiled {
         )
     }
     /// The composed supports form (one [`AttrProbe`], one [`ContainerProbe`], one [`StructProbe`], one [`DescendantProbe`], one [`SupportsProbe`])
-    /// ([`interp_probes_containers_struct_descendants_supports`] on [`Compiled::program`]).
+    /// (`interp_probes_containers_struct_descendants_supports` on [`Compiled::program`]).
     ///
     /// # Errors
     /// [`InterpError::ThemeRequired`] when a declaration's value is a
