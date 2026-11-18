@@ -131,7 +131,12 @@ The observability face is the pool's own seam joined: `ClassCell::with_observer`
 face answers what LEAVES too: the pool's rotation drops and stale-twin clears ride the
 observer's `on_evict` under a typed `EvictReason` (the wire-up reaches the store through
 the `DynStore::attach_observer` seam; the callbacks fire after the store's lock releases,
-so an observer may consult the cache it watches).
+so an observer may consult the cache it watches). The walk half of the face rides beside
+it: `aeolus_compile::compile_observed` reports the compile walk's OWN stage boundaries to a
+`WalkObserver` (the lexer's totals, the per-candidate fold/read verdict as a typed
+`CandidateOutcome`, the assembly's layer count), `WalkStats`/`WalkSnapshot` the built-in
+collector — the host driving the walk itself (a build script, a server session) reads its
+totals without the stringly `tracing` flag; byte-neutral by differential pin.
 
 <details><summary><b>More usage: shadcn widgets, theme swaps, plan algebra, snapshots</b></summary>
 
@@ -285,6 +290,7 @@ aeolus expand --has element=*:focus "has-focus:p-8"   # the subtree facts the ha
 aeolus expand "data-[state=open]:flex" --data state=open  # the attribute bits the data-*/aria-* layers answer from
 aeolus build src/ --theme shadcn-dark --out app.css   # whole project → ONE stylesheet
 aeolus plan "p-4 hover:px-8" --theme shadcn | jq .    # the V1 lane's plan bridge → the same snapshot JSON
+aeolus audit src/ --fail-on refused                   # per-class capability audit vs GPUI (tiers + boundary reasons)
 aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · diff · cn also available
 ```
 
@@ -294,6 +300,7 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 | `aeolus plan`                              | the V1 lane's plan bridge (`Target::Plan`): the v0.x `StylePlan` the backends consume, as the same canonical snapshot JSON `resolve` prints; slot-boundary notes + per-class misses ride stderr, `--fail-on` keys on the typed codes                        |
 | `aeolus check`                             | unknown classes with suggestions, unsupported utilities with reasons, `cn()` conflicts with winner attribution; `--fail-on` exit codes                                                |
 | `aeolus fmt`                               | the class-sort seam's file face: one file's class strings into the canonical order (`sort`'s batch form — stdout rewrite, the file untouched); `--check` prints `path:line:col "before" -> "after"` per out-of-order string and exits 1 — the CI drift gate |
+| `aeolus audit`                             | the capability audit (§5.1's project-sized twin): every scanned class string's longhands tiered against the GPUI backend ([`Caps`](crates/aeolus-codegen-gpui/src/lib.rs), the generated table the emit gates run), the refused/polyfill rows naming the capability's own typed boundary reason, the observed-set score in the summary; `--fail-on refused\|polyfill\|any` turns the report into the CI gate (report-only by default), `--json` the machine form |
 | `cargo xtask gen-tables` / `verify-tables` | regenerate & drift-gate the committed artifacts: roots index, [docs/REGISTRY.md](docs/REGISTRY.md), [docs/CONFORMANCE.md](docs/CONFORMANCE.md), the GPUI capability table — a stale row fails plain `cargo test` |
 | `aeolus-lsp` (the LSP server)              | editor hover, diagnostics, completion and colour swatches over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location, `completion` at the typing edge (registry spellings, theme tokens, the closed variant set — the compiler's own audited tables), `documentColor` swatches (the table's resolved light-tier rgba), `documentDiagnostic` pull (LSP 3.17 — the SAME findings the push channel publishes, recomputed on demand), `semanticTokens` (LSP 3.16 — every candidate's compile outcome onto the legend: lowered `class`, refused the custom `refused` type), `colorPresentation` (the picker's spellings — the table walked backwards, every root/token/opacity-step that re-resolves to the picked colour), `inlayHint` (LSP 3.17 — every lowered class rides one hint at its end: the CSS arm's own declarations compacted, the hover's markdown as the tooltip; a refused class never hints), `codeAction` quick fixes (the "did you mean" seam — every correction a spelling the pipeline lowers, the variant prefix and `/modifier` tail composed back on), `documentHighlight` (the cursor's class, every occurrence in the file), `rename` (the rename face — `prepareRename`'s candidate span under the cursor, `rename`'s one edit per textual occurrence of that candidate, the highlights' own raw-text equality), `formatting` (the class-sort seam's editor face — one edit per out-of-order class string, the canonical order as the new text, an already-canonical string answering nothing: the format-on-save no-op) and `documentSymbol` (the outline face — one symbol per candidate class in document order, the semantic legend's verdict beside the pipeline's own detail line: the compact CSS the class lowers to, or the refusal's stable code); the session's compiles ride the bounded `DynCache` pool — the keystroke repeat is the cheap path, the observability face on `AeolusEngine::with_observer`; `bin/aeolus-lsp` speaks stdio JSON-RPC |
 
@@ -375,7 +382,7 @@ differential oracle — no big-bang migration.
 | `aeolus-data`    | the registry as data: 213 audited rows → generated roots index, docs, sort order                                       |
 | `aeolus-ir`      | `Copy` longhand IR: `Prop`/`Val`/`Decl`/`Layer`/`Program` + `PropMask` bitset algebra                                  |
 | `aeolus-theme`   | CSS-first `ThemeSource` → tiered `TokenTable`s; `@source` directives                                                   |
-| `aeolus-compile` | the pipeline: `compile`/`cn`/`overlay`, 5 emit arms, `Customs`, `DynCache`, `sort`, `scan`/`build`, `emit_plan` bridge |
+| `aeolus-compile` | the pipeline: `compile`/`cn`/`overlay`, 5 emit arms, `Customs`, `DynCache`, `sort`, `scan`/`build`, `emit_plan` bridge, the `WalkObserver`/`compile_observed` walk face |
 
 **Emit & runtime**
 
@@ -384,7 +391,7 @@ differential oracle — no big-bang migration.
 | `aeolus-codegen`      | backend-neutral `Emit` trait + `Capability`/`Conformance` report                                                            |
 | `aeolus-codegen-gpui` | GPUI token emitter, native + polyfill capability tiers, `lower_class` third-party seam                                      |
 | `aeolus-macro`        | `tw!` / `cn!` / `tw_cn!` / `variants!` (compound + slots) / `theme!` — syn-free; emits the frozen program, never the string |
-| `aeolus-rt`           | host seam: `StaticProgram` (the `style*` and probe faces beside the free walks), `Env`, `TokenTable`, `DynCache` + the `DynObserver`/`CacheStats`/`EvictReason`/`session_key` observability face the cell joins, `ClassCell`, `MeasuredContainers`, `theme_from_css`                             |
+| `aeolus-rt`           | host seam: `StaticProgram` (the `style*` and probe faces beside the free walks), `Env`, `TokenTable`, `DynCache` + the `DynObserver`/`CacheStats`/`EvictReason`/`session_key` observability face the cell joins (the `WalkObserver` walk face re-exported beside), `ClassCell`, `MeasuredContainers`, `theme_from_css`                             |
 
 **Integration & tooling**
 
@@ -472,6 +479,7 @@ cargo run -p aeolus-compile --example style_walk_probes # the program lane's ful
 cargo run -p aeolus-compile --example style_walk_pseudo # the program lane's pseudo-target face: the render targets' own cascades
 cargo run -p aeolus-compile --example suggest           # the suggestion seam: suggest_for/SuggestionSurface end to end
 cargo run -p aeolus-cli --example sort                  # the sort face: canonical order beside the miss channel
+cargo run -p aeolus-cli --example audit                 # the capability-audit face: per-class tiers, the reasons, the observed-set score
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
@@ -588,6 +596,7 @@ cargo run -p aeolus-cli --example plan            # the plan bridge: snapshot + 
 cargo run -p aeolus-cli --example resolve         # the base lane: resolve → plan artifact, diff → lanes, css → the sheet
 cargo run -p aeolus-cli --example check            # the CI lint face: candidates, typed findings, the fail-on gate
 cargo run -p aeolus-cli --example fmt              # the fmt file face: the drift report beside the rewrite
+cargo run -p aeolus-cli --example audit            # the capability-audit face: tiers, reasons, the observed-set score
 cargo run -p aeolus-cli --example expand_descendants  # expand --has: the has-* layers answer from the subtree facts
 cargo run -p aeolus-cli --example expand_supports  # expand --supports: the @supports layers answer from the capability facts
 cargo run -p aeolus-cli --example expand_capabilities  # expand --pointer-fine/--portrait: the capability layers answer from the frame facts
