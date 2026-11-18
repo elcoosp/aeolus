@@ -534,3 +534,43 @@ fn linked_ranges_walk(bencher: Bencher) {
         .sum::<u32>();
     bencher.bench(|| lsp.linked_ranges("file:///card.rs", line, character));
 }
+
+/// The outline folding path (LSP 3.16's foldingRange): one fold per
+/// extracted class string — the extraction seam's scan and the
+/// per-hit UTF-16 range translation, no compile verdict riding (the
+/// highlights' textual family) — the cost an outline panel pays per
+/// didOpen (and per edit's re-fold).
+#[divan::bench]
+fn folding_ranges_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    bencher.bench(|| lsp.folding_ranges("file:///card.rs"));
+}
+
+/// The workspace pull's full path (LSP 3.17's workspace/diagnostic):
+/// every open document's report beside its result identity — the
+/// content fingerprint per document plus the per-document analyze the
+/// pooled path rides — the cost a workspace-wide pull with no client
+/// cache pays.
+#[divan::bench]
+fn workspace_diagnostics_pull(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    bencher.bench(|| lsp.workspace_diagnostics(&[]));
+}
+
+/// The workspace pull's unchanged path: the SAME content identity the
+/// client cached riding back — the fingerprint walk beside the skipped
+/// recompute (the retheme fast-path's shape at the pull channel), the
+/// cost a quiet buffer pays per workspace pull.
+#[divan::bench]
+fn workspace_diagnostics_unchanged(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let id = lsp.workspace_diagnostics(&[])[0].result_id.clone();
+    let previous = [("file:///card.rs", id.as_str())];
+    bencher.bench(|| {
+        let outcome = lsp.workspace_diagnostics(&previous)[0].outcome.clone();
+        assert_eq!(outcome, aeolus_lsp::EngineWorkspaceOutcome::Unchanged);
+    });
+}
