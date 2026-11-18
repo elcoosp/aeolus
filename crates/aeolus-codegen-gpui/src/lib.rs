@@ -571,6 +571,19 @@ impl Capability for Caps {
             Tier::Refused
         }
     }
+
+    fn reason(&self, prop: Prop) -> Option<&'static str> {
+        // The GENERATED table's own row — the same one-source-of-truth
+        // verdicts the tier impl reads, so an audit's boundary reasons
+        // can never drift from the committed matrix (the parity the
+        // `caps_reason` suite pins).
+        let row = PROP_CAPABILITIES.iter().find(|row| row.prop == prop)?;
+        if row.reason.is_empty() {
+            None
+        } else {
+            Some(row.reason)
+        }
+    }
 }
 
 /// The composite grammar's per-decl refusal: a `Val::Verbatim` value has
