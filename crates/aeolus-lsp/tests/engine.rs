@@ -1328,6 +1328,77 @@ fn rename_guards_the_empty_name_and_the_unknown_uri() {
 }
 
 // ---------------------------------------------------------------------------
+// The document-symbol battery: the outline face (the wire's
+// `textDocument/documentSymbol`) — one symbol per candidate class the
+// extraction seam's strings carry, the semantic legend's own verdict
+// riding beside the name
+// ---------------------------------------------------------------------------
+
+#[test]
+fn document_symbols_answer_one_per_candidate_in_document_order() {
+    // The outline walks every candidate class the extraction seam's
+    // strings carry — one symbol per candidate, document order (the
+    // scan order), the spelling the NAME.
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let symbols = lsp.document_symbols("file:///card.rs");
+    let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["p-4", "flex-col", "not-a-root"], "{names:?}");
+}
+
+#[test]
+fn document_symbols_carry_the_byte_true_ranges_and_the_verdict() {
+    // The range is the candidate's own span (the same byte-true
+    // translation the swatches and the legend ride — the multi-byte
+    // identifier BEFORE the string shifts the UTF-16 column, never the
+    // line), the verdict the semantic legend's own two answers.
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let symbols = lsp.document_symbols("file:///card.rs");
+    assert_eq!(symbols.len(), 3, "{symbols:?}");
+    let p4 = &symbols[0];
+    assert_eq!(p4.range.start.line, 1, "{p4:?}");
+    assert!(p4.range.end.character > p4.range.start.character, "{p4:?}");
+    assert!(matches!(p4.kind, EngineSemanticKind::Lowered), "{p4:?}");
+    let refused = symbols.last().expect("the fixture carries the miss");
+    assert_eq!(refused.name, "not-a-root");
+    assert!(
+        matches!(refused.kind, EngineSemanticKind::Refused),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn document_symbols_render_the_lowered_css_and_the_refused_code() {
+    // The detail line is the pipeline's own output: a lowered class
+    // renders the compact CSS the inlay hint's label carries (never a
+    // paraphrase), a refused one the stable code the diagnostics key
+    // on.
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let symbols = lsp.document_symbols("file:///card.rs");
+    assert!(
+        symbols[0].detail.contains("padding-top"),
+        "the lowered detail is the CSS arm's own declarations: {:?}",
+        symbols[0].detail
+    );
+    assert_eq!(symbols[2].detail, "aeolus::compile::unknown_root");
+}
+
+#[test]
+fn document_symbols_are_pure_and_unknown_uris_answer_empty() {
+    let mut lsp = engine();
+    lsp.open("file:///card.rs", DOC, 1);
+    let first = lsp.document_symbols("file:///card.rs");
+    let second = lsp.document_symbols("file:///card.rs");
+    assert_eq!(first, second, "document_symbols is pure over its map");
+    assert!(
+        lsp.document_symbols("file:///never-opened.rs").is_empty(),
+        "the unknown URI answers empty"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The helpers
 // ---------------------------------------------------------------------------
 
