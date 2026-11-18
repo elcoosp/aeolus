@@ -332,8 +332,8 @@ Every stage is deterministic and total (keeps today's fuzz/property discipline).
 | `aeolus-macro`                         | The only proc-macro crate: `tw!`, `cn!`, `tw_cn!`, `variants!`, `theme!`                                                 | Thin shell over `aeolus-codegen*`                                                                                                   |
 | `aeolus-rt`                            | Tiny runtime: `Env`, `TokenTable`, `DynCache`, `Program` interpreter; the observability face (`DynObserver`/`CacheStats`/`NoObserver`/`CacheSnapshot`/`EvictReason`/`session_key`) is nameable here and the `ClassCell` joins the same seam (`with_observer`) | No locks on the UI path (UI thread is single-threaded); the cell is `!Sync`, the observer handle `Send + Sync`                                                                              |
 | `aeolus-gpui`                          | `TwExt`, `AeolusRoot`, `Env` plumbing, gpui-component theme bridge, re-exports                                           | The crate users depend on                                                                                                           |
-| `aeolus-cli`                            | resolve / css / diff / cn / check / explain / sort / fmt / expand / build / plan (headless; the benches are cargo benches beside the crates)                                                        | Reuses `aeolus-compile` as-is                                                                                                       |
-| `aeolus-lsp`                            | the P5 row's LSP surface (landed 2026-11, the completion and swatch answers joined 2026-11): the headless engine answers from the same pipeline — the extraction seam's strings through the V1 compile walk, per-location typed diagnostics with UTF-16 ranges and stable codes, the hover keyed by the candidate under the cursor (the CSS arm's own declaration texts, or the typed refusal), the completion at the typing edge (the registry spellings, the theme tokens, the compile crate's audited closed variant set), the colour swatches (the per-candidate compile resolving the IR's colour slots through the config's own table), the inline hints (every lowered class rides one `inlayHint` at its end — the CSS arm's own declarations compacted, the hover's markdown as the tooltip; a refused class never hints), the quick fixes (the "did you mean" suggestion seam's editor face — every correction a spelling the pipeline lowers), the document highlights (the cursor's class, every textual occurrence), the semantic tokens (`textDocument/semanticTokens` — the lowered/refused split tokenized from the same walk), the colour presentations (`textDocument/colorPresentation` — the swatch seam's per-slot forms) and the diagnostics pull (`textDocument/diagnostic` — the push diagnostics' own report, one shot); the server half is the stdio JSON-RPC state machine (`bin/aeolus-lsp`); the session's compiles ride the bounded pool (`DynCache` — the keystroke repeat is the cheap path, the observable face on `AeolusEngine::with_observer`) | The engine carries none of the wire types; the state machine is testable without a pipe                                             |
+| `aeolus-cli`                            | resolve / css / diff / cn / check / explain / sort / fmt / expand / build / plan / audit (headless; the benches are cargo benches beside the crates)                                                        | Reuses `aeolus-compile` as-is                                                                                                       |
+| `aeolus-lsp`                            | the P5 row's LSP surface (landed 2026-11, the completion and swatch answers joined 2026-11): the headless engine answers from the same pipeline — the extraction seam's strings through the V1 compile walk, per-location typed diagnostics with UTF-16 ranges and stable codes, the hover keyed by the candidate under the cursor (the CSS arm's own declaration texts, or the typed refusal), the completion at the typing edge (the registry spellings, the theme tokens, the compile crate's audited closed variant set), the colour swatches (the per-candidate compile resolving the IR's colour slots through the config's own table), the inline hints (every lowered class rides one `inlayHint` at its end — the CSS arm's own declarations compacted, the hover's markdown as the tooltip; a refused class never hints), the quick fixes (the "did you mean" suggestion seam's editor face — every correction a spelling the pipeline lowers), the document highlights (the cursor's class, every textual occurrence), the semantic tokens (`textDocument/semanticTokens` — the lowered/refused split tokenized from the same walk), the colour presentations (`textDocument/colorPresentation` — the swatch seam's per-slot forms) and the diagnostics pull (`textDocument/diagnostic` — the push diagnostics' own report, one shot); the server half is the stdio JSON-RPC state machine (`bin/aeolus-lsp`); the session's compiles ride the bounded pool (`DynCache` — the keystroke repeat is the cheap path, the observable face on `AeolusEngine::with_observer`); the wire half's transport face landed 2026-11 (`Session::with_observer` + `run_stdio_observed`: the state machine's own per-message verdicts — answered/quiet requests, published/exit/silent notifications — stream to a `TransportObserver`, the built-in `TransportStats`/`TransportSnapshot` beside, the outgoing messages byte-identical) | The engine carries none of the wire types; the state machine is testable without a pipe                                             |
 | `aeolus-{xilem,floem,iced,egui,slint}` | Re-targeted onto `Program` (codegen where the API allows, interpreter otherwise)                                         | Migrated one by one; see §7                                                                                                         |
 | `aeolus-legacy`                        | (never split out — the plan decided against a frozen copy once the re-target landed)                                     | The v0.9 `StylePlan` + `Resolver` stay in-tree in `aeolus-core` as the differential oracle; `emit_plan` in `aeolus-compile` is the `Program → StylePlan` adapter the migration walked through |
 
@@ -387,7 +387,14 @@ table itself, so a table wired before the themed compile streams the walk's per-
 stage the walk face's events sit above), answer-neutral by the differential pin. **The pooled-path WALK
 CHANNEL landed beside it**: `DynCache::compile_observed`/`compile_theme_observed` thread the walk face
 through the pool (a miss lowers observed, a hit streams nothing — the channel reports lowerings, not
-answers) and `AeolusEngine::with_walk_observer` joins it to the LSP session.
+answers) and `AeolusEngine::with_walk_observer` joins it to the LSP session. **The wire half's
+TRANSPORT FACE landed 2026-11** (the loop's own seam beside the engine's two): `TransportObserver`
+on `crates/aeolus-lsp` — `on_request(method, RequestOutcome::Answered|QuietDropped)` and
+`on_notification(method, NotificationOutcome::Published|Exit|QuietDropped)`, the state machine's
+OWN per-message verdicts read off the `Handled` the callers receive, `NoTransportObserver` the
+every-constructor default, the `Arc` blanket and the `TransportStats`/`TransportSnapshot` collector
+the pool/walk/theme faces keep, wired through `Session::with_observer` (the loop's observed twin
+`run_stdio_observed`), answer-neutral by the byte-for-byte differential pin.
 
 ### 3.5 Variants map to _where_ the cost is paid
 
@@ -429,17 +436,14 @@ div().tw(tw!("flex items-center gap-2 p-4 rounded-md bg-primary text-primary-for
               hover:bg-primary/90 dark:shadow-none md:p-6"))
 ```
 
-`tw!` expands to a hash-named ZST implementing `StyleProgram` (monomorphised, `#[inline(always)]`):
+`tw!` expands to a frozen `StaticProgram` — a `const` block the macro's compile walk emits
+(the layered longhands and keyword tables baked at expansion, applied at runtime under a
+`Copy` `Env`; the V1 pipeline's emit (b) static-data arm):
 
 ```rust
-{ struct __Tw_9f3a; impl ::aeolus_gpui::StyleProgram for __Tw_9f3a {
-    #[inline(always)] fn apply<E: Styled>(mut e: E, env: Env) -> E {
-        e = e.flex().items_center().gap(rems(0.5)).p(rems(1.0)).rounded(rems(0.375))
-             .bg(THEME_PRIMARY[env.dark as usize]).text_color(THEME_PRIMARY_FG[env.dark as usize]);
-        e = e.hover(|s| s.bg(PRIMARY_90[env.dark as usize]));
-        if env.bp >= Bp::MD { e = e.p(rems(1.5)); }
-        e } }
-  __Tw_9f3a }
+{ const LAYERS: [::aeolus_rt::Layer; 3] = [/* the specificity-sorted condition groups */];
+  const KEYWORDS: ::aeolus_rt::KeywordBook = ::aeolus_rt::KeywordBook::const_default();
+  ::aeolus_gpui::StaticProgram::new(LAYERS, KEYWORDS) }
 ```
 
 **(2) Closed-world components — the shadcn win.** `class-variance-authority`/`tailwind-variants` as a _compile-time_ table:
