@@ -209,7 +209,7 @@ pub use custom::{
 pub use customs_css::{CustomCssError, customs_from_css};
 pub use dyn_cache::{
     CacheSnapshot, CacheStats, CachedCompiled, DEFAULT_DYN_CACHE_CAP, DynCache, DynIdentity,
-    DynObserver, DynStore, NoObserver, TwoGenStore, session_key,
+    DynObserver, DynStore, EvictReason, NoObserver, TwoGenStore, session_key,
 };
 pub use interp::{
     AttrBit, AttrKind, AttrProbe, AttrState, ContainerBound, ContainerProbe, ContainerState,
