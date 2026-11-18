@@ -1379,3 +1379,164 @@ fn formatting_malformed_params_answers_null() {
         "malformed params: the protocol's own empty answer"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The rename wire (the prepareRename + rename face: the candidate's
+// span, the textual occurrences' edits, the capability)
+// ---------------------------------------------------------------------------
+
+/// The rename request the harness reuses.
+fn rename_request(id: i32, u: &str, line: i32, character: i32, new_name: &str) -> Message {
+    request(
+        id,
+        "textDocument/rename",
+        json!({
+            "textDocument": {"uri": u},
+            "position": {"line": line, "character": character},
+            "newName": new_name,
+        }),
+    )
+}
+
+#[test]
+fn initialize_advertises_rename() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(
+        &mut session,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("initialize answers a response");
+    };
+    let result = response.result.expect("the capabilities carry a result");
+    assert_eq!(
+        result["capabilities"]["renameProvider"], true,
+        "the rename capability advertises (the plain true form): {result}"
+    );
+}
+
+#[test]
+fn prepare_rename_answers_the_wire_range() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, DOC));
+    // `p-4` starts at column 13 on line 1 (ASCII — bytes are UTF-16
+    // columns), the cursor mid-candidate.
+    let handled = handle_message(
+        &mut session,
+        request(
+            20,
+            "textDocument/prepareRename",
+            json!({
+                "textDocument": {"uri": uri()},
+                "position": {"line": 1, "character": 14},
+            }),
+        ),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("prepareRename answers a response");
+    };
+    let result = response.result.expect("the span carries a result");
+    assert_eq!(result["start"]["line"], 1, "{result}");
+    assert_eq!(result["start"]["character"], 13, "{result}");
+    assert_eq!(result["end"]["character"], 16, "{result}");
+}
+
+#[test]
+fn prepare_rename_outside_a_candidate_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, DOC));
+    let handled = handle_message(
+        &mut session,
+        request(
+            21,
+            "textDocument/prepareRename",
+            json!({
+                "textDocument": {"uri": uri()},
+                "position": {"line": 0, "character": 2},
+            }),
+        ),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers (never a hang)");
+    };
+    assert_eq!(
+        response.result,
+        Some(serde_json::Value::Null),
+        "outside any candidate: the protocol's cannot-rename"
+    );
+}
+
+#[test]
+fn rename_answers_the_edit_map() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, DOC));
+    let handled = handle_message(&mut session, rename_request(22, &uri(), 1, 14, "px-8"));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("rename answers a response");
+    };
+    let result = response
+        .result
+        .expect("the workspace edit carries a result");
+    let edit = &result["changes"][uri()][0];
+    assert_eq!(edit["range"]["start"]["line"], 1, "{result}");
+    assert_eq!(edit["range"]["start"]["character"], 13, "{result}");
+    assert_eq!(edit["range"]["end"]["character"], 16, "{result}");
+    assert_eq!(edit["newText"], "px-8", "{result}");
+}
+
+#[test]
+fn rename_outside_a_candidate_answers_no_changes() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let _ = handle_message(&mut session, did_open(&uri(), 1, DOC));
+    let handled = handle_message(&mut session, rename_request(23, &uri(), 0, 2, "px-8"));
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers (never a hang)");
+    };
+    let result = response
+        .result
+        .expect("the workspace edit carries a result");
+    // The document rides the map with an EMPTY edit list (the code
+    // action arm's single-shot map shape — no guessed edit, the honest
+    // no-op the editor applies as nothing).
+    let edits = &result["changes"][uri()];
+    assert!(
+        edits.is_array() && edits.as_array().is_some_and(Vec::is_empty),
+        "no occurrences, an empty edit list: {result}"
+    );
+}
+
+#[test]
+fn rename_before_initialize_rides_silently() {
+    let mut session = Session::new(Default::default());
+    let handled = handle_message(&mut session, rename_request(24, &uri(), 1, 14, "px-8"));
+    assert!(
+        handled.outgoing.is_empty(),
+        "requests before initialize ride the quiet-drop contract"
+    );
+}
+
+#[test]
+fn rename_malformed_params_answers_null() {
+    let mut session = Session::new(Default::default());
+    initialize(&mut session);
+    let handled = handle_message(
+        &mut session,
+        request(
+            25,
+            "textDocument/rename",
+            json!({"textDocument": "not-an-object"}),
+        ),
+    );
+    let Some(Message::Response(response)) = handled.outgoing.into_iter().next() else {
+        panic!("the request answers");
+    };
+    assert_eq!(
+        response.result,
+        Some(serde_json::Value::Null),
+        "malformed params: the protocol's own empty answer"
+    );
+}
