@@ -30,8 +30,8 @@ use crate::{
     DocumentMap, EngineCodeAction, EngineColour, EngineColourPresentation, EngineCompletion,
     EngineCompletionKind, EngineDiagnostic, EngineHighlight, EngineHover, EngineInlayHint,
     EnginePosition, EngineRange, EngineReference, EngineRenameEdit, EngineSelectionRange,
-    EngineSemanticKind, EngineSemanticToken, EngineSymbol, EngineTextEdit, EngineWorkspaceSymbol,
-    RethemeOutcome,
+    EngineSemanticKind, EngineSemanticToken, EngineSymbol, EngineTextEdit,
+    EngineWorkspaceDiagnostic, EngineWorkspaceOutcome, EngineWorkspaceSymbol, RethemeOutcome,
 };
 
 // ---------------------------------------------------------------------------
@@ -1185,6 +1185,93 @@ impl AeolusEngine {
     }
 
     // -----------------------------------------------------------------------
+    // The folding-range answer
+    // -----------------------------------------------------------------------
+
+    /// The document's folds (the wire's `textDocument/foldingRange`):
+    /// ONE fold per extracted class string — the string's own content
+    /// span (the extractor's trimmed hit — the quotes stay the editor's
+    /// territory), document order (the extraction seam's scan order),
+    /// each fold spanning the whole content (every candidate inside it
+    /// rides the one range). The fold is a SHAPE-level answer — the
+    /// highlights' textual family: no compile verdict rides, a refused
+    /// candidate's string folds exactly like a lowered one's — and the
+    /// answer set is CLOSED by the extraction seam's own pre-filter (a
+    /// literal with no `-`/`:` token is not a class string, so it never
+    /// folds): the server reports the class strings it knows, the
+    /// client renders which folds it wants (the protocol's own
+    /// contract). The multi-line raw-string call sites are the folds
+    /// the editor actually collapses (the quoted walk stops at a
+    /// newline, the raw-string form the multi-line shape).
+    /// Deterministic and pure over the document map; an unknown URI
+    /// answers empty.
+    pub fn folding_ranges(&self, uri: &str) -> Vec<EngineRange> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        scan_rust_strings(text)
+            .into_iter()
+            .map(|hit| range_of(text, hit.offset, hit.offset + hit.text.len()))
+            .collect()
+    }
+
+    // -----------------------------------------------------------------------
+    // The workspace-pull diagnostic answer
+    // -----------------------------------------------------------------------
+
+    /// The workspace's pull report (the wire's `workspace/diagnostic` —
+    /// LSP 3.17's workspace-wide pull): every OPEN document's findings
+    /// beside its result identity — URI order across the map (the
+    /// cross-document answers' own determinism contract), the
+    /// per-document walk the document pull rides generalized. The
+    /// RESULT IDENTITY is the honest fingerprint: a 64-bit FNV-1a over
+    /// the document's exact text (the module's own `fnv1a` walk below)
+    /// — the same text
+    /// answers the same id whatever the version tag rides (the
+    /// equal-content re-save the byte-neutral no-op the retheme
+    /// fast-path keeps), a text change answers a new one. The findings
+    /// are pure over the text, so the content is the identity: nothing
+    /// else can move the report. A `previous` pair
+    /// (uri, id) whose id EQUALS the current one answers
+    /// [`EngineWorkspaceOutcome::Unchanged`] — the client's cache is
+    /// the report, nothing recomputes (the walk the pool makes cheap
+    /// skipped wholesale); a stale id, or a uri the previous list
+    /// never named, answers the full report — the engine never caches,
+    /// the pull channel's own contract. Deterministic and pure over
+    /// the document map; the previous entries for unopened documents
+    /// ride unanswered (the map is the answer's scope).
+    pub fn workspace_diagnostics(
+        &self,
+        previous: &[(&str, &str)],
+    ) -> Vec<EngineWorkspaceDiagnostic> {
+        let mut uris: Vec<&String> = self.documents.keys().collect();
+        uris.sort();
+        let mut out = Vec::with_capacity(uris.len());
+        for key in uris {
+            let doc = &self.documents[key];
+            let result_id = format!("{:016x}", fnv1a(doc.text.as_bytes()));
+            let outcome = if previous
+                .iter()
+                .any(|(uri, id)| *uri == key.as_str() && *id == result_id)
+            {
+                EngineWorkspaceOutcome::Unchanged
+            } else {
+                EngineWorkspaceOutcome::Full {
+                    diagnostics: self.analyze(key),
+                }
+            };
+            out.push(EngineWorkspaceDiagnostic {
+                uri: key.clone(),
+                version: doc.version,
+                result_id,
+                outcome,
+            });
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
     // The shared per-candidate compile walk
     // -----------------------------------------------------------------------
 
@@ -1265,6 +1352,21 @@ impl AeolusEngine {
 // ---------------------------------------------------------------------------
 // The position conversions (the LSP's UTF-16 model, owned ONCE here)
 // ---------------------------------------------------------------------------
+
+/// The 64-bit FNV-1a the workspace-pull result identity rides — the
+/// one hash this crate owns, dependency-free by the no-manifest-add
+/// discipline (the pool's entry identity lives in the compile crate's
+/// `DynCache`; this one fingerprints the DOCUMENT TEXT the pull report
+/// caches against, a fingerprint never keys a decision — it only names
+/// one for the client).
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
 
 /// The candidate under one byte offset — the cursor-keyed answers'
 /// shared locator (the hover, the quick fixes, the highlights): the
