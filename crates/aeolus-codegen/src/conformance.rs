@@ -63,6 +63,16 @@ pub trait Capability {
 
     /// The verdict for one longhand.
     fn tier(&self, prop: Prop) -> Tier;
+
+    /// The typed boundary reason for one longhand, when the
+    /// capability's own tables name one — the generated tables' refused
+    /// rows (the audit report renders it beside the tier; an
+    /// expressible longhand answers `None`). The provided default is
+    /// the honest empty answer: a capability that names no reasons
+    /// never invents one.
+    fn reason(&self, _prop: Prop) -> Option<&'static str> {
+        None
+    }
 }
 
 /// The §5.1 conformance report: one backend's tier partition over
