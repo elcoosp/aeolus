@@ -2122,3 +2122,129 @@ fn expand_interaction_flags_mix_with_the_base_and_each_other() {
     assert!(out.contains("margin-top = 0.5rem"), "{out}");
     assert!(!out.contains("display = none"), "{out}");
 }
+
+// ---------------------------------------------------------------------------
+// The breakpoint battery: the viewport-width fact's CLI face (the
+// `--width rem` flag)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn expand_width_flag_answers_the_min_breakpoints() {
+    // The viewport width is the frame fact the breakpoint families
+    // answer from (`Env::viewport_rem`, the AT/strictly-below boundary
+    // rules the interp pins): the flag carries the width in rem, the
+    // min forms fire AT and above their breakpoint's rem.
+    for (bp, rem, class) in [
+        ("sm", "40", "sm:p-8"),
+        ("md", "48", "md:p-8"),
+        ("lg", "64", "lg:p-8"),
+        ("xl", "80", "xl:p-8"),
+        ("2xl", "96", "2xl:p-8"),
+    ] {
+        let (code, out, err) = run_cmd(&["expand", "--width", rem, class]);
+        assert_eq!(code, 0, "{bp}: {err}");
+        assert!(out.contains("padding-top = 2rem"), "{bp}: {out}");
+    }
+}
+
+#[test]
+fn expand_width_below_the_breakpoint_is_the_quiet_miss() {
+    // Strictly below the breakpoint the min form misses — the same
+    // quiet miss an unset state fact is (a media query that does not
+    // hold reports nothing). The resting env (no flag) stays the
+    // zero-width viewport: no min breakpoint fires.
+    let (code, out, _) = run_cmd(&["expand", "--width", "39.9", "sm:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "a quiet miss reports nothing: {out}"
+    );
+
+    let (code, out, _) = run_cmd(&["expand", "md:p-8"]);
+    assert_eq!(code, 0);
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(!out.contains("never matched"), "{out}");
+}
+
+#[test]
+fn expand_width_max_forms_answer_strictly_below() {
+    // The max forms read the SAME fact off the complementary boundary:
+    // strictly below the breakpoint the layer fires, at it the layer
+    // stops (the interp's `Cond::Max` arm, the AT boundary's other
+    // edge).
+    let (code, out, err) = run_cmd(&["expand", "--width", "39.9", "max-md:p-8"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--width", "48", "max-md:p-8"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+    assert!(
+        !out.contains("never matched"),
+        "a quiet miss reports nothing: {out}"
+    );
+}
+
+#[test]
+fn expand_width_composes_with_the_state_flags() {
+    // The width rides the same Env the other fact flags build: the
+    // breakpoint layer joins the cascade (responsive ranks AFTER the
+    // state tier, the sort order's own slots) — at the md width the
+    // breakpoint's answer wins the padding longhand, below it the
+    // hover state's does, and the unasserted xl layer waits either
+    // way.
+    let (code, out, _) = run_cmd(&[
+        "expand",
+        "--width",
+        "48",
+        "--hover",
+        "p-4 md:p-8 hover:p-12 xl:p-16",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 2rem"), "{out}");
+    assert!(!out.contains("padding-top = 4rem"), "{out}");
+
+    let (code, out, _) = run_cmd(&["expand", "--hover", "p-4 md:p-8 hover:p-12 xl:p-16"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("padding-top = 3rem"), "{out}");
+    assert!(!out.contains("padding-top = 2rem"), "{out}");
+}
+
+#[test]
+fn expand_width_json_carries_the_answer() {
+    // The JSON shape carries the width-fired layer like any effective
+    // declaration (the `--json` face reads the same walk).
+    let (code, out, err) = run_cmd(&["expand", "--json", "--width", "48", "md:p-8"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("\"prop\":\"padding-top\""), "{out}");
+    assert!(out.contains("\"value\":\"2rem\""), "{out}");
+}
+
+#[test]
+fn expand_width_usage_errors_are_the_honest_refusal() {
+    // The width rides the walk's own f32 slot: a malformed, negative
+    // or non-finite spelling is a CLI input error (exit 2), never a
+    // half-answered layer (the `--container` arm's honest-refusal
+    // shape).
+    for args in [
+        vec!["expand", "--width"],               // missing value
+        vec!["expand", "--width", "abc", "p-4"], // unparseable
+        vec!["expand", "--width", "-4", "p-4"],  // negative
+        vec!["expand", "--width", "inf", "p-4"], // non-finite
+    ] {
+        let (code, _, err) = run_cmd(&args);
+        assert_eq!(code, 2, "args {args:?}: {err}");
+        assert!(err.contains("--width"), "the refusal names the flag: {err}");
+    }
+}
+
+#[test]
+fn expand_width_is_the_expand_face_only() {
+    // The flag is the expand face's (the allow-list closed set): the
+    // other class-string commands refuse it as an unknown flag, the
+    // usage-error exit.
+    let (code, _, err) = run_cmd(&["resolve", "--width", "48", "p-4"]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("unknown flag"), "{err}");
+}
