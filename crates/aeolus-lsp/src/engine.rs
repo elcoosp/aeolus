@@ -15,8 +15,8 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 
 use aeolus_compile::{
-    COLOUR_GROUPS, Compiled, Config, CssSheet, Diagnostic, KNOWN_VARIANTS, ScanHit, compile,
-    compile_theme, emit_css, emit_css_theme, scan_rust_strings, sort, suggest_for,
+    COLOUR_GROUPS, CompileError, Compiled, Config, CssSheet, Diagnostic, DynCache, DynObserver,
+    KNOWN_VARIANTS, ScanHit, emit_css, emit_css_theme, scan_rust_strings, sort, suggest_for,
 };
 use aeolus_data::ValueKind;
 use aeolus_data::rows::ROWS;
@@ -93,6 +93,18 @@ pub struct AeolusEngine {
     config: EngineConfig,
     /// The open documents, keyed by their URI as the wire names them.
     documents: DocumentMap,
+    /// The bounded pool the compile answers ride (the compile crate's
+    /// `DynCache`, the leak-pool dedupe): an editor session re-answers
+    /// the same strings on every keystroke and re-opens the same
+    /// documents across sessions — the cache makes the repeat the CHEAP
+    /// path (a hit hands back the same interned slices the first
+    /// compile pooled; the identity is the engine's own config, fixed
+    /// at construction, so one identity slot spans the session). The
+    /// observability face rides [`AeolusEngine::with_observer`]; the
+    /// default is observation-free and the answers are byte-identical
+    /// (the cache never changes a decision — the compile crate's own
+    /// differential contract).
+    cache: DynCache,
 }
 
 impl AeolusEngine {
@@ -101,7 +113,23 @@ impl AeolusEngine {
         Self {
             config,
             documents: DocumentMap::new(),
+            cache: DynCache::new(),
         }
+    }
+
+    /// The engine with a host-supplied observer — the compile seam's
+    /// observability face joined (the `DynCache::with_observer` shape,
+    /// chained after `new`: the built-in
+    /// [`CacheStats`](aeolus_compile::CacheStats) rides an `Arc` the
+    /// host keeps a handle to). The observer sees every decision the
+    /// session's pool makes — hit/miss/store under the composed key,
+    /// the store event carrying the entry's diagnostic count, the
+    /// eviction face's rotation drops beside — one handle spanning the
+    /// whole editor session. The observer adds a channel; it never
+    /// changes a decision.
+    pub fn with_observer(mut self, observer: impl DynObserver + 'static) -> Self {
+        self.cache = self.cache.with_observer(observer);
+        self
     }
 
     /// Open a document (the wire's didOpen): the text replaces any
@@ -140,6 +168,20 @@ impl AeolusEngine {
         self.documents.get(uri).map(|doc| doc.version)
     }
 
+    /// The pipeline answer over the session's pool: the themed walk when
+    /// the config carries a table, the theme-less boundary otherwise —
+    /// the same entry points the CLI runs, never a parallel matcher,
+    /// now deduped by the bounded cache (the cache's own differential
+    /// contract: a hit hands back the same interned slices and the SAME
+    /// diagnostics the miss stored; only the empty input errors, and
+    /// errors are never cached).
+    fn compiled(&self, raw: &str) -> Result<Compiled, CompileError> {
+        match &self.config.tokens {
+            Some(table) => self.cache.compile_theme(raw, table, &self.config.compile),
+            None => self.cache.compile(raw, &self.config.compile),
+        }
+    }
+
     // -----------------------------------------------------------------------
     // The diagnostics answer
     // -----------------------------------------------------------------------
@@ -155,13 +197,12 @@ impl AeolusEngine {
         let text = doc.text.as_str();
         let mut out = Vec::new();
         for hit in scan_rust_strings(text) {
-            // The pipeline answer: the themed walk when the config
-            // carries a table, the theme-less boundary otherwise — the
-            // same entry points the CLI runs, never a parallel matcher.
-            let compiled = match &self.config.tokens {
-                Some(table) => compile_theme(hit.text.as_str(), table, &self.config.compile),
-                None => compile(hit.text.as_str(), &self.config.compile),
-            };
+            // The pipeline answer over the session's pool: the themed
+            // walk when the config carries a table, the theme-less
+            // boundary otherwise — the same entry points the CLI runs,
+            // never a parallel matcher; a re-analyzed document's
+            // unchanged strings ride the cache instead of re-lowering.
+            let compiled = self.compiled(hit.text.as_str());
             let Ok(compiled) = compiled else {
                 // Only the empty input errors; a trimmed-empty hit is
                 // the extractor's own artifact — no findings either way.
@@ -197,10 +238,7 @@ impl AeolusEngine {
 
         // The single-candidate pipeline answer: the themed walk when the
         // config carries a table, the theme-less boundary otherwise.
-        let compiled = match &self.config.tokens {
-            Some(table) => compile_theme(raw, table, &self.config.compile),
-            None => compile(raw, &self.config.compile),
-        };
+        let compiled = self.compiled(raw);
         let Ok(compiled) = compiled else {
             return None;
         };
@@ -536,10 +574,7 @@ impl AeolusEngine {
         let range = range_of(text, start, end);
         // The single-candidate pipeline answer: the themed walk when the
         // config carries a table, the theme-less boundary otherwise.
-        let compiled = match &self.config.tokens {
-            Some(table) => compile_theme(raw, table, &self.config.compile),
-            None => compile(raw, &self.config.compile),
-        };
+        let compiled = self.compiled(raw);
         let Ok(compiled) = compiled else {
             return Vec::new();
         };
@@ -711,10 +746,7 @@ impl AeolusEngine {
         for hit in scan_rust_strings(text) {
             let (candidates, _) = parse_class_string(&hit.text);
             for candidate in candidates {
-                let compiled = match &self.config.tokens {
-                    Some(table) => compile_theme(candidate.raw, table, &self.config.compile),
-                    None => compile(candidate.raw, &self.config.compile),
-                };
+                let compiled = self.compiled(candidate.raw);
                 let Ok(compiled) = compiled else {
                     continue;
                 };
