@@ -78,7 +78,18 @@
 //!     parent chain per requested position, the candidate span keyed
 //!     by the shared locator with the string's content span riding as
 //!     its parent, the caret's zero-width range the chain-less answer
-//!     outside any string ([`EngineSelectionRange`]).
+//!     outside any string ([`EngineSelectionRange`]);
+//!   * *what folds here?* — the folding ranges: one fold per class
+//!     string the extraction seam names — the string's own content
+//!     span, document order, no compile verdict riding (the
+//!     highlights' textual family; the multi-line raw-string call
+//!     sites the folds the editor actually collapses)
+//!     ([`EngineRange`]);
+//!   * *what does the whole workspace report?* — the workspace pull:
+//!     every open document's findings beside its result identity, a
+//!     matching previous id the unchanged verdict the client's cache
+//!     answers from — the document pull generalized over the map
+//!     ([`EngineWorkspaceDiagnostic`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -184,7 +195,8 @@ pub struct EngineRange {
 /// faces' own rule).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RethemeOutcome {
-    /// The table swapped: the pool retired ([`DynCache::clear`] — the
+    /// The table swapped: the pool retired ([`aeolus_compile::DynCache::clear`]
+    /// — the
     /// compile crate's invalidation seam), every later answer rides
     /// the NEW table, and the wire half republishes every open
     /// document's diagnostics.
@@ -492,6 +504,48 @@ pub struct EngineSelectionRange {
     /// The containing range (the next expand step), the chain's head
     /// answering `None`.
     pub parent: Option<Box<EngineSelectionRange>>,
+}
+
+/// One document's workspace-pull answer (the wire's
+/// `workspace/diagnostic` — the pull channel generalized over the whole
+/// document map): the URI beside the document's result identity — the
+/// fingerprint the client caches against — and the pull outcome the
+/// identity decides (the full report recomputed, or the unchanged
+/// verdict the client's cache answers from). URI order across the map
+/// (the cross-document answers' own determinism contract).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineWorkspaceDiagnostic {
+    /// The reporting document's URI.
+    pub uri: String,
+    /// The document's own version tag (the didChange lifecycle's).
+    pub version: i32,
+    /// The document's CURRENT result identity: a 64-bit FNV-1a over the
+    /// exact text — the same text answers the same id whatever the
+    /// version tag rides (the equal-content re-save the byte-neutral
+    /// no-op the retheme fast-path keeps), a text change answers a new
+    /// one. The findings are pure over the text, so the content is the
+    /// identity.
+    pub result_id: String,
+    /// The pull outcome the identity decided.
+    pub outcome: EngineWorkspaceOutcome,
+}
+
+/// The workspace-pull outcome one document rides: the full report (the
+/// document's own findings, the document pull's answer at the
+/// workspace's scope) or the unchanged verdict (a previous result id
+/// the client sent matches the current one — the report rides from the
+/// client's cache, nothing recomputes).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EngineWorkspaceOutcome {
+    /// The report recomputes: the document's findings ride.
+    Full {
+        /// The document's own findings (the push channel's and the
+        /// document pull's — one walk, every transport).
+        diagnostics: Vec<EngineDiagnostic>,
+    },
+    /// The client's cache is the report: a previous result id the
+    /// client sent matches the document's current one.
+    Unchanged,
 }
 
 /// One open document the engine keeps: the current text and the LSP's
