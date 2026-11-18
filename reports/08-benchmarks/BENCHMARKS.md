@@ -649,3 +649,14 @@ Run: `cargo bench -p aeolus-compile --bench starting` (divan 0.1.21), release pr
 
 | `interp_starting_fire` | **127.7 ns** | the fire path (the frame fact rides, the starting-style layer wins last-wins) |
 | `interp_starting_resting` | **80.7 ns** | the resting path (the layer stays the quiet miss a frame the element is not in is) |
+
+## The theme lifecycle + the linked-editing face (2026-11-18, sandbox)
+
+Run: `cargo bench -p aeolus-lsp -- theme_bake retheme linked_ranges` (divan 0.1.21), release profile, median of 100. The lifecycle arms price the reload seam end to end — the bake is the loader's own `from_css` + `baked` read (what every re-theme pays), the swap the whole honest save (bake + pool invalidation + the document's strings re-lowered under the new table), the unchanged arm the no-op save (the bake beside the equality fast-path — the invalidation and the recompile are what the fast-path skips; the bake itself the reload's dominant cost). The linked-editing arm is the highlights' scan folded to ranges, the compile verdict nowhere on the path.
+
+| Bench | Median | What it prices |
+| --- | --- | --- |
+| `theme_bake` | **38.8 µs** | the loader's own read (`ThemeSource::from_css` + `TokenTable::baked`) — every re-theme's first cost |
+| `retheme_swap` | **120.5 µs** | the whole save: bake + `DynCache::clear` + the strings re-lowered under the new table |
+| `retheme_unchanged` | **119.8 µs** | the no-op save: bake + the tier/names/colours equality walk (the pool keeps serving) |
+| `linked_ranges_walk` | **1.27 µs** | the simultaneous-edit answer: the locator's scan + the textual fold over the document's strings |
