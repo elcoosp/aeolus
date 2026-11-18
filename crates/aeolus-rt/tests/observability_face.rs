@@ -22,7 +22,7 @@ use std::sync::Mutex;
 use aeolus_compile::Config;
 use aeolus_rt::{
     CacheSnapshot, CacheStats, ClassCell, Customs, DynCache, DynObserver, NoObserver, ThemeSource,
-    TokenTable, session_key,
+    TokenTable, WalkObserver, WalkStats, session_key,
 };
 
 /// A host-implemented observer through the runtime surface's own
@@ -126,4 +126,47 @@ fn the_session_key_is_nameable_and_is_the_reported_vocabulary() {
         "the empty bag keys as zero — its byte-identity to the plain \
          entry points"
     );
+}
+
+#[test]
+fn the_walk_observer_face_is_nameable_from_the_runtime_surface() {
+    // The compile-walk seam's own twin: the trait implementable and the
+    // every-constructor default constructible through the runtime
+    // surface alone (the wire-up a host writes — a build script or a
+    // server session driving the walk itself), the built-in collector
+    // answering the empty session's zero. The totals the walk pins live
+    // in the compile crate's own suite; this face pins the NAMEABILITY.
+    use aeolus_rt::{CandidateOutcome, NoWalkObserver};
+
+    #[derive(Default)]
+    struct StageRecorder {
+        lexed: Mutex<usize>,
+    }
+    impl WalkObserver for StageRecorder {
+        fn on_lexed(&self, candidates: usize, _degraded: usize) {
+            *self.lexed.lock().expect("the test never poisons") += candidates;
+        }
+    }
+
+    let default = NoWalkObserver;
+    default.on_lexed(0, 0);
+    default.on_candidate(
+        "p-4",
+        CandidateOutcome::Lowered {
+            decls: 4,
+            diagnostics: 0,
+        },
+    );
+    default.on_assembled(1);
+
+    let recorder = StageRecorder::default();
+    recorder.on_lexed(2, 0);
+    assert_eq!(
+        *recorder.lexed.lock().expect("the test never poisons"),
+        2,
+        "the host-implemented channel answers through the runtime          surface's own names"
+    );
+
+    let stats = Arc::new(WalkStats::new());
+    assert_eq!(stats.snapshot().walks, 0, "the empty session's zero");
 }
