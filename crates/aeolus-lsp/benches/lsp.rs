@@ -443,3 +443,94 @@ fn wire_session_counted(bencher: Bencher) {
         }
     });
 }
+
+// ---------------------------------------------------------------------------
+// The theme lifecycle's arms (the reload seam)
+// ---------------------------------------------------------------------------
+
+/// The reload seam's fixtures: the riding css and the rebrand beside it
+/// (same token names, new brand colour), pre-parsed ONCE so the arms
+/// price the bake + swap + recompile, not the css parse.
+const RIDE_CSS: &str = ":root { --color-primary: #336699; --color-surface: #eeeeee; }";
+const REBRAND_CSS: &str = ":root { --color-primary: #aa4455; --color-surface: #eeeeee; }";
+
+/// The lifecycle's first cost, the loader's own: one
+/// [`ThemeSource::from_css`] + [`TokenTable::baked`] — the read the
+/// `load()` seam serves and the watched-files arm pays on every
+/// re-theme.
+#[divan::bench]
+fn theme_bake(bencher: Bencher) {
+    use aeolus_theme::{ThemeSource, TokenTable};
+
+    let source = ThemeSource::from_css(RIDE_CSS, None).expect("the fixture parses");
+    bencher.bench(|| TokenTable::baked(&source).expect("the fixture bakes"));
+}
+
+/// The swap path: warm pool → re-theme to the REBRAND (a real swap) →
+/// re-analyze the document (the pool was retired, the strings re-lower
+/// under the new table). The lifecycle's honest whole: the bake, the
+/// invalidation and the recompile storm a real save pays.
+#[divan::bench]
+fn retheme_swap(bencher: Bencher) {
+    use aeolus_theme::{ThemeSource, TokenTable};
+    use std::sync::Mutex;
+
+    let riding = ThemeSource::from_css(RIDE_CSS, None).expect("the fixture parses");
+    let rebrand = ThemeSource::from_css(REBRAND_CSS, None).expect("the fixture parses");
+    let mut lsp = AeolusEngine::new(EngineConfig::new(Some(
+        TokenTable::baked(&riding).expect("the fixture bakes"),
+    )));
+    lsp.open("file:///card.rs", DOC, 1);
+    let _ = lsp.analyze("file:///card.rs");
+    // The retheme mutates the engine (the `Fn` bench body's own shape —
+    // the wire arms' Mutex pattern), the lock is uncontended.
+    let lsp = Mutex::new(lsp);
+    bencher.bench(|| {
+        let mut lsp = lsp.lock().expect("the bench engine locks");
+        let _ = lsp.retheme(Some(
+            TokenTable::baked(&rebrand).expect("the fixture bakes"),
+        ));
+        lsp.analyze("file:///card.rs")
+    });
+}
+
+/// The no-op save path: the SAME css re-baked every iteration — the
+/// equality fast-path's own cost (the tier/names/colours walk beside
+/// the untouched pool), the shape a format-on-save rides for free.
+#[divan::bench]
+fn retheme_unchanged(bencher: Bencher) {
+    use aeolus_theme::{ThemeSource, TokenTable};
+    use std::sync::Mutex;
+
+    let riding = ThemeSource::from_css(RIDE_CSS, None).expect("the fixture parses");
+    let mut lsp = AeolusEngine::new(EngineConfig::new(Some(
+        TokenTable::baked(&riding).expect("the fixture bakes"),
+    )));
+    lsp.open("file:///card.rs", DOC, 1);
+    let _ = lsp.analyze("file:///card.rs");
+    // The mutation wrapper again (the swap arm's own shape).
+    let lsp = Mutex::new(lsp);
+    bencher.bench(|| {
+        let mut lsp = lsp.lock().expect("the bench engine locks");
+        let outcome = lsp.retheme(Some(TokenTable::baked(&riding).expect("the fixture bakes")));
+        assert_eq!(outcome, aeolus_lsp::RethemeOutcome::Unchanged);
+    });
+}
+
+/// The simultaneous-edit path (LSP 3.16's linkedEditingRange): the
+/// highlights' textual equality rendered as the client's
+/// edit-together ranges — the cursor's candidate against every string
+/// in the document, the linked-editing gesture's per-cursor cost.
+#[divan::bench]
+fn linked_ranges_walk(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("flex-col").expect("the fixture holds") + 2;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.linked_ranges("file:///card.rs", line, character));
+}
