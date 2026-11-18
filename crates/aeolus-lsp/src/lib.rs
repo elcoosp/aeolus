@@ -89,7 +89,16 @@
 //!     every open document's findings beside its result identity, a
 //!     matching previous id the unchanged verdict the client's cache
 //!     answers from — the document pull generalized over the map
-//!     ([`EngineWorkspaceDiagnostic`]).
+//!     ([`EngineWorkspaceDiagnostic`]);
+//!   * *where does this token live?* — the token goto-definition face:
+//!     the cursor's token class answers the theme file's own
+//!     declaration — the `--color-{name}` (or bare `--{name}`) key the
+//!     theme pass's provenance scan locates (byte-true, UTF-16 columns,
+//!     a comment or quoted string or `var()` reference never a
+//!     declaration, a seeded token the file does not declare answering
+//!     no origin), the config's named origin URI the site rides under,
+//!     a wired host store ([`TokenOrigins`]) the answer that rides
+//!     FIRST ([`EngineDefinition`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -101,7 +110,13 @@
 //!   through [`Session::with_observer`] — the loop's observed twin is
 //!   [`run_stdio_observed`]) streams the machine's own per-message
 //!   verdicts (the answers, the quiet drops, the publishes, the exit)
-//!   to a host handle; the answers themselves stay byte-identical.
+//!   to a host handle; the answers themselves stay byte-identical. The
+//!   command surface rides beside the request arms:
+//!   `workspace/executeCommand` answers the CLOSED command table the
+//!   capabilities advertise (`aeolus.sortDocument` — the class-sort
+//!   seam's editor face invoked as a command, the same edits the
+//!   formatting request answers; an unknown command or a missing
+//!   argument the protocol's own null).
 //!
 //! The engine is pure over its document map: open → change → analyze
 //! is deterministic, an unknown URI answers empty, and every position
@@ -127,6 +142,7 @@ use std::fmt;
 mod engine;
 mod server;
 mod theme_loader;
+mod token_origins;
 mod transport_observer;
 
 pub use crate::engine::{AeolusEngine, EngineConfig};
@@ -136,6 +152,11 @@ pub use crate::engine::{AeolusEngine, EngineConfig};
 // through `Session::with_theme_loader` — the watched-files wire half
 // drives it, the engine's `retheme` is the answer it lands on.
 pub use crate::theme_loader::{FileThemeLoader, ThemeLoader};
+// The goto-definition half's source seam beside the loader (the host's
+// own statement of where a TOKEN lives — the built-in the engine's
+// config path consults, the override a virtual-fs host wires):
+// `TokenOrigins`, the table-provenance form `ProvenanceOrigins` beside.
+pub use crate::token_origins::{ProvenanceOrigins, TokenOrigins};
 // The theme pass's typed error beside the config that can carry it
 // (the `EngineConfig::try_default` host's own boundary, nameable
 // without adding `aeolus-theme` to its manifest — the faces'
@@ -238,6 +259,22 @@ pub struct EngineHover {
     /// The hovered candidate's range, when the resolution came from one
     /// (the editor highlights the class).
     pub range: Option<EngineRange>,
+}
+
+/// One definition site the editor jumps to (the wire's
+/// `textDocument/definition` — the token goto-definition face): the
+/// theme file's own URI beside the declaration's byte-true range — the
+/// `--color-{name}` (or bare `--{name}`) key the token's name rides,
+/// the theme pass's own provenance scan (or a wired host store's)
+/// answering the site. The range rides in the LSP's UTF-16 pairs like
+/// every engine answer; the URI is the config's named origin (or the
+/// host store's) — never a guessed span.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineDefinition {
+    /// The carrying file's URI (the wire's `Location.uri`).
+    pub uri: String,
+    /// The declaration's range (the editor jumps here).
+    pub range: EngineRange,
 }
 
 /// Which audited surface a completion item comes from — the editor's
