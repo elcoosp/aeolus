@@ -1061,11 +1061,15 @@ fn plan_is_a_documented_command() {
     assert!(out.contains("aeolus plan"), "{out}");
     assert!(out.contains("plan bridge"), "{out}");
     // The FAIL-ON line now names the per-command defaults (the usage
-    // drift fix: build/plan default `none`, check `unknown`).
+    // drift fix: build/plan/audit default `none`, check `unknown`).
     assert!(
-        out.contains("default: check unknown; build/plan none"),
+        out.contains("default: check unknown; build/plan/audit none"),
         "{out}"
     );
+    // The audit face is documented beside the commands it mirrors (the
+    // capability-audit handoff's own usage row).
+    assert!(out.contains("aeolus audit"), "{out}");
+    assert!(out.contains("capability audit"), "{out}");
 }
 
 // ---------------------------------------------------------------------------
