@@ -1308,7 +1308,8 @@ fn prepare_rename_outside_a_candidate_answers_none() {
 #[test]
 fn rename_edits_every_textual_occurrence() {
     // One edit per occurrence of the cursor's candidate (the
-    // highlights' own walk), the new spelling riding every edit.
+    // references' own fold, the workspace upgrade), the new spelling
+    // riding every edit beside the carrying document's URI.
     const DOC_RN: &str =
         "fn r() {\n    let a = \"flex-col\";\n    let b = \"not-a-root flex-col\";\n}\n";
     let mut lsp = engine();
@@ -1320,6 +1321,10 @@ fn rename_edits_every_textual_occurrence() {
     assert!(
         edits.iter().all(|edit| edit.new_text == "flex-row"),
         "every occurrence rides the new spelling: {edits:?}"
+    );
+    assert!(
+        edits.iter().all(|edit| edit.uri == "file:///rename.rs"),
+        "every edit rides its document's URI: {edits:?}"
     );
 }
 
@@ -1338,6 +1343,7 @@ fn rename_under_a_variant_replaces_the_whole_spelling() {
     assert_eq!(edits.len(), 1, "{edits:?}");
     let (start_line, start_character) = line_character_of(DOC_RN, hit);
     let (end_line, end_character) = line_character_of(DOC_RN, hit + "hover:flex-col".len());
+    assert_eq!(edits[0].uri, "file:///variant.rs", "{edits:?}");
     assert_eq!(edits[0].range.start.line, start_line, "{edits:?}");
     assert_eq!(edits[0].range.start.character, start_character, "{edits:?}");
     assert_eq!(edits[0].range.end.line, end_line, "{edits:?}");
