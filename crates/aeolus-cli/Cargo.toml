@@ -26,6 +26,14 @@ aeolus-ir = { workspace = true }
 # The CSS-first theme source `explain --theme` lowers colour tokens
 # through (the tiered tables the theme pass resolves).
 aeolus-theme = { workspace = true }
+# The backend-neutral codegen seam the `audit` command's report rides
+# (the §5.1 conformance seam's project-sized twin): the per-longhand
+# tiered rows over the classes the scan seam names.
+aeolus-codegen = { path = "../aeolus-codegen" }
+# The GPUI capability impl (`Caps`, the generated table the emit gates
+# run) — the audit's default verdict source, the macro's own audit-gate
+# reading beside the command's report face.
+aeolus-codegen-gpui = { path = "../aeolus-codegen-gpui" }
 # `tracing` feature: debug spans around command dispatch and the per-file
 # check loop (no subscriber installed by the CLI — the host app owns one).
 # The flag FORWARDS down the pipeline (the consumer-handoff): the
@@ -85,4 +93,11 @@ harness = false
 # Button slice's real shape.
 [[bench]]
 name = "fmt"
+harness = false
+
+# The audit command's benchmarks (the §5.1 capability-audit face): the
+# themed per-string compile+audit walk over the Button slice's real
+# shape and the refusal-heavy battery (every row a verdict).
+[[bench]]
+name = "audit"
 harness = false
