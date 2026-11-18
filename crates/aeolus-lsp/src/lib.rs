@@ -89,6 +89,14 @@ mod server;
 
 pub use crate::engine::{AeolusEngine, EngineConfig};
 pub use crate::server::{Handled, Session, handle_message, run_stdio};
+// The observability face the engine's pool rides (the compile crate's
+// seam, nameable HERE — the rt crate's re-export precedent): a host
+// consuming the LSP crate implements `DynObserver`, totals the
+// session's decisions with the built-in `CacheStats`/`CacheSnapshot`
+// (the eviction face's typed `EvictReason` beside), and keeps the
+// `NoObserver` default — without adding `aeolus-compile` to its
+// manifest.
+pub use aeolus_compile::{CacheSnapshot, CacheStats, DynObserver, EvictReason, NoObserver};
 
 // ---------------------------------------------------------------------------
 // The wire-free types (the server maps these onto lsp_types)
