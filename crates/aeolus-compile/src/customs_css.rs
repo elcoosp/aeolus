@@ -76,11 +76,18 @@ pub enum CustomCssError {
         selector: String,
     },
     /// An `@utility` body that is not a pure `@apply` list: a raw CSS
-    /// declaration body, or `@apply` mixed with raw declarations — the
-    /// CSS declaration grammar has no IR lowering in this slice.
+    /// declaration beside `@apply`, or a body with no `@apply` at all —
+    /// the CSS declaration grammar has no IR lowering in this slice.
+    /// The shape names itself in the message (the sibling variants'
+    /// name + message convention) and the offending statement rides
+    /// verbatim, so a caller's error text says WHAT was wrong instead
+    /// of one prose verdict for both shapes.
     Body {
         /// The utility's root name.
         name: String,
+        /// The shape's reason: the raw declaration beside the `@apply`
+        /// list (the statement verbatim), or the `@apply`-less body.
+        message: String,
     },
     /// An `@utility` body whose `@apply` classes did not compile to a
     /// clean, base-condition-only program: the first diagnostic's own
@@ -121,11 +128,10 @@ impl fmt::Display for CustomCssError {
                  condition surface — register an alias whose selector names a built-in \
                  condition (the `.dark` family, the state spellings)"
             ),
-            CustomCssError::Body { name } => write!(
+            CustomCssError::Body { name, message } => write!(
                 f,
-                "custom utility `{name}`: the body is not a pure `@apply` list — raw CSS \
-                 declarations have no IR lowering; spell the utility through `@apply` or \
-                 the typed `Customs` API"
+                "custom utility `{name}`: the body is not a pure `@apply` list — {message}; spell \
+                 the utility through `@apply` or the typed `Customs` API"
             ),
             CustomCssError::ApplyBody { name, message } => write!(
                 f,
@@ -568,6 +574,9 @@ fn applied_utility(
 fn apply_classes(name: &str, body: &str) -> Result<String, CustomCssError> {
     let mut classes = String::new();
     let mut saw_apply = false;
+    // The first raw statement, verbatim — the refusal's own payload
+    // (the message names the shape: beside `@apply`, or no `@apply`).
+    let mut raw: Option<String> = None;
     for stmt in split_statements(body) {
         let stmt = stmt.trim();
         if stmt.is_empty() {
@@ -582,15 +591,30 @@ fn apply_classes(name: &str, body: &str) -> Result<String, CustomCssError> {
                 classes.push_str(rest.trim());
             }
             None => {
-                return Err(CustomCssError::Body {
-                    name: name.to_string(),
-                });
+                // The first raw statement rides the refusal verbatim;
+                // the loop keeps walking so the message can tell the
+                // two body refusals apart (raw BESIDE `@apply` vs no
+                // `@apply` at all — the shape decides, not the branch).
+                if raw.is_none() {
+                    raw = Some(stmt.to_string());
+                }
             }
         }
+    }
+    if let Some(stmt) = raw {
+        return Err(CustomCssError::Body {
+            name: name.to_string(),
+            message: if saw_apply {
+                format!("a raw CSS declaration rides beside the `@apply` list: {stmt}")
+            } else {
+                format!("the body carries no `@apply` statement at all: {stmt}")
+            },
+        });
     }
     if !saw_apply {
         return Err(CustomCssError::Body {
             name: name.to_string(),
+            message: "the body carries no `@apply` statement at all".to_string(),
         });
     }
     Ok(classes)
