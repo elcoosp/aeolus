@@ -348,3 +348,11 @@ harness = false
 [[bench]]
 name = "observer"
 harness = false
+
+# The compile-walk observability seam's benchmarks (the walk face's own
+# twin beside the dyn-cache observer's): the observation-free baseline,
+# the built-in counter's walk and the worst-case recording observer's
+# walk — the seam's overhead story at the stage hooks.
+[[bench]]
+name = "walk_observer"
+harness = false
