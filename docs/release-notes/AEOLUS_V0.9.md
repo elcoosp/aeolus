@@ -10,7 +10,7 @@
 
 The v0.6 plan (`AEOLUS_V0.6.md`) shipped in 0.6.0; the Slint backend
 landed on top of it (the `Unreleased` section of `CHANGELOG.md`). This
-document is the v0.7 plan of record; every `v0.7 §X` citation in code and
+document is the v0.9 plan of record; every `v0.9 §X` citation in code and
 reports refers here.
 
 Goal: **oracle fidelity — the shipped shadcn v4 class tables resolve
