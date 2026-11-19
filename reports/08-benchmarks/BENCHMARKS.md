@@ -670,3 +670,14 @@ Run: `cargo bench -p aeolus-lsp` (divan 0.1.21), release profile, median of 100.
 | `folding_ranges_walk` | **538.8 ns** | the folding answer: the extraction scan + the range translation over the three-string fixture |
 | `workspace_diagnostics_pull` | **1.67 µs** | the full pull over one open document: the content fingerprint + the pooled analyze |
 | `workspace_diagnostics_unchanged` | **265.9 ns** | the quiet pull: the fingerprint matches, the recompute skipped wholesale |
+
+## The token-rename face + the range-formatting face (2026-11-19, sandbox)
+
+Run: `cargo bench -p aeolus-lsp -- rename_token_fold format_range_slice execute_command_sort definition_walk` (divan 0.1.21), release profile, median of 100. The rename arm prices the whole fold — the cursor candidate's decomposition walk plus the same walk per candidate over EVERY open document (two documents, five candidates), the wire mapping not on this path (the engine answer). The range arm prices the selection-scoped sort — the offset conversions, the intersection boundary, the sort walk and the edit translation over the touched string (the whole-document walk minus the out-of-range strings). The command and definition arms ride beside as the round-trip and single-jump contexts (the same medians the earlier handoffs filed, re-measured on the current tree).
+
+| Bench | Median | What it prices |
+| --- | --- | --- |
+| `rename_token_fold` | **4.844 µs** | the token identity walk: the cursor's decomposition + the per-candidate decomposition fold over two open documents |
+| `format_range_slice` | **1.079 µs** | the range-scoped sort: the byte-range conversion, the intersection filter, the sort seam's canonical join over the touched string |
+| `execute_command_sort` | **2.709 µs** | the command round trip through the state machine (the params parse, the sort walk, the wire mapping) |
+| `definition_walk` | **994.8 ns** | the goto-definition face (the locator, the pooled compile gate, the decomposition, the provenance lookup) |
