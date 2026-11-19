@@ -699,10 +699,12 @@ impl<'t> Resolver<'t> {
         // `has-data-[slot=open]`, `has-aria-invalid`, `has-first`, ...
         // — the inner is a bare attribute/structural/state form: parse it
         // as a variant and map onto ONE typed descendant test (v0.9 §2).
+        // The parsed variant's own reason rides (the per-family messages
+        // `variant_test` answers — a media/breakpoint inner is NOT an
+        // unknown has-<state> variant, and the honest miss names the
+        // boundary instead of erasing the parse detail).
         match crate::parser::parse_variant(inner) {
-            Ok(v) => Self::variant_test(&v)
-                .map(Atom::Has)
-                .map_err(|_| "unknown has-<state> variant"),
+            Ok(v) => Self::variant_test(&v).map(Atom::Has),
             Err(_) => Err("unknown has-<state> variant"),
         }
     }
