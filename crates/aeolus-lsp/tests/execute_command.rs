@@ -5,10 +5,11 @@
 // answers, invoked as a command (an editor keybinding, a refactoring
 // menu, a code-action's follow-up — the protocol's own extension point
 // where a client drives the server). The command table is CLOSED and
-// advertised (one command, the sort face): an unknown command answers
-// the protocol's own null — the state machine's quiet vocabulary — and
-// a command without its argument rides the same way. The edits are the
-// engine's own `format` answer, byte for byte.
+// advertised (the token-rename command joined it beside — its own
+// battery pins the fold): an unknown command answers the protocol's own
+// null — the state machine's quiet vocabulary — and a command without
+// its argument rides the same way. The edits are the engine's own
+// `format` answer, byte for byte.
 //
 // Written FIRST (the RED spec).
 // ---------------------------------------------------------------------------
@@ -83,11 +84,9 @@ fn initialize_advertises_the_execute_command_provider() {
     let commands = result["capabilities"]["executeCommandProvider"]["commands"]
         .as_array()
         .expect("the command table rides the capability");
-    assert_eq!(
-        commands.len(),
-        1,
-        "the table is closed: the sort face, the one command"
-    );
+    // The table is closed: the sort face first, the token-rename fold
+    // beside it (the command battery's own file pins the fold).
+    assert_eq!(commands.len(), 2, "the sort and the token-rename faces");
     assert_eq!(commands[0], "aeolus.sortDocument");
 }
 
