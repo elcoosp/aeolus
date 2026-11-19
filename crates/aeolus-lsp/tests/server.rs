@@ -58,7 +58,7 @@ fn initialize(session: &mut Session) {
 }
 
 #[test]
-fn initialize_advertises_hover_and_full_sync() {
+fn initialize_advertises_hover_and_incremental_sync() {
     let mut session = Session::new(Default::default());
     let handled = handle_message(
         &mut session,
@@ -75,7 +75,7 @@ fn initialize_advertises_hover_and_full_sync() {
         result["capabilities"]["textDocumentSync"]["openClose"],
         true
     );
-    assert_eq!(result["capabilities"]["textDocumentSync"]["change"], 1);
+    assert_eq!(result["capabilities"]["textDocumentSync"]["change"], 2); // the INCREMENTAL upgrade (1 = FULL): the ranged didChange shape the patch seam serves
     // The server info names the pipeline it rides.
     assert_eq!(result["serverInfo"]["name"], "aeolus");
 }
