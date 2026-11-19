@@ -33,7 +33,13 @@
 //!   * *what does the editor highlight here?* — the semantic tokens:
 //!     every candidate's compile outcome onto the wire's legend, a
 //!     lowered class as `class`, a refused one as the custom `refused`
-//!     type ([`EngineSemanticToken`]);
+//!     type ([`EngineSemanticToken`]); the range-scoped form beside it
+//!     ([`AeolusEngine::semantic_tokens_range`], the wire's
+//!     `textDocument/semanticTokens/range`): the same walk restricted
+//!     to the candidates the requested range touches — a partial
+//!     selection still names the token whole, a candidate wholly
+//!     outside stays out AND never compiles, the whole-document range
+//!     the full answer byte for byte;
 //!   * *how would the editor spell this colour?* — the colour
 //!     presentations: the config's own table walked backwards, every
 //!     (root, token, opacity step) spelling that re-resolves to the
@@ -138,7 +144,12 @@
 //! The engine is pure over its document map: open → change → analyze
 //! is deterministic, an unknown URI answers empty, and every position
 //! conversion (bytes ↔ UTF-16 pairs) lives HERE — a host never
-//! re-derives the LSP's column model.
+//! re-derives the LSP's column model. The change half rides the wire's
+//! INCREMENTAL sync: [`EngineTextChange`] patches the map through the
+//! ranged didChange shapes ([`AeolusEngine::change_incremental`]), each
+//! change spliced sequentially against the text the previous change
+//! left, a range-less change the full-text replace the full-sync
+//! clients keep sending.
 //!
 //! ```no_run
 //! use aeolus_lsp::{AeolusEngine, EngineConfig};
@@ -610,6 +621,23 @@ pub(crate) struct Document {
     pub(crate) text: String,
     /// The LSP's version tag for the text.
     pub(crate) version: i32,
+}
+
+/// One incremental content change (the wire's `textDocument/didChange`
+/// ranged shape, the engine's wire-free form): the replacement text
+/// over the half-open range, [`EngineTextChange::range`] `None` — the
+/// full-text replace (the backward-compat shape a full-sync client
+/// sends, still legal under the incremental capability).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineTextChange {
+    /// The replaced half-open range, the CURRENT text's UTF-16 pairs
+    /// (each change of a didChange notification applies against the
+    /// text the previous change left — the protocol's own sequential
+    /// application order), `None` the full-text replace.
+    pub range: Option<(EnginePosition, EnginePosition)>,
+    /// The replacement text (a zero-width range inserts; the whole
+    /// text's range deletes).
+    pub text: String,
 }
 
 /// The document map — `uri → Document`. The engine's own storage.
