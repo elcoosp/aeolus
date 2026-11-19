@@ -296,6 +296,9 @@ impl AeolusEngine {
     /// Replace a document's text (the wire's didChange, full-text
     /// sync). An unknown URI opens implicitly — the wire contract
     /// allows a didChange without a matching didOpen from some clients.
+    /// The INCREMENTAL sibling beside it:
+    /// [`AeolusEngine::change_incremental`] patches the same map
+    /// through the wire's ranged changes.
     pub fn change(&mut self, uri: &str, text: &str, version: i32) {
         self.documents.insert(
             uri.to_string(),
@@ -304,6 +307,74 @@ impl AeolusEngine {
                 version,
             },
         );
+    }
+
+    /// Patch a document's text through INCREMENTAL content changes
+    /// (the wire's didChange ranged shape): each change applies
+    /// SEQUENTIALLY against the text the previous change left (the
+    /// protocol's own application order), a ranged change's positions
+    /// riding the CURRENT text's UTF-16 pairs — the engine's own byte
+    /// conversion (the position conversions this module owns, clamped
+    /// the way [`offset_of`]'s documented contract clamps: a column
+    /// inside a multi-byte character to that character's start, a
+    /// column past the line's end to the line end). A range-less
+    /// change is the full-text replace — the backward-compat shape a
+    /// full-sync client sends, still legal under the incremental
+    /// capability. The version tag lands after the patch, one tag per
+    /// notification.
+    ///
+    /// Two boundaries the patch keeps honestly:
+    ///
+    /// * a position the document does not name (a line past the
+    ///   document's last line, the conversion's `None`) and a reversed
+    ///   range (an end before its start) splice nothing — the change
+    ///   rides as the honest no-op, never an invented rewrite;
+    /// * an unknown URI's current text is the EMPTY string — the
+    ///   implicit-open contract [`AeolusEngine::change`] keeps,
+    ///   generalized: the ranged edits compose against it, a
+    ///   full-text change replaces it.
+    ///
+    /// The wire's `rangeLength` rides unused: the informational field
+    /// the protocol marks deprecated beside the range (the patch keys
+    /// on the range alone). Deterministic and pure over the changes —
+    /// the patched text is the same string the equivalent full-text
+    /// [`AeolusEngine::change`] would have stored (the parity pin the
+    /// wire battery keeps), the answers re-deriving lazily from the
+    /// strings the way every other lifecycle seam keeps.
+    pub fn change_incremental(
+        &mut self,
+        uri: &str,
+        changes: &[crate::EngineTextChange],
+        version: i32,
+    ) {
+        let mut text = self
+            .documents
+            .get(uri)
+            .map_or(String::new(), |doc| doc.text.clone());
+        for change in changes {
+            let Some((start, end)) = change.range else {
+                // The range-less shape: the full-text replace (the
+                // backward-compat contract the capability keeps).
+                text.clone_from(&change.text);
+                continue;
+            };
+            let Some(start_offset) = offset_of(&text, start.line, start.character) else {
+                // A line the document does not name: the honest no-op,
+                // never an invented rewrite.
+                continue;
+            };
+            let Some(end_offset) = offset_of(&text, end.line, end.character) else {
+                continue;
+            };
+            if end_offset < start_offset {
+                // A reversed range is no splice: the honest no-op (the
+                // half-open model's own boundary).
+                continue;
+            }
+            text.replace_range(start_offset..end_offset, &change.text);
+        }
+        self.documents
+            .insert(uri.to_string(), crate::Document { text, version });
     }
 
     /// Close a document (the wire's didClose): the state drops, the
@@ -639,9 +710,91 @@ impl AeolusEngine {
     }
 
     // -----------------------------------------------------------------------
-    // The colour-presentation answer
+    // The range-restricted semantic-token answer
     // -----------------------------------------------------------------------
 
+    /// The range-restricted semantic tokens (the wire's
+    /// `textDocument/semanticTokens/range` — the highlighter feed's
+    /// SELECTION-SCOPED form, the format_range arm's shape re-keyed on
+    /// the legend): the full-token walk restricted to the candidates the
+    /// requested byte range touches. A candidate whose span INTERSECTS
+    /// the half-open range rides its token — the WHOLE spelling rides
+    /// (the highlighter never emits a fragment; a partial selection
+    /// still names the token) — and a candidate wholly outside stays
+    /// out AND never compiles (the walk's win over the full legend: the
+    /// out-of-range class costs no lower, the bench arm pins the delta).
+    /// The classification is the compile walk's own verdict (the
+    /// diagnostics list's emptiness — no parallel matcher), the same
+    /// walk the full answer rides, document order kept (the delta
+    /// encoding's own precondition).
+    ///
+    /// The RANGE answers honestly, the format_range arm's own
+    /// boundaries carried over: a reversed range (an end before its
+    /// start) is no selection and answers empty, a position past the
+    /// document's last line likewise (no invented legend), and the
+    /// whole-document range IS the full answer byte for byte (the
+    /// differential pin the wire battery keeps). The WIRE answer
+    /// re-baselines the delta encoding per response — each array
+    /// encodes from its own start (row 0), so a mid-document range's
+    /// first token carries its own absolute line as the delta (the
+    /// encoding's contract, the server half keeps it). Deterministic
+    /// and pure over the document map; an unknown URI answers empty.
+    pub fn semantic_tokens_range(
+        &self,
+        uri: &str,
+        start_line: u32,
+        start_character: u32,
+        end_line: u32,
+        end_character: u32,
+    ) -> Vec<EngineSemanticToken> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let Some(range_start) = offset_of(text, start_line, start_character) else {
+            return Vec::new();
+        };
+        let Some(range_end) = offset_of(text, end_line, end_character) else {
+            return Vec::new();
+        };
+        // A reversed range is no selection: the half-open walk answers
+        // the honest empty instead of an invented legend.
+        if range_end <= range_start {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for hit in scan_rust_strings(text) {
+            let (candidates, _) = parse_class_string(&hit.text);
+            for candidate in candidates {
+                let span = (hit.offset + candidate.span.0, hit.offset + candidate.span.1);
+                // The intersection boundary (the format_range arm's
+                // own): the candidate's span must touch the range —
+                // and the gate rides BEFORE the compile, the walk's
+                // win.
+                if span.0 >= range_end || span.1 <= range_start {
+                    continue;
+                }
+                let compiled = self.compiled(candidate.raw);
+                let Ok(compiled) = compiled else {
+                    continue;
+                };
+                let kind = if compiled.diagnostics.is_empty() {
+                    EngineSemanticKind::Lowered
+                } else {
+                    EngineSemanticKind::Refused
+                };
+                out.push(EngineSemanticToken {
+                    range: range_of(text, span.0, span.1),
+                    kind,
+                });
+            }
+        }
+        out
+    }
+
+    // -----------------------------------------------------------------------
+    // The colour-presentation answer
+    // -----------------------------------------------------------------------
     /// The spellings one colour answers back: the config's own table
     /// walked backwards — every (colour-group root, token, opacity step)
     /// whose light-tier resolve is EXACTLY the requested bytes, the same
@@ -1705,12 +1858,16 @@ fn token_span_at<'t>(raw: &'t str, table: &'t TokenTable) -> Option<(usize, usiz
 fn position_of(text: &str, offset: usize) -> (u32, u32) {
     let offset = offset.min(text.len());
     // Clamp to a character boundary: the last index at or before the
-    // offset that starts a character.
-    let safe = text[..=offset]
-        .char_indices()
-        .map(|(i, _)| i)
-        .next_back()
-        .unwrap_or(offset);
+    // offset that starts a character. The walk-back loop, not a
+    // `text[..=offset]` slice — the inclusive slice's EXCLUSIVE end
+    // cuts a multi-byte character in half whenever the offset sits at
+    // a non-ASCII character's first byte (the slice form panicked on
+    // any document whose class strings carry one — the fixture the
+    // incremental-sync battery keeps).
+    let mut safe = offset;
+    while !text.is_char_boundary(safe) {
+        safe -= 1;
+    }
     let head = &text[..safe];
     let line = head.matches('\n').count() as u32;
     let line_start = head.rfind('\n').map_or(0, |i| i + 1);
