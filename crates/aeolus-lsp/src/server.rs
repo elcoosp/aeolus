@@ -28,10 +28,11 @@ use lsp_types::{
     PublishDiagnosticsParams, ReferenceParams, RelatedFullDocumentDiagnosticReport, RenameParams,
     SelectionRange, SelectionRangeParams, SelectionRangeProviderCapability, SemanticToken,
     SemanticTokenType, SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend,
-    SemanticTokensOptions, SemanticTokensParams, SemanticTokensServerCapabilities,
-    ServerCapabilities, ServerInfo, SymbolKind, TextDocumentPositionParams,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
-    WorkDoneProgressOptions, WorkspaceEdit, WorkspaceSymbolParams,
+    SemanticTokensOptions, SemanticTokensParams, SemanticTokensRangeParams,
+    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SymbolKind,
+    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncOptions, TextEdit, Uri, WorkDoneProgressOptions, WorkspaceEdit,
+    WorkspaceSymbolParams,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -439,6 +440,39 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                             .engine
                             .semantic_tokens(params.text_document.uri.as_str()),
                     )
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |tokens| Some(serde_json::to_value(tokens).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
+        "textDocument/semanticTokens/range" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The highlighter feed's SELECTION-SCOPED form (LSP 3.16's
+            // semanticTokens/range): the full-token walk restricted to
+            // the candidates the requested range touches — a candidate
+            // whose span intersects the range rides its token whole (a
+            // partial selection still names the token), a candidate
+            // outside stays out and never compiles (the walk's win over
+            // the full legend). The answer rides the SAME delta encoder
+            // the full arm answers through — each response encodes from
+            // its own start (row 0), so the restricted array's first
+            // token carries its absolute line as the delta (the
+            // encoding's contract, the re-baseline the battery pins); a
+            // reversed range rides the engine's honest empty.
+            let answer = serde_json::from_value::<SemanticTokensRangeParams>(request.params)
+                .ok()
+                .map(|params| {
+                    wire_semantic_tokens(&session.engine.semantic_tokens_range(
+                        params.text_document.uri.as_str(),
+                        params.range.start.line,
+                        params.range.start.character,
+                        params.range.end.line,
+                        params.range.end.character,
+                    ))
                 });
             let result = answer.map_or(
                 Some(Value::Null), // malformed params: the protocol's own empty answer
@@ -1140,13 +1174,40 @@ fn handle_notification(session: &mut Session, notification: Notification) -> Han
             else {
                 return Handled::default();
             };
-            // Full-text sync: the LAST change carries the whole text.
-            let Some(change) = params.content_changes.last() else {
-                return Handled::default();
-            };
+            // The incremental sync (the capability's own upgrade): EVERY
+            // change applies sequentially — a ranged change splices the
+            // replacement text over the range the CURRENT text names
+            // (each change riding the text the previous change left, the
+            // protocol's own application order), a range-less change the
+            // full-text replace (the backward-compat shape a full-sync
+            // client sends, still legal under the incremental
+            // capability). The engine's own boundary keeps the honest
+            // no-ops (a line past the document, a reversed range — no
+            // invented rewrite); the version tag lands after the patch.
+            let changes = params
+                .content_changes
+                .iter()
+                .map(|change| crate::EngineTextChange {
+                    range: change.range.map(|range| {
+                        (
+                            crate::EnginePosition {
+                                line: range.start.line,
+                                character: range.start.character,
+                            },
+                            crate::EnginePosition {
+                                line: range.end.line,
+                                character: range.end.character,
+                            },
+                        )
+                    }),
+                    text: change.text.clone(),
+                })
+                .collect::<Vec<_>>();
             let uri = params.text_document.uri;
             let version = params.text_document.version;
-            session.engine.change(uri.as_str(), &change.text, version);
+            session
+                .engine
+                .change_incremental(uri.as_str(), &changes, version);
             publish(&mut session.engine, uri.as_str())
         }
         "textDocument/didClose" => {
@@ -1405,9 +1466,10 @@ fn previous_result_ids(params: &Value) -> Option<Vec<(String, String)>> {
 }
 
 /// The advertised capabilities: hover, completion, colour swatches, the
-/// semantic tokens, the inlay hints, the quick fixes, the document
-/// highlights, the rename face, the canonical-order formatting, the
-/// document-symbol outline, the folding ranges and full-text sync. The
+/// semantic tokens (full and range), the inlay hints, the quick fixes,
+/// the document highlights, the rename face, the canonical-order
+/// formatting, the document-symbol outline, the folding ranges and the
+/// incremental sync. The
 /// engine never forks the pipeline, so the capability surface is the
 /// pipeline's own honesty contract at the editor.
 fn server_capabilities() -> ServerCapabilities {
@@ -1523,7 +1585,7 @@ fn server_capabilities() -> ServerCapabilities {
                     token_types: vec![SemanticTokenType::CLASS, SemanticTokenType::new("refused")],
                     token_modifiers: Vec::new(),
                 },
-                range: None,
+                range: Some(true),
                 full: Some(SemanticTokensFullOptions::Bool(true)),
             },
         )),
@@ -1551,7 +1613,14 @@ fn server_capabilities() -> ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Options(
             TextDocumentSyncOptions {
                 open_close: Some(true),
-                change: Some(TextDocumentSyncKind::FULL),
+                // The incremental sync: the didChange payload carries
+                // RANGED content changes — each spliced sequentially
+                // against the text the previous change left (the
+                // engine's `change_incremental` walk), a range-less
+                // change the full-text replace the full-sync clients
+                // keep sending (the backward-compat shape the
+                // capability keeps legal).
+                change: Some(TextDocumentSyncKind::INCREMENTAL),
                 ..TextDocumentSyncOptions::default()
             },
         )),
