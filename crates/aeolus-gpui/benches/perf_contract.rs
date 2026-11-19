@@ -40,9 +40,10 @@
 //!   compile (`ClassCell`).
 //!
 //! The iai-callgrind instruction-count golden (`tw!(s)` vs hand-written,
-//! the ±2 % gate) stays NIGHTLY-ONLY — this harness is the stable half,
-//! wall-clock (divan), the numbers it produces recorded beside the §4
-//! targets they replace.
+//! the ±2 % gate) is the PLANNED nightly half — not an in-tree target
+//! yet (no iai-callgrind dependency rides the workspace). This harness
+//! is the stable half, wall-clock (divan), the numbers it produces
+//! recorded beside the §4 targets they replace.
 //!
 //! ```sh
 //! cargo bench -p aeolus-gpui --bench perf_contract
