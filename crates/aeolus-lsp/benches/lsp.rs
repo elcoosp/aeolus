@@ -660,3 +660,45 @@ fn execute_command_sort(bencher: Bencher) {
         )
     });
 }
+
+/// The token-rename fold (the command surface's `aeolus.renameToken`):
+/// the decomposition walk over the cursor's candidate plus the fold over
+/// EVERY open document — one scan per document, each candidate's utility
+/// half decomposed onto the registry's colour-group roots, the same-token
+/// usages riding their edits (what one rename invocation costs).
+#[divan::bench]
+fn rename_token_fold(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    lsp.open(
+        "file:///panel.rs",
+        "fn panel() {\n    let c = \"text-primary border-primary\";\n}\n",
+        1,
+    );
+    let offset = DOC.find("bg-primary").expect("the fixture holds") + 4;
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.rename_token("file:///card.rs", line, character, "brand"));
+}
+
+/// The selection-scoped sort (LSP 3.12's rangeFormatting): the same
+/// engine over the same document, the requested range over the SECOND
+/// string — the intersection boundary plus the sort walk plus the wire
+/// mapping (what one selection-scoped format-on-save costs).
+#[divan::bench]
+fn format_range_slice(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("hover:bg-primary").expect("the fixture holds");
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let start_character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher.bench(|| lsp.format_range("file:///card.rs", line, start_character, line + 1, 0));
+}
