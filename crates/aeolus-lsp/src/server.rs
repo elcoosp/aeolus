@@ -17,21 +17,21 @@ use lsp_types::{
     DiagnosticServerCapabilities, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentColorParams,
     DocumentDiagnosticParams, DocumentDiagnosticReport, DocumentDiagnosticReportResult,
-    DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
-    ExecuteCommandOptions, ExecuteCommandParams, FoldingRange, FoldingRangeParams,
-    FoldingRangeProviderCapability, FullDocumentDiagnosticReport, GotoDefinitionParams, Hover,
-    HoverContents, HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind,
-    InlayHintLabel, InlayHintOptions, InlayHintParams, InlayHintServerCapabilities,
-    InlayHintTooltip, LinkedEditingRangeParams, LinkedEditingRangeServerCapabilities,
-    LinkedEditingRanges, Location, MarkupContent, MarkupKind, NumberOrString, OneOf,
-    PrepareRenameResponse, PublishDiagnosticsParams, ReferenceParams,
-    RelatedFullDocumentDiagnosticReport, RenameParams, SelectionRange, SelectionRangeParams,
-    SelectionRangeProviderCapability, SemanticToken, SemanticTokenType, SemanticTokens,
-    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
-    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SymbolKind,
-    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, TextEdit, Uri, WorkDoneProgressOptions, WorkspaceEdit,
-    WorkspaceSymbolParams,
+    DocumentFormattingParams, DocumentHighlight, DocumentHighlightParams,
+    DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandOptions,
+    ExecuteCommandParams, FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability,
+    FullDocumentDiagnosticReport, GotoDefinitionParams, Hover, HoverContents,
+    HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind, InlayHintLabel,
+    InlayHintOptions, InlayHintParams, InlayHintServerCapabilities, InlayHintTooltip,
+    LinkedEditingRangeParams, LinkedEditingRangeServerCapabilities, LinkedEditingRanges, Location,
+    MarkupContent, MarkupKind, NumberOrString, OneOf, PrepareRenameResponse,
+    PublishDiagnosticsParams, ReferenceParams, RelatedFullDocumentDiagnosticReport, RenameParams,
+    SelectionRange, SelectionRangeParams, SelectionRangeProviderCapability, SemanticToken,
+    SemanticTokenType, SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend,
+    SemanticTokensOptions, SemanticTokensParams, SemanticTokensServerCapabilities,
+    ServerCapabilities, ServerInfo, SymbolKind, TextDocumentPositionParams,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
+    WorkDoneProgressOptions, WorkspaceEdit, WorkspaceSymbolParams,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -736,41 +736,107 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             );
             respond(request.id, result)
         }
+        "textDocument/rangeFormatting" => {
+            if !session.initialized {
+                return Handled::default();
+            }
+            // The sort seam's SELECTION-SCOPED form (LSP 3.12's
+            // rangeFormatting): the formatting request's own walk
+            // restricted to the class strings the requested range
+            // touches — a string whose span intersects the range rides
+            // its WHOLE-string edit (a partial selection still names
+            // the string, the sort never emits a fragment), a string
+            // outside the range stays out, an already-canonical string
+            // answers nothing wherever the range sits. The params'
+            // formatting options are accepted and left to the engine's
+            // shape-level walk (the canonical order is a registry fact,
+            // not an indentation choice — the formatting arm's own
+            // rule); a reversed range rides the engine's honest empty.
+            let answer = serde_json::from_value::<DocumentRangeFormattingParams>(request.params)
+                .ok()
+                .map(|params| {
+                    let range = params.range;
+                    session
+                        .engine
+                        .format_range(
+                            params.text_document.uri.as_str(),
+                            range.start.line,
+                            range.start.character,
+                            range.end.line,
+                            range.end.character,
+                        )
+                        .iter()
+                        .map(|edit| TextEdit {
+                            range: wire_range(edit.range),
+                            new_text: edit.new_text.clone(),
+                        })
+                        .collect::<Vec<_>>()
+                });
+            let result = answer.map_or(
+                Some(Value::Null), // malformed params: the protocol's own empty answer
+                |edits| Some(serde_json::to_value(edits).unwrap_or(Value::Null)),
+            );
+            respond(request.id, result)
+        }
         "workspace/executeCommand" => {
             if !session.initialized {
                 return Handled::default();
             }
             // The server's command surface (LSP 3.16's
             // workspace/executeCommand): the CLOSED command table the
-            // capability advertises, the sort face invoked as a
-            // command. The unknown command and the missing argument
-            // answer the protocol's own null — the state machine's
-            // quiet vocabulary (no invented command runs, the honest
-            // boundary the table's closedness keeps); the known one
-            // rides the engine's own `format` answer, the edits the
-            // formatting request answers byte for byte.
+            // capability advertises — the sort face invoked as a
+            // command, and the token-rename fold beside it. An unknown
+            // command and a malformed argument answer the protocol's
+            // own null — the state machine's quiet vocabulary (no
+            // invented command runs, the honest boundary the table's
+            // closedness keeps); the known ones ride the engine's own
+            // answers byte for byte.
             let Ok(params) = serde_json::from_value::<ExecuteCommandParams>(request.params) else {
                 return respond(request.id, Some(Value::Null));
             };
-            if params.command != "aeolus.sortDocument" {
-                return respond(request.id, Some(Value::Null));
+            match params.command.as_str() {
+                // The class-sort seam's editor face as a command: the
+                // first argument names the URI, the edits the
+                // formatting request answers ride back.
+                "aeolus.sortDocument" => {
+                    let Some(argument) = params.arguments.first().and_then(|value| value.as_str())
+                    else {
+                        return respond(request.id, Some(Value::Null));
+                    };
+                    let edits = session
+                        .engine
+                        .format(argument)
+                        .iter()
+                        .map(|edit| TextEdit {
+                            range: wire_range(edit.range),
+                            new_text: edit.new_text.clone(),
+                        })
+                        .collect::<Vec<_>>();
+                    respond(
+                        request.id,
+                        Some(serde_json::to_value(edits).unwrap_or(Value::Null)),
+                    )
+                }
+                // The token-rename fold as a command: the arguments
+                // ride [uri, line, character, newName] — a URI string,
+                // the two position numbers, the new token name. A
+                // missing or mistyped argument answers the protocol's
+                // own null (the quiet vocabulary); a well-formed
+                // invocation answers the rename face's own changes map
+                // — the engine's token fold, byte for byte.
+                "aeolus.renameToken" => {
+                    let Some((uri, line, character, new_name)) =
+                        rename_token_arguments(&params.arguments)
+                    else {
+                        return respond(request.id, Some(Value::Null));
+                    };
+                    let edits = session
+                        .engine
+                        .rename_token(&uri, line, character, &new_name);
+                    respond(request.id, Some(changes_map(&edits)))
+                }
+                _ => respond(request.id, Some(Value::Null)),
             }
-            let Some(argument) = params.arguments.first().and_then(|value| value.as_str()) else {
-                return respond(request.id, Some(Value::Null));
-            };
-            let edits = session
-                .engine
-                .format(argument)
-                .iter()
-                .map(|edit| TextEdit {
-                    range: wire_range(edit.range),
-                    new_text: edit.new_text.clone(),
-                })
-                .collect::<Vec<_>>();
-            respond(
-                request.id,
-                Some(serde_json::to_value(edits).unwrap_or(Value::Null)),
-            )
         }
         "textDocument/prepareRename" => {
             if !session.initialized {
@@ -824,28 +890,16 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
                         position.character,
                         &params.new_name,
                     );
-                    let mut changes: HashMap<String, Vec<TextEdit>> = HashMap::new();
-                    for edit in &edits {
-                        changes.entry(edit.uri.clone()).or_default().push(TextEdit {
-                            range: wire_range(edit.range),
-                            new_text: edit.new_text.clone(),
-                        });
-                    }
-                    // The wire names the keys with parsed `Uri`s: a URI
-                    // the parser rejects was never a document the editor
-                    // could have named either (the publish half's own
-                    // rule), so its key skips the map.
-                    WorkspaceEdit {
-                        changes: Some(HashMap::from_iter(changes.into_iter().filter_map(
-                            |(key, list)| Uri::from_str(&key).ok().map(|parsed| (parsed, list)),
-                        ))),
-                        ..WorkspaceEdit::default()
-                    }
+                    // The shared fold (the rename command's own map — one
+                    // fold, two faces, no parallel edit shape; the keys
+                    // ride the engine's own URI order, the bytes
+                    // deterministic).
+                    changes_map(&edits)
                 });
-            let result = answer.map_or(
-                Some(Value::Null), // malformed params: the protocol's own empty answer
-                |edit| Some(serde_json::to_value(edit).unwrap_or(Value::Null)),
-            );
+            // Malformed params answer the wire's own NULL RESULT (the
+            // protocol's empty answer — the battery's pinned shape), a
+            // well-formed one the fold's map.
+            let result = answer.map_or(Some(Value::Null), Some);
             respond(request.id, result)
         }
         "textDocument/documentSymbol" => {
@@ -1183,6 +1237,49 @@ fn wire_range(range: crate::EngineRange) -> lsp_types::Range {
         },
     }
 }
+/// The engine's rename edits folded onto the wire's full `changes` map —
+/// one key per carrying document, the keys riding the ENGINE'S OWN URI
+/// order (the fold's determinism carried to the BYTES: the engine hands
+/// back URI-ordered edits and the map inserts in that order, so the
+/// answer serializes the same whatever the dependency graph's
+/// serde_json map semantics — a `HashMap`-keyed `WorkspaceEdit` rides
+/// the hasher's whim, and the byte-identity contract every
+/// cross-document face keeps does not), a URI the `Uri` parser rejects
+/// skipping its key (the references half's own rule). The rename
+/// REQUEST and the rename COMMAND answer the same fold — no parallel
+/// edit shape at the wire.
+fn changes_map(edits: &[crate::EngineRenameEdit]) -> Value {
+    let mut changes = serde_json::Map::new();
+    for edit in edits {
+        // The wire names the keys with parsed `Uri`s: a URI the parser
+        // rejects was never a document the editor could have named
+        // either.
+        if Uri::from_str(&edit.uri).is_err() {
+            continue;
+        }
+        let list = changes
+            .entry(edit.uri.clone())
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if let Some(list) = list.as_array_mut() {
+            list.push(json!({
+                "range": serde_json::to_value(wire_range(edit.range)).unwrap_or(Value::Null),
+                "newText": edit.new_text,
+            }));
+        }
+    }
+    json!({ "changes": changes })
+}
+/// The `aeolus.renameToken` command's argument shape: `[uri, line,
+/// character, newName]` — a URI string, the two position numbers, the
+/// new token name. Any missing or mistyped slot answers None (the
+/// protocol's own null at the dispatch site).
+fn rename_token_arguments(arguments: &[Value]) -> Option<(String, u32, u32, String)> {
+    let uri = arguments.first()?.as_str()?.to_string();
+    let line = u32::try_from(arguments.get(1)?.as_u64()?).ok()?;
+    let character = u32::try_from(arguments.get(2)?.as_u64()?).ok()?;
+    let new_name = arguments.get(3)?.as_str()?.to_string();
+    Some((uri, line, character, new_name))
+}
 
 /// One engine selection chain onto the protocol's `SelectionRange` —
 /// the parent chain riding the protocol's own `parent` key (the
@@ -1367,21 +1464,32 @@ fn server_capabilities() -> ServerCapabilities {
         // plain `true` form: the answer is the engine's own walk, no
         // options object.
         selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
-        // The class-sort seam's editor face: one edit per out-of-order
-        // class string, the sort seam's canonical join as the new text
-        // (an already-canonical string answers no edit — the no-op
-        // contract a format-on-save rides). The plain `true` form: the
-        // answer is the engine's whole-document walk, no options
-        // object.
+        // The class-sort seam's editor faces: the whole-document walk
+        // (`formatting` — one edit per out-of-order class string, the
+        // canonical order as the new text, an already-canonical string
+        // answering nothing: the format-on-save no-op) beside the
+        // SELECTION-SCOPED form (`rangeFormatting` — the same walk
+        // restricted to the strings the requested range touches, a
+        // partial selection still naming the string). Both answer the
+        // engine's own walks, no options object.
         document_formatting_provider: Some(OneOf::Left(true)),
-        // The server's command surface: `aeolus.sortDocument`, the
-        // class-sort seam's editor face invoked as a command (the
-        // protocol's own extension point for client-driven server
-        // work — a keybinding, a refactoring menu). The table is
-        // CLOSED and advertised: one command, the sort face, no
-        // resolve round-trip.
+        // The sort seam's range form (LSP 3.12's rangeFormatting): the
+        // selection-scoped walk the selection or the cursor's block
+        // rides — the strings the range INTERSECTS reorder, the whole
+        // string riding its edit, never a fragment. The plain `true`
+        // form: the answer is the engine's own walk, no options object.
+        document_range_formatting_provider: Some(OneOf::Left(true)),
+        // The server's command surface: `aeolus.sortDocument` (the
+        // class-sort seam's editor face invoked as a command) beside
+        // `aeolus.renameToken` (the theme-token rename fold — the
+        // engine's cross-document token edits as the client's drive).
+        // The table is CLOSED and advertised: two commands, both
+        // answering the engine's own walks, no resolve round-trip.
         execute_command_provider: Some(ExecuteCommandOptions {
-            commands: vec!["aeolus.sortDocument".to_string()],
+            commands: vec![
+                "aeolus.sortDocument".to_string(),
+                "aeolus.renameToken".to_string(),
+            ],
             work_done_progress_options: WorkDoneProgressOptions::default(),
         }),
         // The outline face: one symbol per candidate class, document
