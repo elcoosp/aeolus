@@ -1070,6 +1070,95 @@ impl AeolusEngine {
         out
     }
 
+    /// The token-rename fold (the command surface's `aeolus.renameToken` —
+    /// the wire's `textDocument/rename` TEXTUAL contract untouched): ONE
+    /// edit per THEME-TOKEN usage over EVERY open document — the
+    /// cursor's candidate decomposes onto a colour-group root whose
+    /// remainder the riding table carries (the definition face's own
+    /// walk, factored once with the token's own byte span riding beside
+    /// its name), and every candidate
+    /// whose decomposition names the SAME token rides one edit over the
+    /// token's own span. The identity is the TOKEN, not the spelling —
+    /// the boundary the textual rename face does not have:
+    /// `bg-primary` and `dark:text-primary` are different spellings and
+    /// the same token, so one rename takes them together, the variant
+    /// prefixes and `/opacity` modifier tails preserved byte-true (only
+    /// the token's own bytes ride the edits; the root stays).
+    ///
+    /// The fold is the references walk's determinism, re-keyed: URI
+    /// order across the documents (sorted, whatever the open order was
+    /// — the answer is pure over the hash map), document order within
+    /// each (the extraction seam's scan order). Every miss is honest —
+    /// a non-token class, a cursor outside any candidate, a theme-less
+    /// config (the identity IS the table), an empty new name (the
+    /// textual rename's own validity clause: never a deletion walk) —
+    /// all answer the empty fold. The NEW spelling is the editor's
+    /// business (a token the theme file is about to declare): the fold
+    /// keys on the OLD token's identity, the diagnostics channel
+    /// telling the truth about what the new spellings lower the moment
+    /// the didChange lands. Deterministic and pure over the document
+    /// map; an unknown URI answers empty.
+    pub fn rename_token(
+        &self,
+        uri: &str,
+        line: u32,
+        character: u32,
+        new_name: &str,
+    ) -> Vec<EngineRenameEdit> {
+        if new_name.is_empty() {
+            return Vec::new();
+        }
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let Some(offset) = offset_of(text, line, character) else {
+            return Vec::new();
+        };
+        let Some((start, end)) = candidate_span_at(text, offset) else {
+            return Vec::new();
+        };
+        let raw = &text[start..end];
+        let Some(table) = self.config.tokens.as_ref() else {
+            return Vec::new();
+        };
+        let Some((_, _, token)) = token_span_at(raw, table) else {
+            return Vec::new();
+        };
+        // URI order across the map (the determinism pin), document
+        // order within each — one scan per document, the references
+        // fold's own walk re-keyed on the decomposed token.
+        let mut uris: Vec<&String> = self.documents.keys().collect();
+        uris.sort();
+        let mut out = Vec::new();
+        for key in uris {
+            let text = self.documents[key].text.as_str();
+            for hit in scan_rust_strings(text) {
+                let (candidates, _) = parse_class_string(&hit.text);
+                for candidate in candidates {
+                    let Some((local_start, local_end, name)) = token_span_at(candidate.raw, table)
+                    else {
+                        continue;
+                    };
+                    if name != token {
+                        continue;
+                    }
+                    let range = range_of(
+                        text,
+                        hit.offset + candidate.span.0 + local_start,
+                        hit.offset + candidate.span.0 + local_end,
+                    );
+                    out.push(EngineRenameEdit {
+                        uri: key.clone(),
+                        range,
+                        new_text: new_name.to_string(),
+                    });
+                }
+            }
+        }
+        out
+    }
+
     // -----------------------------------------------------------------------
     // The selection-range answer
     // -----------------------------------------------------------------------
@@ -1203,6 +1292,76 @@ impl AeolusEngine {
             // deliberately value/theme free (the sort module's own
             // boundary). Only the empty input errors — the extractor's
             // prose pre-filter keeps those out anyway.
+            let Ok(sorted) = sort(&hit.text) else {
+                continue;
+            };
+            let canonical = sorted.to_class_string();
+            if canonical == hit.text {
+                continue;
+            }
+            let range = range_of(text, hit.offset, hit.offset + hit.text.len());
+            out.push(EngineTextEdit {
+                range,
+                new_text: canonical,
+            });
+        }
+        out
+    }
+
+    /// The range-restricted formatting edits (the wire's
+    /// `textDocument/rangeFormatting` — the sort seam's
+    /// SELECTION-SCOPED form): the document formatting face's own walk,
+    /// restricted to the class strings the requested byte range
+    /// touches. A string whose span INTERSECTS the half-open range
+    /// rides its edit — the WHOLE string reorders (the sort seam's own
+    /// canonical join; a selection over part of a string still names
+    /// the string, the sort never emits a fragment) — and a string
+    /// wholly outside the range stays out. Every boundary the
+    /// whole-document face keeps rides unchanged: an already-canonical
+    /// string answers NO edit wherever the range sits (the no-op
+    /// contract a selection-scoped format rides), the whitespace
+    /// normalization is the canonical join's own, the misses never
+    /// block the edit and never ride this channel (the diagnostics'
+    /// story), and the edit's range is the string CONTENT's span,
+    /// byte-true in the LSP's UTF-16 pairs.
+    ///
+    /// The range itself answers honestly: a reversed range (an end
+    /// before its start) is no selection and answers empty, a position
+    /// past the document's last line likewise (no invented walk), and
+    /// the whole-document range IS the formatting request's own answer,
+    /// byte for byte (the differential pin the wire battery keeps).
+    /// Deterministic and pure over the document map; an unknown URI
+    /// answers empty.
+    pub fn format_range(
+        &self,
+        uri: &str,
+        start_line: u32,
+        start_character: u32,
+        end_line: u32,
+        end_character: u32,
+    ) -> Vec<EngineTextEdit> {
+        let Some(doc) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let text = doc.text.as_str();
+        let Some(range_start) = offset_of(text, start_line, start_character) else {
+            return Vec::new();
+        };
+        let Some(range_end) = offset_of(text, end_line, end_character) else {
+            return Vec::new();
+        };
+        // A reversed range is no selection: the half-open walk answers
+        // the honest empty instead of an invented sort.
+        if range_end <= range_start {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for hit in scan_rust_strings(text) {
+            // The intersection boundary: the string's span must touch
+            // the range — a partial selection still names the string.
+            if hit.offset >= range_end || hit.offset + hit.text.len() <= range_start {
+                continue;
+            }
             let Ok(sorted) = sort(&hit.text) else {
                 continue;
             };
@@ -1503,7 +1662,22 @@ fn candidate_span_at(text: &str, offset: usize) -> Option<(usize, usize)> {
 /// the table cannot name (a non-colour root, an arbitrary value's own
 /// colon) answers None, the honest miss.
 fn token_under<'t>(raw: &'t str, table: &'t TokenTable) -> Option<&'t str> {
-    let utility = raw.rsplit(':').next()?;
+    token_span_at(raw, table).map(|(_, _, name)| name)
+}
+
+/// The token decomposition walk FACTORED ONCE beside
+/// [`token_under`] — the definition face's name-only consumer: the same
+/// walk with the token's OWN byte span inside the raw spelling riding
+/// beside the name — the offset-true seam the token-rename fold edits
+/// through ([`AeolusEngine::rename_token`]). The identity is the
+/// table's own membership (`TokenTable::id`), never a guessed span:
+/// the variant stack's tail (the last `:` segment), the `/opacity`
+/// modifier presentation stripped, decomposed onto the registry's
+/// colour-group roots — the SAME rows and roots the definition face
+/// answers through.
+fn token_span_at<'t>(raw: &'t str, table: &'t TokenTable) -> Option<(usize, usize, &'t str)> {
+    let utility_at = raw.rfind(':').map_or(0, |colon| colon + 1);
+    let utility = &raw[utility_at..];
     let utility = utility.split('/').next()?;
     for row in ROWS {
         if !COLOUR_GROUPS.contains(&row.group) {
@@ -1519,7 +1693,8 @@ fn token_under<'t>(raw: &'t str, table: &'t TokenTable) -> Option<&'t str> {
             continue;
         }
         if table.id(rest).is_some() {
-            return Some(rest);
+            let rest_at = utility_at + row.root.len() + 1;
+            return Some((rest_at, rest_at + rest.len(), rest));
         }
     }
     None
