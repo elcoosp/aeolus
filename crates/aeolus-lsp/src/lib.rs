@@ -54,7 +54,13 @@
 //!     rides one edit over its content span, the class-sort seam's own
 //!     canonical join as the new text — the no-op contract a
 //!     format-on-save rides, an already-canonical string answering
-//!     nothing ([`EngineTextEdit`]);
+//!     nothing ([`EngineTextEdit`]); the SELECTION-SCOPED form beside
+//!     it ([`AeolusEngine::format_range`], the wire's
+//!     `textDocument/rangeFormatting`): the same walk restricted to the
+//!     strings the requested range touches — a partial selection still
+//!     names the string (the whole string reorders, never a fragment),
+//!     the whole-document range the formatting request's own answer
+//!     byte for byte;
 //!   * *what classes live here?* — the document symbols: every
 //!     candidate class as an outline entry — the spelling the name, its
 //!     byte-true range, the legend's own verdict and the pipeline's own
@@ -98,7 +104,16 @@
 //!     declaration, a seeded token the file does not declare answering
 //!     no origin), the config's named origin URI the site rides under,
 //!     a wired host store ([`TokenOrigins`]) the answer that rides
-//!     FIRST ([`EngineDefinition`]).
+//!     FIRST ([`EngineDefinition`]);
+//!   * *how would every document spell the TOKEN?* — the token-rename
+//!     fold: the cursor's candidate decomposed onto its colour-group
+//!     token (the definition face's own walk, factored once with the
+//!     token's own byte span), every candidate over EVERY open document
+//!     whose decomposition names the SAME token riding one edit over
+//!     the token's own span — `bg-primary` and `dark:text-primary` are
+//!     different spellings and the same token, so one rename takes them
+//!     together, the variant prefixes and `/opacity` tails preserved
+//!     ([`EngineRenameEdit`], through [`AeolusEngine::rename_token`]).
 //! * **The server** ([`Session`] + [`handle_message`] + [`run_stdio`])
 //!   is the wire half: a `handle`-driven JSON-RPC state machine
 //!   (initialize capabilities, didOpen/didChange/didClose publish
@@ -115,8 +130,10 @@
 //!   `workspace/executeCommand` answers the CLOSED command table the
 //!   capabilities advertise (`aeolus.sortDocument` — the class-sort
 //!   seam's editor face invoked as a command, the same edits the
-//!   formatting request answers; an unknown command or a missing
-//!   argument the protocol's own null).
+//!   formatting request answers; `aeolus.renameToken` — the token-rename
+//!   fold invoked as a command, the rename request's own changes-map
+//!   shape over the theme TOKEN's identity; an unknown command or a
+//!   malformed argument the protocol's own null).
 //!
 //! The engine is pure over its document map: open → change → analyze
 //! is deterministic, an unknown URI answers empty, and every position
