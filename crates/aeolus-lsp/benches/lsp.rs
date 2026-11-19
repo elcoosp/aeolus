@@ -97,6 +97,27 @@ fn semantic_tokens_walk(bencher: Bencher) {
     bencher.bench(|| lsp.semantic_tokens("file:///card.rs"));
 }
 
+/// The range-scoped highlighter (LSP 3.16's semanticTokens/range): the
+/// SAME engine over the SAME document, the requested range over the
+/// SECOND string — the intersection gate riding BEFORE the compile (the
+/// out-of-range candidates cost no lower, the walk's win over the full
+/// legend) beside the legend walk and the wire mapping (what one
+/// viewport-sized highlight refresh costs).
+#[divan::bench]
+fn semantic_tokens_range_slice(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let offset = DOC.find("hover:bg-primary").expect("the fixture holds");
+    let line = DOC[..offset].matches('\n').count() as u32;
+    let line_start = DOC[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let start_character = DOC[line_start..offset]
+        .chars()
+        .map(|ch| ch.len_utf16() as u32)
+        .sum::<u32>();
+    bencher
+        .bench(|| lsp.semantic_tokens_range("file:///card.rs", line, start_character, line + 1, 0));
+}
+
 /// The picker path (the colorProvider capability's paired
 /// colorPresentation request): the config's table walked backwards —
 /// the colour-group rows × the token names × the audited opacity steps,
@@ -701,4 +722,36 @@ fn format_range_slice(bencher: Bencher) {
         .map(|ch| ch.len_utf16() as u32)
         .sum::<u32>();
     bencher.bench(|| lsp.format_range("file:///card.rs", line, start_character, line + 1, 0));
+}
+
+/// The incremental-sync path (the didChange upgrade to the ranged
+/// shape): one ranged content change spliced into the open document —
+/// the position conversions riding the CURRENT text and the sequential
+/// splice (what one keystroke's patch costs the session, beside the
+/// publish's re-analyze).
+#[divan::bench]
+fn incremental_patch(bencher: Bencher) {
+    let mut lsp = AeolusEngine::new(EngineConfig::default());
+    lsp.open("file:///card.rs", DOC, 1);
+    let changes = [aeolus_lsp::EngineTextChange {
+        range: Some((
+            aeolus_lsp::EnginePosition {
+                line: 1,
+                character: 13,
+            },
+            aeolus_lsp::EnginePosition {
+                line: 1,
+                character: 16,
+            },
+        )),
+        text: "p-8".to_string(),
+    }];
+    // The patch mutates the engine (the `Fn` bench body's own shape —
+    // the retheme arm's Mutex pattern), the lock is uncontended.
+    let lsp = std::sync::Mutex::new(lsp);
+    bencher.bench(|| {
+        lsp.lock()
+            .expect("the bench engine locks")
+            .change_incremental("file:///card.rs", &changes, 2);
+    });
 }
