@@ -134,6 +134,12 @@ struct Slot {
     input: Box<str>,
     program: StaticProgram,
     diagnostics: Vec<Diagnostic>,
+    /// The composed session key the store decision reported, cached at
+    /// swap-in (a pure function of identity + input): the warm path's
+    /// hit decision re-reports it without RE-FORMATTING the string —
+    /// the §4 warm target's own saving (the key format was the hit
+    /// path's dominant cost).
+    key: Box<str>,
 }
 
 /// The dynamic-strings slow lane's view-state cell (plan §3.6's
@@ -206,6 +212,7 @@ impl ClassCell {
                 input: String::new().into_boxed_str(),
                 program: empty_program(),
                 diagnostics: Vec::new(),
+                key: String::new().into_boxed_str(),
             }),
             observer: Arc::new(NoObserver),
             hits: std::cell::Cell::new(0),
@@ -350,8 +357,11 @@ impl ClassCell {
         lower: impl FnOnce(&str, &Config) -> Result<Compiled, CompileError>,
     ) -> Result<StaticProgram, CompileError> {
         let mut slot = self.slot.borrow_mut();
+        // The warm path: identity + content match, the cached key
+        // re-reported (the store decision's own string) — the hit path
+        // formats nothing (the §4 warm target's own saving).
         if slot.identity == identity && slot.input.as_ref() == classes {
-            self.observer.on_hit(&key);
+            self.observer.on_hit(&slot.key);
             self.hits.set(self.hits.get() + 1);
             return Ok(slot.program);
         }
@@ -374,6 +384,7 @@ impl ClassCell {
             input: classes.into(),
             program,
             diagnostics: compiled.diagnostics,
+            key: key.into(),
         };
         Ok(program)
     }
