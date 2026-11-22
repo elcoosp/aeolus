@@ -27,7 +27,6 @@
 //!   ([`ThemeSpecError`]), never bare strings.
 
 use aeolus_codegen::audit::{AuditReport, ClassAudit};
-use aeolus_codegen::conformance::Capability as _;
 use aeolus_codegen_gpui::Caps;
 use aeolus_compile::{
     AttrBit, AttrKind, AttrState, ClassKeywords, CompileError, Config, ContainerBound,
@@ -3387,8 +3386,53 @@ fn json_escape(s: &str) -> String {
 /// diagnostics never surface here; the callers skip empty strings
 /// upstream).
 pub fn audit_string(raw: &str, table: &TokenTable) -> Result<ClassAudit, CompileError> {
+    audit_string_for(raw, table, &Caps)
+}
+
+/// [`audit_string`] against an EXPLICIT backend capability — the
+/// `--target <backend>` face's seam: the GPUI emit-gate tables
+/// ([`Caps`]) or the five interpreter lanes' committed
+/// `caps_tables` rows ([`aeolus_codegen::conformance::TableCaps`], the
+/// drift-pinned freezes of each backend's own walk replay). The tiers
+/// and reasons ride the capability's own answers — one walk, six
+/// verdict sources, no parallel claims.
+///
+/// # Errors
+/// [`CompileError::Empty`] — the empty class string.
+pub fn audit_string_for(
+    raw: &str,
+    table: &TokenTable,
+    capability: &dyn aeolus_codegen::conformance::Capability,
+) -> Result<ClassAudit, CompileError> {
     let compiled = compile_theme(raw, table, &Config::default())?;
-    Ok(ClassAudit::of(raw, &compiled.program, &Caps))
+    Ok(ClassAudit::of(raw, &compiled.program, capability))
+}
+
+/// The audit's backend targets — the six published scores' names (the
+/// conformance pages' own set): `gpui` reads the emit-gate tables, the
+/// five interpreter lanes read their committed `caps_tables` freezes.
+pub const AUDIT_TARGETS: &[&str] = &["gpui", "xilem", "floem", "iced", "egui", "slint"];
+
+/// The target's capability source: the parse-time dispatch the
+/// `--target` flag answers (an unknown name is the usage error, the
+/// message names the closed set).
+fn capability_for_target(
+    name: &'static str,
+) -> Option<Box<dyn aeolus_codegen::conformance::Capability>> {
+    use aeolus_codegen::caps_tables::{
+        EGUI_CAPABILITIES, FLOEM_CAPABILITIES, ICED_CAPABILITIES, SLINT_CAPABILITIES,
+        XILEM_CAPABILITIES,
+    };
+    use aeolus_codegen::conformance::TableCaps;
+    match name {
+        "gpui" => Some(Box::new(Caps)),
+        "xilem" => Some(Box::new(TableCaps::new("xilem", XILEM_CAPABILITIES))),
+        "floem" => Some(Box::new(TableCaps::new("floem", FLOEM_CAPABILITIES))),
+        "iced" => Some(Box::new(TableCaps::new("iced", ICED_CAPABILITIES))),
+        "egui" => Some(Box::new(TableCaps::new("egui", EGUI_CAPABILITIES))),
+        "slint" => Some(Box::new(TableCaps::new("slint", SLINT_CAPABILITIES))),
+        _ => None,
+    }
 }
 
 /// `audit` (the §5.1 capability-audit face — the conformance score's
@@ -3418,14 +3462,40 @@ pub fn audit_string(raw: &str, table: &TokenTable) -> Result<ClassAudit, Compile
 fn cmd_audit(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     #[cfg(feature = "tracing")]
     let _audit_span = tracing::debug_span!("aeolus_audit").entered();
-    // audit accepts --theme, --fail-on and --json (the check grammar).
+    // audit accepts --theme, --target, --fail-on and --json (the check
+    // grammar). The default target stays GPUI (the macro surface's own
+    // audit gate); `--target <backend>` reads that lane's committed
+    // table instead — the six published scores' per-project twin.
     let mut fail_on = "none".to_string();
     let mut theme_spec = "shadcn".to_string();
+    // The target is a &'static str from the start (the AUDIT_TARGETS
+    // set's own spelling — the report's backend key is the closed set).
+    let mut target: &'static str = "gpui";
     let mut json = false;
     let mut files: Vec<String> = Vec::new();
     let mut i = 0usize;
     while i < rest.len() {
         match rest[i].as_str() {
+            "--target" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => match AUDIT_TARGETS.iter().find(|name| *name == v) {
+                        Some(name) => target = name,
+                        None => {
+                            let _ = writeln!(
+                                err,
+                                "--target takes {} (got {v:?})",
+                                AUDIT_TARGETS.join("|")
+                            );
+                            return 2;
+                        }
+                    },
+                    None => {
+                        let _ = writeln!(err, "--target needs a value");
+                        return 2;
+                    }
+                }
+            }
             "--theme" => {
                 i += 1;
                 match rest.get(i) {
@@ -3461,6 +3531,14 @@ fn cmd_audit(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         let _ = writeln!(err, "audit takes at least one file");
         return 2;
     }
+    let Some(capability) = capability_for_target(target) else {
+        let _ = writeln!(
+            err,
+            "--target takes {} (got {target:?})",
+            AUDIT_TARGETS.join("|")
+        );
+        return 2;
+    };
     let Some(table) = token_table_or_report(&theme_spec, err) else {
         return 2;
     };
@@ -3481,7 +3559,7 @@ fn cmd_audit(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             if positions.contains_key(&hit.text) {
                 continue;
             }
-            let Ok(audit) = audit_string(&hit.text, &table) else {
+            let Ok(audit) = audit_string_for(&hit.text, &table, &*capability) else {
                 // Only the empty input errors here; the extractor's
                 // prose pre-filter keeps those out anyway.
                 continue;
@@ -3492,7 +3570,7 @@ fn cmd_audit(rest: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             audits.push(audit);
         }
     }
-    let report = AuditReport::new(Caps.name(), audits);
+    let report = AuditReport::new(target, audits);
     // The gate: keyed on the TIER counts (never on the prose).
     let fires = match fail_on.as_str() {
         "refused" => report.count(aeolus_codegen::conformance::Tier::Refused) > 0,
