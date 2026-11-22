@@ -98,6 +98,96 @@ impl Outcome {
 }
 
 // ---------------------------------------------------------------------------
+// The corpus-at-scale score (the M1 scale-up's second conformance line)
+// ---------------------------------------------------------------------------
+
+/// The committed golden corpus (`crates/aeolus-core/tests/fixtures/
+/// golden.corpus`, the M1 scale-up's 2992-entry regeneration through the
+/// real tailwindcss v4.1.17) — the corpus-at-scale score's subject.
+const GOLDEN_CORPUS: &str =
+    include_str!("../../../crates/aeolus-core/tests/fixtures/golden.corpus");
+
+/// The per-entry verdict one backend's corpus-at-scale score rides: the
+/// entry compiles through the V1 pipeline under its own theme's baked
+/// table (zero diagnostics) AND every lowered longhand lands
+/// native/polyfill on the backend's capability table. A compile refusal
+/// (the documented typed-refusal surface) or a refused longhand makes
+/// the entry not expressible — honest either way.
+struct CorpusScale {
+    entries: usize,
+    expressible: usize,
+}
+
+/// Walk the corpus against one capability. Deterministic: the corpus
+/// bytes are committed, the token tables bake from committed CSS, the
+/// compile walk is the same one the batteries pin.
+fn corpus_scale(capability: &impl Capability) -> CorpusScale {
+    use aeolus_compile::{Config, compile_theme};
+    use aeolus_theme::{ThemeSource, TokenTable};
+
+    let default_source =
+        ThemeSource::from_css(aeolus_core::TAILWIND_DEFAULT_THEME, None).expect("default parses");
+    let default = TokenTable::baked(&default_source).expect("default bakes");
+    let shadcn_source = ThemeSource::shadcn().expect("shadcn parses");
+    let shadcn = TokenTable::baked(&shadcn_source).expect("shadcn bakes");
+    let config = Config::default();
+
+    let mut scale = CorpusScale {
+        entries: 0,
+        expressible: 0,
+    };
+    let mut theme = String::new();
+    for line in GOLDEN_CORPUS.lines() {
+        if let Some(rest) = line.strip_prefix("@theme ") {
+            theme = rest.trim().to_string();
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("@entry ") else {
+            continue;
+        };
+        let (_entry_theme, class) = rest.split_once(' ').expect("entry line shape");
+        scale.entries += 1;
+        let table = if theme == "shadcn" { &shadcn } else { &default };
+        let expressible = match compile_theme(class, table, &config) {
+            Ok(compiled) => {
+                compiled.diagnostics.is_empty()
+                    && compiled.program.layers.iter().all(|layer| {
+                        layer
+                            .decls
+                            .iter()
+                            .all(|decl| capability.tier(decl.prop) != Tier::Refused)
+                    })
+            }
+            Err(_) => false,
+        };
+        if expressible {
+            scale.expressible += 1;
+        }
+    }
+    scale
+}
+
+/// The corpus-at-scale line the six conformance pages render under the
+/// per-longhand ceiling table: the EXPANDED corpus's entry-level
+/// expressibility for the backend (the §5.1 "at scale" measure). The
+/// ceiling score above stays the per-longhand share over the 159
+/// longhands — the two numbers answer different questions (can the
+/// backend carry a longhand at all; can it carry a real class fully).
+fn corpus_scale_section(capability: &impl Capability) -> String {
+    let scale = corpus_scale(capability);
+    let pct = scale.expressible as f32 / scale.entries.max(1) as f32 * 100.0;
+    format!(
+        "\n**corpus at scale: {} entries — {:.2}% expressible** (per-entry share of the \
+         expanded golden.corpus; an entry counts when every lowered longhand lands \
+         native/polyfill. The ceiling score above is the per-longhand share over the \
+         {} longhands — the two answer different questions.)\n",
+        scale.entries,
+        pct,
+        Prop::ALL.len(),
+    )
+}
+
+// ---------------------------------------------------------------------------
 // The conformance page: the §5.1 score's committed artifact
 // ---------------------------------------------------------------------------
 
@@ -135,6 +225,9 @@ gate. -->\n\n",
         // report through the plan bridge's typed notes instead).
         let report = Conformance::of(&Caps);
         out.push_str(&report.to_string());
+        // The M1 scale-up's second line: the expanded corpus's
+        // entry-level expressibility for this backend.
+        out.push_str(&corpus_scale_section(&Caps));
         out
     }
 }
@@ -316,6 +409,9 @@ committed bytes are pinned by `cargo xtask verify-tables`; a walk-verdict edit \
 that forgets the regeneration fails the gate. -->\n\n",
         );
         out.push_str(&Conformance::of(&caps).to_string());
+        // The M1 scale-up's second line: the expanded corpus's
+        // entry-level expressibility for this interpreter lane.
+        out.push_str(&corpus_scale_section(&caps));
         out
     }
 }
