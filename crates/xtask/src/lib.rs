@@ -34,7 +34,7 @@
 
 use std::path::{Path, PathBuf};
 
-use aeolus_codegen::conformance::{Capability, Conformance, Tier};
+use aeolus_codegen::conformance::{Capability, Conformance, PropCapability, TableCaps, Tier};
 use aeolus_codegen_gpui::{Caps, unsupported_reason};
 use aeolus_data::codegen::{self, GeneratedArtifact};
 use aeolus_ir::Prop;
@@ -140,6 +140,187 @@ gate. -->\n\n",
 }
 
 // ---------------------------------------------------------------------------
+// The five interpreter backends' capability tables: the conformance
+// moat's committed rows
+// ---------------------------------------------------------------------------
+
+/// One interpreter backend's verdict replay, as the generator sees it:
+/// the backend's own `caps::walk_capabilities()` rows + the static
+/// table name the freeze lands in.
+struct BackendReplay {
+    name: &'static str,
+    doc: &'static str,
+    table: &'static str,
+    rows: fn() -> Vec<(Prop, bool, bool, String)>,
+}
+
+/// The committed five-backend table
+/// (`crates/aeolus-codegen/src/caps_tables.rs`, the conformance moat's
+/// framework-free rows — the `caps_generated.rs` pattern at the
+/// interpreter lanes): each backend's own `walk_capabilities()`
+/// replay, frozen into the committed module the drift pins beside the
+/// backends assert equal. The CLI's `--target` face and the per-backend
+/// docs pages render THROUGH these rows — the published scores are the
+/// emitters' verdicts, never a parallel claim.
+struct BackendCaps;
+
+impl GeneratedArtifact for BackendCaps {
+    fn name(&self) -> &'static str {
+        "backend-caps"
+    }
+
+    fn path(&self) -> &'static str {
+        "crates/aeolus-codegen/src/caps_tables.rs"
+    }
+
+    fn generate(&self) -> String {
+        let replays: &[BackendReplay] = &[
+            BackendReplay {
+                name: "xilem",
+                doc: "the masonry property-stack lane's committed verdicts",
+                table: "XILEM_CAPABILITIES",
+                rows: aeolus_xilem::caps::walk_capability_flags,
+            },
+            BackendReplay {
+                name: "floem",
+                doc: "the own-walk reactive lane's committed verdicts",
+                table: "FLOEM_CAPABILITIES",
+                rows: aeolus_floem::caps::walk_capability_flags,
+            },
+            BackendReplay {
+                name: "iced",
+                doc: "the native-style lane's committed verdicts",
+                table: "ICED_CAPABILITIES",
+                rows: aeolus_iced::caps::walk_capability_flags,
+            },
+            BackendReplay {
+                name: "egui",
+                doc: "the painted-surface lane's committed verdicts",
+                table: "EGUI_CAPABILITIES",
+                rows: aeolus_egui::caps::walk_capability_flags,
+            },
+            BackendReplay {
+                name: "slint",
+                doc: "the property-tree lane's committed verdicts",
+                table: "SLINT_CAPABILITIES",
+                rows: aeolus_slint::caps::walk_capability_flags,
+            },
+        ];
+        let mut body = String::with_capacity(16_384);
+        for replay in replays {
+            body.push_str(&format!(
+                "/// {} — {} (the drift pin beside the backend re-runs the replay).\n#[rustfmt::skip]\npub static {}: &[PropCapability] = &[\n",
+                replay.name, replay.doc, replay.table
+            ));
+            for (prop, landed, polyfill, reason) in (replay.rows)() {
+                let tier = match (landed, polyfill) {
+                    (true, false) => "Native",
+                    (true, true) => "Polyfill",
+                    (false, _) => "Refused",
+                };
+                // The reason rides ONLY the refused rows (the
+                // PropCapability contract: an expressible longhand
+                // carries the empty reason — the best-tier replay's
+                // recorded refusal text is the demotion audit trail,
+                // not the published row).
+                let reason = match tier {
+                    "Refused" => reason,
+                    _ => String::new(),
+                };
+                let reason = reason.replace('\\', "\\\\").replace('"', "\\\"");
+                body.push_str(&format!(
+                    "    PropCapability {{ prop: Prop::{prop:?}, tier: Tier::{tier}, reason: \"{reason}\" }},\n"
+                ));
+            }
+            // The last table ends the file WITHOUT the blank line (the
+            // rustfmt-stable bytes the verify gate pins).
+            if replay.table != "SLINT_CAPABILITIES" {
+                body.push_str("];\n\n");
+            } else {
+                body.push_str("];\n");
+            }
+        }
+        format!(
+            "//! The five interpreter backends' committed capability tables (plan\n\
+             //! §5.1's conformance moat: six published scores, no parallel claims).\n\
+             //!\n\
+             //! GENERATED by `cargo xtask gen-tables` from each backend's own\n\
+             //! `caps::walk_capabilities()` replay (the registry-driven probe\n\
+             //! corpus through the backend's REAL `lower_program` lane) — DO NOT\n\
+             //! EDIT. The committed bytes are pinned equal to a fresh replay by the\n\
+             //! drift test beside each backend (`crates/aeolus-<backend>/tests/\n\
+             //! caps_table.rs`), and `cargo xtask verify-tables` gates the same\n\
+             //! equality from the CLI side; a walk-verdict edit that forgets the\n\
+             //! regeneration fails `cargo test` first.\n\
+             //!\n\
+             //! The rows' semantics: one [`PropCapability`] per IR longhand in\n\
+             //! `Prop::ALL`'s own (cascade) order — the tier the backend's walk\n\
+             //! answers and, for a refused longhand, the report's own boundary\n\
+             //! text. An expressible longhand carries the empty reason. The\n\
+             //! framework-free tables are the `aeolus audit --target <backend>`\n\
+             //! face's verdict source and the `docs/CONFORMANCE-<backend>.md`\n\
+             //! pages' renderer ([`crate::conformance::TableCaps`]).\n\n\
+             use crate::conformance::PropCapability;\n\
+             use crate::conformance::Tier;\n\
+             use aeolus_ir::Prop;\n\n\
+             {body}"
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The per-backend conformance pages: the six published scores
+// ---------------------------------------------------------------------------
+
+/// One committed per-backend conformance page
+/// (`docs/CONFORMANCE-<backend>.md`, the moat's publish face for the
+/// five interpreter lanes — the GPUI page
+/// ([`ConformanceDocs`], `docs/CONFORMANCE.md`) the §5.1 seam already
+/// renders): the [Conformance] report from the committed
+/// [`TableCaps`] rows, which are the backend's own walk freezes (the
+/// drift pins beside the backends keep them equal to a fresh replay).
+struct ConformanceBackendDocs {
+    name: &'static str,
+    table: &'static [PropCapability],
+}
+
+impl GeneratedArtifact for ConformanceBackendDocs {
+    fn name(&self) -> &'static str {
+        match self.name {
+            "xilem" => "conformance-xilem",
+            "floem" => "conformance-floem",
+            "iced" => "conformance-iced",
+            "egui" => "conformance-egui",
+            _ => "conformance-slint",
+        }
+    }
+
+    fn path(&self) -> &'static str {
+        match self.name {
+            "xilem" => "docs/CONFORMANCE-xilem.md",
+            "floem" => "docs/CONFORMANCE-floem.md",
+            "iced" => "docs/CONFORMANCE-iced.md",
+            "egui" => "docs/CONFORMANCE-egui.md",
+            _ => "docs/CONFORMANCE-slint.md",
+        }
+    }
+
+    fn generate(&self) -> String {
+        let caps = TableCaps::new(self.name, self.table);
+        let mut out = String::with_capacity(4096);
+        out.push_str(
+            "<!-- GENERATED by `cargo xtask gen-tables` from the committed \
+`caps_tables` rows (the backend's own `walk_capabilities()` freeze, the drift \
+pins beside the backend keep them equal to a fresh replay) — DO NOT EDIT. The \
+committed bytes are pinned by `cargo xtask verify-tables`; a walk-verdict edit \
+that forgets the regeneration fails the gate. -->\n\n",
+        );
+        out.push_str(&Conformance::of(&caps).to_string());
+        out
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The GPUI capability table: the §3.7 generator slice's committed module
 // ---------------------------------------------------------------------------
 
@@ -222,10 +403,42 @@ pub static PROP_CAPABILITIES: &[PropCapability] = &[\n\
 /// the conformance page this driver renders from the codegen crates'
 /// capability impls, and the capability table the same impls render
 /// into the codegen-gpui crate's own src.
+// The five interpreter lanes' committed pages (the six published
+// scores — the moat's no-parallel-claims face): rendered from the SAME
+// committed rows the `backend-caps` artifact freezes, so a page can
+// never drift from the table it reads. Statics — the artifact list's
+// `&'static dyn` shape.
+static CONFORMANCE_XILEM_DOCS: ConformanceBackendDocs = ConformanceBackendDocs {
+    name: "xilem",
+    table: aeolus_codegen::caps_tables::XILEM_CAPABILITIES,
+};
+static CONFORMANCE_FLOEM_DOCS: ConformanceBackendDocs = ConformanceBackendDocs {
+    name: "floem",
+    table: aeolus_codegen::caps_tables::FLOEM_CAPABILITIES,
+};
+static CONFORMANCE_ICED_DOCS: ConformanceBackendDocs = ConformanceBackendDocs {
+    name: "iced",
+    table: aeolus_codegen::caps_tables::ICED_CAPABILITIES,
+};
+static CONFORMANCE_EGUI_DOCS: ConformanceBackendDocs = ConformanceBackendDocs {
+    name: "egui",
+    table: aeolus_codegen::caps_tables::EGUI_CAPABILITIES,
+};
+static CONFORMANCE_SLINT_DOCS: ConformanceBackendDocs = ConformanceBackendDocs {
+    name: "slint",
+    table: aeolus_codegen::caps_tables::SLINT_CAPABILITIES,
+};
+
 fn artifacts() -> Vec<&'static dyn GeneratedArtifact> {
     let mut list: Vec<&'static dyn GeneratedArtifact> = codegen::artifacts().to_vec();
     list.push(&ConformanceDocs);
+    list.push(&BackendCaps);
     list.push(&GpuiCaps);
+    list.push(&CONFORMANCE_XILEM_DOCS);
+    list.push(&CONFORMANCE_FLOEM_DOCS);
+    list.push(&CONFORMANCE_ICED_DOCS);
+    list.push(&CONFORMANCE_EGUI_DOCS);
+    list.push(&CONFORMANCE_SLINT_DOCS);
     list
 }
 
