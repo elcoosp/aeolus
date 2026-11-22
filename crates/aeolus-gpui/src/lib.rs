@@ -82,7 +82,6 @@ mod motion;
 mod ring;
 mod shadow;
 mod space;
-mod transform;
 pub use containers::{ContainerQuery, TwContainerExt, container_rem};
 pub use filters::FilterState;
 pub use grad::GradState;
@@ -92,7 +91,6 @@ pub use motion::{
 pub use ring::RingState;
 pub use shadow::{SHADOW_PRESET_TEXTS, ShadowState, parse_shadow_bands};
 pub use space::{Axis, SpaceDiv, SpaceDivState, TwSpaceExt};
-pub use transform::{TransformState, transform_state};
 
 pub use aeolus_macro::{cn, theme, tw, tw_cn, variants};
 pub use aeolus_rt::theme_from_css;
@@ -113,8 +111,8 @@ pub use aeolus_rt::{ContainerBound, ContainerProbe, ContainerState, MeasuredCont
 pub mod prelude {
     pub use crate::{
         AeolusRoot, Axis, ContainerQuery, FilterState, GradState, SpaceDiv, SpaceDivState,
-        TransformState, TwAnimExt, TwContainerExt, TwExt, TwSpaceExt, TwStateExt, begin_frame, cn,
-        container_rem, set_env, theme, theme_from_css, transform_state, tw, tw_cn, variants,
+        TwAnimExt, TwContainerExt, TwExt, TwSpaceExt, TwStateExt, begin_frame, cn, container_rem,
+        set_env, theme, theme_from_css, tw, tw_cn, variants,
     };
     pub use aeolus_compile::Env;
     pub use aeolus_rt::{
@@ -492,79 +490,8 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
         this = this.active(|style| {
             apply_state_polyfills(style, &program, is_active, ring, grad, grid, shadow, filter)
         });
-        // The NAMED group-hover labels the program carries: each rides
-        // GPUI's own group dispatch — the native `.group_hover(label, …)`
-        // slot keyed on the label the host's `.group(label)` ancestor
-        // carries. The predicate is the label match itself (the named
-        // condition IS which group the question tests), the seeded
-        // polyfill states compose exactly like the element-own hover
-        // closure's (`hover:from-blue-500` with the base's stops, the
-        // named form the same composition one relation out).
-        //
-        // The pin's `Interactivity` carries ONE group-hover style slot
-        // per element, so a program naming several labels keeps the
-        // FIRST (layer order — the cascade's own tie-break) and the
-        // rest stay the documented boundary; every OTHER named family
-        // (group-focus/…, the peer side) has no native slot at this
-        // pin and keeps the quiet-miss boundary the env walk carries
-        // (the CSS arm renders the named head the real selector is).
-        for label in named_group_labels(&program, |cond| match cond {
-            Cond::GroupHover { name } => name,
-            _ => None,
-        }) {
-            this = this.group_hover(label, |style| {
-                apply_state_polyfills(
-                    style,
-                    &program,
-                    |cond| matches!(cond, Cond::GroupHover { name: Some(l) } if l == label),
-                    ring,
-                    grad,
-                    grid,
-                    shadow,
-                    filter,
-                )
-            });
-        }
-        // The named group-active labels: GPUI's native
-        // `.group_active(label, …)` slot, the hover dispatch's own shape.
-        for label in named_group_labels(&program, |cond| match cond {
-            Cond::GroupActive { name } => name,
-            _ => None,
-        }) {
-            this = this.group_active(label, |style| {
-                apply_state_polyfills(
-                    style,
-                    &program,
-                    |cond| matches!(cond, Cond::GroupActive { name: Some(l) } if l == label),
-                    ring,
-                    grad,
-                    grid,
-                    shadow,
-                    filter,
-                )
-            });
-        }
         this
     }
-}
-
-/// The distinct named labels one family carries, in layer order (the
-/// cascade's own tie-break — the FIRST label wins the pin's single
-/// native slot). `label_of` extracts the family's payload from a
-/// condition; every other condition answers `None`.
-fn named_group_labels(
-    program: &StaticProgram,
-    label_of: impl Fn(Cond) -> Option<&'static str>,
-) -> Vec<&'static str> {
-    let mut labels = Vec::new();
-    for layer in program.layers {
-        if let Some(label) = label_of(layer.cond)
-            && !labels.contains(&label)
-        {
-            labels.push(label);
-        }
-    }
-    labels
 }
 
 impl<T: StatefulInteractiveElement + Styled> TwStateExt for T {}
@@ -660,22 +587,11 @@ impl<T: AnimationExt + Styled + 'static> TwAnimExt for T {}
 // ---------------------------------------------------------------------------
 
 fn is_hover(cond: Cond) -> bool {
-    // The BARE forms only: a named label condition (`group-hover/menu:`)
-    // is a DIFFERENT condition (the named-container fold's own rule) —
-    // it rides the element's native `.group_hover(label, …)` closure the
-    // [`TwStateExt::tw_state`] state walk wires, never the element's own
-    // hover state.
-    matches!(
-        cond,
-        Cond::Hover | Cond::GroupHover { name: None } | Cond::PeerHover { name: None }
-    )
+    matches!(cond, Cond::Hover | Cond::GroupHover | Cond::PeerHover)
 }
 
 fn is_focus(cond: Cond) -> bool {
-    matches!(
-        cond,
-        Cond::Focus | Cond::GroupFocus { name: None } | Cond::PeerFocus { name: None }
-    )
+    matches!(cond, Cond::Focus | Cond::GroupFocus | Cond::PeerFocus)
 }
 
 fn is_focus_visible(cond: Cond) -> bool {
@@ -754,57 +670,26 @@ fn env_matches(cond: Cond, env: &Env) -> bool {
         | Cond::FileSelector
         | Cond::Backdrop
         | Cond::DetailsContent => false,
-        // The parent-relative probes answer from the env's UNNAMED
-        // facts (the interp's `decide` semantics shared verbatim —
-        // one semantics, three walks). A NAMED label condition
-        // (`group-hover/menu:`) is a DIFFERENT condition the unnamed
-        // boolean cannot answer: the quiet miss here, the NATIVE
-        // `.group_hover(label, …)`/`.group_active(label, …)` closure
-        // the [`TwStateExt::tw_state`] state walk wires (the label
-        // dispatch's own seam), never an env read.
-        Cond::GroupHover { name: None } => env.group_hover,
-        Cond::GroupFocus { name: None } => env.group_focus,
+        Cond::GroupHover => env.group_hover,
+        Cond::GroupFocus => env.group_focus,
         // The composition tier answers from the env like the landed
         // pair (the interp's `decide` semantics shared verbatim — the
         // composed state one relation up, the unset bits the quiet
         // misses a selector that does not match is).
-        Cond::GroupFocusVisible { name: None } => env.group_focus_visible,
-        Cond::GroupFocusWithin { name: None } => env.group_focus_within,
-        Cond::GroupActive { name: None } => env.group_active,
-        Cond::GroupDisabled { name: None } => env.group_disabled,
-        Cond::GroupVisited { name: None } => env.group_visited,
-        Cond::GroupChecked { name: None } => env.group_checked,
-        Cond::PeerHover { name: None } => env.peer_hover,
-        Cond::PeerFocus { name: None } => env.peer_focus,
-        Cond::PeerFocusVisible { name: None } => env.peer_focus_visible,
-        Cond::PeerFocusWithin { name: None } => env.peer_focus_within,
-        Cond::PeerActive { name: None } => env.peer_active,
-        Cond::PeerDisabled { name: None } => env.peer_disabled,
-        Cond::PeerVisited { name: None } => env.peer_visited,
-        Cond::PeerChecked { name: None } => env.peer_checked,
-        // The NAMED label forms: the env's unnamed facts cannot answer
-        // them (the condition names its group) — the quiet miss a
-        // selector whose group is not in that state is (the interp's
-        // own reading). The two families with a NATIVE slot at the
-        // pin (group hover, group active) ride the state walk's label
-        // closures; the rest keep the documented boundary (the CSS
-        // arm renders the named head the real selector carries).
-        Cond::GroupHover { name: Some(_) }
-        | Cond::GroupFocus { name: Some(_) }
-        | Cond::GroupFocusVisible { name: Some(_) }
-        | Cond::GroupFocusWithin { name: Some(_) }
-        | Cond::GroupActive { name: Some(_) }
-        | Cond::GroupDisabled { name: Some(_) }
-        | Cond::GroupVisited { name: Some(_) }
-        | Cond::GroupChecked { name: Some(_) }
-        | Cond::PeerHover { name: Some(_) }
-        | Cond::PeerFocus { name: Some(_) }
-        | Cond::PeerFocusVisible { name: Some(_) }
-        | Cond::PeerFocusWithin { name: Some(_) }
-        | Cond::PeerActive { name: Some(_) }
-        | Cond::PeerDisabled { name: Some(_) }
-        | Cond::PeerVisited { name: Some(_) }
-        | Cond::PeerChecked { name: Some(_) } => false,
+        Cond::GroupFocusVisible => env.group_focus_visible,
+        Cond::GroupFocusWithin => env.group_focus_within,
+        Cond::GroupActive => env.group_active,
+        Cond::GroupDisabled => env.group_disabled,
+        Cond::GroupVisited => env.group_visited,
+        Cond::GroupChecked => env.group_checked,
+        Cond::PeerHover => env.peer_hover,
+        Cond::PeerFocus => env.peer_focus,
+        Cond::PeerFocusVisible => env.peer_focus_visible,
+        Cond::PeerFocusWithin => env.peer_focus_within,
+        Cond::PeerActive => env.peer_active,
+        Cond::PeerDisabled => env.peer_disabled,
+        Cond::PeerVisited => env.peer_visited,
+        Cond::PeerChecked => env.peer_checked,
         // The attribute shapes route through `cond_matches`'s probe
         // arms (the env alone has no answer for them); the guard keeps
         // the match total so a new `Cond` variant fails to compile here
@@ -1337,7 +1222,7 @@ fn apply_dynamic<S: Styled>(
 fn apply_state_polyfills<S: Styled>(
     style: S,
     program: &StaticProgram,
-    pred: impl Fn(Cond) -> bool,
+    pred: fn(Cond) -> bool,
     mut ring: RingState,
     mut grad: GradState,
     mut grid: GridState,
