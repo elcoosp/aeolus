@@ -1,0 +1,9 @@
+{
+  "_comment": "The \u00a74 perf contract's committed baselines (the five representative strings' median wall-clock, from the stable perf_contract divan harness). The perf.yml CI gate fails when the static walk regresses >5% or the cell-warm path exceeds 2x its baseline. Update deliberately: re-run `cargo bench -p aeolus-gpui --bench perf_contract` on the reference runner and commit the medians.",
+  "unit": "ns",
+  "static_walk_button": 1070,
+  "hand_button_chain": 84,
+  "static_clone_button": 70,
+  "cell_warm": 908,
+  "cell_cold": 9400
+}
