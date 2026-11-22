@@ -120,12 +120,12 @@ fn main() {
     );
 
     println!();
-    println!("── the label form folds to the same probe (no IR slot for the name) ──");
+    println!("── the label form rides the IR slot (the named condition) ──");
     let labelled = compile("group-active/menu:p-0", &config).expect("compiles");
     println!("  layer: {:?}", labelled.program.layers[0].cond);
     assert!(matches!(
         labelled.program.layers[0].cond,
-        aeolus_ir::Cond::GroupActive
+        aeolus_ir::Cond::GroupActive { name: Some("menu") }
     ));
 
     println!();
