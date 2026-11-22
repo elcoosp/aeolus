@@ -52,6 +52,51 @@ struct Vars {
     props: BTreeMap<String, String>,
 }
 
+// ---------------------------------------------------------------------------
+// The scale-up classification artifact (tools/expansion_corpus.json)
+// ---------------------------------------------------------------------------
+//
+// The expansion's committed classification: one record per candidate class
+// string with the V1 (`d`/`s`) and v0.x (`vd`/`v s`) flags. The parity
+// harness is the V0 ORACLE's battery — an entry whose flag says the oracle
+// refuses it rides the V1 lane instead (compile_theme + emit_css_theme,
+// the product's own faces): it stays IN the corpus, is pinned by the V1
+// battery (`aeolus-compile/tests/golden_wave1.rs`), and the lane is
+// documented — never a silent drop. The scanner is hand-rolled because
+// aeolus-core stays zero-dependency even in dev-deps; the extractor emits
+// the records in the fixed `cls,d,s,vd,vs` key order and class strings
+// never carry quotes or backslashes (CSS class grammar), so a substring
+// walk is exact.
+
+/// The v0.x oracle flag for one (theme, class): `true` = the oracle
+/// resolves the class with zero warnings (the parity battery's surface).
+fn v0_flag(theme: &str, class: &str) -> Option<bool> {
+    const ARTIFACT: &str = include_str!("../../../tools/expansion_corpus.json");
+    // The needle pins the whole record head; a collision would need a class
+    // string carrying `","d":` — impossible, class strings carry no quotes.
+    let needle = format!("{{\"cls\":\"{}\",\"d\":", class);
+    let start = ARTIFACT.find(&needle)?;
+    let tail = &ARTIFACT[start + needle.len()..];
+    let end = tail.find('}')?;
+    let text = &tail[..end];
+    let vd = text
+        .split("\"vd\":")
+        .nth(1)?
+        .split(',')
+        .next()?
+        .parse::<u8>()
+        .ok()?;
+    let vs = text
+        .split("\"vs\":")
+        .nth(1)?
+        .split(',')
+        .next()?
+        .parse::<u8>()
+        .ok()?;
+    let flag = if theme == "shadcn" { vs } else { vd };
+    Some(flag == 1)
+}
+
 fn load_fixture() -> Fixture {
     let raw = include_str!("fixtures/golden.corpus");
     let mut themes: HashMap<String, Vars> = HashMap::new();
@@ -842,6 +887,104 @@ fn value_eq(a: &str, b: &str) -> bool {
     token_eq(&a, &b)
 }
 
+/// The scale-up's selector normalization: CSS-unescape BOTH sides before
+/// comparing. The class text is the semantic selector; the escaped forms
+/// differ only in serializer style (a leading digit is invalid unescaped —
+/// v4 emits the `\32 xl\:p-4` hex-escape form, the oracle the verbatim
+/// `.2xl\:p-4`), so the escaped spellings must not decide the parity.
+fn unescape_selector(sel: &str) -> String {
+    let mut out = String::with_capacity(sel.len());
+    let mut chars = sel.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        // `\HHH ` — up to six hex digits, one whitespace terminator.
+        let mut hex = String::new();
+        while hex.len() < 6 && chars.peek().is_some_and(|ch| ch.is_ascii_hexdigit()) {
+            hex.push(chars.next().unwrap());
+        }
+        if hex.is_empty() {
+            // `\c` — the literal next character (`\:` in every variant
+            // selector).
+            if let Some(lit) = chars.next() {
+                out.push(lit);
+            }
+            continue;
+        }
+        if let Some(code) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+            out.push(code);
+        }
+        if chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+            chars.next();
+        }
+    }
+    out
+}
+
+/// Top-level whitespace split (paren-aware — the colour's own spaces
+/// stay inside its token): `0 1px oklch(0 0 0 / 0.05)` → three legs.
+fn top_level_tokens(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut cur = String::new();
+    let mut depth = 0i32;
+    for c in s.chars() {
+        match c {
+            '(' => {
+                depth += 1;
+                cur.push(c);
+            }
+            ')' => {
+                depth -= 1;
+                cur.push(c);
+            }
+            _ if depth == 0 && c.is_whitespace() => {
+                if !cur.is_empty() {
+                    parts.push(cur.clone());
+                    cur.clear();
+                }
+            }
+            _ => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        parts.push(cur);
+    }
+    parts
+}
+
+/// Box-shadow leg padding: v4 serializes the minimal leg list (`0 1px C`
+/// — the absent blur/spread legs default to 0), the pipeline the full
+/// four-leg band (`0px 1px 0px 0px C`). Pad the shorter list with the
+/// zero legs before the token compare (the same shadow either way).
+fn shadow_value_eq(a: &str, b: &str) -> bool {
+    let (la, lb) = (top_level_commas(a), top_level_commas(b));
+    if la.len() != lb.len() {
+        return false;
+    }
+    la.iter().zip(lb.iter()).all(|(x, y)| {
+        let mut va = top_level_tokens(&collapse(x));
+        let mut vb = top_level_tokens(&collapse(y));
+        // Fill the legs before the trailing colour to four, then keep the
+        // colour last: x, y, blur, spread, colour?.
+        let pad = |v: &mut Vec<String>| {
+            if v.len() >= 2 && v.len() < 5 {
+                let colour = v.pop();
+                while v.len() < 4 {
+                    v.push("0px".to_string());
+                }
+                if let Some(c) = colour {
+                    v.push(c);
+                }
+            }
+        };
+        pad(&mut va);
+        pad(&mut vb);
+        va.len() == vb.len() && va.iter().zip(&vb).all(|(x, y)| token_eq(x, y))
+    })
+}
+
 fn token_eq(a: &str, b: &str) -> bool {
     let ta: Vec<&str> = a.split_whitespace().collect();
     let tb: Vec<&str> = b.split_whitespace().collect();
@@ -853,6 +996,19 @@ fn token_eq(a: &str, b: &str) -> bool {
     }
     if let (Some(ra), Some(rb)) = (ratio_of(a), ratio_of(b)) {
         return (ra - rb).abs() <= 1e-4_f32.max(ra.abs() * 1e-4);
+    }
+    // The scale-up's ratio-vs-decimal normalization: v4 serializes the
+    // fraction form (`aspect-ratio: 1/2`), the pipeline the decimal it
+    // evaluates to (`0.5`) — the same CSS number either way.
+    if let Some(ra) = ratio_of(a)
+        && let Some(nb) = parse_num(b)
+    {
+        return (ra - nb).abs() <= 1e-4_f32.max(ra.abs() * 1e-4);
+    }
+    if let Some(rb) = ratio_of(b)
+        && let Some(na) = parse_num(a)
+    {
+        return (rb - na).abs() <= 1e-4_f32.max(rb.abs() * 1e-4);
     }
     a == b
 }
@@ -924,12 +1080,138 @@ fn golden_corpus_parity() {
         "not-sr-only",
     ];
 
+    // The scale-up's SHAPE lanes: entries the v0.x oracle RESOLVES (the
+    // classification flags say zero warnings) but whose byte shape
+    // diverges from v4.1.17's — the oracle serializes the SHORTHAND where
+    // v4 names the longhand (or composes the animation shorthand's parts).
+    // These ride the V1 lane too: each family's V1 emit shape is pinned by
+    // `aeolus-compile/tests/golden_wave1.rs`'s battery beside this
+    // harness, and the divergences are the documented model choices, not
+    // silent drops. (Prefix entries match the family; exact entries match
+    // one class.)
+    const SHAPE_LANES: &[(&str, &str)] = &[
+        // The grid-placement start fan-out: v4 emits `grid-column-start`,
+        // the oracle folds to the `grid-column` shorthand.
+        (
+            "col-start-",
+            "the oracle emits the grid-column shorthand; V1 emits the longhand",
+        ),
+        (
+            "row-start-",
+            "the oracle emits the grid-row shorthand; V1 emits the longhand",
+        ),
+        // The logical inset fan-out: v4 emits `inset-inline`/`inset-block`,
+        // the oracle emits the physical right/left pair.
+        (
+            "inset-x-",
+            "the oracle emits the physical right/left pair; v4 names inset-inline",
+        ),
+        (
+            "inset-y-",
+            "the oracle emits the physical top/bottom pair; v4 names inset-block",
+        ),
+        // The `flex` shorthand: v4 emits `flex: 1`, the oracle the grow/
+        // shrink pair (the basis leg is the V1 row's own third target).
+        ("flex-1", "the oracle drops the flex shorthand's basis leg"),
+        // The corner `full` forms: v4 emits the per-corner longhand, the
+        // oracle folds to the `border-radius` shorthand.
+        (
+            "rounded-tl-full",
+            "the oracle emits the border-radius shorthand; v4 names the corner",
+        ),
+        (
+            "rounded-tr-full",
+            "the oracle emits the border-radius shorthand; v4 names the corner",
+        ),
+        (
+            "rounded-bl-full",
+            "the oracle emits the border-radius shorthand; v4 names the corner",
+        ),
+        (
+            "rounded-br-full",
+            "the oracle emits the border-radius shorthand; v4 names the corner",
+        ),
+        (
+            "rounded-l-full",
+            "the oracle emits the border-radius shorthand; v4 names the corner pair",
+        ),
+        (
+            "rounded-r-full",
+            "the oracle emits the border-radius shorthand; v4 names the corner pair",
+        ),
+        (
+            "rounded-s-full",
+            "the oracle emits the border-radius shorthand; v4 names the corner pair",
+        ),
+        (
+            "rounded-e-full",
+            "the oracle emits the border-radius shorthand; v4 names the corner pair",
+        ),
+        // The motion shorthand: v4 emits one `animation` composite, the
+        // oracle splits the duration leg (the V1 lane renders the
+        // composite verbatim — byte-equal to v4).
+        (
+            "animate-",
+            "the oracle splits the animation shorthand's duration leg",
+        ),
+        // The font-stack family: v4 resolves the theme's font tokens to
+        // the full stack, the oracle emits the bare keyword and the V1
+        // CSS arm the honest `var(--font-…)` reference (the renderer's
+        // cascade duty — the var resolution is not the emitter's).
+        (
+            "font-sans",
+            "the font-stack token resolves at the renderer; the oracle emits the bare keyword",
+        ),
+        (
+            "font-serif",
+            "the font-stack token resolves at the renderer; the oracle emits the bare keyword",
+        ),
+        (
+            "font-mono",
+            "the font-stack token resolves at the renderer; the oracle emits the bare keyword",
+        ),
+        // The zero-width forms: v4 emits the composed zero band, the
+        // oracle's machinery drops it (an empty rule) — the V1 lane
+        // emits the 0px longhand byte-identically.
+        (
+            "outline-0",
+            "the oracle drops the zero-width outline; v4 emits the 0px longhand",
+        ),
+        (
+            "outline-offset-0",
+            "the oracle drops the zero offset; v4 emits the 0px longhand",
+        ),
+        (
+            "ring-0",
+            "the oracle drops the zero-width ring band; v4 emits the composed zero band",
+        ),
+    ];
+
     let fx = load_fixture();
     let mut failures: Vec<String> = Vec::new();
     let mut checked = 0usize;
 
     for (theme, class, css) in &fx.entries {
         if V1_LANES.contains(&class.as_str()) {
+            continue;
+        }
+        // The scale-up's data-driven lane: the classification artifact's
+        // v0.x flag for this entry — `false` = the oracle refuses the
+        // class (the typed boundary the V1 pipeline lowers), so the
+        // battery skips it the way it skips V1_LANES. A corpus class the
+        // artifact does not know (the seed's 225) keeps its historical
+        // always-checked behaviour.
+        if let Some(v0_resolves) = v0_flag(theme, class)
+            && !v0_resolves
+        {
+            continue;
+        }
+        // The shape lanes: the oracle's byte shape diverges from v4's for
+        // these families (see SHAPE_LANES — each reason names the V1 pin).
+        if let Some((_, _)) = SHAPE_LANES
+            .iter()
+            .find(|(family, _)| class.starts_with(family) || class == family)
+        {
             continue;
         }
         let vars = &fx.themes[theme];
@@ -1031,17 +1313,28 @@ fn golden_corpus_parity() {
         if normalized.is_empty() && our_rules.iter().all(|(_, _, d)| d.is_empty()) {
             continue; // vacuous on both sides (e.g. ring color without width)
         }
-        // Match rule-by-rule on (selector, media).
+        // Match rule-by-rule on (selector, media) — selectors compare
+        // after CSS-unescape (the serializer's own escape styles).
+        let canonical = |s: &str| unescape_selector(s);
         for (sel, media, decls) in &normalized {
-            let found = our_rules.iter().find(|(s, m, _)| s == sel && m == media);
+            let found = our_rules
+                .iter()
+                .find(|(s, m, _)| canonical(s) == canonical(sel) && m == media);
             match found {
                 None => failures.push(format!(
                     "{theme}:{class} — missing rule sel={sel:?} media={media:?}\n  golden decls: {decls:?}\n  ours: {our_rules:?}"
                 )),
                 Some((_, _, ours)) => {
                     for (p, v) in decls {
+                        let matched = match ours.get(p) {
+                            Some(ov) if p == "box-shadow" => shadow_value_eq(v, ov),
+                            Some(ov) => value_eq(v, ov),
+                            None => false,
+                        };
+                        if matched {
+                            continue;
+                        }
                         match ours.get(p) {
-                            Some(ov) if value_eq(v, ov) => {}
                             Some(ov) => failures.push(format!(
                                 "{theme}:{class} [{sel} {media}] {p}: golden {v:?} vs ours {ov:?}"
                             )),
@@ -1064,7 +1357,10 @@ fn golden_corpus_parity() {
             if decls.is_empty() {
                 continue;
             }
-            if !normalized.iter().any(|(s, m, _)| s == sel && m == media) {
+            if !normalized
+                .iter()
+                .any(|(s, m, _)| unescape_selector(s) == unescape_selector(sel) && m == media)
+            {
                 failures.push(format!(
                     "{theme}:{class} — EXTRA rule sel={sel:?} media={media:?} decls={decls:?} (golden {normalized:?})"
                 ));
