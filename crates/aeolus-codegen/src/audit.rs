@@ -67,7 +67,7 @@ impl ClassAudit {
     /// (the mask's bitset walk), tiered through the capability's own
     /// predicates. An empty program (the empty-string compile's shape)
     /// observes nothing and carries no rows.
-    pub fn of(raw: &str, program: &Program, capability: &impl Capability) -> Self {
+    pub fn of(raw: &str, program: &Program, capability: &dyn Capability) -> Self {
         let mut rows: Vec<PropAudit> = Vec::new();
         let mut seen = PropMask::EMPTY;
         for layer in program.layers {
