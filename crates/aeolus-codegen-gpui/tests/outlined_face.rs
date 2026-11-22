@@ -72,7 +72,10 @@ fn the_outlined_face_is_byte_equal_to_the_reference_face() {
     ] {
         let reference = frozen_content(&tokens_of(emit_static_program, literal));
         let outlined = frozen_content(&tokens_of(emit_static_program_outlined, literal));
-        assert!(!reference.is_empty(), "{literal}: the reference froze decls");
+        assert!(
+            !reference.is_empty(),
+            "{literal}: the reference froze decls"
+        );
         assert_eq!(
             reference, outlined,
             "{literal}: the outlined face freezes the same program content"
