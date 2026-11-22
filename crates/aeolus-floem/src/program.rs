@@ -1070,6 +1070,49 @@ fn apply_decl(
             );
             style
         }
+
+        // ---- the parity wave 1 tail (the honest verdicts, the
+        // same reason discipline the family arms keep) ---------------
+        Prop::LineClamp => {
+            report.drop(
+                prop.name(),
+                "no Floem multi-line clamp prop at the pinned rev — the CSS emit arm carries the overflow/-webkit-box composite",
+            );
+            style
+        }
+        Prop::FontVariantNumeric => {
+            report.drop(
+                prop.name(),
+                "no Floem font-feature slot at the pinned rev — the CSS emit arm carries                  the keyword",
+            );
+            style
+        }
+        Prop::SpaceXReverse
+        | Prop::SpaceX
+        | Prop::SpaceYReverse
+        | Prop::SpaceY
+        | Prop::DivideXReverse
+        | Prop::DivideYReverse
+        | Prop::DivideStyle
+        | Prop::DivideX
+        | Prop::DivideY
+        | Prop::DivideColor => {
+            // The between-child intent: the longhand styles OTHER
+            // elements — a per-view lowering has no child access (the
+            // precise reason the conformance table freezes).
+            report.drop(
+                prop.name(),
+                "the between-child surface styles OTHER elements — a per-view lowering has no child access (the CSS emit arm renders the child rule)",
+            );
+            style
+        }
+        Prop::ClipPath => {
+            report.drop(
+                prop.name(),
+                "no Floem clip-path slot — the sr-only composite's clip leg stays the CSS emit arm's output",
+            );
+            style
+        }
     }
 }
 
