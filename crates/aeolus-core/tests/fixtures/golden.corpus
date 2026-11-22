@@ -58,7 +58,11 @@ font-variation-settings: var(--default-font-variation-settings, normal)
 @propdef --tw-scale-x: 1
 @propdef --tw-scale-y: 1
 @propdef --tw-scale-z: 1
+@propdef --tw-space-y-reverse: 0
+@propdef --tw-space-x-reverse: 0
+@propdef --tw-divide-x-reverse: 0
 @propdef --tw-border-style: solid
+@propdef --tw-divide-y-reverse: 0
 @propdef --tw-shadow: 0 0 #0000
 @propdef --tw-shadow-alpha: 100%
 @propdef --tw-inset-shadow: 0 0 #0000
@@ -449,6 +453,178 @@ overflow: hidden;
 @entry default underline-offset-2
 .underline-offset-2 {
 text-underline-offset: 2px;
+}
+@end
+@entry default line-clamp-none
+.line-clamp-none {
+overflow: visible;
+    display: block;
+    -webkit-box-orient: horizontal;
+    -webkit-line-clamp: unset;
+}
+@end
+@entry default ordinal
+.ordinal {
+--tw-ordinal: ordinal;
+    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
+}
+@end
+@entry default slashed-zero
+.slashed-zero {
+--tw-slashed-zero: slashed-zero;
+    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
+}
+@end
+@entry default lining-nums
+.lining-nums {
+--tw-numeric-figure: lining-nums;
+    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
+}
+@end
+@entry default oldstyle-nums
+.oldstyle-nums {
+--tw-numeric-figure: oldstyle-nums;
+    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
+}
+@end
+@entry default proportional-nums
+.proportional-nums {
+--tw-numeric-spacing: proportional-nums;
+    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
+}
+@end
+@entry default diagonal-fractions
+.diagonal-fractions {
+--tw-numeric-fraction: diagonal-fractions;
+    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
+}
+@end
+@entry default stacked-fractions
+.stacked-fractions {
+--tw-numeric-fraction: stacked-fractions;
+    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
+}
+@end
+@entry default normal-nums
+.normal-nums {
+font-variant-numeric: normal;
+}
+@end
+@entry default space-x-4
+.space-x-4 {
+:where(& > :not(:last-child)) {
+      --tw-space-x-reverse: 0;
+      margin-inline-start: calc(calc(var(--spacing) * 4) * var(--tw-space-x-reverse));
+      margin-inline-end: calc(calc(var(--spacing) * 4) * calc(1 - var(--tw-space-x-reverse)));
+    }
+}
+@end
+@entry default space-y-2
+.space-y-2 {
+:where(& > :not(:last-child)) {
+      --tw-space-y-reverse: 0;
+      margin-block-start: calc(calc(var(--spacing) * 2) * var(--tw-space-y-reverse));
+      margin-block-end: calc(calc(var(--spacing) * 2) * calc(1 - var(--tw-space-y-reverse)));
+    }
+}
+@end
+@entry default -space-x-2
+.-space-x-2 {
+:where(& > :not(:last-child)) {
+      --tw-space-x-reverse: 0;
+      margin-inline-start: calc(calc(var(--spacing) * -2) * var(--tw-space-x-reverse));
+      margin-inline-end: calc(calc(var(--spacing) * -2) * calc(1 - var(--tw-space-x-reverse)));
+    }
+}
+@end
+@entry default space-x-reverse
+.space-x-reverse {
+:where(& > :not(:last-child)) {
+      --tw-space-x-reverse: 1;
+    }
+}
+@end
+@entry default space-y-reverse
+.space-y-reverse {
+:where(& > :not(:last-child)) {
+      --tw-space-y-reverse: 1;
+    }
+}
+@end
+@entry default divide-x
+.divide-x {
+:where(& > :not(:last-child)) {
+      --tw-divide-x-reverse: 0;
+      border-inline-style: var(--tw-border-style);
+      border-inline-start-width: calc(1px * var(--tw-divide-x-reverse));
+      border-inline-end-width: calc(1px * calc(1 - var(--tw-divide-x-reverse)));
+    }
+}
+@end
+@entry default divide-y-2
+.divide-y-2 {
+:where(& > :not(:last-child)) {
+      --tw-divide-y-reverse: 0;
+      border-bottom-style: var(--tw-border-style);
+      border-top-style: var(--tw-border-style);
+      border-top-width: calc(2px * var(--tw-divide-y-reverse));
+      border-bottom-width: calc(2px * calc(1 - var(--tw-divide-y-reverse)));
+    }
+}
+@end
+@entry default divide-x-reverse
+.divide-x-reverse {
+:where(& > :not(:last-child)) {
+      --tw-divide-x-reverse: 1;
+    }
+}
+@end
+@entry default divide-dashed
+.divide-dashed {
+:where(& > :not(:last-child)) {
+      --tw-border-style: dashed;
+      border-style: dashed;
+    }
+}
+@end
+@entry default divide-solid
+.divide-solid {
+:where(& > :not(:last-child)) {
+      --tw-border-style: solid;
+      border-style: solid;
+    }
+}
+@end
+@entry default divide-red-500
+.divide-red-500 {
+:where(& > :not(:last-child)) {
+      border-color: var(--color-red-500);
+    }
+}
+@end
+@entry default sr-only
+.sr-only {
+position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border-width: 0;
+}
+@end
+@entry default not-sr-only
+.not-sr-only {
+position: static;
+    width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
 }
 @end
 @entry default tracking-tighter
@@ -1231,7 +1407,11 @@ font-variation-settings: var(--default-font-variation-settings, normal)
 @propdef --tw-scale-x: 1
 @propdef --tw-scale-y: 1
 @propdef --tw-scale-z: 1
+@propdef --tw-space-y-reverse: 0
+@propdef --tw-space-x-reverse: 0
+@propdef --tw-divide-x-reverse: 0
 @propdef --tw-border-style: solid
+@propdef --tw-divide-y-reverse: 0
 @propdef --tw-shadow: 0 0 #0000
 @propdef --tw-shadow-alpha: 100%
 @propdef --tw-inset-shadow: 0 0 #0000
