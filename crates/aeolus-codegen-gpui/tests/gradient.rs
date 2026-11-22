@@ -33,14 +33,18 @@ fn keywords_of(literal: &str) -> Vec<&'static str> {
 #[test]
 fn the_two_stop_linear_family_joins_the_native_tier() {
     // The stops and their positions are native (GPUI's stops carry
-    // colours and percentages); the direction longhand is gated by the
-    // ROW TEXT (below), and the via stop stays out (three stops).
+    // colours and percentages); the direction longhand rode the wave to
+    // NATIVE — the walk composes GPUI's own linear_gradient from the
+    // `--tw-gradient-*` state, the row TEXT's refinements staying at
+    // the emit gates (the shadow preset tier's own shape). The via
+    // stop stays out (the pin's fixed [LinearColorStop; 2]).
     assert!(supports(Prop::GradientFrom));
     assert!(supports(Prop::GradientTo));
     assert!(supports(Prop::GradientFromPosition));
     assert!(supports(Prop::GradientToPosition));
+    assert!(supports(Prop::BackgroundImage));
     assert!(!supports(Prop::GradientVia));
-    assert!(!supports(Prop::BackgroundImage), "text-gated, not per-prop");
+    assert!(!supports(Prop::GradientViaPosition));
     // The polyfill tier stays the ring family's — gradients are native.
     assert!(!polyfilled(Prop::GradientFrom));
 }
@@ -54,6 +58,10 @@ fn a_two_stop_linear_program_emits() {
         .emit(&compiled.program)
         .expect("the 2-stop linear program expresses");
     let compact = tokens.to_string().replace(' ', "");
+    // The GpuiEmit emit face IS the reference face (the differential
+    // emit): `StaticProgram::new` over the frozen slices. The macro's
+    // DEFAULT face is the outlined one (the §4 perf contract's emit
+    // half) — pinned in tests/outlined_face.rs.
     assert!(compact.contains("StaticProgram::new"));
     assert!(
         compact.contains("GradientFrom"),
@@ -74,8 +82,8 @@ fn the_via_stop_refuses_with_the_two_stop_reason() {
         .find(|entry| entry.prop == Prop::GradientVia)
         .expect("the via stop refuses");
     assert!(
-        via.reason.contains("two stops"),
-        "the reason names the slot's shape: {via:?}"
+        via.reason.contains("[LinearColorStop; 2]"),
+        "the reason names the pin's slot shape (verified at the gpui-pre 0.3.12 pin): {via:?}"
     );
 }
 
