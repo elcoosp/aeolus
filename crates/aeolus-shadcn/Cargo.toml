@@ -18,6 +18,10 @@ aeolus-core = { path = "../aeolus-core" }
 # through the V1 pipeline once per combo and intern.
 aeolus-compile = { path = "../aeolus-compile" }
 aeolus-rt = { path = "../aeolus-rt" }
+# The closed-world const tables' macro (§10's headline): the
+# variants_static! expansion freezes every (slot, combo) arm at
+# compile time.
+aeolus-macro = { workspace = true }
 aeolus-theme = { workspace = true }
 aeolus-ir = { workspace = true }
 aeolus-xilem = { path = "../aeolus-xilem" }
