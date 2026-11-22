@@ -114,6 +114,33 @@ const CORPUS = [
   { theme: "default", class: "line-clamp-2" },
   { theme: "default", class: "tabular-nums" },
   { theme: "default", class: "underline-offset-2" },
+  // The parity wave 1 tail: the five highest-traffic families, generated
+  // through the real compiler (the deliberate regeneration). The
+  // between-child entries pin the v4.1.17 `:where(& >
+  // :not(:last-child))` child rule; the composite entries pin the
+  // verbatim multi-decl emission.
+  { theme: "default", class: "line-clamp-none" },
+  { theme: "default", class: "ordinal" },
+  { theme: "default", class: "slashed-zero" },
+  { theme: "default", class: "lining-nums" },
+  { theme: "default", class: "oldstyle-nums" },
+  { theme: "default", class: "proportional-nums" },
+  { theme: "default", class: "diagonal-fractions" },
+  { theme: "default", class: "stacked-fractions" },
+  { theme: "default", class: "normal-nums" },
+  { theme: "default", class: "space-x-4" },
+  { theme: "default", class: "space-y-2" },
+  { theme: "default", class: "-space-x-2" },
+  { theme: "default", class: "space-x-reverse" },
+  { theme: "default", class: "space-y-reverse" },
+  { theme: "default", class: "divide-x" },
+  { theme: "default", class: "divide-y-2" },
+  { theme: "default", class: "divide-x-reverse" },
+  { theme: "default", class: "divide-dashed" },
+  { theme: "default", class: "divide-solid" },
+  { theme: "default", class: "divide-red-500" },
+  { theme: "default", class: "sr-only" },
+  { theme: "default", class: "not-sr-only" },
   // element-relative typography (v0.5 §2): token forms carry their
   // relative unit (em / unitless ratio); arbitrary + spacing-multiple
   // forms stay absolute.
