@@ -447,3 +447,59 @@ fn resolve_rgba_refusals_are_the_typed_set() {
         "a non-finite alpha refuses instead of baking a NaN literal"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The single-file host sheet (`from_app_css`, the `theme:` argument's
+// seam): one sheet carrying `@theme`/`:root` tokens plus a `.dark` block
+// — the same `app.css` a web Tailwind v4 project uses — splits into the
+// light half and the dark overrides without conflating the two.
+// ---------------------------------------------------------------------------
+
+/// The single-file shape: light tokens plus a `.dark` block, one sheet.
+const APP_CSS: &str =
+    "@theme {\n  --color-brand: #0ea5e9;\n}\n\n.dark {\n  --color-brand: #ef4444;\n}\n";
+
+#[test]
+fn the_single_file_sheet_builds_light_and_dark() {
+    let source = ThemeSource::from_app_css(APP_CSS).expect("the single-file sheet parses");
+    let table = TokenTable::baked(&source).expect("the sheet table bakes");
+    let id = table.id("brand").expect("the sheet declares brand");
+    // The light half keeps the light value (a conflated read would bake
+    // the dark hex into the light tier).
+    assert_eq!(
+        table.light_rgba(id),
+        Some([14, 165, 233, 255]),
+        "the light half is the sheet minus its .dark block"
+    );
+    assert_eq!(table.dark_rgba(id), Some([239, 68, 68, 255]));
+    // The differing dark value forms the T1 const pair.
+    let slot = u16::try_from(table.pairs() - 1).expect("one pair");
+    assert!(table.pair_at(slot).is_some());
+}
+
+#[test]
+fn the_sheet_without_a_dark_block_bakes_pure_literals() {
+    let source = ThemeSource::from_app_css("@theme {\n  --color-brand: #0ea5e9;\n}\n")
+        .expect("the sheet parses");
+    let table = TokenTable::baked(&source).expect("the sheet table bakes");
+    assert_eq!(table.pairs(), 0, "no .dark block: zero pairs");
+    let id = table.id("brand").expect("the sheet declares brand");
+    assert_eq!(table.light_rgba(id), Some([14, 165, 233, 255]));
+}
+
+#[test]
+fn the_dark_split_keeps_comments_and_multiple_blocks() {
+    // A `.dark` mention inside a comment never splits; two dark blocks
+    // both ride the overrides. (The table's names are the LIGHT theme's
+    // colour surface — a token the light sheet never declares is not
+    // addressable, so `surface` declares in both halves here.)
+    let css = "/* .dark mention in a comment */\n@theme {\n  --color-brand: #0ea5e9;\n  --color-surface: #eeeeee;\n}\n\n.dark {\n  --color-brand: #ef4444;\n}\n\n.dark {\n  --color-surface: #111111;\n}\n";
+    let source = ThemeSource::from_app_css(css).expect("the sheet parses");
+    let table = TokenTable::baked(&source).expect("the sheet table bakes");
+    let brand = table.id("brand").expect("brand declared");
+    let surface = table.id("surface").expect("surface declared");
+    assert_eq!(table.light_rgba(brand), Some([14, 165, 233, 255]));
+    assert_eq!(table.dark_rgba(brand), Some([239, 68, 68, 255]));
+    assert_eq!(table.light_rgba(surface), Some([238, 238, 238, 255]));
+    assert_eq!(table.dark_rgba(surface), Some([17, 17, 17, 255]));
+}
