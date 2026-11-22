@@ -890,11 +890,48 @@ fn is_dropped(prop: &str, value: &str) -> bool {
 
 #[test]
 fn golden_corpus_parity() {
+    // The parity wave 1's corpus entries (the deliberate 193 → 215
+    // regeneration): the between-child families (space-*/divide-*), the
+    // screen-reader composites and the font-variant-numeric reset ride
+    // the V1 pipeline's OWN golden harness
+    // (`aeolus-compile/tests/golden_wave1.rs` — emit_css_theme against
+    // the same fixture), because the v0.x Probe model cannot carry
+    // them: the oracle's typed refusals for these families ARE the
+    // v0.2 shape's honest boundary (resolve.rs names each one). The
+    // oracle still resolves `ordinal` (its keyword half) and the
+    // `line-clamp-{n}` COUNT form — those stay pinned here.
+    const V1_LANES: &[&str] = &[
+        "line-clamp-none",
+        "slashed-zero",
+        "lining-nums",
+        "oldstyle-nums",
+        "proportional-nums",
+        "diagonal-fractions",
+        "stacked-fractions",
+        "normal-nums",
+        "space-x-4",
+        "space-y-2",
+        "-space-x-2",
+        "space-x-reverse",
+        "space-y-reverse",
+        "divide-x",
+        "divide-y-2",
+        "divide-x-reverse",
+        "divide-dashed",
+        "divide-solid",
+        "divide-red-500",
+        "sr-only",
+        "not-sr-only",
+    ];
+
     let fx = load_fixture();
     let mut failures: Vec<String> = Vec::new();
     let mut checked = 0usize;
 
     for (theme, class, css) in &fx.entries {
+        if V1_LANES.contains(&class.as_str()) {
+            continue;
+        }
         let vars = &fx.themes[theme];
         let t = theme_for(theme);
         let resolver = Resolver::new(&t);
