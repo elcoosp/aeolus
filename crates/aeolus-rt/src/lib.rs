@@ -334,6 +334,28 @@ impl StaticProgram {
     }
 }
 
+/// The outlined emit face's assembly point (the §4 perf contract's
+/// emit half): ONE typed call the macro's outlined face expands to,
+/// taking the frozen data as the two `&'static` slices — the runtime
+/// assembles the [`StaticProgram`] in one inline call, no per-decl
+/// tuple bindings and no local const items at the call site (the
+/// reference face's block expression stays the differential emit).
+#[derive(Clone, Copy, Debug)]
+pub struct StaticProgramBuilder;
+
+impl StaticProgramBuilder {
+    /// Assemble a static program from the frozen slices — the outlined
+    /// face's single call (a `const fn`: the assembly is the struct's
+    /// own two-pointer construction, and const-context callers fold it
+    /// at compile time).
+    pub const fn assemble(
+        layers: &'static [Layer],
+        keywords: &'static [&'static str],
+    ) -> StaticProgram {
+        StaticProgram::new(layers, keywords)
+    }
+}
+
 /// Parse a CSS-first theme file at the host — the `theme!` macro's
 /// runtime half (T2, the explicit slow lane the plan allows for
 /// user-editable themes). The file text is the SAME `@theme`/`:root`/
