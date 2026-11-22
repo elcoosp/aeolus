@@ -128,11 +128,13 @@ fn write_mode_populates_a_temp_root_and_verify_stays_clean() {
         0
     );
     let text = String::from_utf8(out).expect("utf8");
-    // Four artifacts: the data crate's two registry-derived pages, the
-    // conformance score the driver renders from the codegen crates,
-    // and the §3.7 capability table the same impls render into the
-    // codegen-gpui crate's own src.
-    assert_eq!(text.matches("clean").count(), 4, "{text}");
+    // Ten artifacts: the data crate's two registry-derived pages, the
+    // conformance score the driver renders from the codegen crates, the
+    // §3.7 capability table the same impls render into the
+    // codegen-gpui crate's own src, the five interpreter lanes'
+    // committed `caps_tables` rows and their five `CONFORMANCE-<backend>`
+    // pages (the moat's six published scores + the shared tables).
+    assert_eq!(text.matches("clean").count(), 10, "{text}");
 }
 
 #[test]
@@ -186,7 +188,7 @@ fn verify_reports_missing_files_as_drift() {
     let text = String::from_utf8(out).expect("utf8");
     // Four artifacts, all missing in the empty root (see the clean
     // count's note).
-    assert_eq!(text.matches("MISSING").count(), 4, "{text}");
+    assert_eq!(text.matches("MISSING").count(), 10, "{text}");
 }
 
 #[test]
