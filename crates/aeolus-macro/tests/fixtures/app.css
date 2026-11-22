@@ -1,0 +1,16 @@
+/* The baked-theme fixture (the macro suite's own `app.css`): the same
+ * shape a web Tailwind v4 project uses — `@theme` tokens plus a `.dark`
+ * block, ONE file, no separate dark sheet. `--color-primary` and
+ * `--color-primary-foreground` carry dark overrides (the T1 pair
+ * surface); `--color-accent` is light-only (the T0 literal surface, the
+ * one the `/opacity` premultiply arm bakes). */
+@theme {
+  --color-primary: #0ea5e9;
+  --color-primary-foreground: #f0f9ff;
+  --color-accent: #f59e0b;
+}
+
+.dark {
+  --color-primary: #ef4444;
+  --color-primary-foreground: #450a0a;
+}
