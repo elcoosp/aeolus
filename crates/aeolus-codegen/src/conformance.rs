@@ -75,6 +75,75 @@ pub trait Capability {
     }
 }
 
+/// One per-longhand verdict row of a committed capability table (the
+/// §3.7 matrix's per-longhand form): the tier the backend's own walk
+/// answers, plus — for a refused longhand only — the typed boundary
+/// reason the walk's report carries. An expressible longhand carries
+/// the empty reason. The GPUI target's generated table
+/// (`aeolus-codegen-gpui/src/caps_generated.rs`) and the five
+/// interpreter backends' committed tables ([`crate::caps_tables`])
+/// share this row shape — one partition, six renderings, all pinned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PropCapability {
+    /// The longhand.
+    pub prop: Prop,
+    /// The tier (the backend's own verdict — the table is pinned equal
+    /// to the walk that produced it).
+    pub tier: Tier,
+    /// The refused longhand's documented boundary (the walk report's
+    /// own text); empty for native and polyfilled longhands.
+    pub reason: &'static str,
+}
+
+/// The committed-table reading of the [`Capability`] seam: one
+/// framework-free static table (the `caps_generated.rs`/`caps_tables`
+/// pattern — committed data, no macro or CLI framework deps), the
+/// `aeolus audit --target <backend>` face's verdict source and the
+/// per-backend docs page's renderer. The rows ARE the backend's own
+/// walk verdicts — each backend's drift pin beside its crate asserts
+/// the table equals a fresh replay, so the published score is the
+/// emitter's behaviour, never a parallel claim.
+pub struct TableCaps {
+    backend: &'static str,
+    rows: &'static [PropCapability],
+}
+
+impl TableCaps {
+    /// A table-backed capability for one backend.
+    pub const fn new(backend: &'static str, rows: &'static [PropCapability]) -> Self {
+        Self { backend, rows }
+    }
+
+    /// The committed rows (the drift pins and the docs pages read
+    /// them directly).
+    pub const fn rows(&self) -> &'static [PropCapability] {
+        self.rows
+    }
+}
+
+impl Capability for TableCaps {
+    fn name(&self) -> &'static str {
+        self.backend
+    }
+
+    fn tier(&self, prop: Prop) -> Tier {
+        self.rows
+            .iter()
+            .find(|row| row.prop == prop)
+            .map(|row| row.tier)
+            .unwrap_or(Tier::Refused)
+    }
+
+    fn reason(&self, prop: Prop) -> Option<&'static str> {
+        let row = self.rows.iter().find(|row| row.prop == prop)?;
+        if row.reason.is_empty() {
+            None
+        } else {
+            Some(row.reason)
+        }
+    }
+}
+
 /// The §5.1 conformance report: one backend's tier partition over
 /// [`Prop::ALL`], the score arithmetic and the rendered audit table.
 /// Deterministic by construction — the same capability reports the
