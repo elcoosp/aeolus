@@ -415,6 +415,76 @@ pub enum Prop {
     /// other three are the per-decl typed refusal (the emit gate's
     /// row-text verdict, the box-shadow preset gate's pattern).
     TextDecorationStyle,
+    // ---- the parity wave 1 tail (cascade tail; the five highest-traffic
+    // missing families, appended in their emission shapes) --------------
+    /// `-webkit-line-clamp` (`line-clamp-{n}`; the `line-clamp-none`
+    /// reset's text is the row's `unset` keyword). The CSS arm renders
+    /// the full composite beside it (v4's own emission: the overflow /
+    /// `-webkit-box` display pair), the plan bridge maps onto the v0.x
+    /// oracle's `TextProperty::LineClamp` slot (the oracle resolves the
+    /// family), and GPUI's pinned surface carries the native
+    /// `Styled::line_clamp` method (verified at the `gpui-pre` pin).
+    LineClamp,
+    /// `font-variant-numeric` (`tabular-nums`, `ordinal`,
+    /// `slashed-zero`, `lining-nums`, `oldstyle-nums`,
+    /// `proportional-nums`, `diagonal-fractions`, `stacked-fractions`,
+    /// and the `normal-nums` reset). The keyword text is the OpenType
+    /// surface's own value; the plan bridge maps onto the v0.x
+    /// oracle's `TextProperty::FontVariantNumeric` slot (the oracle
+    /// resolves `tabular-nums`/`ordinal`), and GPUI composes the tags
+    /// into the native `FontFeatures` slot (`tnum`/`ordn`/`zero`/
+    /// `lnum`/`onum`/`pnum`/`frac`/`dfrn` — verified at the pin).
+    FontVariantNumeric,
+    /// `--tw-space-x-reverse` (`space-x-reverse`): the reverse flip the
+    /// `space-x` child-margin rule composes (v4's own machinery var;
+    /// the value is the 0/1 state the rule reads).
+    SpaceXReverse,
+    /// `--tw-space-x` (`space-x-{n}`): the between-child column margin
+    /// VALUE the child-selector rule fans onto `margin-inline-start`/
+    /// `margin-inline-end` (v4's own `--tw-space-x-reverse` machinery).
+    /// The longhand carries the CHILD-SELECTOR intent — a per-element
+    /// margin slot would fake the between-child semantics; the CSS arm
+    /// renders the `:where(& > :not(:last-child))` rule, the plan
+    /// bridge reports the longhand (no v0.x slot — the grid-auto-flow
+    /// precedent), and GPUI composes it into the `tw_space` wrapper's
+    /// child margins (the POLYFILL tier, the audit gate's classification).
+    SpaceX,
+    /// `--tw-space-y-reverse` (`space-y-reverse`): the row-axis twin.
+    SpaceYReverse,
+    /// `--tw-space-y` (`space-y-{n}`): the between-child row margin
+    /// (`margin-block-start`/`margin-block-end`), the [`Prop::SpaceX`]
+    /// longhand's row-axis twin.
+    SpaceY,
+    /// `--tw-divide-x-reverse` (`divide-x-reverse`): the reverse flip
+    /// the `divide-x` child-border rule composes.
+    DivideXReverse,
+    /// `--tw-divide-y-reverse` (`divide-y-reverse`): the row-axis twin.
+    DivideYReverse,
+    /// `--tw-divide-style` (`divide-{style}`): the between-child border
+    /// STYLE the child-selector rule renders beside v4's
+    /// `--tw-border-style` var machinery. The discriminant sits between
+    /// the reverse flips and the width longhands so the CSS arm's
+    /// cascade sort renders the child rule's lines in the upstream
+    /// emission order (the reverse var, the style lines, the widths).
+    DivideStyle,
+    /// `--tw-divide-x` (`divide-x`/`divide-x-{n}`): the between-child
+    /// column border WIDTH (`border-inline-start`/`end`), the
+    /// [`Prop::SpaceX`] longhand's border twin.
+    DivideX,
+    /// `--tw-divide-y` (`divide-y`/`divide-y-{n}`): the between-child
+    /// row border WIDTH (`border-top`/`bottom`), the [`Prop::DivideX`]
+    /// longhand's row-axis twin.
+    DivideY,
+    /// `--tw-divide-color` (`divide-{color}`): the between-child border
+    /// COLOUR the child-selector rule renders.
+    DivideColor,
+    /// `clip-path` (`sr-only`'s clip leg — `clip-path: inset(50%)`, the
+    /// real tailwindcss v4.1.17 emission the corpus pins; the
+    /// composite's other legs ride the EXISTING longhands, the
+    /// truncate multi-row precedent). The CSS/interp arms render it;
+    /// every framework backend reports it (no framework carries a
+    /// clip-path slot — the honest refusal the audit gates run).
+    ClipPath,
 }
 
 impl Prop {
@@ -567,6 +637,19 @@ impl Prop {
         Self::TextDecorationColor,
         Self::TextDecorationThickness,
         Self::TextDecorationStyle,
+        Self::LineClamp,
+        Self::FontVariantNumeric,
+        Self::SpaceXReverse,
+        Self::SpaceX,
+        Self::SpaceYReverse,
+        Self::SpaceY,
+        Self::DivideXReverse,
+        Self::DivideYReverse,
+        Self::DivideStyle,
+        Self::DivideX,
+        Self::DivideY,
+        Self::DivideColor,
+        Self::ClipPath,
     ];
 
     /// The CSS longhand name (`padding-top`, `grid-template-columns`, ...).
@@ -727,6 +810,26 @@ impl Prop {
             Prop::TextDecorationColor => "text-decoration-color",
             Prop::TextDecorationThickness => "text-decoration-thickness",
             Prop::TextDecorationStyle => "text-decoration-style",
+            // The parity wave 1 tail: the clamp/variant longhands render
+            // their real CSS properties (the oracle's own spellings),
+            // the child-selector families render their machinery var
+            // names (the ring/gradient `--tw-*` precedent — the CSS
+            // arm's child-rule lines carry the real property names
+            // beside them), and the sr-only composite's clip leg is the
+            // real property.
+            Prop::LineClamp => "-webkit-line-clamp",
+            Prop::FontVariantNumeric => "font-variant-numeric",
+            Prop::SpaceXReverse => "--tw-space-x-reverse",
+            Prop::SpaceX => "--tw-space-x",
+            Prop::SpaceYReverse => "--tw-space-y-reverse",
+            Prop::SpaceY => "--tw-space-y",
+            Prop::DivideXReverse => "--tw-divide-x-reverse",
+            Prop::DivideYReverse => "--tw-divide-y-reverse",
+            Prop::DivideStyle => "--tw-divide-style",
+            Prop::DivideX => "--tw-divide-x",
+            Prop::DivideY => "--tw-divide-y",
+            Prop::DivideColor => "--tw-divide-color",
+            Prop::ClipPath => "clip-path",
         }
     }
 }
@@ -746,9 +849,11 @@ impl Prop {
 /// `size-4` vs `w-4`) is `union`/`contains` — no per-backend tables.
 ///
 /// The budget is asserted, not assumed: the two words hold 256 bits
-/// against the current 146-longhand surface (the filter + backdrop
+/// against the current 159-longhand surface (the filter + backdrop
 /// layers' twenty, the content longhand, and the decoration half's
-/// three are the latest append-only blocks; append-only growth is the
+/// three, the parity wave 1 tail's thirteen — line-clamp,
+/// font-variant-numeric, the space/divide child-selector families'
+/// ten and the sr-only composite's clip leg; append-only growth is the
 /// plan's own rule) — see
 /// `prop_mask_fits_two_words` in tests.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
