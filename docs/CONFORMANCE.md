@@ -167,3 +167,5 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `grid-auto-flow` | refused |
 | `content` | refused |
 | `clip-path` | refused |
+
+**corpus at scale: 2992 entries — 76.97% expressible** (per-entry share of the expanded golden.corpus; an entry counts when every lowered longhand lands native/polyfill. The ceiling score above is the per-longhand share over the 159 longhands — the two answer different questions.)
