@@ -301,8 +301,8 @@ fn condition_specificity_matches_the_v4_cascade_ranks() {
         Cond::Hover,
         Cond::Disabled,
         Cond::Selection,
-        Cond::GroupHover,
-        Cond::PeerFocus,
+        Cond::GroupHover { name: None },
+        Cond::PeerFocus { name: None },
         Cond::Bp(Bp::Md),
         Cond::Max(Bp::Sm),
         Cond::Container {
@@ -348,22 +348,25 @@ fn parent_relative_compositions_rank_and_spell_with_their_family() {
     // pair, and each reconstructs its closed spelling (the
     // validation/element-state arm's shape — the bare-variant table).
     for (cond, text) in [
-        (Cond::GroupActive, "group-active"),
-        (Cond::GroupFocusVisible, "group-focus-visible"),
-        (Cond::GroupFocusWithin, "group-focus-within"),
-        (Cond::GroupDisabled, "group-disabled"),
-        (Cond::GroupVisited, "group-visited"),
-        (Cond::GroupChecked, "group-checked"),
-        (Cond::PeerActive, "peer-active"),
-        (Cond::PeerFocusVisible, "peer-focus-visible"),
-        (Cond::PeerFocusWithin, "peer-focus-within"),
-        (Cond::PeerDisabled, "peer-disabled"),
-        (Cond::PeerVisited, "peer-visited"),
-        (Cond::PeerChecked, "peer-checked"),
+        (Cond::GroupActive { name: None }, "group-active"),
+        (
+            Cond::GroupFocusVisible { name: None },
+            "group-focus-visible",
+        ),
+        (Cond::GroupFocusWithin { name: None }, "group-focus-within"),
+        (Cond::GroupDisabled { name: None }, "group-disabled"),
+        (Cond::GroupVisited { name: None }, "group-visited"),
+        (Cond::GroupChecked { name: None }, "group-checked"),
+        (Cond::PeerActive { name: None }, "peer-active"),
+        (Cond::PeerFocusVisible { name: None }, "peer-focus-visible"),
+        (Cond::PeerFocusWithin { name: None }, "peer-focus-within"),
+        (Cond::PeerDisabled { name: None }, "peer-disabled"),
+        (Cond::PeerVisited { name: None }, "peer-visited"),
+        (Cond::PeerChecked { name: None }, "peer-checked"),
     ] {
         assert_eq!(
             cond.specificity(),
-            Cond::GroupHover.specificity(),
+            Cond::GroupHover { name: None }.specificity(),
             "{text} ranks with the parent-relative tier"
         );
         assert_eq!(cond.source(), Some(text), "{text} round-trips source()");
