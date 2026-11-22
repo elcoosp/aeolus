@@ -26,6 +26,9 @@ smallvec = "1"
 tracing = "0.1"
 
 [dev-dependencies]
+# The committed capability table the drift pin reads (the walk's own
+# freeze — the conformance moat's one-source rule).
+aeolus-codegen = { workspace = true }
 # The V1 compile seam builds the static programs the program lane walks,
 # and the plan bridge feeds the differential pins.
 aeolus-compile = { path = "../aeolus-compile" }
