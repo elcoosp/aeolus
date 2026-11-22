@@ -52,6 +52,7 @@
 
 use std::sync::Arc;
 
+pub mod caps;
 pub mod program;
 
 // The backend-neutral static front door (plan §3.6 surface 1–2 for
