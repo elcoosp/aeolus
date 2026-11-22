@@ -842,26 +842,46 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
                 env.range_bounded = true;
                 env.range_in = false;
             }
-            Cond::GroupHover => env.group_hover = true,
-            Cond::GroupFocus => env.group_focus = true,
+            Cond::GroupHover { name: None } => env.group_hover = true,
+            Cond::GroupFocus { name: None } => env.group_focus = true,
             // The composition tier sets its own fact (the differential
             // harness answers the walk both sides with the SAME env —
             // each composition is its own probe, the landed pair's
             // shape).
-            Cond::GroupFocusVisible => env.group_focus_visible = true,
-            Cond::GroupFocusWithin => env.group_focus_within = true,
-            Cond::GroupActive => env.group_active = true,
-            Cond::GroupDisabled => env.group_disabled = true,
-            Cond::GroupVisited => env.group_visited = true,
-            Cond::GroupChecked => env.group_checked = true,
-            Cond::PeerHover => env.peer_hover = true,
-            Cond::PeerFocus => env.peer_focus = true,
-            Cond::PeerFocusVisible => env.peer_focus_visible = true,
-            Cond::PeerFocusWithin => env.peer_focus_within = true,
-            Cond::PeerActive => env.peer_active = true,
-            Cond::PeerDisabled => env.peer_disabled = true,
-            Cond::PeerVisited => env.peer_visited = true,
-            Cond::PeerChecked => env.peer_checked = true,
+            Cond::GroupFocusVisible { name: None } => env.group_focus_visible = true,
+            Cond::GroupFocusWithin { name: None } => env.group_focus_within = true,
+            Cond::GroupActive { name: None } => env.group_active = true,
+            Cond::GroupDisabled { name: None } => env.group_disabled = true,
+            Cond::GroupVisited { name: None } => env.group_visited = true,
+            Cond::GroupChecked { name: None } => env.group_checked = true,
+            Cond::PeerHover { name: None } => env.peer_hover = true,
+            Cond::PeerFocus { name: None } => env.peer_focus = true,
+            Cond::PeerFocusVisible { name: None } => env.peer_focus_visible = true,
+            Cond::PeerFocusWithin { name: None } => env.peer_focus_within = true,
+            Cond::PeerActive { name: None } => env.peer_active = true,
+            Cond::PeerDisabled { name: None } => env.peer_disabled = true,
+            Cond::PeerVisited { name: None } => env.peer_visited = true,
+            Cond::PeerChecked { name: None } => env.peer_checked = true,
+            // The NAMED label forms are not the unnamed fact — the env
+            // booleans answer the BARE spelling only (the interp's own
+            // reading; the named condition names its group). The
+            // battery's env leaves them the quiet miss.
+            Cond::GroupHover { name: Some(_) }
+            | Cond::GroupFocus { name: Some(_) }
+            | Cond::GroupFocusVisible { name: Some(_) }
+            | Cond::GroupFocusWithin { name: Some(_) }
+            | Cond::GroupActive { name: Some(_) }
+            | Cond::GroupDisabled { name: Some(_) }
+            | Cond::GroupVisited { name: Some(_) }
+            | Cond::GroupChecked { name: Some(_) }
+            | Cond::PeerHover { name: Some(_) }
+            | Cond::PeerFocus { name: Some(_) }
+            | Cond::PeerFocusVisible { name: Some(_) }
+            | Cond::PeerFocusWithin { name: Some(_) }
+            | Cond::PeerActive { name: Some(_) }
+            | Cond::PeerDisabled { name: Some(_) }
+            | Cond::PeerVisited { name: Some(_) }
+            | Cond::PeerChecked { name: Some(_) } => {}
             Cond::Bp(bp) | Cond::Min(bp) => env.viewport_rem = env.viewport_rem.max(bp.rem()),
             Cond::Max(bp) => {
                 let below = (bp.rem() - 0.5).max(0.0);
@@ -1001,25 +1021,41 @@ fn cond_label(cond: &Cond) -> String {
         Cond::FileSelector => "file".to_string(),
         Cond::Backdrop => "backdrop".to_string(),
         Cond::DetailsContent => "details-content".to_string(),
-        Cond::GroupHover => "group-hover".to_string(),
-        Cond::GroupFocus => "group-focus".to_string(),
+        Cond::GroupHover { name: None } => "group-hover".to_string(),
+        Cond::GroupHover { name: Some(label) } => format!("group-hover/{label}"),
+        Cond::GroupFocus { name: None } => "group-focus".to_string(),
+        Cond::GroupFocus { name: Some(label) } => format!("group-focus/{label}"),
         // The composition spellings reconstruct from the closed table
         // (the pseudo-element tier's bare-variant shape — the
         // condition names the composed state's own spelling).
-        Cond::GroupFocusVisible => "group-focus-visible".to_string(),
-        Cond::GroupFocusWithin => "group-focus-within".to_string(),
-        Cond::GroupActive => "group-active".to_string(),
-        Cond::GroupDisabled => "group-disabled".to_string(),
-        Cond::GroupVisited => "group-visited".to_string(),
-        Cond::GroupChecked => "group-checked".to_string(),
-        Cond::PeerHover => "peer-hover".to_string(),
-        Cond::PeerFocus => "peer-focus".to_string(),
-        Cond::PeerFocusVisible => "peer-focus-visible".to_string(),
-        Cond::PeerFocusWithin => "peer-focus-within".to_string(),
-        Cond::PeerActive => "peer-active".to_string(),
-        Cond::PeerDisabled => "peer-disabled".to_string(),
-        Cond::PeerVisited => "peer-visited".to_string(),
-        Cond::PeerChecked => "peer-checked".to_string(),
+        Cond::GroupFocusVisible { name: None } => "group-focus-visible".to_string(),
+        Cond::GroupFocusVisible { name: Some(label) } => format!("group-focus-visible/{label}"),
+        Cond::GroupFocusWithin { name: None } => "group-focus-within".to_string(),
+        Cond::GroupFocusWithin { name: Some(label) } => format!("group-focus-within/{label}"),
+        Cond::GroupActive { name: None } => "group-active".to_string(),
+        Cond::GroupActive { name: Some(label) } => format!("group-active/{label}"),
+        Cond::GroupDisabled { name: None } => "group-disabled".to_string(),
+        Cond::GroupDisabled { name: Some(label) } => format!("group-disabled/{label}"),
+        Cond::GroupVisited { name: None } => "group-visited".to_string(),
+        Cond::GroupVisited { name: Some(label) } => format!("group-visited/{label}"),
+        Cond::GroupChecked { name: None } => "group-checked".to_string(),
+        Cond::GroupChecked { name: Some(label) } => format!("group-checked/{label}"),
+        Cond::PeerHover { name: None } => "peer-hover".to_string(),
+        Cond::PeerHover { name: Some(label) } => format!("peer-hover/{label}"),
+        Cond::PeerFocus { name: None } => "peer-focus".to_string(),
+        Cond::PeerFocus { name: Some(label) } => format!("peer-focus/{label}"),
+        Cond::PeerFocusVisible { name: None } => "peer-focus-visible".to_string(),
+        Cond::PeerFocusVisible { name: Some(label) } => format!("peer-focus-visible/{label}"),
+        Cond::PeerFocusWithin { name: None } => "peer-focus-within".to_string(),
+        Cond::PeerFocusWithin { name: Some(label) } => format!("peer-focus-within/{label}"),
+        Cond::PeerActive { name: None } => "peer-active".to_string(),
+        Cond::PeerActive { name: Some(label) } => format!("peer-active/{label}"),
+        Cond::PeerDisabled { name: None } => "peer-disabled".to_string(),
+        Cond::PeerDisabled { name: Some(label) } => format!("peer-disabled/{label}"),
+        Cond::PeerVisited { name: None } => "peer-visited".to_string(),
+        Cond::PeerVisited { name: Some(label) } => format!("peer-visited/{label}"),
+        Cond::PeerChecked { name: None } => "peer-checked".to_string(),
+        Cond::PeerChecked { name: Some(label) } => format!("peer-checked/{label}"),
         Cond::Bp(bp) | Cond::Min(bp) => bp.name().to_string(),
         Cond::Max(bp) => format!("max-{}", bp.name()),
         Cond::Container {
