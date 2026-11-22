@@ -1,0 +1,29 @@
+# The §4 instruction-count golden's nightly half: the iai-callgrind
+# gate runs ONLY on the nightly toolchain under valgrind (the
+# iai-callgrind contract), pinning the five representative strings'
+# instruction counts to ±3% of the committed baseline. The stable
+# benches stay the wall-clock half (perf.yml).
+
+name: iai-nightly
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  instruction-counts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install valgrind (the iai-callgrind contract)
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Run the instruction-count golden
+        run: |
+          cargo +nightly bench -p aeolus-gpui --bench iai_contract \
+            -- --save-baseline iai-contract
