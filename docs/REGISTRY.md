@@ -217,3 +217,37 @@ Generated from `aeolus-data`'s committed rows — do not edit.
 | `backdrop-saturate` | any-of | --tw-backdrop-saturate | `backdrop-saturate` | no | utilities.ts backdrop-saturate (registry-local group; oracle None) |
 | `backdrop-sepia` | any-of | --tw-backdrop-sepia | `backdrop-sepia` | no | utilities.ts backdrop-sepia (registry-local group; oracle None) |
 | `backdrop-filter` | any-of | backdrop-filter | `backdrop-filter` | no | utilities.ts backdrop-filter (registry-local group; oracle None) |
+| `line-clamp` | any-of | -webkit-line-clamp | `line-clamp` | no | utilities.ts line-clamp (registry-local group; oracle None) |
+| `normal-nums` | bare | font-variant-numeric | `font-variant-numeric` | no | utilities.ts font-variant-numeric (registry-local group; oracle None) |
+| `ordinal` | bare | font-variant-numeric | `font-variant-numeric` | no | utilities.ts font-variant-numeric (registry-local group; oracle None) |
+| `slashed-zero` | bare | font-variant-numeric | `font-variant-numeric` | no | utilities.ts font-variant-numeric (registry-local group; oracle None) |
+| `lining-nums` | bare | font-variant-numeric | `font-variant-numeric` | no | utilities.ts font-variant-numeric (registry-local group; oracle None) |
+| `oldstyle-nums` | bare | font-variant-numeric | `font-variant-numeric` | no | utilities.ts font-variant-numeric (registry-local group; oracle None) |
+| `proportional-nums` | bare | font-variant-numeric | `font-variant-numeric` | no | utilities.ts font-variant-numeric (registry-local group; oracle None) |
+| `tabular-nums` | bare | font-variant-numeric | `font-variant-numeric` | no | utilities.ts font-variant-numeric (registry-local group; oracle None) |
+| `diagonal-fractions` | bare | font-variant-numeric | `font-variant-numeric` | no | utilities.ts font-variant-numeric (registry-local group; oracle None) |
+| `stacked-fractions` | bare | font-variant-numeric | `font-variant-numeric` | no | utilities.ts font-variant-numeric (registry-local group; oracle None) |
+| `space-x` | any-of | --tw-space-x | `space-x` | yes | utilities.ts space-x (registry-local group; oracle None) |
+| `space-y` | any-of | --tw-space-y | `space-y` | yes | utilities.ts space-y (registry-local group; oracle None) |
+| `space-x-reverse` | bare | --tw-space-x-reverse | `space-x` | no | utilities.ts space-x-reverse (registry-local group; oracle None) |
+| `space-y-reverse` | bare | --tw-space-y-reverse | `space-y` | no | utilities.ts space-y-reverse (registry-local group; oracle None) |
+| `divide-x` | any-of | --tw-divide-x | `divide-x` | no | utilities.ts divide-x (registry-local group; oracle None) |
+| `divide-y` | any-of | --tw-divide-y | `divide-y` | no | utilities.ts divide-y (registry-local group; oracle None) |
+| `divide-x-reverse` | bare | --tw-divide-x-reverse | `divide-x` | no | utilities.ts divide-x-reverse (registry-local group; oracle None) |
+| `divide-y-reverse` | bare | --tw-divide-y-reverse | `divide-y` | no | utilities.ts divide-y-reverse (registry-local group; oracle None) |
+| `divide` | keywords | --tw-divide-style | `divide-style` | no | utilities.ts divide-style (registry-local group; oracle None) |
+| `divide` | keywords | --tw-divide-color | `divide-color` | no | utilities.ts divide-color (registry-local group; oracle None) |
+| `divide` | arbitrary | --tw-divide-color | `divide-color` | no | utilities.ts divide-color (registry-local group; oracle None) |
+| `sr-only` | bare | position | `sr-only` | no | utilities.ts sr-only (registry-local group; oracle None) |
+| `sr-only` | bare | width, height | `sr-only` | no | utilities.ts sr-only (registry-local group; oracle None) |
+| `sr-only` | bare | padding-top, padding-right, padding-bottom, padding-left, border-top-width, border-right-width, border-bottom-width, border-left-width | `sr-only` | no | utilities.ts sr-only (registry-local group; oracle None) |
+| `sr-only` | bare | margin-top, margin-right, margin-bottom, margin-left | `sr-only` | no | utilities.ts sr-only (registry-local group; oracle None) |
+| `sr-only` | bare | overflow-x, overflow-y | `sr-only` | no | utilities.ts sr-only (registry-local group; oracle None) |
+| `sr-only` | bare | clip-path | `sr-only` | no | utilities.ts sr-only (registry-local group; oracle None) |
+| `sr-only` | bare | white-space | `sr-only` | no | utilities.ts sr-only (registry-local group; oracle None) |
+| `not-sr-only` | bare | position | `sr-only` | no | utilities.ts not-sr-only (registry-local group; oracle None) |
+| `not-sr-only` | bare | width, height | `sr-only` | no | utilities.ts not-sr-only (registry-local group; oracle None) |
+| `not-sr-only` | bare | padding-top, padding-right, padding-bottom, padding-left, margin-top, margin-right, margin-bottom, margin-left | `sr-only` | no | utilities.ts not-sr-only (registry-local group; oracle None) |
+| `not-sr-only` | bare | overflow-x, overflow-y | `sr-only` | no | utilities.ts not-sr-only (registry-local group; oracle None) |
+| `not-sr-only` | bare | clip-path | `sr-only` | no | utilities.ts not-sr-only (registry-local group; oracle None) |
+| `not-sr-only` | bare | white-space | `sr-only` | no | utilities.ts not-sr-only (registry-local group; oracle None) |
