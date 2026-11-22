@@ -122,7 +122,10 @@ fn number_forms_render_their_units() {
     )
     .expect("non-empty input renders");
     let text = sheet.to_string();
-    assert!(text.contains("--tw-rotate: 45deg;"), "{text}");
+    // The transform row's v4.1.17-true form (the golden corpus's own
+    // bytes): the 2D rotation writes the bare `rotate:` property, no
+    // var — the wave's corpus-differential pin.
+    assert!(text.contains("rotate: 45deg;"), "{text}");
     assert!(text.contains("opacity: 50%;"), "{text}");
     assert!(text.contains("stroke-width: 2px;"), "{text}");
     assert!(
@@ -173,11 +176,17 @@ fn named_group_and_peer_render_combinators() {
     let sheet = emit_css("group-hover/menu:p-4 peer-focus:p-2", &Config::default())
         .expect("non-empty input renders");
     let text = sheet.to_string();
+    // The v4.1.17 compound mechanism's own bytes (the corpus pins them):
+    // the conjunct rides the class head, the label escaped inside
+    // `:where(...)`, the peer side the `~ ` sibling combinator.
     assert!(
-        text.contains(".group\\/menu:hover .group-hover\\/menu\\:p-4 {"),
+        text.contains(".group-hover\\/menu\\:p-4:is(:where(.group\\/menu):hover *) {"),
         "{text}"
     );
-    assert!(text.contains(".peer:focus ~ .peer-focus\\:p-2 {"), "{text}");
+    assert!(
+        text.contains(".peer-focus\\:p-2:is(:where(.peer):focus ~ *) {"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -405,19 +414,19 @@ fn the_two_walks_report_identically_themed() {
 
 #[test]
 fn group_and_peer_compositions_render_the_state_heads() {
-    // The composition heads render like the landed probes do: the group
-    // head is a descendant conjunct (`.group:active`), the peer head the
-    // sibling conjunct (`.peer:disabled ~`) — the upstream `group` /
-    // `peer` compound mechanisms' own relations (descendant vs `~ *`).
+    // The composition heads render the v4.1.17 compound mechanism's own
+    // bytes (the corpus pins them): the conjunct rides the class head —
+    // the descendant relation inside `:is(:where(.group):active *)`, the
+    // sibling one the `~ *` combinator inside the peer form.
     let sheet = emit_css("group-active:p-4 peer-disabled:p-2", &Config::default())
         .expect("the sheet renders");
     let text = sheet.to_string();
     assert!(
-        text.contains(".group:active .group-active\\:p-4 {"),
+        text.contains(".group-active\\:p-4:is(:where(.group):active *) {"),
         "the group head renders the composed state: {text}"
     );
     assert!(
-        text.contains(".peer:disabled ~ .peer-disabled\\:p-2 {"),
+        text.contains(".peer-disabled\\:p-2:is(:where(.peer):disabled ~ *) {"),
         "the peer head renders the composed state: {text}"
     );
     // The label form rides the head (the group-hover/menu precedent).
@@ -425,7 +434,9 @@ fn group_and_peer_compositions_render_the_state_heads() {
         emit_css("group-focus-visible/menu:p-1", &Config::default()).expect("the sheet renders");
     let text = labelled.to_string();
     assert!(
-        text.contains(".group\\/menu:focus-visible .group-focus-visible\\/menu\\:p-1 {"),
+        text.contains(
+            ".group-focus-visible\\/menu\\:p-1:is(:where(.group\\/menu):focus-visible *) {"
+        ),
         "the labelled head renders the composed state: {text}"
     );
 }
