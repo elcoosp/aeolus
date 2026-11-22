@@ -14,6 +14,14 @@ publish = false
 [dependencies]
 aeolus-core = { path = "../aeolus-core" }
 aeolus-rt = { path = "../aeolus-rt" }
+# The backend-neutral static front door: the macro entries the prelude
+# re-exports below (`tw_static!`/`cn_static!`/`variants_static!` — no
+# GPUI audit; the macro crate stays framework-free, so this adds no
+# framework dependency here either).
+# The macro expansion's emitted consts name the IR types
+# (`::aeolus_ir::Layer`/`Decl`/`Val`) — the frozen program is IR data.
+aeolus-ir = { workspace = true }
+aeolus-macro = { workspace = true }
 masonry = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
 xilem_masonry = { git = "https://github.com/linebender/xilem", rev = "dc496876a2f6ff2ce7687bfc8c19bd311bb553dc" }
 tracing = "0.1"
