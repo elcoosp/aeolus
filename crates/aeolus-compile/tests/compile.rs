@@ -310,10 +310,25 @@ fn stacked_variants_fold_to_the_dominant_condition() {
 
 #[test]
 fn named_group_variants_fold_to_the_probe() {
-    // `group-hover/menu` folds to the GroupHover probe; the NAME has no
-    // IR slot yet (documented boundary, cond.rs).
+    // `group-hover/menu` folds to the GroupHover probe WITH the label
+    // riding the IR slot (the named-container fold's own rule — the
+    // condition IS which group the question tests).
     let compiled = compile("group-hover/menu:p-0", &Config::default()).expect("compiles");
-    assert_eq!(compiled.program.layers[0].cond, Cond::GroupHover);
+    assert_eq!(
+        compiled.program.layers[0].cond,
+        Cond::GroupHover { name: Some("menu") }
+    );
+    // The bare form is the unnamed fold (the env's boolean fact).
+    let bare = compile("group-hover:p-0", &Config::default()).expect("compiles");
+    assert_eq!(bare.program.layers[0].cond, Cond::GroupHover { name: None });
+    // An empty label is the unknown-variant refusal (the named-container
+    // form's own guard), never a silent unnamed fold — the utility
+    // skips with the typed diagnostic.
+    let empty = compile("group-hover/:p-0", &Config::default()).expect("the walk reports");
+    assert!(
+        empty.program.layers.is_empty() && !empty.diagnostics.is_empty(),
+        "the empty label refuses with the typed diagnostic"
+    );
 }
 
 #[test]
@@ -326,18 +341,30 @@ fn group_and_peer_compositions_fold_the_full_probe_state_set() {
     // composition is its own typed probe; the label form rides the
     // group-hover/menu precedent.
     let cases = [
-        ("group-active:p-0", Cond::GroupActive),
-        ("group-focus-visible:p-0", Cond::GroupFocusVisible),
-        ("group-focus-within:p-0", Cond::GroupFocusWithin),
-        ("group-disabled:p-0", Cond::GroupDisabled),
-        ("group-visited:p-0", Cond::GroupVisited),
-        ("group-checked:p-0", Cond::GroupChecked),
-        ("peer-active:p-0", Cond::PeerActive),
-        ("peer-focus-visible:p-0", Cond::PeerFocusVisible),
-        ("peer-focus-within:p-0", Cond::PeerFocusWithin),
-        ("peer-disabled:p-0", Cond::PeerDisabled),
-        ("peer-visited:p-0", Cond::PeerVisited),
-        ("peer-checked:p-0", Cond::PeerChecked),
+        ("group-active:p-0", Cond::GroupActive { name: None }),
+        (
+            "group-focus-visible:p-0",
+            Cond::GroupFocusVisible { name: None },
+        ),
+        (
+            "group-focus-within:p-0",
+            Cond::GroupFocusWithin { name: None },
+        ),
+        ("group-disabled:p-0", Cond::GroupDisabled { name: None }),
+        ("group-visited:p-0", Cond::GroupVisited { name: None }),
+        ("group-checked:p-0", Cond::GroupChecked { name: None }),
+        ("peer-active:p-0", Cond::PeerActive { name: None }),
+        (
+            "peer-focus-visible:p-0",
+            Cond::PeerFocusVisible { name: None },
+        ),
+        (
+            "peer-focus-within:p-0",
+            Cond::PeerFocusWithin { name: None },
+        ),
+        ("peer-disabled:p-0", Cond::PeerDisabled { name: None }),
+        ("peer-visited:p-0", Cond::PeerVisited { name: None }),
+        ("peer-checked:p-0", Cond::PeerChecked { name: None }),
     ];
     for (input, expected) in cases {
         let compiled = compile(input, &Config::default()).expect("compiles");
@@ -348,22 +375,25 @@ fn group_and_peer_compositions_fold_the_full_probe_state_set() {
         );
         assert_eq!(compiled.program.layers[0].cond, expected, "{input}");
     }
-    // The named-label form drops the name on the IR tier (the
-    // group-hover/menu precedent — head decoration, not a slot).
+    // The named-label form rides the IR slot (the group-hover/menu
+    // precedent — the condition names its group).
     let labelled = compile("group-active/menu:p-0", &Config::default()).expect("compiles");
-    assert_eq!(labelled.program.layers[0].cond, Cond::GroupActive);
+    assert_eq!(
+        labelled.program.layers[0].cond,
+        Cond::GroupActive { name: Some("menu") }
+    );
     // The composition tier ranks with its family: parent-relative
     // (rank 3), above the element-own probes, below the at-rules.
     assert_eq!(
-        Cond::GroupActive.specificity(),
-        Cond::GroupHover.specificity()
+        Cond::GroupActive { name: None }.specificity(),
+        Cond::GroupHover { name: None }.specificity()
     );
     assert_eq!(
-        Cond::PeerDisabled.specificity(),
-        Cond::PeerHover.specificity()
+        Cond::PeerDisabled { name: None }.specificity(),
+        Cond::PeerHover { name: None }.specificity()
     );
     assert!(
-        Cond::GroupActive.specificity() > Cond::Disabled.specificity(),
+        Cond::GroupActive { name: None }.specificity() > Cond::Disabled.specificity(),
         "parent-relative outranks the element-own probe"
     );
 }
