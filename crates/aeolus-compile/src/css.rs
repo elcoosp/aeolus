@@ -766,20 +766,16 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
             | "group-visited"
             | "group-checked" => {
                 let probe = name.strip_prefix("group-").unwrap_or(name);
-                set.parent = Some(match label {
-                    "" => format!(".group:{probe}"),
-                    l => format!(".group/{l}:{probe}"),
-                });
+                let label = (!label.is_empty()).then_some(label);
+                set.probes.push(group_state_probe("group", probe, label));
                 set.peer = false;
             }
             "peer-hover" | "peer-focus" | "peer-focus-visible" | "peer-focus-within"
             | "peer-active" | "peer-disabled" | "peer-visited" | "peer-checked" => {
                 let probe = name.strip_prefix("peer-").unwrap_or(name);
-                set.parent = Some(match label {
-                    "" => format!(".peer:{probe}"),
-                    l => format!(".peer/{l}:{probe}"),
-                });
-                set.peer = true;
+                let label = (!label.is_empty()).then_some(label);
+                set.probes.push(group_state_probe("peer", probe, label));
+                set.peer = false;
             }
             // The direction family: the selector-side probe (the
             // upstream static-variant selectors, the fold's typed bit
@@ -800,6 +796,23 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
 /// typed [`Cond`] itself (an alias carries no group/peer LABEL, so the
 /// unnamed head forms render; a `Cond::Base` alias renders no
 /// condition, the flat model's honest reading).
+/// The parent-relative state conjunct the corpus pins (the v4.1.17
+/// compound mechanism's own bytes): `:is(:where(.group):hover *)` bare,
+/// `:is(:where(.group\/menu):hover *)` named, the peer side the `~ `
+/// sibling combinator inside (`:is(:where(.peer\/menu):disabled ~ *)`).
+/// One shape, the alias path and the spelling path render the same
+/// conjunct, the agreement the tests pin.
+fn group_state_probe(prefix: &str, probe: &str, name: Option<&str>) -> String {
+    let head = match name {
+        Some(label) => format!(".{}{}", prefix, escape_class(&format!("/{label}"))),
+        None => format!(".{prefix}"),
+    };
+    match prefix {
+        "peer" => format!(":is(:where({head}):{probe} ~ *)"),
+        _ => format!(":is(:where({head}):{probe} *)"),
+    }
+}
+
 fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
     use aeolus_ir::Cond;
     match cond {
@@ -868,73 +881,78 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         Cond::FileSelector => set.pseudos.push("::file-selector-button"),
         Cond::Backdrop => set.pseudos.push("::backdrop"),
         Cond::DetailsContent => set.pseudos.push("::details-content"),
-        Cond::GroupHover => {
-            set.parent = Some(".group:hover".to_string());
+        Cond::GroupHover { name } => {
+            set.probes.push(group_state_probe("group", "hover", name));
             set.peer = false;
         }
-        Cond::GroupFocus => {
-            set.parent = Some(".group:focus".to_string());
+        Cond::GroupFocus { name } => {
+            set.probes.push(group_state_probe("group", "focus", name));
             set.peer = false;
         }
         // The composition tier renders the same conjunctive head the
         // landed pair does — the composed state rides the group head's
         // pseudo-class slot (the head text is the relation's selector,
         // only the state differs).
-        Cond::GroupFocusVisible => {
-            set.parent = Some(".group:focus-visible".to_string());
+        Cond::GroupFocusVisible { name } => {
+            set.probes
+                .push(group_state_probe("group", "focus-visible", name));
             set.peer = false;
         }
-        Cond::GroupFocusWithin => {
-            set.parent = Some(".group:focus-within".to_string());
+        Cond::GroupFocusWithin { name } => {
+            set.probes
+                .push(group_state_probe("group", "focus-within", name));
             set.peer = false;
         }
-        Cond::GroupActive => {
-            set.parent = Some(".group:active".to_string());
+        Cond::GroupActive { name } => {
+            set.probes.push(group_state_probe("group", "active", name));
             set.peer = false;
         }
-        Cond::GroupDisabled => {
-            set.parent = Some(".group:disabled".to_string());
+        Cond::GroupDisabled { name } => {
+            set.probes
+                .push(group_state_probe("group", "disabled", name));
             set.peer = false;
         }
-        Cond::GroupVisited => {
-            set.parent = Some(".group:visited".to_string());
+        Cond::GroupVisited { name } => {
+            set.probes.push(group_state_probe("group", "visited", name));
             set.peer = false;
         }
-        Cond::GroupChecked => {
-            set.parent = Some(".group:checked".to_string());
+        Cond::GroupChecked { name } => {
+            set.probes.push(group_state_probe("group", "checked", name));
             set.peer = false;
         }
-        Cond::PeerHover => {
-            set.parent = Some(".peer:hover".to_string());
-            set.peer = true;
+        Cond::PeerHover { name } => {
+            set.probes.push(group_state_probe("peer", "hover", name));
+            set.peer = false;
         }
-        Cond::PeerFocus => {
-            set.parent = Some(".peer:focus".to_string());
-            set.peer = true;
+        Cond::PeerFocus { name } => {
+            set.probes.push(group_state_probe("peer", "focus", name));
+            set.peer = false;
         }
-        Cond::PeerFocusVisible => {
-            set.parent = Some(".peer:focus-visible".to_string());
-            set.peer = true;
+        Cond::PeerFocusVisible { name } => {
+            set.probes
+                .push(group_state_probe("peer", "focus-visible", name));
+            set.peer = false;
         }
-        Cond::PeerFocusWithin => {
-            set.parent = Some(".peer:focus-within".to_string());
-            set.peer = true;
+        Cond::PeerFocusWithin { name } => {
+            set.probes
+                .push(group_state_probe("peer", "focus-within", name));
+            set.peer = false;
         }
-        Cond::PeerActive => {
-            set.parent = Some(".peer:active".to_string());
-            set.peer = true;
+        Cond::PeerActive { name } => {
+            set.probes.push(group_state_probe("peer", "active", name));
+            set.peer = false;
         }
-        Cond::PeerDisabled => {
-            set.parent = Some(".peer:disabled".to_string());
-            set.peer = true;
+        Cond::PeerDisabled { name } => {
+            set.probes.push(group_state_probe("peer", "disabled", name));
+            set.peer = false;
         }
-        Cond::PeerVisited => {
-            set.parent = Some(".peer:visited".to_string());
-            set.peer = true;
+        Cond::PeerVisited { name } => {
+            set.probes.push(group_state_probe("peer", "visited", name));
+            set.peer = false;
         }
-        Cond::PeerChecked => {
-            set.parent = Some(".peer:checked".to_string());
-            set.peer = true;
+        Cond::PeerChecked { name } => {
+            set.probes.push(group_state_probe("peer", "checked", name));
+            set.peer = false;
         }
         // The attribute probes: the corpus's attribute-test form (the
         // value quotes, the presence test stays bare, the has- inner
