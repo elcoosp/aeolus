@@ -62,6 +62,7 @@ use i_slint_core::graphics::{
 };
 use i_slint_core::items::{BuiltInMouseCursor, TextHorizontalAlignment, TextOverflow, TextWrap};
 
+pub mod caps;
 pub mod program;
 // The backend-neutral static front door (plan §3.6 surface 1–2 for
 // every backend): the macros freeze programs at EXPANSION time with NO
