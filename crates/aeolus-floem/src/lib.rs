@@ -30,6 +30,7 @@
 //! is emulated by evaluating `plan.resolve_rules_only(&probe)` — see
 //! [`FloemProbe`] and [`FloemTwExt::tw_plan`].
 
+pub mod caps;
 mod program;
 
 use floem::animate::Bezier;
