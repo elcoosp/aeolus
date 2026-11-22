@@ -40,6 +40,9 @@ i-slint-core = "1.18"
 tracing = "0.1"
 
 [dev-dependencies]
+# The committed capability table the drift pin reads (the walk's own
+# freeze — the conformance moat's one-source rule).
+aeolus-codegen = { workspace = true }
 # The generated snippets are REAL slint code: the interpreter compiles them
 # headless (no backend features needed for compilation — instantiation is
 # never attempted) so the tests prove the emitted `.slint` is valid.
