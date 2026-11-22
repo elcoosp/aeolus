@@ -18,10 +18,23 @@
 //! ```
 //!
 //! The macro compiles against the embedded shadcn palette by default so
-//! colour tokens bake to literals (T0/T1). A host that needs a custom
-//! theme compiles at runtime through [`aeolus_compile::compile_theme`]
-//! and its `DynCache` — the documented dynamic lane.
-
+//! colour tokens bake to literals (T0/T1). Two escape hatches exist:
+//!
+//! * The `theme:` ARGUMENT bakes a HOST theme at expansion time —
+//!   `tw!(theme: "themes/app.css", "bg-primary")` reads the CSS
+//!   relative to the calling crate's `CARGO_MANIFEST_DIR`, bakes it
+//!   through `ThemeSource::from_css` + `TokenTable::baked` (T0
+//!   literals, T1 `ModePair` dark pairs, `/opacity` premultiplied) and
+//!   carries an `include_str!` rebuild anchor inside the expansion, so
+//!   Cargo re-runs rustc when the CSS changes (plan §3.4 T0/T1). The
+//!   GPUI-gated entries keep their audit; the neutral
+//!   `tw_static!`/`cn_static!`/`variants_static!` entries freeze
+//!   WITHOUT one — the interpreter backends' `LoweringReport` is their
+//!   honesty channel.
+//! * The `theme!` MACRO stays the T2 runtime handle — a
+//!   `theme_from_css(include_str!(…))` value the host re-themes live
+//!   through its `TokenTable`; nothing about it changed here.
+//!
 //! The macro grammar is a hand-written token walk (the mission's syn-free
 //! constraint); the pedantic lints it trips are excepted in the crate
 //! manifest's `[lints.clippy]` table, with the rationale — the workspace
@@ -50,13 +63,27 @@ fn render_refusals(refusals: &[aeolus_codegen_gpui::Unsupported]) -> String {
 }
 
 /// Compile a class string at build time into an `aeolus_rt::StaticProgram`.
+///
+/// GPUI-gated: the expansion is audited against
+/// [`aeolus_codegen_gpui`] before it freezes — a capability the target
+/// cannot express is a compile error, never a silent drop. The optional
+/// leading `theme: "path", ` argument bakes a host theme at expansion
+/// time (plan §3.4 T0/T1); without it the embedded shadcn bake rides.
 #[proc_macro]
 pub fn tw(input: TokenStream) -> TokenStream {
-    let literal = match extract_single_string(&input) {
+    let (theme, rest) = match split_theme_prefix(input.clone(), "tw!") {
+        Ok(pair) => pair,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let literal = match extract_single_string(&rest, "tw!") {
         Ok(s) => s,
         Err(msg) => return compile_error(&input, &msg),
     };
-    let (compiled, classes) = match compile_literal(&literal) {
+    let bake = match theme_bake_arg(theme, "tw!") {
+        Ok(bake) => bake,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let (compiled, classes) = match compile_literal_with(&literal, bake.as_ref(), "tw!") {
         Ok(pair) => pair,
         Err(msg) => return compile_error(&input, &msg),
     };
@@ -71,21 +98,59 @@ pub fn tw(input: TokenStream) -> TokenStream {
             ),
         );
     }
-    aeolus_codegen_gpui::emit_static_program(&compiled.program, &keywords).into()
+    let emitted = aeolus_codegen_gpui::emit_static_program(&compiled.program, &keywords);
+    anchor_expression(bake.as_ref(), emitted.into(), "tw!")
+}
+
+/// The BACKEND-NEUTRAL freeze entry: the same expansion-time bake and
+/// the same static emission as [`tw!`], with NO GPUI audit gate. The
+/// emitted `StaticProgram` is the shape every backend's `lower_program`
+/// lane consumes; what the interpreter cannot express lands in its own
+/// `LoweringReport` — the honesty channel — never a compile refusal.
+/// The optional `theme:` argument rides exactly like [`tw!`]'s.
+#[proc_macro]
+pub fn tw_static(input: TokenStream) -> TokenStream {
+    let (theme, rest) = match split_theme_prefix(input.clone(), "tw_static!") {
+        Ok(pair) => pair,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let literal = match extract_single_string(&rest, "tw_static!") {
+        Ok(s) => s,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let bake = match theme_bake_arg(theme, "tw_static!") {
+        Ok(bake) => bake,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let (compiled, classes) = match compile_literal_with(&literal, bake.as_ref(), "tw_static!") {
+        Ok(pair) => pair,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let keywords = keyword_alignment(&compiled, &classes);
+    let emitted = aeolus_codegen_gpui::emit_static_program(&compiled.program, &keywords);
+    anchor_expression(bake.as_ref(), emitted.into(), "tw_static!")
 }
 
 /// Compile-time `cn()`: compile each static list, merge at IR level, and
-/// emit the merged static program.
+/// emit the merged static program. GPUI-gated, like [`tw!`].
 #[proc_macro]
 pub fn cn(input: TokenStream) -> TokenStream {
-    let strings = match extract_string_list(input.clone()) {
+    let (theme, rest) = match split_theme_prefix(input.clone(), "cn!") {
+        Ok(pair) => pair,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let strings = match extract_string_list(rest, "cn!") {
         Ok(s) => s,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let bake = match theme_bake_arg(theme, "cn!") {
+        Ok(bake) => bake,
         Err(msg) => return compile_error(&input, &msg),
     };
     let mut compiled = Vec::new();
     let mut classes: Vec<ClassKeywords> = Vec::new();
     for string in &strings {
-        match compile_literal(string) {
+        match compile_literal_with(string, bake.as_ref(), "cn!") {
             Ok((c, k)) => {
                 compiled.push(c);
                 classes.extend(k);
@@ -110,7 +175,45 @@ pub fn cn(input: TokenStream) -> TokenStream {
             ),
         );
     }
-    aeolus_codegen_gpui::emit_static_program(&merged.program, &keywords).into()
+    let emitted = aeolus_codegen_gpui::emit_static_program(&merged.program, &keywords);
+    anchor_expression(bake.as_ref(), emitted.into(), "cn!")
+}
+
+/// The BACKEND-NEUTRAL merge entry: the same compile-time `cn()` merge,
+/// with NO GPUI audit gate (see [`tw_static!`]).
+#[proc_macro]
+pub fn cn_static(input: TokenStream) -> TokenStream {
+    let (theme, rest) = match split_theme_prefix(input.clone(), "cn_static!") {
+        Ok(pair) => pair,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let strings = match extract_string_list(rest, "cn_static!") {
+        Ok(s) => s,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let bake = match theme_bake_arg(theme, "cn_static!") {
+        Ok(bake) => bake,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let mut compiled = Vec::new();
+    let mut classes: Vec<ClassKeywords> = Vec::new();
+    for string in &strings {
+        match compile_literal_with(string, bake.as_ref(), "cn_static!") {
+            Ok((c, k)) => {
+                compiled.push(c);
+                classes.extend(k);
+            }
+            Err(msg) => return compile_error(&input, &msg),
+        }
+    }
+    let refs: Vec<&Compiled> = compiled.iter().collect();
+    let merged = match merge_cn(&refs) {
+        Ok(merged) => merged,
+        Err(err) => return compile_error(&input, &format!("cn_static!: {err}")),
+    };
+    let keywords = last_keywords(&merged, &classes);
+    let emitted = aeolus_codegen_gpui::emit_static_program(&merged.program, &keywords);
+    anchor_expression(bake.as_ref(), emitted.into(), "cn_static!")
 }
 
 /// The compatibility alias kept for the pre-1.0 spelling (`tw_cn!`).
@@ -120,12 +223,15 @@ pub fn tw_cn(input: TokenStream) -> TokenStream {
 }
 
 /// Parse a CSS-first theme file at the host (`@theme`/`:root`/`.dark`,
-/// the same file a web Tailwind v4 project uses).
+/// the same file a web Tailwind v4 project uses) into the T2 RUNTIME
+/// handle: the returned `ThemeSource` feeds a `TokenTable::runtime` the
+/// host re-themes live. Compile-time baking is the `theme:` ARGUMENT on
+/// the other entries — `theme!` stays the dynamic lane's front door.
 ///
 /// One argument: the light source. Two arguments: light + dark override.
 #[proc_macro]
 pub fn theme(input: TokenStream) -> TokenStream {
-    let strings = match extract_string_list(input.clone()) {
+    let strings = match extract_string_list(input.clone(), "theme!") {
         Ok(s) => s,
         Err(msg) => return compile_error(&input, &msg),
     };
@@ -152,15 +258,61 @@ pub fn theme(input: TokenStream) -> TokenStream {
 // The compile walk
 // ---------------------------------------------------------------------------
 
-fn compile_literal(literal: &str) -> Result<(Compiled, Vec<ClassKeywords>), String> {
-    let source = ThemeSource::shadcn().map_err(|err| format!("tw!: theme: {err}"))?;
-    let table = TokenTable::baked(&source).map_err(|err| format!("tw!: theme: {err}"))?;
-    let config = Config::default();
-    let compiled = compile_theme(literal, &table, &config).map_err(|err| format!("tw!: {err}"))?;
-    if !compiled.diagnostics.is_empty() {
-        return Err(render_diagnostics("tw!", &compiled.diagnostics));
+/// A host theme read at expansion time: the sheet's CSS plus the
+/// absolute path the rebuild anchor rides on (plan §3.4's
+/// `include_str!` contract — Cargo re-runs rustc when the CSS changes).
+#[derive(Debug)]
+struct ThemeBake {
+    css: String,
+    anchor: String,
+}
+
+/// The rebuild anchor the themed expansions carry: an UNNAMED `const _`
+/// item reading the theme file, so Cargo tracks the dependency. Unnamed
+/// so two themed call sites in one scope coexist (the integration
+/// battery's whole-file-scope compilation pins it).
+fn theme_anchor_tokens(abs_path: &str) -> String {
+    format!("const _: &str = ::core::include_str!({abs_path:?});")
+}
+
+/// Wrap an EXPRESSION-position expansion with the rebuild anchor. The
+/// no-arg path passes the expansion through untouched — the embedded
+/// shadcn bake stays byte-identical (the differential pin).
+fn anchor_expression(theme: Option<&ThemeBake>, emitted: TokenStream, name: &str) -> TokenStream {
+    let Some(bake) = theme else {
+        return emitted;
+    };
+    let anchor = theme_anchor_tokens(&bake.anchor);
+    format!("{{ {anchor} {emitted} }}")
+        .parse()
+        .unwrap_or_else(|_| {
+            compile_error_msg(&format!("{name}: could not render the theme anchor"))
+        })
+}
+
+fn compile_literal_with(
+    literal: &str,
+    theme: Option<&ThemeBake>,
+    name: &str,
+) -> Result<(Compiled, Vec<ClassKeywords>), String> {
+    let source = match theme {
+        // The no-arg bake: the embedded shadcn palette, exactly as it
+        // always ran (byte-identical — the differential pin).
+        None => ThemeSource::shadcn(),
+        // The host bake: the SINGLE-FILE sheet a web v4 project uses —
+        // the light half minus its `.dark` blocks, those blocks the dark
+        // variant (a sheet without `.dark` yields zero pairs: pure T0).
+        Some(bake) => ThemeSource::from_app_css(&bake.css),
     }
-    let classes = keyword_texts(literal, &config).map_err(|err| format!("tw!: {err}"))?;
+    .map_err(|err| format!("{name}: theme: {err}"))?;
+    let table = TokenTable::baked(&source).map_err(|err| format!("{name}: theme: {err}"))?;
+    let config = Config::default();
+    let compiled =
+        compile_theme(literal, &table, &config).map_err(|err| format!("{name}: {err}"))?;
+    if !compiled.diagnostics.is_empty() {
+        return Err(render_diagnostics(name, &compiled.diagnostics));
+    }
+    let classes = keyword_texts(literal, &config).map_err(|err| format!("{name}: {err}"))?;
     Ok((compiled, classes))
 }
 
@@ -225,15 +377,93 @@ fn quote_ts(text: &str) -> TokenStream {
 // Token parsing (syn-free, the mission's own constraint)
 // ---------------------------------------------------------------------------
 
-fn extract_single_string(input: &TokenStream) -> Result<String, String> {
-    let mut strings = extract_string_list(input.clone())?;
+/// Split the optional leading `theme: "path", ` argument off the front
+/// of a macro's token stream (plan §3.4 T0/T1's expansion-time bake).
+/// The theme argument is a PREFIX: the payload is everything after the
+/// argument's comma, so the plain forms parse exactly as before.
+fn split_theme_prefix(
+    input: TokenStream,
+    name: &str,
+) -> Result<(Option<String>, TokenStream), String> {
+    let trees: Vec<TokenTree> = input.into_iter().collect();
+    let is_theme_arg = matches!(
+        (trees.first(), trees.get(1)),
+        (Some(TokenTree::Ident(id)), Some(TokenTree::Punct(p)))
+            if id.to_string() == "theme" && p.as_char() == ':'
+    );
+    if !is_theme_arg {
+        return Ok((None, trees.into_iter().collect()));
+    }
+    // The theme path: one string literal after `theme:`, then the
+    // argument's comma. A second literal before the comma is the
+    // tokenizer's own "exactly one" refusal — the grammar has no
+    // two-path form here (the T2 `theme!` keeps that one).
+    let mut path_tokens: Vec<TokenTree> = Vec::new();
+    let mut rest_start: Option<usize> = None;
+    for (index, token) in trees.iter().enumerate().skip(2) {
+        if let TokenTree::Punct(p) = token
+            && p.as_char() == ','
+            && !path_tokens.is_empty()
+        {
+            rest_start = Some(index + 1);
+            break;
+        }
+        path_tokens.push(token.clone());
+    }
+    let Some(rest_start) = rest_start else {
+        return Err(format!(
+            "{name}: theme: expected the theme path followed by a comma before the class \
+             strings"
+        ));
+    };
+    let stream: TokenStream = path_tokens.into_iter().collect();
+    let path = extract_single_string(&stream, name)?;
+    Ok((Some(path), trees[rest_start..].iter().cloned().collect()))
+}
+
+/// The expansion-time `theme:` argument's bake: [`theme_bake`] when an
+/// argument rode, `None` (the embedded shadcn bake) when not.
+fn theme_bake_arg(theme: Option<String>, name: &str) -> Result<Option<ThemeBake>, String> {
+    match theme {
+        Some(rel) => resolve_theme(&rel, name).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// Read the `theme:` argument's CSS relative to the CALLING crate's
+/// manifest (the same resolution the `include_str!` anchor rides). An
+/// empty sheet is a typed refusal of its own; a malformed sheet is the
+/// pipeline's own `ThemeError` text, carried verbatim into the compile
+/// error by the themed bake.
+fn resolve_theme(rel: &str, name: &str) -> Result<ThemeBake, String> {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
+        format!(
+            "{name}: theme: CARGO_MANIFEST_DIR is unset — the theme path resolves relative \
+             to the calling crate's manifest"
+        )
+    })?;
+    let path = std::path::Path::new(&manifest).join(rel);
+    let anchor = path.display().to_string();
+    let css = std::fs::read_to_string(&path)
+        .map_err(|err| format!("{name}: theme file {rel:?}: {err}"))?;
+    if css.trim().is_empty() {
+        return Err(format!(
+            "{name}: theme file {rel:?}: empty theme file — the bake refuses an empty sheet \
+             (declare `@theme` tokens or a `:root`/`.dark` palette)"
+        ));
+    }
+    Ok(ThemeBake { css, anchor })
+}
+
+fn extract_single_string(input: &TokenStream, name: &str) -> Result<String, String> {
+    let mut strings = extract_string_list(input.clone(), name)?;
     if strings.len() != 1 {
-        return Err("tw!: expected exactly one string literal".into());
+        return Err(format!("{name}: expected exactly one string literal"));
     }
     Ok(strings.remove(0))
 }
 
-fn extract_string_list(input: TokenStream) -> Result<Vec<String>, String> {
+fn extract_string_list(input: TokenStream, name: &str) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut pending: Option<String> = None;
     for token in input {
@@ -247,7 +477,9 @@ fn extract_string_list(input: TokenStream) -> Result<Vec<String>, String> {
                         None => pending = Some(unquoted),
                     }
                 } else {
-                    return Err(format!("tw!: unsupported literal {s} (expected a string)"));
+                    return Err(format!(
+                        "{name}: unsupported literal {s} (expected a string)"
+                    ));
                 }
             }
             TokenTree::Punct(p) if p.as_char() == ',' => {
@@ -256,12 +488,12 @@ fn extract_string_list(input: TokenStream) -> Result<Vec<String>, String> {
                 }
             }
             TokenTree::Group(g) if g.delimiter() == Delimiter::None => {
-                let inner = extract_string_list(g.stream())?;
+                let inner = extract_string_list(g.stream(), name)?;
                 out.extend(inner);
             }
             other => {
                 return Err(format!(
-                    "tw!: unexpected token {other} (expected a string literal)"
+                    "{name}: unexpected token {other} (expected a string literal)"
                 ));
             }
         }
@@ -446,11 +678,34 @@ struct CompoundEntry {
 /// runtime cost stays the match dispatch the table always had.
 #[proc_macro]
 pub fn variants(input: TokenStream) -> TokenStream {
-    let table = match parse_variants(input.clone()) {
+    variants_expansion(input, true)
+}
+
+/// The BACKEND-NEUTRAL variants table: the same closed-world compile,
+/// with NO GPUI audit gate (see [`tw_static!`] — the interpreter
+/// backends' `LoweringReport` is the honesty channel).
+#[proc_macro]
+pub fn variants_static(input: TokenStream) -> TokenStream {
+    variants_expansion(input, false)
+}
+
+/// The two tables' shared walk: the optional `theme:` prefix splits
+/// off first, then the table grammar, then the render (the gate is the
+/// only difference between the entries).
+fn variants_expansion(input: TokenStream, gate: bool) -> TokenStream {
+    let (theme, rest) = match split_theme_prefix(input.clone(), "variants!") {
+        Ok(pair) => pair,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let table = match parse_variants(rest) {
         Ok(table) => table,
         Err(msg) => return compile_error(&input, &msg),
     };
-    match render_variants(&table) {
+    let bake = match theme_bake_arg(theme, "variants!") {
+        Ok(bake) => bake,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    match render_variants(&table, bake.as_ref(), gate) {
         Ok(tokens) => tokens,
         Err(msg) => compile_error(&input, &msg),
     }
@@ -570,10 +825,10 @@ fn parse_variant_classes(rest: TokenStream, field: &str) -> Result<VariantClasse
                         if inner.delimiter() == Delimiter::Brace {
                             ClassSource::PerSlot(parse_slot_map(inner.stream(), field)?)
                         } else {
-                            ClassSource::All(extract_single_string(&stream)?)
+                            ClassSource::All(extract_single_string(&stream, "variants!")?)
                         }
                     } else {
-                        ClassSource::All(extract_single_string(&stream)?)
+                        ClassSource::All(extract_single_string(&stream, "variants!")?)
                     };
                 groups.push((key, source));
                 pending = None;
@@ -588,7 +843,10 @@ fn parse_variant_classes(rest: TokenStream, field: &str) -> Result<VariantClasse
         }
     }
     if let Some(TokenTree::Literal(_)) = tokens.first() {
-        return Ok(VariantClasses::Base(extract_single_string(&rest)?));
+        return Ok(VariantClasses::Base(extract_single_string(
+            &rest,
+            "variants!",
+        )?));
     }
     Err(format!(
         "variants!: `{field}` expects a string or `{{ ... }}`"
@@ -620,6 +878,7 @@ fn parse_slot_map(stream: TokenStream, field: &str) -> Result<Vec<(String, Strin
             &value
                 .parse::<TokenStream>()
                 .map_err(|_| format!("variants!: `{field}.{name}` is not a string"))?,
+            "variants!",
         )?;
         slots.push((name, text));
         pending = None;
@@ -668,10 +927,10 @@ fn parse_compound_entries(stream: TokenStream, field: &str) -> Result<VariantCla
                         if inner.delimiter() == Delimiter::Brace {
                             ClassSource::PerSlot(parse_slot_map(inner.stream(), field)?)
                         } else {
-                            ClassSource::All(extract_single_string(&parsed)?)
+                            ClassSource::All(extract_single_string(&parsed, "variants!")?)
                         }
                     } else {
-                        ClassSource::All(extract_single_string(&parsed)?)
+                        ClassSource::All(extract_single_string(&parsed, "variants!")?)
                     };
                 classes = Some(source);
             } else {
@@ -759,8 +1018,18 @@ fn pascal_case(text: &str) -> String {
     out
 }
 
-fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
+fn render_variants(
+    table: &VariantTable,
+    theme: Option<&ThemeBake>,
+    gate: bool,
+) -> Result<TokenStream, String> {
     let mut output = String::new();
+    // The themed tables carry the rebuild anchor as their first ITEM
+    // (module position — the enum defs follow).
+    if let Some(bake) = theme {
+        output.push_str(&theme_anchor_tokens(&bake.anchor));
+        output.push('\n');
+    }
     let visibility = &table.visibility;
     let name = &table.name;
 
@@ -882,14 +1151,16 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
                 for (slot, classes) in slots {
                     let full = join_classes(&base, classes);
                     let (program, class_annotations) =
-                        compile_literal(&full).map_err(|err| format!("variants!: {err}"))?;
+                        compile_literal_with(&full, theme, "variants!")?;
                     let keywords = keyword_alignment(&program, &class_annotations);
-                    let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
-                    if !refusals.is_empty() {
-                        return Err(format!(
-                            "variants!: {full:?} uses capabilities GPUI cannot express:{}",
-                            render_refusals(&refusals)
-                        ));
+                    if gate {
+                        let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
+                        if !refusals.is_empty() {
+                            return Err(format!(
+                                "variants!: {full:?} uses capabilities GPUI cannot express:{}",
+                                render_refusals(&refusals)
+                            ));
+                        }
                     }
                     let tokens =
                         aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
@@ -905,15 +1176,16 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
                 ));
             }
             None => {
-                let (program, _) =
-                    compile_literal(&base).map_err(|err| format!("variants!: {err}"))?;
+                let (program, _) = compile_literal_with(&base, theme, "variants!")?;
                 let keywords = keyword_alignment(&program, &[]);
-                let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
-                if !refusals.is_empty() {
-                    return Err(format!(
-                        "variants!: {base:?} uses capabilities GPUI cannot express:{}",
-                        render_refusals(&refusals)
-                    ));
+                if gate {
+                    let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
+                    if !refusals.is_empty() {
+                        return Err(format!(
+                            "variants!: {base:?} uses capabilities GPUI cannot express:{}",
+                            render_refusals(&refusals)
+                        ));
+                    }
                 }
                 let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
                 output.push_str(&enum_defs);
@@ -971,14 +1243,16 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
                     }
                 }
                 let (program, class_annotations) =
-                    compile_literal(&classes).map_err(|err| format!("variants!: {err}"))?;
+                    compile_literal_with(&classes, theme, "variants!")?;
                 let keywords = keyword_alignment(&program, &class_annotations);
-                let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
-                if !refusals.is_empty() {
-                    return Err(format!(
-                        "variants!: {classes:?} uses capabilities GPUI cannot express:{}",
-                        render_refusals(&refusals)
-                    ));
+                if gate {
+                    let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
+                    if !refusals.is_empty() {
+                        return Err(format!(
+                            "variants!: {classes:?} uses capabilities GPUI cannot express:{}",
+                            render_refusals(&refusals)
+                        ));
+                    }
                 }
                 let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
                 arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
@@ -1040,14 +1314,16 @@ fn render_variants(table: &VariantTable) -> Result<TokenStream, String> {
                         }
                     }
                     let (program, class_annotations) =
-                        compile_literal(&classes).map_err(|err| format!("variants!: {err}"))?;
+                        compile_literal_with(&classes, theme, "variants!")?;
                     let keywords = keyword_alignment(&program, &class_annotations);
-                    let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
-                    if !refusals.is_empty() {
-                        return Err(format!(
-                            "variants!: {classes:?} uses capabilities GPUI cannot express:{}",
-                            render_refusals(&refusals)
-                        ));
+                    if gate {
+                        let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
+                        if !refusals.is_empty() {
+                            return Err(format!(
+                                "variants!: {classes:?} uses capabilities GPUI cannot express:{}",
+                                render_refusals(&refusals)
+                            ));
+                        }
                     }
                     let tokens =
                         aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
@@ -1112,7 +1388,9 @@ fn cartesian(
 
 #[cfg(test)]
 mod render_tests {
-    use super::render_diagnostics;
+    use super::{
+        ThemeBake, compile_literal_with, render_diagnostics, resolve_theme, theme_anchor_tokens,
+    };
     use aeolus_compile::{Config, compile};
 
     /// The two renderers carry the SAME refusal set — the verbose mode
@@ -1136,5 +1414,60 @@ mod render_tests {
         let verbose = render_diagnostics("tw!", &compiled.diagnostics);
         assert!(verbose.contains("code: "), "{verbose}");
         assert!(verbose.contains("help: "), "{verbose}");
+    }
+
+    /// The rebuild anchor is the unnamed `const _` the plan §3.4 sketch
+    /// pins: `include_str!` on the absolute path, so Cargo tracks the
+    /// theme file. Unnamed is the contract — two themed call sites in
+    /// one scope must coexist (the integration battery compiles a whole
+    /// file of themed expansions through exactly this shape).
+    #[test]
+    fn the_theme_anchor_is_an_unnamed_include_str_const() {
+        let anchor = theme_anchor_tokens("/abs/path/app.css");
+        assert!(anchor.starts_with("const _: &str = "), "{anchor}");
+        assert!(anchor.contains("::core::include_str!("), "{anchor}");
+        assert!(anchor.contains("/abs/path/app.css"), "{anchor}");
+        assert!(anchor.trim_end().ends_with(';'), "{anchor}");
+    }
+
+    /// A missing theme file is a typed compile error naming the macro,
+    /// the path and the io failure — never a panic, never a silent
+    /// shadcn fallback.
+    #[test]
+    fn the_missing_theme_file_refuses_with_the_macro_s_name() {
+        let err = resolve_theme("tests/fixtures/missing.css", "tw_static!")
+            .expect_err("the missing file refuses");
+        assert!(err.starts_with("tw_static!"), "{err}");
+        assert!(err.contains("theme file"), "{err}");
+        assert!(err.contains("missing.css"), "{err}");
+    }
+
+    /// An EMPTY theme file is its own typed refusal — the bake refuses
+    /// a sheet that declares nothing rather than silently baking the
+    /// default palette.
+    #[test]
+    fn the_empty_theme_file_refuses_typed() {
+        let err =
+            resolve_theme("tests/fixtures/empty.css", "tw!").expect_err("the empty sheet refuses");
+        assert!(err.starts_with("tw!"), "{err}");
+        assert!(err.contains("empty theme file"), "{err}");
+    }
+
+    /// A malformed sheet is the pipeline's own diagnostic text carried
+    /// verbatim (the `ThemeError::Parse` display rides the compile
+    /// error — the macro wraps, never re-words).
+    #[test]
+    fn the_malformed_theme_sheet_carries_the_pipeline_s_text() {
+        let bake = ThemeBake {
+            css: "@theme { --color-brand: var(--never-declared); }".to_string(),
+            anchor: String::new(),
+        };
+        let err = compile_literal_with("bg-primary", Some(&bake), "tw!")
+            .expect_err("the unresolved var() refuses");
+        assert!(err.starts_with("tw!: theme: "), "{err}");
+        assert!(
+            err.contains("theme CSS:"),
+            "the ThemeError text rides verbatim: {err}"
+        );
     }
 }
