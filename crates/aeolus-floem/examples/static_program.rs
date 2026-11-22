@@ -1,6 +1,6 @@
 //! Consumer demonstration: the V1 static-program lane (architecture
 //! plan §7's Floem re-target — the second backend after GPUI). A
-//! `tw!`-compiled [`StaticProgram`] walks into a Floem [`Style`] under
+//! `tw_static!`-frozen `StaticProgram` walks into a Floem `Style` under
 //! the interp's [`Env`] probe semantics, and the SAME class string goes
 //! through the plan bridge to show the two lanes agree. Headless by
 //! construction: the walk is pure.
@@ -11,32 +11,19 @@
 
 use floem::style::{Background, PaddingLeft};
 
-use aeolus_compile::{Config, compile_theme, emit_plan_theme, keyword_alignment, keyword_texts};
+use aeolus_compile::{Config, emit_plan_theme};
 use aeolus_floem::{lower, lower_program};
-use aeolus_rt::{Env, StaticProgram};
+use aeolus_macro::tw_static;
+use aeolus_rt::Env;
 use aeolus_theme::{ThemeSource, TokenTable};
-
-/// Compile a class string the way `tw!` does (the theme pass's baked
-/// shadcn table) and freeze it into the static form the macro emits:
-/// the interned layers plus the row texts the keyword slots index.
-fn frozen(classes: &str) -> StaticProgram {
-    let source = ThemeSource::shadcn().expect("the built-in shadcn source parses");
-    let table = TokenTable::baked(&source).expect("the baked shadcn table builds");
-    let config = Config::default();
-    let compiled = compile_theme(classes, &table, &config).expect("the class string lowers");
-    let annotations = keyword_texts(classes, &config).expect("non-empty input annotates");
-    let keywords = keyword_alignment(&compiled, &annotations);
-    StaticProgram::new(
-        compiled.program.layers,
-        Box::leak(keywords.into_boxed_slice()),
-    )
-}
 
 fn main() {
     // The shadcn card surface, as a `tw!` call site would compile it.
     let classes = "p-4 bg-card text-card-foreground rounded-md w-1/2 h-9 \
                    font-medium items-center gap-2 disabled:opacity-50 hover:bg-accent";
-    let program = frozen(classes);
+    let program = tw_static!(
+        "p-4 bg-card text-card-foreground rounded-md w-1/2 h-9 font-medium items-center gap-2 disabled:opacity-50 hover:bg-accent"
+    );
 
     // The program lane: the walk folds the layers under one probe Env —
     // the frame situation `tw_program_env` re-reads per style pass.
@@ -80,7 +67,7 @@ fn main() {
     // StylePlan the crate has consumed since v0.1 — two lanes, one
     // compiler, one cascade (tests/static_program.rs pins the agreement).
     let sheet =
-        emit_plan_theme(classes, &frozen_table(), &Config::default()).expect("the plan bridge");
+        emit_plan_theme(classes, &bridge_table(), &Config::default()).expect("the plan bridge");
     let (bridged, report) = lower(&sheet.plan);
     println!("── the plan bridge, same classes ──");
     println!(
@@ -94,7 +81,7 @@ fn main() {
     println!("  bridge report: {} drops", report.dropped.len());
 }
 
-fn frozen_table() -> TokenTable {
+fn bridge_table() -> TokenTable {
     let source = ThemeSource::shadcn().expect("the built-in shadcn source parses");
     TokenTable::baked(&source).expect("the baked shadcn table builds")
 }
