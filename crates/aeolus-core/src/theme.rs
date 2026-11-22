@@ -566,10 +566,17 @@ impl TailwindTheme {
     }
 
     /// Build the dark variant by re-parsing the source CSS with the
-    /// `.dark` overrides appended, so `@theme inline` var chains
+    /// `.dark` overrides applied last, so `@theme inline` var chains
     /// (`--color-primary: var(--primary)`) re-resolve against the dark
     /// palette — the propagation CSS gives us for free and Aeolus does
-    /// explicitly (mission brief §3.5).
+    /// explicitly (mission brief §3.5). Layer order is explicit here
+    /// (the light reader keeps file order): `:root` palette, the light
+    /// sheet's CONCRETE `@theme` values, the dark overrides — the last
+    /// word on every token the dark sheet names — then the `@theme`
+    /// var() chains re-resolved against the final palette. Splitting
+    /// the `@theme` layer by value shape is what keeps a dark override
+    /// of an `@theme`-declared token from being clobbered by that
+    /// token's own light value riding the chain re-resolution.
     pub fn dark_variant(&self, dark_css: &str) -> Result<Self, ParseError> {
         let mut dark = TailwindTheme {
             dark_mode: true,
@@ -588,10 +595,16 @@ impl TailwindTheme {
             .cloned()
             .collect();
         dark.absorb_declarations(&roots)?;
-        // 2. dark palette overrides
+        // 2. the light sheet's concrete `@theme` values (`@theme`
+        //    merges over `:root` — later wins, the reader's semantics).
+        let (chains, values): (Vec<_>, Vec<_>) = themes
+            .into_iter()
+            .partition(|(_, _, value)| value.contains("var("));
+        dark.absorb_declarations(&values)?;
+        // 3. dark palette overrides — the last word.
         dark.absorb_declarations(&extract_declarations(dark_css))?;
-        // 3. re-resolve `@theme inline` var chains against the final palette
-        dark.absorb_declarations(&themes)?;
+        // 4. re-resolve `@theme inline` var chains against the final palette
+        dark.absorb_declarations(&chains)?;
         // Custom rules from the source CSS carry over.
         let (variants, utilities) = extract_custom_rules(&self.source_css);
         dark.custom_variants.extend(variants);
