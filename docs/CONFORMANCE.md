@@ -2,7 +2,7 @@
 
 # Aeolus conformance — gpui
 
-**score: 58.90% expressible** (50.00% native + 8.90% polyfilled) over 146 longhands
+**score: 61.64% expressible** (47.17% native + 14.47% polyfilled) over 159 longhands
 
 The per-longhand tiers, in the IR's cascade order. The per-declaration refinements (the emit gates' text-dependent verdicts) live at the gates themselves — this is the per-longhand ceiling.
 
@@ -81,6 +81,8 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `text-decoration-color` | native |
 | `text-decoration-thickness` | native |
 | `text-decoration-style` | native |
+| `-webkit-line-clamp` | native |
+| `font-variant-numeric` | native |
 | `--tw-ring-offset-width` | polyfill |
 | `--tw-ring-offset-color` | polyfill |
 | `--tw-ring-color` | polyfill |
@@ -94,6 +96,16 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `--tw-sepia` | polyfill |
 | `--tw-drop-shadow` | polyfill |
 | `filter` | polyfill |
+| `--tw-space-x-reverse` | polyfill |
+| `--tw-space-x` | polyfill |
+| `--tw-space-y-reverse` | polyfill |
+| `--tw-space-y` | polyfill |
+| `--tw-divide-x-reverse` | polyfill |
+| `--tw-divide-y-reverse` | polyfill |
+| `--tw-divide-style` | polyfill |
+| `--tw-divide-x` | polyfill |
+| `--tw-divide-y` | polyfill |
+| `--tw-divide-color` | polyfill |
 | `inset-inline-start` | refused |
 | `inset-inline-end` | refused |
 | `z-index` | refused |
@@ -154,3 +166,4 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `backdrop-filter` | refused |
 | `grid-auto-flow` | refused |
 | `content` | refused |
+| `clip-path` | refused |
