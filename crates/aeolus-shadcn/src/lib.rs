@@ -62,7 +62,11 @@ pub mod floem;
 pub mod iced;
 pub mod program;
 pub mod slint;
+pub mod static_tables;
 pub mod xilem;
 
 /// Re-export for callers building their own variants.
 pub use aeolus_core::{Resolver, cn};
+// The closed-world const tables' macro — re-exported so the static
+// tables' expansion (and a host composing its own) imports ONE surface.
+pub use aeolus_macro::variants_static;
