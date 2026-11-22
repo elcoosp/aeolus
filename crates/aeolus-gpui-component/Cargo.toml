@@ -1,0 +1,40 @@
+[package]
+name = "aeolus-gpui-component"
+description = "The gpui-component bridge: gpui-component's ActiveTheme trait implemented over the Aeolus TailwindTheme + TokenTable, with the theme hot-swap (§3.4) and the dynamic-lane style() twin (§3.6) beside the closed-world variants_static! path"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+# The SAME gpui-pre snapshot the aeolus-gpui lane rides — gpui-component
+# 0.10.0 pins gpui-pre =0.3.12 too, so both resolve to ONE gpui build
+# (the version-unification rule the workspace's gpui-pre pin carries).
+gpui = { package = "gpui-pre", version = "=0.3.12" }
+gpui-component = "0.10.0"
+aeolus-core = { workspace = true }
+aeolus-ir = { workspace = true }
+aeolus-rt = { path = "../aeolus-rt" }
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-theme = { workspace = true }
+# The walk the bridge applies the resolved programs through (the
+# TwExt::tw_env surface) and the tw!/variants_static! macro re-exports.
+aeolus-gpui = { path = "../aeolus-gpui" }
+aeolus-macro = { workspace = true }
+
+[dev-dependencies]
+# The swap path's microbenchmark (divan, stable — the workspace bench
+# idiom).
+divan = "0.1"
+# The one App-context pin (the ActiveTheme global install + the
+# refresh-on-swap): gpui's headless test harness.
+gpui = { package = "gpui-pre", version = "=0.3.12", features = ["test-support"] }
+
+[[bench]]
+name = "theme_swap"
+harness = false
+
+[lints]
+workspace = true
