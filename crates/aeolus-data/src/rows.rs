@@ -355,13 +355,92 @@ pub const BACKDROP_FILTER_CHAIN: &str = "var(--tw-backdrop-blur,) var(--tw-backd
 /// the chain itself.
 pub const BACKDROP_FILTER_RESETS: &[(&str, &str)] = &[("none", "none")];
 
+// -- The parity wave 1's shared texts (the five highest-traffic
+// families) ------------------------------------------------------------
+//
+// The keyword texts are the v4.1.17 utilities' own values, quoted
+// verbatim from the pinned upstream (the same discipline the motion
+// and filter families' tables keep). `pub`: the compile seam's CSS
+// arm and the plan bridge match the texts (the gradient direction's
+// `linear_gradient_angle` precedent — one source, several readers).
+
+/// The `line-clamp-none` reset — v4's own off text for
+/// `-webkit-line-clamp` (`unset`, the display/overflow pair's reset
+/// riding the CSS arm's composite emission).
+pub const LINE_CLAMP_RESETS: &[(&str, &str)] = &[("none", "unset")];
+
+/// The `font-variant-numeric` keyword family — the v4 static
+/// utilities' own values in registry order (`ordinal` …
+/// `stacked-fractions`); the `normal-nums` reset is its own bare root.
+/// The texts ARE the OpenType surface's values (`font-variant-numeric:
+/// <text>`), the GPUI walk maps them onto the `FontFeatures` tags
+/// (`tnum`/`ordn`/`zero`/`lnum`/`onum`/`pnum`/`frac`/`dfrn`).
+pub const FONT_VARIANT_NUMERIC: &[(&str, &str)] = &[
+    ("ordinal", "ordinal"),
+    ("slashed-zero", "slashed-zero"),
+    ("lining-nums", "lining-nums"),
+    ("oldstyle-nums", "oldstyle-nums"),
+    ("proportional-nums", "proportional-nums"),
+    ("tabular-nums", "tabular-nums"),
+    ("diagonal-fractions", "diagonal-fractions"),
+    ("stacked-fractions", "stacked-fractions"),
+];
+
+/// The `divide-{style}` keyword arms — the border-style values the
+/// between-child rule renders beside v4's `--tw-border-style` var
+/// machinery (the `border-{style}` family's own value set).
+pub const DIVIDE_STYLES: &[(&str, &str)] = &[
+    ("solid", "solid"),
+    ("dashed", "dashed"),
+    ("dotted", "dotted"),
+    ("double", "double"),
+    ("hidden", "hidden"),
+    ("none", "none"),
+];
+
+/// `sr-only` — the between-child and screen-reader composites' shared
+/// shape slices (the TRUNCATE fan-out precedent: one bare value per
+/// longhand set, one row per distinct value). The composite's rows
+/// share the registry-local group so they stay one merge unit.
+const SR_ONLY_W_H: &[Prop] = &[Prop::Width, Prop::Height];
+const SR_ONLY_OVERFLOW: &[Prop] = &[Prop::OverflowX, Prop::OverflowY];
+/// The composite's zero rows: `padding: 0` and `border-width: 0` share
+/// the ONE bare value — one row fanning the same `0` over both families
+/// (the duplicate-row guard's own rule: same root + kind + group is ONE
+/// row, the targets slice is the fan-out).
+const SR_ONLY_ZERO: &[Prop] = &[
+    Prop::PaddingTop,
+    Prop::PaddingRight,
+    Prop::PaddingBottom,
+    Prop::PaddingLeft,
+    Prop::BorderTopWidth,
+    Prop::BorderRightWidth,
+    Prop::BorderBottomWidth,
+    Prop::BorderLeftWidth,
+];
+/// `not-sr-only`'s zero row: `padding: 0` and `margin: 0` share the
+/// value (the same one-row fan-out rule).
+const NOT_SR_ONLY_ZERO: &[Prop] = &[
+    Prop::PaddingTop,
+    Prop::PaddingRight,
+    Prop::PaddingBottom,
+    Prop::PaddingLeft,
+    Prop::MarginTop,
+    Prop::MarginRight,
+    Prop::MarginBottom,
+    Prop::MarginLeft,
+];
+
 // -- The registry ---------------------------------------------------------
 
 /// Every registry row, in root order. The P1 port grew to **184 rows**
-/// in-tree — 213 since the backdrop layer: the motion layer's transition
-/// quartet and the animation root, the ten filter roots, the ten
-/// backdrop roots and the decoration family's three longhand rows
-/// appended at the cascade tail — the audit count
+/// in-tree — 213 since the backdrop layer, **247** since the parity
+/// wave 1 tail: the motion layer's transition quartet and the animation
+/// root, the ten filter roots, the ten backdrop roots, the decoration
+/// family's three longhand rows, the clamp/variant pair, the
+/// font-variant-numeric family's nine static roots, the space/divide
+/// child-selector families' ten rows and the sr-only composites'
+/// fifteen value rows appended at the cascade tail — the audit count
 /// `registry::row_count()` renders from these rows. The plan's "top
 /// ~150" was the floor, not the ceiling.
 pub static ROWS: &[UtilityRow] = &[
@@ -2156,5 +2235,299 @@ pub static ROWS: &[UtilityRow] = &[
         "backdrop-filter",
         false,
         "utilities.ts backdrop-filter (registry-local group; oracle None)",
+    ),
+    // ---- the parity wave 1 tail (the five highest-traffic families;
+    // the oracle leaves every root here None — registry-local groups,
+    // the truncate precedent) --------------------------------------------
+    // line-clamp: the clamp count (v4's PositiveInteger scale) and the
+    // `none` reset, one longhand target (the CSS arm renders the
+    // overflow/-webkit-box composite beside it, v4's own emission).
+    row(
+        "line-clamp",
+        any(&[kw(LINE_CLAMP_RESETS), ValueKind::PositiveInt, arb()]),
+        &[Prop::LineClamp],
+        "line-clamp",
+        false,
+        "utilities.ts line-clamp (registry-local group; oracle None)",
+    ),
+    // font-variant-numeric: the nine static utilities, one bare root
+    // each (the texts ARE the CSS values; the reset root carries the
+    // `normal` arm).
+    row(
+        "normal-nums",
+        bare("normal"),
+        &[Prop::FontVariantNumeric],
+        "font-variant-numeric",
+        false,
+        "utilities.ts font-variant-numeric (registry-local group; oracle None)",
+    ),
+    row(
+        "ordinal",
+        bare("ordinal"),
+        &[Prop::FontVariantNumeric],
+        "font-variant-numeric",
+        false,
+        "utilities.ts font-variant-numeric (registry-local group; oracle None)",
+    ),
+    row(
+        "slashed-zero",
+        bare("slashed-zero"),
+        &[Prop::FontVariantNumeric],
+        "font-variant-numeric",
+        false,
+        "utilities.ts font-variant-numeric (registry-local group; oracle None)",
+    ),
+    row(
+        "lining-nums",
+        bare("lining-nums"),
+        &[Prop::FontVariantNumeric],
+        "font-variant-numeric",
+        false,
+        "utilities.ts font-variant-numeric (registry-local group; oracle None)",
+    ),
+    row(
+        "oldstyle-nums",
+        bare("oldstyle-nums"),
+        &[Prop::FontVariantNumeric],
+        "font-variant-numeric",
+        false,
+        "utilities.ts font-variant-numeric (registry-local group; oracle None)",
+    ),
+    row(
+        "proportional-nums",
+        bare("proportional-nums"),
+        &[Prop::FontVariantNumeric],
+        "font-variant-numeric",
+        false,
+        "utilities.ts font-variant-numeric (registry-local group; oracle None)",
+    ),
+    row(
+        "tabular-nums",
+        bare("tabular-nums"),
+        &[Prop::FontVariantNumeric],
+        "font-variant-numeric",
+        false,
+        "utilities.ts font-variant-numeric (registry-local group; oracle None)",
+    ),
+    row(
+        "diagonal-fractions",
+        bare("diagonal-fractions"),
+        &[Prop::FontVariantNumeric],
+        "font-variant-numeric",
+        false,
+        "utilities.ts font-variant-numeric (registry-local group; oracle None)",
+    ),
+    row(
+        "stacked-fractions",
+        bare("stacked-fractions"),
+        &[Prop::FontVariantNumeric],
+        "font-variant-numeric",
+        false,
+        "utilities.ts font-variant-numeric (registry-local group; oracle None)",
+    ),
+    // space: the between-child margin VALUE longhands (the child-selector
+    // intent rides the prop — a per-element margin slot would fake the
+    // between-child semantics), the negated form legal (v4's own scale),
+    // and the reverse flips.
+    row(
+        "space-x",
+        any(&[spacing(), arb()]),
+        &[Prop::SpaceX],
+        "space-x",
+        true,
+        "utilities.ts space-x (registry-local group; oracle None)",
+    ),
+    row(
+        "space-y",
+        any(&[spacing(), arb()]),
+        &[Prop::SpaceY],
+        "space-y",
+        true,
+        "utilities.ts space-y (registry-local group; oracle None)",
+    ),
+    row(
+        "space-x-reverse",
+        bare("1"),
+        &[Prop::SpaceXReverse],
+        "space-x",
+        false,
+        "utilities.ts space-x-reverse (registry-local group; oracle None)",
+    ),
+    row(
+        "space-y-reverse",
+        bare("1"),
+        &[Prop::SpaceYReverse],
+        "space-y",
+        false,
+        "utilities.ts space-y-reverse (registry-local group; oracle None)",
+    ),
+    // divide: the between-child border widths (the bare root the 1px
+    // default, the number scale the px widths), the reverse flips, and
+    // the shared `divide` root's style/colour arms (the `bg` root's
+    // several-arms precedent).
+    row(
+        "divide-x",
+        any(&[bare("1px"), num(), arb()]),
+        &[Prop::DivideX],
+        "divide-x",
+        false,
+        "utilities.ts divide-x (registry-local group; oracle None)",
+    ),
+    row(
+        "divide-y",
+        any(&[bare("1px"), num(), arb()]),
+        &[Prop::DivideY],
+        "divide-y",
+        false,
+        "utilities.ts divide-y (registry-local group; oracle None)",
+    ),
+    row(
+        "divide-x-reverse",
+        bare("1"),
+        &[Prop::DivideXReverse],
+        "divide-x",
+        false,
+        "utilities.ts divide-x-reverse (registry-local group; oracle None)",
+    ),
+    row(
+        "divide-y-reverse",
+        bare("1"),
+        &[Prop::DivideYReverse],
+        "divide-y",
+        false,
+        "utilities.ts divide-y-reverse (registry-local group; oracle None)",
+    ),
+    row(
+        "divide",
+        kw(DIVIDE_STYLES),
+        &[Prop::DivideStyle],
+        "divide-style",
+        false,
+        "utilities.ts divide-style (registry-local group; oracle None)",
+    ),
+    row(
+        "divide",
+        color(),
+        &[Prop::DivideColor],
+        "divide-color",
+        false,
+        "utilities.ts divide-color (registry-local group; oracle None)",
+    ),
+    row(
+        "divide",
+        arb(),
+        &[Prop::DivideColor],
+        "divide-color",
+        false,
+        "utilities.ts divide-color (registry-local group; oracle None)",
+    ),
+    // sr-only / not-sr-only: the composites over the EXISTING longhands
+    // (the truncate multi-row precedent — one row per distinct value;
+    // the clip leg is the ONE new longhand the real tailwindcss
+    // emission carries). The rows share the registry-local group so
+    // each composite stays one merge unit.
+    row(
+        "sr-only",
+        bare("absolute"),
+        &[Prop::Position],
+        "sr-only",
+        false,
+        "utilities.ts sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "sr-only",
+        bare("1px"),
+        SR_ONLY_W_H,
+        "sr-only",
+        false,
+        "utilities.ts sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "sr-only",
+        bare("0"),
+        SR_ONLY_ZERO,
+        "sr-only",
+        false,
+        "utilities.ts sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "sr-only",
+        bare("-1px"),
+        MARGIN,
+        "sr-only",
+        false,
+        "utilities.ts sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "sr-only",
+        bare("hidden"),
+        SR_ONLY_OVERFLOW,
+        "sr-only",
+        false,
+        "utilities.ts sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "sr-only",
+        bare("inset(50%)"),
+        &[Prop::ClipPath],
+        "sr-only",
+        false,
+        "utilities.ts sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "sr-only",
+        bare("nowrap"),
+        &[Prop::WhiteSpace],
+        "sr-only",
+        false,
+        "utilities.ts sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "not-sr-only",
+        bare("static"),
+        &[Prop::Position],
+        "sr-only",
+        false,
+        "utilities.ts not-sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "not-sr-only",
+        bare("auto"),
+        SR_ONLY_W_H,
+        "sr-only",
+        false,
+        "utilities.ts not-sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "not-sr-only",
+        bare("0"),
+        NOT_SR_ONLY_ZERO,
+        "sr-only",
+        false,
+        "utilities.ts not-sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "not-sr-only",
+        bare("visible"),
+        SR_ONLY_OVERFLOW,
+        "sr-only",
+        false,
+        "utilities.ts not-sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "not-sr-only",
+        bare("none"),
+        &[Prop::ClipPath],
+        "sr-only",
+        false,
+        "utilities.ts not-sr-only (registry-local group; oracle None)",
+    ),
+    row(
+        "not-sr-only",
+        bare("normal"),
+        &[Prop::WhiteSpace],
+        "sr-only",
+        false,
+        "utilities.ts not-sr-only (registry-local group; oracle None)",
     ),
 ];
