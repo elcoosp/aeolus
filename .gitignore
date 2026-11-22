@@ -1,9 +1,5 @@
-target
-commit.sh
-
-# The handoff ceremony files stay untracked (the ship tool reads them
-# in-tree — the PR description and the per-file commit plan, tree
-# state, not source).
-.github/pr-body.md
+skills/
+node_modules/
 ship.toml
-docs/launch.md
+.github/pr-body.md
+DELIVERY-STATE.md
