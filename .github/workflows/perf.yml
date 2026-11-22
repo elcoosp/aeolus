@@ -1,0 +1,34 @@
+# The §4 perf contract's CI gate (the committed baseline's wall-clock
+# half): the stable perf_contract bench on the ubuntu runner, compared
+# against crates/aeolus-gpui/benches/baselines.json. The gate FAILS the
+# PR when the static walk regresses more than 5% or the cell-warm path
+# exceeds 2x the baseline. Additive: the existing ci.yml jobs are
+# untouched.
+
+name: perf
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  wall-clock-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.96
+      - name: Run the stable perf-contract harness
+        run: cargo bench -p aeolus-gpui --bench perf_contract | tee bench-output.txt
+      - name: Compare against the committed baselines
+        run: python3 tools/compare_baselines.py bench-output.txt
+      - name: Archive the bench output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-output
+          path: bench-output.txt
