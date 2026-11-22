@@ -1,24 +1,33 @@
 //! The GPUI gradient lane (architecture plan §3.7's `bg-linear-*` row:
 //! "native for 2 stops; ≥3 stops/radial/conic → diagnostic"). GPUI's
-//! `linear_gradient(angle, from, to)` carries exactly the v4 two-stop
-//! linear form, so the gradient longhands the registry lowers into —
-//! the direction row's `BackgroundImage` text plus the
-//! `--tw-gradient-from`/`-to` colours and their `-position` patches —
-//! accumulate into a [`GradState`] and compose the linear gradient
-//! instead of the silent no-op the un-mapped `_ => style` arm used to
-//! be.
+//! `linear_gradient(angle, from, to)` composes the v4 two-stop linear
+//! form — VERIFIED at the `gpui-pre` 0.3.12 pin: the pinned
+//! `Background` carries a FIXED `[LinearColorStop; 2]` (its fields are
+//! `pub(crate)`, no wider stop list is constructible) and its
+//! `BackgroundTag` carries no radial shape — so the gradient longhands
+//! the registry lowers into (the direction row's `BackgroundImage`
+//! text plus the `--tw-gradient-from`/`-via`/`-to` colours and their
+//! `-position` patches) accumulate into a [`GradState`] and compose
+//! the two-stop linear gradient instead of the silent no-op the
+//! un-mapped `_ => style` arm used to be.
 //!
 //! The honest boundaries, all documented:
 //!
 //! * **Three stops** (`via-*`) paint NOTHING rather than a wrong
 //!   (flattened) gradient — the static emit gate
 //!   (`aeolus_codegen_gpui::unsupported_reason`) refuses the program
-//!   typed, and the walk degrades to no gradient, never to a
-//!   two-stop misreading of a three-stop intent.
+//!   typed with the pin-verified reason, and the walk degrades to no
+//!   gradient, never to a two-stop misreading of a three-stop intent.
+//!   The state still RECORDS the via stop and its position (the full
+//!   v4 machinery one walk accumulates — the interp/CSS arms carry
+//!   the real three-stop output), the composition is what stays
+//!   two-stop.
 //! * **Radial/conic** and the bare `bg-linear` placeholder texts have
-//!   no `Fill` slot — the walk composes nothing for them (the static
-//!   gate refuses them with the same reason the interp/plan surfaces
-//!   carry).
+//!   no `Fill` slot — verified at the pin (`BackgroundTag`: Solid |
+//!   LinearGradient | PatternSlash | Checkerboard; conic stays the
+//!   vello sweep TODO) — the walk composes nothing for them (the
+//!   static gate refuses them with the same reason the interp/plan
+//!   surfaces carry).
 //! * GPUI's background is ONE slot: where v4 layers the gradient image
 //!   OVER a solid `background-color`, the composed gradient replaces
 //!   the solid the walk applied (the more specific v4 intent wins; the
@@ -59,6 +68,7 @@ pub struct GradState {
     from: Option<Hsla>,
     from_pos: Option<f32>,
     via: Option<Hsla>,
+    via_pos: Option<f32>,
     to: Option<Hsla>,
     to_pos: Option<f32>,
 }
@@ -86,6 +96,7 @@ impl GradState {
             Prop::GradientFrom => self.from = hsla_of(val),
             Prop::GradientFromPosition => self.from_pos = fraction_of(val),
             Prop::GradientVia => self.via = hsla_of(val),
+            Prop::GradientViaPosition => self.via_pos = fraction_of(val),
             Prop::GradientTo => self.to = hsla_of(val),
             Prop::GradientToPosition => self.to_pos = fraction_of(val),
             _ => {}
@@ -94,10 +105,11 @@ impl GradState {
 
     /// The composed linear gradient the state paints — `None` when
     /// nothing would (no direction, the `bg-none` clear, or a via stop
-    /// present: GPUI's gradient carries TWO stops, and a flattened
-    /// three-stop reading would paint a WRONG gradient, so the via
-    /// case degrades to no gradient — the static gate refuses it
-    /// typed).
+    /// present: the PIN's `Background` carries a fixed
+    /// `[LinearColorStop; 2]` and its fields are `pub(crate)` — a
+    /// flattened three-stop reading would paint a WRONG gradient, so
+    /// the via case degrades to no gradient; the static gate refuses
+    /// it typed with the pin-verified reason).
     ///
     /// The missing edges compose v4's `@property` initials: the
     /// transparent from/to stop at the 0%/100% defaults, so a lone
