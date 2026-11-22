@@ -25,6 +25,15 @@ aeolus-codegen-gpui = { path = "../aeolus-codegen-gpui" }
 # The IR longhand list the `gpui-caps` artifact walks (the §3.7
 # generator slice's per-longhand rows ride `Prop::ALL`'s own order).
 aeolus-ir = { workspace = true }
+# The five interpreter backends' walk-verdict replays (the
+# `backend-caps` artifact's render inputs — the committed
+# `caps_tables.rs` rows ARE the backends' own `walk_capabilities()`
+# freezes, the conformance moat's publish-the-emitter's-verdicts rule).
+aeolus-xilem = { path = "../aeolus-xilem" }
+aeolus-floem = { path = "../aeolus-floem" }
+aeolus-iced = { path = "../aeolus-iced" }
+aeolus-egui = { path = "../aeolus-egui" }
+aeolus-slint = { path = "../aeolus-slint" }
 
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
