@@ -17,6 +17,7 @@ use aeolus_ir::{Program, Prop};
 use proc_macro2::TokenStream;
 
 pub mod audit;
+pub mod caps_tables;
 pub mod conformance;
 
 /// One longhand a target cannot express — the capability report.
