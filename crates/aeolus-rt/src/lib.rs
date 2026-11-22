@@ -47,6 +47,7 @@ use aeolus_ir::{Layer, Program, Prop};
 
 mod class_cell;
 mod containers;
+pub mod probe;
 
 pub use aeolus_compile::{
     AttrBit, AttrKind, AttrProbe, AttrState, CachedCompiled, CompileError, ContainerBound,
@@ -96,6 +97,7 @@ pub use aeolus_compile::{CandidateOutcome, NoWalkObserver, WalkObserver, WalkSna
 pub use aeolus_theme::{ThemeError, ThemeSource, TokenTable};
 pub use class_cell::ClassCell;
 pub use containers::MeasuredContainers;
+pub use probe::{ProbeProgram, probe_programs};
 
 /// The static form a `tw!`-style macro emits.
 ///
