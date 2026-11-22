@@ -25,6 +25,14 @@ aeolus-codegen-gpui = { path = "../aeolus-codegen-gpui" }
 # The IR longhand list the `gpui-caps` artifact walks (the §3.7
 # generator slice's per-longhand rows ride `Prop::ALL`'s own order).
 aeolus-ir = { workspace = true }
+# The M1 scale-up's corpus-at-scale score (the conformance pages'
+# second line): the committed golden corpus compiles through the V1
+# pipeline (aeolus-compile + the two baked token tables — the default
+# palette/theme CSS lives in aeolus-core's data) and each entry's
+# longhands ride the same Capability verdicts the ceiling score runs.
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-theme = { workspace = true }
+aeolus-core = { workspace = true }
 # The five interpreter backends' walk-verdict replays (the
 # `backend-caps` artifact's render inputs — the committed
 # `caps_tables.rs` rows ARE the backends' own `walk_capabilities()`
