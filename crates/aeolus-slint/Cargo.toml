@@ -17,6 +17,14 @@ aeolus-core = { path = "../aeolus-core" }
 # The V1 runtime seam: the `StaticProgram`/`Env`/`AttrProbe`/`TokenSource`
 # types the program lane walks.
 aeolus-rt = { path = "../aeolus-rt" }
+# The backend-neutral static front door: the macro entries the prelude
+# re-exports below (`tw_static!`/`cn_static!`/`variants_static!` — no
+# GPUI audit; the macro crate stays framework-free, so this adds no
+# framework dependency here either).
+# The macro expansion's emitted consts name the IR types
+# (`::aeolus_ir::Layer`/`Decl`/`Val`) — the frozen program is IR data.
+aeolus-ir = { workspace = true }
+aeolus-macro = { workspace = true }
 # The framework's stable facade (`Brush`/`Color` at the crate root), with
 # every windowing backend and renderer feature off: this backend is pure
 # type-level lowering and compiles headless. Apps depend on `slint`
