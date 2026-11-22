@@ -234,6 +234,40 @@ pub fn emit_static_program(program: &Program, keywords: &[&str]) -> TokenStream 
     }}
 }
 
+/// The §4 perf contract's OUTLINED emit face: ONE call to
+/// [`aeolus_rt::StaticProgramBuilder::assemble`] taking the frozen data
+/// as the two `&'static` slices — no per-layer `const` bindings at the
+/// call site (the reference face's `const DECLS_N` items materialize
+/// per call site; the outlined face's slice literals live inside the
+/// single call expression). The layers + keywords are IDENTICAL to the
+/// reference face's (the byte-equal runtime behavior the tests pin);
+/// the macro selects this face by default (perf), the reference face
+/// stays the differential emit.
+pub fn emit_static_program_outlined(program: &Program, keywords: &[&str]) -> TokenStream {
+    let ir = ir_path();
+    let layer_entries = program.layers.iter().map(|layer| {
+        let cond = cond_tokens(layer.cond, &ir);
+        let decls = layer.decls.iter().map(|decl| {
+            let prop = ident_tokens(decl.prop, "prop");
+            let val = val_tokens(decl.val, &ir);
+            quote! { #ir::Decl { prop: #ir::Prop::#prop, val: #val } }
+        });
+        quote! { #ir::Layer::new(#cond, &[#(#decls),*]) }
+    });
+    let texts = keywords.iter().map(|text| {
+        let text = *text;
+        quote! { #text }
+    });
+    // The frozen slices are `static` items (the ALWAYS-single
+    // materialization the call site can borrow for `'static` — the
+    // assembly itself rides the ONE builder call).
+    quote! {{
+        static LAYERS: &[#ir::Layer] = &[#(#layer_entries),*];
+        static KEYWORDS: &[&str] = &[#(#texts),*];
+        ::aeolus_rt::StaticProgramBuilder::assemble(LAYERS, KEYWORDS)
+    }}
+}
+
 /// One IR enum unit's Debug name → the identifier tokens it freezes
 /// into. The IR's Debug spellings ARE the Rust identifiers (`Md`,
 /// `PointerFine`, the `Structural` variant names) — a parse failure
@@ -315,6 +349,74 @@ fn cond_tokens(cond: Cond, ir: &TokenStream) -> TokenStream {
         // static item carries it verbatim, the interp walk's
         // `SupportsProbe` seam answering at runtime.
         Cond::Supports(condition) => quote! { #ir::Cond::Supports(#condition) },
+        // The parent-relative state probes: the NAMED label form's
+        // payload rides the frozen static item (the named-container
+        // form's own shape — the label the fold interned freezes as
+        // the `&'static str` it is).
+        Cond::GroupHover { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::GroupHover { name: #name } }
+        }
+        Cond::GroupFocus { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::GroupFocus { name: #name } }
+        }
+        Cond::GroupFocusVisible { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::GroupFocusVisible { name: #name } }
+        }
+        Cond::GroupFocusWithin { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::GroupFocusWithin { name: #name } }
+        }
+        Cond::GroupActive { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::GroupActive { name: #name } }
+        }
+        Cond::GroupDisabled { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::GroupDisabled { name: #name } }
+        }
+        Cond::GroupVisited { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::GroupVisited { name: #name } }
+        }
+        Cond::GroupChecked { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::GroupChecked { name: #name } }
+        }
+        Cond::PeerHover { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::PeerHover { name: #name } }
+        }
+        Cond::PeerFocus { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::PeerFocus { name: #name } }
+        }
+        Cond::PeerFocusVisible { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::PeerFocusVisible { name: #name } }
+        }
+        Cond::PeerFocusWithin { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::PeerFocusWithin { name: #name } }
+        }
+        Cond::PeerActive { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::PeerActive { name: #name } }
+        }
+        Cond::PeerDisabled { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::PeerDisabled { name: #name } }
+        }
+        Cond::PeerVisited { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::PeerVisited { name: #name } }
+        }
+        Cond::PeerChecked { name } => {
+            let name = name_tokens(name);
+            quote! { #ir::Cond::PeerChecked { name: #name } }
+        }
         // The media-feature preferences: the payload is the typed bit —
         // the frozen static item names it, the interp walk's env facts
         // answering at runtime.
@@ -467,12 +569,23 @@ pub const fn supports(prop: Prop) -> bool {
             | Prop::Opacity
             | Prop::Cursor
             | Prop::TextOverflow
+            // The gradient direction row: the walk composes GPUI's OWN
+            // `linear_gradient` primitive from the `--tw-gradient-*`
+            // state (`aeolus_gpui::GradState`) — the closed-world forms
+            // (the `bg-linear-to-*` directions, the `bg-none` clear)
+            // pass the emit gate, the per-decl refinements (the
+            // radial/conic/placeholder row texts, refused on the
+            // pin-verified `BackgroundTag` shape) stay at the gates —
+            // the shadow preset tier's own shape (the composed surface
+            // native, the row text's verdict per declaration).
+            | Prop::BackgroundImage
             // The gradient stops and their positions: GPUI's
             // `linear_gradient` stops carry a colour and a percentage
-            // each, the v4 two-stop form. The via stop (three stops)
-            // and the direction longhand (whose verdict is the row
-            // TEXT's, see [`unsupported_reason`]) stay out of the
-            // per-prop table.
+            // each, the v4 two-stop form. The via stop and its
+            // position (the pin's fixed `[LinearColorStop; 2]` — the
+            // verified refusal) and the direction longhand's
+            // text-dependent verdict (see [`unsupported_reason`]) ride
+            // the gates.
             | Prop::GradientFrom
             | Prop::GradientTo
             | Prop::GradientFromPosition
@@ -646,8 +759,10 @@ fn decl_unsupported_reason(prop: Prop, val: Val, keyword: &str) -> Option<&'stat
 /// `linear-gradient(to …)` directions ([`aeolus_compile::
 /// linear_gradient_angle`]) and the `bg-none` clear — while the
 /// radial/conic/placeholder texts refuse with the reason the
-/// diagnostic renders; the via stop refuses on its own slot shape
-/// (GPUI's gradient carries two stops). `None` = expressible.
+/// diagnostic renders (the pin-verified `BackgroundTag` shape); the
+/// via stop refuses on the pin's fixed `[LinearColorStop; 2]` (no
+/// three-stop form is constructible at the `gpui-pre` 0.3.12 pin).
+/// `None` = expressible.
 ///
 /// `keyword` is the declaration's row text (the annotation a bare
 /// `Val::Kw` slot cannot recover): a direction decl with NO text
@@ -769,13 +884,18 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
             } else {
                 Some(
                     "GPUI's Fill carries only the linear-gradient directions (bg-linear-to-*) \
-                     — the radial/conic/placeholder texts have no slot",
+                     — verified at the gpui-pre 0.3.12 pin, the Background's BackgroundTag \
+                     carries no radial/conic shape (the radial/conic/placeholder texts have \
+                     no slot; conic stays the vello sweep TODO)",
                 )
             }
         }
-        Prop::GradientVia => Some(
-            "GPUI linear gradients carry two stops — the via stop has no slot (v4's \
-             three-stop form stays the documented boundary)",
+        Prop::GradientVia | Prop::GradientViaPosition => Some(
+            "the pin's Background carries a fixed [LinearColorStop; 2] with pub(crate) fields \
+             — verified at the gpui-pre 0.3.12 pin, no three-stop form is constructible, so \
+             the via stop would freeze a flattened (wrong) gradient (v4's three-stop form \
+             stays the documented boundary; the walk's GradState records the stop, the \
+             CSS/interp arms carry the real output)",
         ),
         // The decoration family's style longhand: GPUI renders a single
         // line — solid and wavy express through the pinned
