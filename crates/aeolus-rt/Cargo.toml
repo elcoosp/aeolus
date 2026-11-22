@@ -20,6 +20,10 @@ aeolus-theme = { workspace = true }
 # host names it from THIS crate's re-export (the walk entries' own
 # shape, not a second style type).
 aeolus-core = { workspace = true }
+# The conformance probe corpus (plan §5.1's walk half): the registry's
+# own rows are the probe grammar — one frozen program per row, the row's
+# target longhands riding beside it.
+aeolus-data = { path = "../aeolus-data" }
 
 [dev-dependencies]
 # The dynamic lane's microbenchmarks (divan, stable — the workspace
