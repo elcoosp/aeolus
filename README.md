@@ -35,10 +35,10 @@ it compiles it through the full V1 pipeline at macro-expansion time and emits a 
 | ------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `tw!("p-4 …")`     | validated, then the **input string emitted back** — re-parsed every process start | compiled at expansion → **frozen static program**; the string is never emitted          |
 | Static hot path    | parse → resolve → cache (**exclusive lock even on a hit**)                        | **zero parse, zero hash, zero locks** — static data applied under a `Copy` `Env`        |
-| IR                 | heap-shaped `StylePlan` (`Vec`/`BTreeMap`/`Box`), per-edge set-mask patches       | `Copy` longhands (**146 props**) + `PropMask` bitsets — `p-4 ⊕ px-8` is bit ops         |
+| IR                 | heap-shaped `StylePlan` (`Vec`/`BTreeMap`/`Box`), per-edge set-mask patches       | `Copy` longhands (**159 props**) + `PropMask` bitsets — `p-4 ⊕ px-8` is bit ops         |
 | Theme lookups      | `HashMap<String, Token>` by name                                                  | **tiered tables**: T0 literals · T1 dark pairs · T2 one load + one multiply             |
 | `cn()` / overrides | string-level tw_merge at runtime                                                  | **IR-level `cn()` + `overlay`** — rightmost-wins per longhand, computed at compile time |
-| Utility semantics  | 4,000-line `match` walls                                                          | **213 registry rows as data** → generated index, docs, sort order, conformance         |
+| Utility semantics  | 4,000-line `match` walls                                                          | **247 registry rows as data** → generated index, docs, sort order, conformance         |
 | Backends           | re-lower plans on every call                                                      | all six consume the frozen program; GPUI gets macros, `Env` plumbing and polyfills      |
 | Dynamic strings    | one big runtime matcher                                                           | same compiler behind `DynCache` + `ClassCell` — **no capability split**                 |
 
@@ -209,7 +209,7 @@ Every stage is total and fuzzed; the same compiler serves macros, the runtime la
 ```mermaid
 flowchart LR
     A["class string"] --> S["aeolus-syntax<br/>zero-copy lexer + spans"]
-    D["aeolus-data<br/>213 registry rows"] --> C
+    D["aeolus-data<br/>247 registry rows"] --> C
     T["aeolus-theme<br/>app.css → T0/T1/T2 tiers"] --> C
     S --> C["aeolus-compile<br/>lookup · longhand lowering<br/>variants → Cond · cn()/overlay"]
     C --> P["Program (aeolus-ir)<br/>Copy longhands + PropMask<br/>cascade-sorted layers"]
@@ -230,11 +230,24 @@ flowchart LR
 | **(e) Plan bridge** | `emit_plan` / `emit_plan_theme`                     | the §7 migration seam — the artifact lowered into the v0.x `StylePlan` the backends consume                |
 
 **Differential triangle:** new compiler ⟷ v0.x `Resolver` (kept in-tree as oracle) ⟷ real
-`tailwindcss` v4.1.17 (193-entry golden corpus). Any disagreement is a bug in one of the three.
+`tailwindcss` v4.1.17 (215-entry golden corpus). Any disagreement is a bug in one of the three.
 **The metamorphic checker** (`aeolus_compile::metamorphic_check*`) walks the triangle's in-tree
 half per string: `interp(compile(s))` must equal the CSS emit's cascade-resolved rules for every
 probe situation the string names — the diagnostics channels byte-equal, the sheet the
 per-candidate parts, every documented divergence a typed note.
+
+**Six published scores** (plan §5.1's conformance moat — the per-longhand expressible share over
+the 159-longhand IR, each the backend's OWN walk verdicts, drift-pinned by the replay test beside
+its crate; the pages are the committed `docs/CONFORMANCE*.md` artifacts):
+
+| backend | score | page |
+| --- | --- | --- |
+| gpui | **61.64%** (47.17% native + 14.47% polyfilled) | [docs/CONFORMANCE.md](docs/CONFORMANCE.md) |
+| floem | **84.91%** | [docs/CONFORMANCE-floem.md](docs/CONFORMANCE-floem.md) |
+| iced | **58.49%** | [docs/CONFORMANCE-iced.md](docs/CONFORMANCE-iced.md) |
+| egui | **58.49%** | [docs/CONFORMANCE-egui.md](docs/CONFORMANCE-egui.md) |
+| xilem | **57.86%** | [docs/CONFORMANCE-xilem.md](docs/CONFORMANCE-xilem.md) |
+| slint | **57.86%** (52.20% native + 5.66% polyfilled) | [docs/CONFORMANCE-slint.md](docs/CONFORMANCE-slint.md) |
 
 ## Backends
 
@@ -352,14 +365,14 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
 | `aeolus plan`                              | the V1 lane's plan bridge (`Target::Plan`): the v0.x `StylePlan` the backends consume, as the same canonical snapshot JSON `resolve` prints; slot-boundary notes + per-class misses ride stderr, `--fail-on` keys on the typed codes                        |
 | `aeolus check`                             | unknown classes with suggestions, unsupported utilities with reasons, `cn()` conflicts with winner attribution; `--fail-on` exit codes                                                |
 | `aeolus fmt`                               | the class-sort seam's file face: one file's class strings into the canonical order (`sort`'s batch form — stdout rewrite, the file untouched); `--check` prints `path:line:col "before" -> "after"` per out-of-order string and exits 1 — the CI drift gate |
-| `aeolus audit`                             | the capability audit (§5.1's project-sized twin): every scanned class string's longhands tiered against the GPUI backend ([`Caps`](crates/aeolus-codegen-gpui/src/lib.rs), the generated table the emit gates run), the refused/polyfill rows naming the capability's own typed boundary reason, the observed-set score in the summary; `--fail-on refused\|polyfill\|any\|none` turns the report into the CI gate (report-only by default), `--json` the machine form |
-| `cargo xtask gen-tables` / `verify-tables` | regenerate & drift-gate the committed artifacts: roots index, [docs/REGISTRY.md](docs/REGISTRY.md), [docs/CONFORMANCE.md](docs/CONFORMANCE.md), the GPUI capability table — a stale row fails plain `cargo test` |
+| `aeolus audit`                             | the capability audit (§5.1's project-sized twin): every scanned class string's longhands tiered against a backend — `--target gpui` (the default, the generated table the emit gates run) or `--target xilem|floem|iced|egui|slint` (the committed `caps_tables` freezes of each lane's own walk replay), the refused/polyfill rows naming the capability's own typed boundary reason, the observed-set score in the summary; `--fail-on refused\|polyfill\|any\|none` turns the report into the CI gate (report-only by default), `--json` the machine form |
+| `cargo xtask gen-tables` / `verify-tables` | regenerate & drift-gate the committed artifacts: roots index, [docs/REGISTRY.md](docs/REGISTRY.md), [docs/CONFORMANCE.md](docs/CONFORMANCE.md) + the five `docs/CONFORMANCE-<backend>.md` pages, the GPUI capability table and the five interpreter lanes' committed `caps_tables` rows — a stale row fails plain `cargo test` |
 | `aeolus-lsp` (the LSP server)              | editor hover, diagnostics, completion and colour swatches over the same pipeline: `hover` per class (longhand signature or typed refusal with its code), the extraction seam's strings linted per location, `completion` at the typing edge (registry spellings, theme tokens, the closed variant set — the compiler's own audited tables), `documentColor` swatches (the table's resolved light-tier rgba), `documentDiagnostic` pull (LSP 3.17 — the SAME findings the push channel publishes, recomputed on demand), `semanticTokens` (LSP 3.16 — every candidate's compile outcome onto the legend: lowered `class`, refused the custom `refused` type), `colorPresentation` (the picker's spellings — the table walked backwards, every root/token/opacity-step that re-resolves to the picked colour), `inlayHint` (LSP 3.17 — every lowered class rides one hint at its end: the CSS arm's own declarations compacted, the hover's markdown as the tooltip; a refused class never hints), `codeAction` quick fixes (the "did you mean" seam — every correction a spelling the pipeline lowers, the variant prefix and `/modifier` tail composed back on), `documentHighlight` (the cursor's class, every occurrence in the file), `rename` (the rename face — `prepareRename`'s candidate span under the cursor, `rename`'s one edit per textual occurrence of that candidate over EVERY open document — the references' own fold over the rename edits, each edit riding its document's URI, URI order across the map, the highlights' own raw-text equality), `formatting` (the class-sort seam's editor face — one edit per out-of-order class string, the canonical order as the new text, an already-canonical string answering nothing: the format-on-save no-op) and `documentSymbol` (the outline face — one symbol per candidate class in document order, the semantic legend's verdict beside the pipeline's own detail line: the compact CSS the class lowers to, or the refusal's stable code), `references` (the first cross-document answer — the highlights' textual equality over EVERY open document, each occurrence riding its `Location`, URI order across the map, a refused class's occurrences answering exactly like a lowered one's) and `workspace/symbol` (the workspace outline — the documentSymbol contract over every open document, the query the case-insensitive substring filter, the empty query riding every open candidate), `selectionRange` (the expand-selection walk — one parent chain per requested position, the candidate span the shared locator keys with the string's content span riding as its parent, the caret's zero-width range the chain-less answer outside any string), `linkedEditingRange` (the simultaneous-edit face — the highlights' textual equality as the client's edit-together ranges, same-file only: the cross-document fold stays the rename face's) and the theme lifecycle (the watched-files event naming the wired `ThemeLoader`'s URI re-themes the running session — the equal-content save the byte-neutral no-op, the swap retiring the pool it invalidates and republishing every open document; `Session::with_theme_loader` the face, `run_stdio_with_theme` the loop, the binary's `--theme <path>` the consumer flag); the session's compiles ride the bounded `DynCache` pool — the keystroke repeat is the cheap path, the pool face on `AeolusEngine::with_observer`, the walk face on `AeolusEngine::with_walk_observer`; the wire half answers beside them — `Session::with_observer` (the loop's observed twin `run_stdio_observed`) streams the state machine's per-message verdicts (`TransportObserver`: answered/quiet requests, published/exit/silent notifications, `TransportStats` totals, the answers byte-identical); the outline folding face beside the documentSymbol outline (`textDocument/foldingRange` — one fold per extracted class string, the string's own content span, document order, no compile verdict riding, the multi-line raw-string call sites the folds the editor actually collapses) and the workspace-wide pull (`workspace/diagnostic` — every open document's report beside its content-keyed result identity, the unchanged verdict the client's cache answers from, nothing recomputes); the token goto-definition face (`textDocument/definition` — the cursor's token class answers the theme file's own `--color-{name}`/`--{name}` declaration under the config's named origin URI, `TokenOrigins` the host store that rides first) and the command surface (`workspace/executeCommand` — the closed table carrying `aeolus.sortDocument` beside `aeolus.renameToken`, the class-sort seam and the theme-token rename fold as commands); the selection-scoped sort (`textDocument/rangeFormatting` — the formatting walk restricted to the strings the requested range touches, a partial selection still naming the string, the whole-document range the formatting answer byte for byte); the selection-scoped highlighter (`textDocument/semanticTokens/range` — the full-token walk restricted to the candidates the requested range touches, a partial selection still naming the token, a candidate wholly outside staying out AND never compiling — the walk's win over the full legend, the whole-document range the full answer byte for byte); the incremental sync (`TextDocumentSyncKind::INCREMENTAL` — the ranged didChange content changes spliced sequentially against the text the previous change left, a range-less change the full-text replace the full-sync clients keep sending, an unknown URI's empty base the implicit-open generalization); `bin/aeolus-lsp` speaks stdio JSON-RPC |
 
 ## Correctness & performance
 
 - **Spec-first:** registry + IR published as data; golden corpus generated by the real v4.1.17
-  compiler (193 entries, growing by mining Tailwind's own test cases).
+  compiler (215 entries, growing by mining Tailwind's own test cases).
 - **Differential pins everywhere:** lexer ⟷ v0.x parser, `cn()` ⟷ tw_merge oracle, plan bridge ⟷
   v0.x resolver, index ⟷ linear scan, `ClassCell` ⟷ macro-frozen program (byte-equal).
 - **Fuzz + property suites:** seven fuzz targets (60 s CI sweeps — the §5.3 metamorphic
@@ -408,7 +421,7 @@ differential oracle — no big-bang migration.
 | Phase                   | Scope                                                                                                                                             | Status                         |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | **P0** Prove it         | iai/criterion gates vs hand-written builders; replace §4 targets                                                                                  | ✅ the stable half landed 2026-11 — `benches/perf_contract` (the walk beside the hand-written chains, parity-pinned; walk 1.07 µs vs hand 84 ns on the button string, clone 70 ns, cell warm 908 ns) — the iai-callgrind instruction-count golden is the planned nightly half (not yet in-tree: no iai-callgrind dependency rides the workspace) |
-| **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (213 rows) · `aeolus-ir` (146 longhands)                                                                          | ✅ landed                      |
+| **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (247 rows) · `aeolus-ir` (159 longhands)                                                                          | ✅ landed                      |
 | **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all five emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
 | **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill; shadow tier (`shadow-*` → GPUI's own `Vec<BoxShadow>`) | ✅ landed                      |
 | **P4** Env & state      | frame `Env`, dark/breakpoints, state layers, `AttrProbe` host seam                                                                                | ✅ landed                      |
@@ -432,7 +445,7 @@ differential oracle — no big-bang migration.
 | Crate            | Role                                                                                                                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `aeolus-syntax`  | zero-copy lexer: borrowed candidates + spans (std build today; `no_std + alloc` capable per the architecture plan)      |
-| `aeolus-data`    | the registry as data: 213 audited rows → generated roots index, docs, sort order                                       |
+| `aeolus-data`    | the registry as data: 247 audited rows → generated roots index, docs, sort order                                       |
 | `aeolus-ir`      | `Copy` longhand IR: `Prop`/`Val`/`Decl`/`Layer`/`Program` + `PropMask` bitset algebra                                  |
 | `aeolus-theme`   | CSS-first `ThemeSource` → tiered `TokenTable`s; `@source` directives                                                   |
 | `aeolus-compile` | the pipeline: `compile`/`cn`/`overlay`, 5 emit arms, `Customs`, `DynCache`, `sort`, `scan`/`build`, `emit_plan` bridge, the `WalkObserver`/`compile_observed` walk face |
