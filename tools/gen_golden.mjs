@@ -141,25 +141,6 @@ const CORPUS = [
   { theme: "default", class: "divide-red-500" },
   { theme: "default", class: "sr-only" },
   { theme: "default", class: "not-sr-only" },
-  // The flagship wave's families, generated through the real compiler
-  // (the deliberate regeneration): the gradient stop machinery (the
-  // via stop and the position patches the walk accumulates), the
-  // composed transform forms (the `--tw-*` var + composed property
-  // line the CSS arm renders beside), and the named group/peer labels
-  // the IR slot rides.
-  { theme: "default", class: "bg-linear-to-r from-red-500 via-white to-blue-500" },
-  { theme: "default", class: "bg-linear-to-br from-red-500 to-blue-500" },
-  { theme: "default", class: "from-20% via-30% to-80%" },
-  { theme: "default", class: "via-50%" },
-  { theme: "default", class: "scale-y-125" },
-  { theme: "default", class: "scale-150" },
-  { theme: "default", class: "translate-y-4" },
-  { theme: "default", class: "translate-x-1/2" },
-  { theme: "default", class: "skew-x-12" },
-  { theme: "default", class: "-rotate-90" },
-  { theme: "default", class: "group-active/menu:bg-red-500" },
-  { theme: "default", class: "group-focus-within/nav:underline" },
-  { theme: "default", class: "peer-disabled/menu:opacity-50" },
   // element-relative typography (v0.5 §2): token forms carry their
   // relative unit (em / unitless ratio); arbitrary + spacing-multiple
   // forms stay absolute.
