@@ -646,6 +646,12 @@ pub(crate) const NUMBER_FORMS: &[(&str, NumForm, Option<&str>)] = &[
     ("col-end", NumForm::Line, None),
     ("row-start", NumForm::Line, None),
     ("row-end", NumForm::Line, None),
+    // The parity wave 1's number-bearing roots: the clamp count (the
+    // unitless `-webkit-line-clamp` value) and the between-child border
+    // widths (the px divide scale).
+    ("line-clamp", NumForm::Unit, None),
+    ("divide-x", NumForm::Px, None),
+    ("divide-y", NumForm::Px, None),
 ];
 
 /// The row's number form — the unit-suffix oracle the arbitrary Num
@@ -778,6 +784,137 @@ pub(crate) fn row_to_css(
                     });
                 }
                 out = expanded;
+            }
+            Some(Prop::LineClamp) => {
+                // v4's own composite emission (the oracle's
+                // `Applied::Texts` special case, the same lines): the
+                // overflow and `-webkit-box` display pair beside the
+                // clamp value — the reset (`line-clamp-none`) flips the
+                // pair to the visible/block/horizontal forms.
+                let reset = matches!(out.first().map(|r| r.value.base.as_str()), Some("unset"));
+                let (overflow, display, orient) = if reset {
+                    ("visible", "block", "horizontal")
+                } else {
+                    ("hidden", "-webkit-box", "vertical")
+                };
+                out.push(line(Prop::OverflowX, "overflow", overflow));
+                out.push(line(Prop::Display, "display", display));
+                out.push(line(Prop::LineClamp, "-webkit-box-orient", orient));
+            }
+            Some(&prop @ (Prop::SpaceX | Prop::SpaceY)) => {
+                // The between-child margin rule (v4's own machinery
+                // emission): the reverse var resets to 0 and the value
+                // fans onto the logical margin PAIR — the end side
+                // carries the value, the start side the reverse flip
+                // (the `space-x-reverse` class's own var). The CSS arm
+                // emits the rule's lines; the CHILD-SELECTOR intent
+                // rides the longhand (the rule's selector is the emit
+                // stage's, see css.rs).
+                let (reverse, start, end) = if prop == Prop::SpaceX {
+                    (
+                        Prop::SpaceXReverse,
+                        "margin-inline-start",
+                        "margin-inline-end",
+                    )
+                } else {
+                    (
+                        Prop::SpaceYReverse,
+                        "margin-block-start",
+                        "margin-block-end",
+                    )
+                };
+                let reverse_name = reverse.name();
+                let value = out[0].value.base.clone();
+                out[0].prop_name = start;
+                out[0].value.base = format!("calc({value} * var({reverse_name}))");
+                out.insert(0, line(reverse, reverse_name, "0"));
+                out.push(line(
+                    prop,
+                    end,
+                    format!("calc({value} * calc(1 - var({reverse_name})))"),
+                ));
+            }
+            Some(&prop @ (Prop::DivideX | Prop::DivideY)) => {
+                // The between-child border-width rule (the space
+                // families' border twin): the reverse var resets to 0
+                // and the style lines ride v4's `--tw-border-style` var
+                // reference — the ONE logical line for the column axis,
+                // the physical PAIR for the row axis (the upstream
+                // emission's own shape, quoted verbatim from the pinned
+                // compiler's output).
+                let (reverse, start, end) = if prop == Prop::DivideX {
+                    (
+                        Prop::DivideXReverse,
+                        "border-inline-start-width",
+                        "border-inline-end-width",
+                    )
+                } else {
+                    (
+                        Prop::DivideYReverse,
+                        "border-top-width",
+                        "border-bottom-width",
+                    )
+                };
+                let reverse_name = reverse.name();
+                let value = out[0].value.base.clone();
+                out[0].prop_name = start;
+                out[0].value.base = format!("calc({value} * var({reverse_name}))");
+                out.insert(0, line(reverse, reverse_name, "0"));
+                if prop == Prop::DivideX {
+                    out.insert(
+                        1,
+                        line(
+                            Prop::DivideStyle,
+                            "border-inline-style",
+                            "var(--tw-border-style)",
+                        ),
+                    );
+                } else {
+                    // The row axis renders the physical pair, the
+                    // bottom leg first (the upstream emission's own
+                    // order).
+                    out.insert(
+                        1,
+                        line(
+                            Prop::DivideStyle,
+                            "border-bottom-style",
+                            "var(--tw-border-style)",
+                        ),
+                    );
+                    out.insert(
+                        2,
+                        line(
+                            Prop::DivideStyle,
+                            "border-top-style",
+                            "var(--tw-border-style)",
+                        ),
+                    );
+                }
+                out.push(line(
+                    prop,
+                    end,
+                    format!("calc({value} * calc(1 - var({reverse_name})))"),
+                ));
+            }
+            Some(Prop::DivideStyle) => {
+                // The between-child style rule: v4's `--tw-border-style`
+                // var line beside the composed `border-style` (the
+                // cascade composition the width rules' var references
+                // resolve — the width rows' inserted style lines read
+                // the same var).
+                if let Some(first) = out.first_mut() {
+                    first.prop_name = "--tw-border-style";
+                    let style = first.value.base.clone();
+                    out.push(line(Prop::DivideStyle, "border-style", style));
+                }
+            }
+            Some(Prop::DivideColor) => {
+                // The between-child colour rule renders the real
+                // `border-color` line (the machinery longhand's own
+                // name is the audit/docs view, not the emission).
+                if let Some(first) = out.first_mut() {
+                    first.prop_name = "border-color";
+                }
             }
             _ => {}
         }
@@ -1063,6 +1200,22 @@ fn fan_css(targets: &'static [Prop], text: &str, colour_form: bool) -> Vec<Rende
             colour_form,
         })
         .collect()
+}
+
+/// One appended composite line (the chain-append precedent's unit): the
+/// IR longhand slot is the cascade SORT key, the rendered property name
+/// and value the rule's own line (the `-webkit-` prefixed pair's
+/// precedent — the sort orders, the names render).
+fn line(prop: Prop, prop_name: &'static str, value: impl Into<String>) -> RenderedCss {
+    RenderedCss {
+        prop,
+        prop_name,
+        value: CssValue {
+            base: value.into(),
+            dark: None,
+        },
+        colour_form: false,
+    }
 }
 
 /// The suffix's CSS text inside the row's OWN keyword table — the
