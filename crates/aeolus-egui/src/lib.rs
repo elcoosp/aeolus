@@ -47,6 +47,7 @@
 //! # }
 //! ```
 
+pub mod caps;
 pub mod gradient;
 pub mod program;
 
