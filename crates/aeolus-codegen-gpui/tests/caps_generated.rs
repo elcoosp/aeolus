@@ -125,14 +125,14 @@ fn the_boundaries_keep_their_typed_reasons() {
         "the per-prop fallback's own text rides: {}",
         z_index.reason
     );
+    // The direction longhand rode the wave to NATIVE (the walk composes
+    // GPUI's own linear_gradient from the `--tw-gradient-*` state — the
+    // shadow preset tier's own shape); its per-decl refinements (the
+    // radial/conic/placeholder row texts) stay at the emit gates, the
+    // per-longhand ceiling the docs page renders.
     let direction = PROP_CAPABILITIES
         .iter()
         .find(|row| row.prop == Prop::BackgroundImage)
         .expect("the direction longhand rides");
-    assert_eq!(direction.tier, Tier::Refused);
-    assert!(
-        direction.reason.contains("annotation"),
-        "the row-TEXT refinement names itself: {}",
-        direction.reason
-    );
+    assert_eq!(direction.tier, Tier::Native);
 }
