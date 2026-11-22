@@ -16,6 +16,14 @@ aeolus-core = { path = "../aeolus-core" }
 # The V1 runtime seam: the `StaticProgram`/`Env`/`AttrProbe`/`TokenSource`
 # types the program lane walks.
 aeolus-rt = { path = "../aeolus-rt" }
+# The backend-neutral static front door: the macro entries the prelude
+# re-exports below (`tw_static!`/`cn_static!`/`variants_static!` — no
+# GPUI audit; the macro crate stays framework-free, so this adds no
+# framework dependency here either).
+# The macro expansion's emitted consts name the IR types
+# (`::aeolus_ir::Layer`/`Decl`/`Val`) — the frozen program is IR data.
+aeolus-ir = { workspace = true }
+aeolus-macro = { workspace = true }
 iced_core = "0.14"
 # Widget style types (container::Style / button::{Style, Status} / Catalog)
 # live in iced_widget; every renderer feature (wgpu, tiny-skia, image, ...)
