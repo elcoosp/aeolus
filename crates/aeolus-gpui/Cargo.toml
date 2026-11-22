@@ -17,6 +17,10 @@ aeolus-compile = { path = "../aeolus-compile" }
 aeolus-macro = { workspace = true }
 
 [dev-dependencies]
+# The §4 instruction-count golden's nightly half (the iai-callgrind
+# gate): the stable `perf_contract` wall-clock harness stays the stable
+# half; this bench target runs ONLY in CI on nightly + valgrind.
+iai-callgrind = "0.14"
 # The attribute-bits seam's microbenchmarks (divan, stable — the
 # workspace bench idiom).
 divan = "0.1"
@@ -113,6 +117,22 @@ harness = false
 # parity pins at setup.
 [[bench]]
 name = "perf_contract"
+harness = false
+
+# The named-group dispatch's microbenchmark (the wave's M1b half).
+[[bench]]
+name = "groups"
+harness = false
+
+# The transform lane's microbenchmark (the wave's M1c half).
+[[bench]]
+name = "transform"
+harness = false
+
+# The §4 instruction-count golden (the iai-callgrind gate, nightly CI
+# only — the stable `perf_contract` stays the wall-clock half).
+[[bench]]
+name = "iai_contract"
 harness = false
 
 [lints]
