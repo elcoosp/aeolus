@@ -1094,6 +1094,30 @@ fn escape_class(raw: &str) -> String {
     out
 }
 
+/// The between-child longhands — the CHILD-SELECTOR emission shape: the
+/// rule's declarations style the container's OTHER elements, so the
+/// selector wraps the class compound in v4's own
+/// `:where(& > :not(:last-child))` form (the real tailwindcss v4.1.17
+/// emission the corpus pins; the parity harness's flattening resolves
+/// the `&` to the class compound — the same selector text the nested
+/// rule normalizes to).
+fn is_child_selector_prop(prop: aeolus_ir::Prop) -> bool {
+    use aeolus_ir::Prop;
+    matches!(
+        prop,
+        Prop::SpaceXReverse
+            | Prop::SpaceX
+            | Prop::SpaceYReverse
+            | Prop::SpaceY
+            | Prop::DivideXReverse
+            | Prop::DivideYReverse
+            | Prop::DivideStyle
+            | Prop::DivideX
+            | Prop::DivideY
+            | Prop::DivideColor
+    )
+}
+
 /// Build one rule's selector: the optional parent/peer head with its
 /// combinator, the escaped class, the probe suffixes, the dark scope.
 /// `dark_companion` renders the baked-pair rule's `:where(.dark, .dark *)`
@@ -1103,8 +1127,10 @@ fn escape_class(raw: &str) -> String {
 /// segment keeps the compound suffix form. The head is
 /// `.<class>[:<probe>]`: the class half escapes like any class text,
 /// the probe half renders raw (a pseudo-class is selector syntax, not
-/// class text).
-fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
+/// class text). `child` wraps the whole class compound in v4's
+/// between-child `:where(... > :not(:last-child))` form (the
+/// space/divide families' emission shape).
+fn selector_for(raw: &str, set: &CondSet, dark_companion: bool, child: bool) -> String {
     let mut out = String::new();
     if dark_companion {
         out.push_str(":where(.dark, .dark *) ");
@@ -1168,7 +1194,18 @@ fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
                 alt
             })
             .collect();
-        return alternatives.join(", ");
+        let joined = alternatives.join(", ");
+        return if child {
+            // Each alternative wraps in the between-child form (the
+            // compound stays the class + its conjunctive stack).
+            joined
+                .split(", ")
+                .map(|alt| format!(":where({alt} > :not(:last-child))"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            joined
+        };
     }
     for pseudo in &set.pseudos {
         out.push_str(pseudo);
@@ -1182,6 +1219,13 @@ fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
     if set.dark {
         out.push_str(":where(.dark, .dark *)");
     }
+    if child {
+        // The between-child form: the whole compound sits INSIDE the
+        // `:where(...)`, the child test appended to it — the flattened
+        // `:where(.hover\:space-x-4:hover > :not(:last-child))` shape
+        // the corpus pins.
+        return format!(":where({out} > :not(:last-child))");
+    }
     out
 }
 
@@ -1189,8 +1233,14 @@ fn selector_for(raw: &str, set: &CondSet, dark_companion: bool) -> String {
 /// always; the `:where(.dark, .dark *)` companion when a baked pair rode
 /// along and the candidate was not already `dark:`-conditioned. `dark`
 /// picks the pair's dark half where one exists (the light half never
-/// renders under dark).
+/// renders under dark). The between-child families (space/divide)
+/// render their child-selector form — the selector wraps the class
+/// compound, the declarations stay the rule body.
 fn push_rules(rules: &mut Vec<CssRule>, raw: &str, set: &CondSet, decls: &[lower::CssDecl]) {
+    // The between-child emission shape: one longhand's presence flips
+    // the whole candidate's selector (the declarations ARE the child
+    // rule's body — v4's own emission form).
+    let child = decls.iter().any(|decl| is_child_selector_prop(decl.prop));
     // The `before:`/`after:` body contract (the upstream functional
     // body, pinned verbatim: `decl('content', 'var(--tw-content)')`
     // rides ahead of `...v.nodes`). The per-rule `""` fallback stands
@@ -1221,20 +1271,20 @@ fn push_rules(rules: &mut Vec<CssRule>, raw: &str, set: &CondSet, decls: &[lower
         // The rule already fires under dark: the pair's dark half IS the
         // value (the light half never renders).
         rules.push(CssRule {
-            selector: selector_for(raw, set, false),
+            selector: selector_for(raw, set, false, child),
             media: set.at,
             body: lines(true),
         });
         return;
     }
     rules.push(CssRule {
-        selector: selector_for(raw, set, false),
+        selector: selector_for(raw, set, false, child),
         media: set.at,
         body: lines(false),
     });
     if decls.iter().any(|decl| decl.value.dark.is_some()) {
         rules.push(CssRule {
-            selector: selector_for(raw, set, true),
+            selector: selector_for(raw, set, true, child),
             media: set.at,
             body: lines(true),
         });
