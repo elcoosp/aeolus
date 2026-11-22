@@ -99,12 +99,14 @@ pub fn fold(variants: &[&str], classifier: &impl ClassifyVariant) -> Result<Cond
 
 /// The typed classification for ONE variant segment: the built-in
 /// table first, the registered aliases second. The named group/peer
-/// label (`group-hover/menu`) folds to its probe: the NAME has no IR
-/// slot yet (cond.rs documents the threading as a compile-stage job
-/// this slice leaves to the codegen). The CSS emit arm reuses this as
-/// the REFUSAL oracle (what a segment IS) while rendering the selector
-/// shape itself (HOW it shows) — the two must agree, and `tests/css.rs`
-/// pins it.
+/// label (`group-hover/menu`) folds to its probe WITH the label riding
+/// the payload (`Cond::GroupHover { name: Some("menu") }` — the
+/// named-container fold's own rule): the condition IS which group the
+/// question tests, so every consumer that answers it sees the same
+/// named question the CSS head renders. The CSS emit arm reuses this
+/// as the REFUSAL oracle (what a segment IS) while rendering the
+/// selector shape itself (HOW it shows) — the two must agree, and
+/// `tests/css.rs` pins it.
 pub(crate) fn classify(variant: &str, classifier: &impl ClassifyVariant) -> Option<Cond> {
     classify_builtin(variant).or_else(|| classifier.classify(variant))
 }
@@ -363,8 +365,20 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         "file" => Some(Cond::FileSelector),
         "backdrop" => Some(Cond::Backdrop),
         "details-content" => Some(Cond::DetailsContent),
-        "group-hover" => Some(Cond::GroupHover),
-        "group-focus" => Some(Cond::GroupFocus),
+        // The parent-relative probes: the label split happened above and
+        // the label is SEMANTIC here the way the named-container form's
+        // is — `group-hover/menu` names WHICH group the question tests,
+        // two different groups are two different conditions (the
+        // `Cond::GroupHover` payload, the `@md/card` fold's own rule).
+        // An empty label (`group-hover/:`) is the unknown-variant
+        // refusal, never a silent unnamed fold (the container form's
+        // own guard).
+        "group-hover" => Some(Cond::GroupHover {
+            name: group_label(label).ok()?,
+        }),
+        "group-focus" => Some(Cond::GroupFocus {
+            name: group_label(label).ok()?,
+        }),
         // The composition tier: the `group`/`peer` compound mechanisms
         // compose with every probe state the element-own tier answers
         // (the tailwindcss v4.1.17 `staticVariant` set — `active`,
@@ -372,22 +386,64 @@ pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
         // `focus-within` — composed per the compound table's own
         // eligibility). Each composition is its own typed probe; the
         // label form (`group-active/menu`) splits before this table
-        // runs (the group-hover precedent).
-        "group-focus-visible" => Some(Cond::GroupFocusVisible),
-        "group-focus-within" => Some(Cond::GroupFocusWithin),
-        "group-active" => Some(Cond::GroupActive),
-        "group-disabled" => Some(Cond::GroupDisabled),
-        "group-visited" => Some(Cond::GroupVisited),
-        "group-checked" => Some(Cond::GroupChecked),
-        "peer-hover" => Some(Cond::PeerHover),
-        "peer-focus" => Some(Cond::PeerFocus),
-        "peer-focus-visible" => Some(Cond::PeerFocusVisible),
-        "peer-focus-within" => Some(Cond::PeerFocusWithin),
-        "peer-active" => Some(Cond::PeerActive),
-        "peer-disabled" => Some(Cond::PeerDisabled),
-        "peer-visited" => Some(Cond::PeerVisited),
-        "peer-checked" => Some(Cond::PeerChecked),
+        // runs (the group-hover precedent) and rides the payload.
+        "group-focus-visible" => Some(Cond::GroupFocusVisible {
+            name: group_label(label).ok()?,
+        }),
+        "group-focus-within" => Some(Cond::GroupFocusWithin {
+            name: group_label(label).ok()?,
+        }),
+        "group-active" => Some(Cond::GroupActive {
+            name: group_label(label).ok()?,
+        }),
+        "group-disabled" => Some(Cond::GroupDisabled {
+            name: group_label(label).ok()?,
+        }),
+        "group-visited" => Some(Cond::GroupVisited {
+            name: group_label(label).ok()?,
+        }),
+        "group-checked" => Some(Cond::GroupChecked {
+            name: group_label(label).ok()?,
+        }),
+        "peer-hover" => Some(Cond::PeerHover {
+            name: group_label(label).ok()?,
+        }),
+        "peer-focus" => Some(Cond::PeerFocus {
+            name: group_label(label).ok()?,
+        }),
+        "peer-focus-visible" => Some(Cond::PeerFocusVisible {
+            name: group_label(label).ok()?,
+        }),
+        "peer-focus-within" => Some(Cond::PeerFocusWithin {
+            name: group_label(label).ok()?,
+        }),
+        "peer-active" => Some(Cond::PeerActive {
+            name: group_label(label).ok()?,
+        }),
+        "peer-disabled" => Some(Cond::PeerDisabled {
+            name: group_label(label).ok()?,
+        }),
+        "peer-visited" => Some(Cond::PeerVisited {
+            name: group_label(label).ok()?,
+        }),
+        "peer-checked" => Some(Cond::PeerChecked {
+            name: group_label(label).ok()?,
+        }),
         _ => None,
+    }
+}
+
+/// The parent-relative probe's label payload: `Ok(None)` for the bare
+/// form, the interned label for the named form, a refusal (`Err`) for
+/// the empty label (`group-hover/:` — the named-container fold's own
+/// guard). The label charset is the attr-name one (identifier text,
+/// the same honest grammar every payload rides).
+fn group_label(label: Option<&str>) -> Result<Option<&'static str>, ()> {
+    match label {
+        None => Ok(None),
+        Some("") => Err(()),
+        Some(label) if is_attr_name(label) => Ok(Some(intern(label))),
+        Some(_) => Err(()),
     }
 }
 
