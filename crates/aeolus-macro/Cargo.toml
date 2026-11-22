@@ -37,6 +37,19 @@ verbose-diagnostics = []
 # the `StaticProgram` the expansion evaluates to (the expansion's
 # `::aeolus_rt::…` absolute paths resolve through this dev-dep).
 aeolus-rt = { path = "../aeolus-rt" }
+# The integration battery's runtime half (tests/baked_theme.rs): the
+# same walks the expansion performs, through the pipeline's public face,
+# for the byte-equality pins.
+aeolus-compile = { path = "../aeolus-compile" }
+aeolus-theme = { workspace = true }
+aeolus-ir = { workspace = true }
+# The baked-theme bench: the expansion-time walk the `theme:` argument
+# runs, measured beside the embedded shadcn bake.
+divan = "0.1"
+
+[[bench]]
+name = "baked"
+harness = false
 
 # The macro grammar's pedantic exceptions ride the WORKSPACE table
 # (cargo forbids a local `[lints.clippy]` beside `workspace = true`,
