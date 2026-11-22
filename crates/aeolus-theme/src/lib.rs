@@ -120,6 +120,24 @@ impl ThemeSource {
         Self::build(light_css, dark_css, true)
     }
 
+    /// The SINGLE-FILE host sheet: the same `app.css` a web Tailwind v4
+    /// project uses — `@theme`/`:root` tokens plus a `.dark` block, one
+    /// file — read as one source (plan §3.4 T0/T1's expansion-time bake
+    /// and any host that hands over one sheet). The light half is the
+    /// sheet with every `.dark`-selector block removed; the dark variant
+    /// is those blocks over the light palette (`TailwindTheme::dark_variant`,
+    /// the audited re-resolution). A sheet without a `.dark` block builds
+    /// with no dark half at all — every token bakes to a literal.
+    ///
+    /// # Errors
+    /// [`ThemeError::Parse`] when the sheet does not parse (the audited
+    /// `ParseError`, carried verbatim); [`ThemeError::Source`] when an
+    /// `@source` statement is malformed.
+    pub fn from_app_css(css: &str) -> Result<Self, ThemeError> {
+        let (light_css, dark_css) = split_dark_blocks(css);
+        Self::from_css(&light_css, dark_css.as_deref())
+    }
+
     /// The construction the public entry points share. `scan` names the
     /// provenance half: the host-called [`ThemeSource::from_css`] scans
     /// the light sheet it was handed (the origins a goto-definition face
@@ -215,7 +233,69 @@ impl ThemeSource {
 /// Why a theme source or a token table failed to build. An empty colour
 /// surface cannot occur (every theme is default-seeded with the full v4
 /// palette), so the failure modes are a parse failure (carried verbatim,
-/// never stringly re-wrapped), the T1 budget boundary below and the
+/// Split a single-file host sheet into its light half and its `.dark`
+/// overrides (the `ThemeSource::from_app_css` seam): the light half is
+/// the sheet with every `.dark`-selector block removed, the dark half is
+/// those blocks verbatim — `.dark` selectors kept, so the reader's own
+/// block classifier picks them up. Comment spans are skipped while
+/// scanning (a `.dark` inside a comment never matches); braces are
+/// depth-matched (a nested rule never truncates the block). A sheet
+/// without a `.dark` block splits to `(the sheet, None)` — byte-identical
+/// light half.
+fn split_dark_blocks(css: &str) -> (String, Option<String>) {
+    let bytes = css.as_bytes();
+    let mut light = String::with_capacity(css.len());
+    let mut dark = String::new();
+    let mut i = 0usize;
+    let mut rest = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            // A comment span copies verbatim to the light half and
+            // stays out of the selector scan.
+            b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'*' => {
+                let start = i;
+                i += 2;
+                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i = (i + 2).min(bytes.len());
+                light.push_str(&css[start..i]);
+                rest = i;
+            }
+            // A block: the selector is the comment-free text since the
+            // last block's close.
+            b'{' => {
+                let selector = css[rest..i].trim();
+                let mut depth = 1usize;
+                let mut close = i + 1;
+                while close < bytes.len() && depth > 0 {
+                    match bytes[close] {
+                        b'{' => depth += 1,
+                        b'}' => depth -= 1,
+                        _ => {}
+                    }
+                    close += 1;
+                }
+                if selector.contains(".dark") {
+                    dark.push_str(&css[rest..close]);
+                } else {
+                    light.push_str(&css[rest..close]);
+                }
+                i = close;
+                rest = close;
+            }
+            _ => i += 1,
+        }
+    }
+    light.push_str(&css[rest..]);
+    let dark = if dark.is_empty() { None } else { Some(dark) };
+    (light, dark)
+}
+
+/// Why a theme source or a token table failed to build. An empty colour
+/// surface never fails silently here: the parse failure is the audited
+/// reader's own error type (carried verbatim — never stringly
+/// re-wrapped), the T1 budget boundary below and the
 /// typed `@source` scan contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ThemeError {
