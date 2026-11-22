@@ -56,30 +56,56 @@ Crates are consumed from git (see [Status](#status--roadmap)):
 
 ```toml
 [dependencies]
-# Static / macro path (flagship):
-aeolus-gpui = { git = "https://github.com/elcoosp/aeolus" }
-# …or the runtime resolver path:
+# Static / macro path (flagship — every backend):
+aeolus-gpui  = { git = "https://github.com/elcoosp/aeolus" }   # the GPUI-gated lane
+aeolus-xilem = { git = "https://github.com/elcoosp/aeolus" }   # or any of floem/iced/egui/slint
+# …the runtime resolver lane (the dynamic fallback, below):
 aeolus-core  = { git = "https://github.com/elcoosp/aeolus" }
-aeolus-xilem = { git = "https://github.com/elcoosp/aeolus" }
 ```
 
-### Static — compile-time (GPUI)
+### Static — compile-time (every backend)
+
+The documented path on ALL SIX backends is compile-time. GPUI's `tw!` audits the expansion
+against GPUI's capability table — a capability the target cannot express is a compile error.
+The five interpreter backends re-export the NEUTRAL entries — `tw_static!`/`cn_static!`/
+`variants_static!` — which freeze WITHOUT that gate: the freeze is the host's choice, and the
+backend's own `LoweringReport` is the honesty channel for anything it cannot express.
 
 ```rust,ignore
+// GPUI: the gated lane (compile-time refusals ride):
 use aeolus_gpui::prelude::*;
-
-// Parsed, theme-resolved and merged at expansion time.
-// At runtime: static data + a Copy Env. That's it.
 div().tw(tw!(
     "flex items-center gap-2 p-4 rounded-md bg-primary text-primary-foreground \
      hover:bg-primary/90 dark:shadow-none md:p-6"
 ))
+
+// Xilem, Floem, Iced, egui, Slint: the neutral lane (no gate, the
+// LoweringReport answers):
+use aeolus_xilem::{tw_static, cn_static, lower_program};
+
+let program = tw_static!(
+    "p-4 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+);
+// parsed, theme-resolved and frozen at expansion time — at runtime:
+// static data + a Copy Env, folded by `lower_program` into the native payload.
 ```
 
-Closed-world components compile to dispatch tables — shadcn's class tables keep their web vocabulary:
+A host theme bakes at EXPANSION time with the `theme:` argument — the same `app.css` a web v4
+project uses, read relative to your crate's `CARGO_MANIFEST_DIR` and pinned by an `include_str!`
+anchor (editing the CSS re-runs rustc):
 
 ```rust,ignore
-variants! { pub Button {
+// `themes/app.css` carries @theme tokens plus a .dark block: the dark-
+// carrying tokens bake to const pairs (T1), the light-only ones to
+// premultiplied literals (T0).
+let program = tw_static!(theme: "themes/app.css", "bg-primary text-primary-foreground border-accent/50");
+```
+
+Closed-world components compile to dispatch tables — shadcn's class tables keep their web vocabulary
+(the GPUI-gated `variants!`, or `variants_static!` on the five interpreter backends):
+
+```rust,ignore
+variants_static! { pub Button {
     base:    "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium",
     variant: { default: "bg-primary text-primary-foreground hover:bg-primary/90",
                destructive: "bg-destructive text-white hover:bg-destructive/90" },
@@ -90,7 +116,10 @@ variants! { pub Button {
 // Button::style(Variant::Default, Size::Sm) → &'static program. Zero strings at runtime.
 ```
 
-### Runtime — the resolver lane (Xilem, Floem, Iced, egui, Slint)
+### Runtime — the resolver lane (the dynamic fallback)
+
+Styles known only at runtime — no build step, no browser — resolve through the v0.x lane every
+backend still carries:
 
 ```rust
 use aeolus_core::{Resolver, shadcn_default};
@@ -106,10 +135,11 @@ let save = label("Save changes").tw(
 );
 ```
 
-No build step, no browser; a CSS theme file is optional. `.tw` panics on unparseable classes in
-debug and warns + drops styling in release — the honest-failure contract, not a silent no-op.
-Every backend also has the V1 lane: `lower_program` walks a frozen `StaticProgram` under one probe
-`Env` into its native payload, differentially pinned against the plan path.
+`.tw` panics on unparseable classes in debug and warns + drops styling in release — the
+honest-failure contract, not a silent no-op. `lower_program` walks a frozen `StaticProgram` under
+one probe `Env` into the native payload, differentially pinned against the plan path. Prefer the
+static front door above when the class strings are known at build time — the resolver lane is the
+fallback for strings the compiler cannot see.
 
 ### Dynamic strings — the explicit slow lane
 
@@ -209,7 +239,10 @@ per-candidate parts, every documented divergence a typed note.
 ## Backends
 
 Every backend consumes **both** the v0.x `StylePlan` (runtime lane) and the V1 frozen
-`StaticProgram` (`lower_program`, differential-pinned, benched, with a headless example).
+`StaticProgram` (`lower_program`, differential-pinned, benched, with a headless example) — and
+re-exports the **backend-neutral static front door** (`tw_static!`/`cn_static!`/
+`variants_static!`, the expansion-time freeze with NO GPUI audit; the crate's `LoweringReport`
+is the honesty channel).
 
 | Backend         | Crate          | Lowers to                                               | Highlights                                                                                                  |
 | --------------- | -------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -238,19 +271,28 @@ with the built-in `ThemeStats` collector the shared handle (`TokenTable::with_ob
 .dark  { --color-primary: oklch(0.70 0.15 250); }
 ```
 
-Pay only for the dynamism you use:
+Pay only for the dynamism you use. The `theme:` ARGUMENT bakes T0/T1 at expansion time; the
+`theme!` MACRO stays the T2 runtime handle:
 
-| Tier              | When                                   | Emitted                | Runtime cost                      |
-| ----------------- | -------------------------------------- | ---------------------- | --------------------------------- |
-| **T0** static     | theme known at compile time (`theme!`) | colour literals        | **0**                             |
-| **T1** light/dark | same, with a `.dark` block             | `[Rgba; 2]` const pair | 1 branch-free index by `Env.dark` |
-| **T2** runtime    | user-editable themes, live bridges     | `Tok { id, alpha }`    | 1 table load + 1 multiply         |
+| Tier              | When                                                | Emitted                | Runtime cost                      |
+| ----------------- | --------------------------------------------------- | ---------------------- | --------------------------------- |
+| **T0** static     | theme baked at expansion (`theme:` argument, no-arg shadcn) | colour literals | **0**                             |
+| **T1** light/dark | same, with a `.dark` block                          | `[Rgba; 2]` const pair | 1 branch-free index by `Env.dark` |
+| **T2** runtime    | user-editable themes, live bridges (`theme!`)       | `Tok { id, alpha }`    | 1 table load + 1 multiply         |
 
 - **`/opacity` is one multiply, not colour maths.** v4's `color-mix(… transparent)` in premultiplied
   space only scales alpha: `bg-primary/90` → `(L, a, b, α·0.9)`. Baked to a literal when static;
   property-tested against the real compiler.
 - `calc()` + `--spacing` folded at build time; oklch → sRGB gamut-mapped **once**.
-- `theme!` emits an `include_str!` pin, so editing the CSS triggers a Cargo rebuild.
+- The `theme:` argument and `theme!` both emit an `include_str!` pin, so editing the CSS triggers a
+  Cargo rebuild.
+- **Tier boundaries are typed:** an `/opacity` modifier on a T1 pair token refuses
+  (`ResolveError::AlphaOnPair` — the pair form has no alpha arm; pair+alpha hosts use `theme!`);
+  an empty or missing theme file is a typed compile error naming the path, a malformed sheet
+  carries the pipeline's own `ThemeError` text verbatim.
+- **The colour suffixes are the registry's closed table** (the v4 palette + the shadcn semantic
+  tokens): a host sheet OVERRIDES those names' values; a brand-new token NAME rides the registry
+  wave, not the theme pass.
 - **CSS-first authoring, all four forms:** `@theme`, `@utility` (incl. functional `--value()`),
   `@custom-variant`, `@source` (inline literals, walked paths, pruned paths — feeds `check`/`build`).
   The `@custom-variant`/`@utility` statements register onto the same typed `Customs` surface
@@ -514,7 +556,8 @@ cargo run -p aeolus-cli --example audit                 # the capability-audit f
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
-cargo run -p aeolus-macro --example frozen_program  # what a tw! expansion actually emits
+cargo run -p aeolus-macro --example frozen_program
+cargo run -p aeolus-macro --example themed_program  # the `theme:` bake: T0/T1 literals at expansion, the include_str! rebuild anchor  # what a tw! expansion actually emits
 cargo run -p aeolus-macro --example variants        # variants!/tw_cn!/theme!: the cva tables + the baked theme
 ```
 
@@ -593,7 +636,8 @@ cargo run -p aeolus-rt --example style_face  # the host surface's own style face
 cargo run -p aeolus-rt --example probe_face   # the host surface's probe face: the widest walk over a MeasuredContainers hand-off
 cargo run -p aeolus-rt --example cell_observer  # the view cell's observability face: the pool's seam joined, one stats handle across pool + cells
 cargo run -p aeolus-rt --example program_overlay
-cargo run -p aeolus-macro --example frozen_program  # the tw!/cn! surface: the frozen program, printed
+cargo run -p aeolus-macro --example frozen_program
+cargo run -p aeolus-macro --example themed_program  # the `theme:` bake: T0/T1 literals at expansion, the include_str! rebuild anchor  # the tw!/cn! surface: the frozen program, printed
 cargo run -p aeolus-macro --example variants  # variants!/tw_cn!/theme!: the cva tables + the baked theme
 # GPUI
 cargo run -p aeolus-gpui --example ring
@@ -609,7 +653,9 @@ cargo run -p aeolus-gpui --example struct           # first:/last:/odd: through 
 cargo run -p aeolus-gpui --example motion
 cargo run -p aeolus-gpui --example placement  # grid placement + flex-basis, GPUI's own slots
 cargo run -p aeolus-gpui --example shadow     # shadow-* on GPUI's own BoxShadow list
-# backends: plan lane + V1 program lane each
+# backends: plan lane + the macro-frozen program lane each
+# (the `program`/`static_program` examples freeze through the backends'
+# own `tw_static!` re-export — the neutral front door)
 cargo run -p aeolus-xilem --example styled_label
 cargo run -p aeolus-xilem --example program
 cargo run -p aeolus-xilem --example program_pseudo  # the render targets' own cascades: the pseudo face lowers beside the silent element walk
