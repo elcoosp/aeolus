@@ -1,6 +1,6 @@
 //! Consumer demonstration: the V1 static-program lane (architecture
 //! plan §7's egui re-target — the fifth backend after GPUI, Floem,
-//! Xilem and Iced). A `tw!`-compiled [`StaticProgram`] walks through
+//! Xilem and Iced). A `tw_static!`-frozen [`StaticProgram`] walks through
 //! the pipeline's shared seam into the crate's own [`EguiStyle`] under
 //! one probe [`Env`] — the same [`lower_resolved`] mapping the plan
 //! path's [`StyleBook`] runs — and the SAME class string goes through
@@ -11,35 +11,21 @@
 //! cargo run -p aeolus-egui --example program
 //! ```
 
-use aeolus_compile::{Config, compile_theme, emit_plan_theme, keyword_alignment, keyword_texts};
+use aeolus_compile::{Config, emit_plan_theme};
 use aeolus_egui::{EguiProbe, StyleBook, env_for_probe, lower_program};
-use aeolus_rt::StaticProgram;
+use aeolus_macro::tw_static;
 use aeolus_theme::{ThemeSource, TokenTable};
-
-/// Compile a class string the way `tw!` does (the theme pass's baked
-/// shadcn table) and freeze it into the static form the macro emits:
-/// the interned layers plus the row texts the keyword slots index.
-fn frozen(classes: &str) -> StaticProgram {
-    let source = ThemeSource::shadcn().expect("the built-in shadcn source parses");
-    let table = TokenTable::baked(&source).expect("the baked shadcn table builds");
-    let config = Config::default();
-    let compiled = compile_theme(classes, &table, &config).expect("the class string lowers");
-    let annotations = keyword_texts(classes, &config).expect("non-empty input annotates");
-    let keywords = keyword_alignment(&compiled, &annotations);
-    StaticProgram::new(
-        compiled.program.layers,
-        Box::leak(keywords.into_boxed_slice()),
-    )
-}
 
 fn main() {
     // The shadcn button surface, as a `tw!` call site would compile it.
     let classes = "p-4 bg-primary text-primary-foreground rounded-md w-24 h-9 \
                    font-medium gap-2 disabled:opacity-50 hover:bg-accent";
-    let program = frozen(classes);
+    let program = tw_static!(
+        "p-4 bg-primary text-primary-foreground rounded-md w-1/2 h-9 font-medium items-center gap-2 disabled:opacity-50 hover:bg-accent"
+    );
 
     // The program lane: the immediate-mode frame converts its EguiProbe
-    // once per frame (`env_for_probe`) and the walk folds the frozen
+    // once per frame (`env_for_probe`) and the walk folds the macro-frozen
     // layers under it — zero parse, zero hash, one style fold.
     let idle_probe = EguiProbe::default();
     let hover_probe = EguiProbe {
