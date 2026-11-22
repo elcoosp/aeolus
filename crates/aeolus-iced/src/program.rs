@@ -340,6 +340,11 @@ fn translate(walk: &StyleWalk) -> LoweringReport {
             PlanNoteKind::CompositeValue { prop, text } => {
                 (format!("{} {text}", prop.name()), boundary.help())
             }
+            // The between-child families: the boundary NAMES the
+            // longhand (the five backends' precise "no child access"
+            // reason — the help text names the child rule the CSS arm
+            // renders and the wrapper lane the GPUI target composes).
+            PlanNoteKind::ChildSelector { prop } => (prop.name().to_string(), boundary.help()),
         };
         report.drop(what, reason);
     }
