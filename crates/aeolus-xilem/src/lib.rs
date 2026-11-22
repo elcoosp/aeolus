@@ -19,6 +19,7 @@
 //! `hover_restyle_is_paint_only` pins the invalidation behavior.
 
 pub mod button;
+pub mod caps;
 pub mod program;
 pub mod view;
 pub mod widget;
