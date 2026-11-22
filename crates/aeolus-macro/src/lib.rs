@@ -98,7 +98,7 @@ pub fn tw(input: TokenStream) -> TokenStream {
             ),
         );
     }
-    let emitted = aeolus_codegen_gpui::emit_static_program(&compiled.program, &keywords);
+    let emitted = aeolus_codegen_gpui::emit_static_program_outlined(&compiled.program, &keywords);
     anchor_expression(bake.as_ref(), emitted.into(), "tw!")
 }
 
@@ -127,7 +127,7 @@ pub fn tw_static(input: TokenStream) -> TokenStream {
         Err(msg) => return compile_error(&input, &msg),
     };
     let keywords = keyword_alignment(&compiled, &classes);
-    let emitted = aeolus_codegen_gpui::emit_static_program(&compiled.program, &keywords);
+    let emitted = aeolus_codegen_gpui::emit_static_program_outlined(&compiled.program, &keywords);
     anchor_expression(bake.as_ref(), emitted.into(), "tw_static!")
 }
 
@@ -175,7 +175,7 @@ pub fn cn(input: TokenStream) -> TokenStream {
             ),
         );
     }
-    let emitted = aeolus_codegen_gpui::emit_static_program(&merged.program, &keywords);
+    let emitted = aeolus_codegen_gpui::emit_static_program_outlined(&merged.program, &keywords);
     anchor_expression(bake.as_ref(), emitted.into(), "cn!")
 }
 
@@ -212,7 +212,7 @@ pub fn cn_static(input: TokenStream) -> TokenStream {
         Err(err) => return compile_error(&input, &format!("cn_static!: {err}")),
     };
     let keywords = last_keywords(&merged, &classes);
-    let emitted = aeolus_codegen_gpui::emit_static_program(&merged.program, &keywords);
+    let emitted = aeolus_codegen_gpui::emit_static_program_outlined(&merged.program, &keywords);
     anchor_expression(bake.as_ref(), emitted.into(), "cn_static!")
 }
 
@@ -1162,8 +1162,10 @@ fn render_variants(
                             ));
                         }
                     }
-                    let tokens =
-                        aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
+                    let tokens = aeolus_codegen_gpui::emit_static_program_outlined(
+                        &program.program,
+                        &keywords,
+                    );
                     arms.push_str(&format!(
                         "        {slot_enum}::{} => {tokens},\n",
                         pascal_case(slot)
@@ -1187,7 +1189,8 @@ fn render_variants(
                         ));
                     }
                 }
-                let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
+                let tokens =
+                    aeolus_codegen_gpui::emit_static_program_outlined(&program.program, &keywords);
                 output.push_str(&enum_defs);
                 output.push_str(&format!(
                     "{visibility}struct {name};\nimpl {name} {{\n    {visibility}fn style() -> ::aeolus_rt::StaticProgram {{\n        {tokens}\n    }}\n}}\n"
@@ -1254,7 +1257,8 @@ fn render_variants(
                         ));
                     }
                 }
-                let tokens = aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
+                let tokens =
+                    aeolus_codegen_gpui::emit_static_program_outlined(&program.program, &keywords);
                 arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
             }
 
@@ -1325,8 +1329,10 @@ fn render_variants(
                             ));
                         }
                     }
-                    let tokens =
-                        aeolus_codegen_gpui::emit_static_program(&program.program, &keywords);
+                    let tokens = aeolus_codegen_gpui::emit_static_program_outlined(
+                        &program.program,
+                        &keywords,
+                    );
                     arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
                 }
             }
