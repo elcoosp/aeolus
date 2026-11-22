@@ -52,23 +52,11 @@ use quote::quote;
 // regeneration fails `cargo test` first.
 mod caps_generated;
 
-/// One per-longhand verdict row of the generated capability table (the
-/// §3.7 matrix's per-longhand form): the tier the emit gates run, plus
-/// — for a refused longhand only — the typed boundary reason the emit
-/// gate answers (the text-dependent verdicts say so honestly: the
-/// gradient direction row's reason names the annotation the verdict is
-/// the ROW TEXT's). An expressible longhand carries the empty reason.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PropCapability {
-    /// The longhand.
-    pub prop: Prop,
-    /// The tier ([`supports`]/[`polyfilled`]'s own verdict — the table
-    /// is pinned equal to them).
-    pub tier: Tier,
-    /// The refused longhand's documented boundary (the emit gate's own
-    /// per-prop text); empty for native and polyfilled longhands.
-    pub reason: &'static str,
-}
+// The row shape moved to the shared conformance seam (the six tables'
+// one type — the GPUI generated table and the five interpreter
+// backends' committed tables render through it); the re-export keeps
+// the crate's public reading (`crate::PropCapability`) unchanged.
+pub use aeolus_codegen::conformance::PropCapability;
 
 /// The generated capability table: one [`PropCapability`] row per IR
 /// longhand, in `Prop::ALL`'s own (cascade) order — the committed bytes
@@ -501,6 +489,14 @@ pub const fn supports(prop: Prop) -> bool {
             // ring's).
             | Prop::BoxShadow
             | Prop::ShadowColor
+            // The parity wave 1's native pair: the pinned surface
+            // carries `Styled::line_clamp` (the count form — the
+            // `none` reset stays the per-decl refusal, see
+            // [`unsupported_reason`]) and the `font_features` slot the
+            // font-variant-numeric tags compose into (both verified at
+            // the `gpui-pre` pin).
+            | Prop::LineClamp
+            | Prop::FontVariantNumeric
     )
 }
 
@@ -534,6 +530,21 @@ pub const fn polyfilled(prop: Prop) -> bool {
             | Prop::FilterSepia
             | Prop::FilterDropShadow
             | Prop::Filter
+            // The parity wave 1's between-child families: no per-element
+            // slot — the between-child margins/borders/styles/colours
+            // compose into the `aeolus_gpui::SpaceDivState` accumulator
+            // and the `TwSpaceExt::tw_space` wrapper styles the
+            // CHILDREN (the `tw_container` measuring-wrapper precedent).
+            | Prop::SpaceX
+            | Prop::SpaceXReverse
+            | Prop::SpaceY
+            | Prop::SpaceYReverse
+            | Prop::DivideX
+            | Prop::DivideXReverse
+            | Prop::DivideY
+            | Prop::DivideYReverse
+            | Prop::DivideColor
+            | Prop::DivideStyle
     )
 }
 
@@ -805,6 +816,25 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
                 )
             }
         }
+        // The parity wave 1's per-decl refinements: the clamp count is
+        // native (`Styled::line_clamp`), the `none` reset has no unset
+        // slot (the pinned method SETS a count; un-setting needs a
+        // second walk pass the frozen program does not carry); the
+        // sr-only composite's clip leg is the honest full refusal (no
+        // framework slot carries clip-path — the composite's other legs
+        // ride their own longhands' verdicts).
+        Prop::LineClamp => match keyword {
+            "unset" => Some(
+                "GPUI's line_clamp sets a count — the none reset has no unset \
+                 slot (the CSS/interp arms carry the real output)",
+            ),
+            _ => None,
+        },
+        Prop::ClipPath => Some(
+            "GPUI has no clip-path slot — the sr-only composite's clip leg stays \
+             the CSS/interp arms' output (the composite's other legs ride their \
+             own longhands' verdicts)",
+        ),
         _ => {
             if expressible(prop) {
                 None
