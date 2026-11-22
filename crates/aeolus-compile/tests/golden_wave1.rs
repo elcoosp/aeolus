@@ -3,7 +3,7 @@
 //! the V1 pipeline's own faces):
 //!
 //! 1. **The golden corpus** (`crates/aeolus-core/tests/fixtures/
-//!    golden.corpus`, the deliberate 193 → 215 regeneration through the
+//!    golden.corpus`, the deliberate 193 → 215 → 2992 regeneration through the
 //!    real tailwindcss v4.1.17): every wave-1 entry's `emit_css_theme`
 //!    output normalizes to the SAME declaration set under the SAME
 //!    selector (the corpus's nested `:where(& > :not(:last-child))`
@@ -989,5 +989,128 @@ fn the_target_css_arm_renders_the_same_sheet() {
     assert_eq!(
         sheet.to_string(),
         ".tabular-nums {\n  font-variant-numeric: tabular-nums;\n}\n"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The scale-up battery (M1): the FULL corpus through the V1 pipeline
+// ---------------------------------------------------------------------------
+
+/// The seed's documented V1 typed-refusal surface (the scale-up
+/// findings): the seed's entries ride the corpus for the v0.x oracle's
+/// byte-parity, and these families are the V1 pipeline's OWN typed
+/// boundaries at this pin — refused with the named diagnostic kind, never
+/// silently dropped. Each family is the honest wave-2 capability-push
+/// candidate the conformance findings name (the important!/negation/
+/// arbitrary-variant/composite-modifier/named-container declaration
+/// grammar, the special bg-transparent keyword and the has-first
+/// composition tier).
+const DOCUMENTED_V1_REFUSALS: &[(&str, &str)] = &[
+    ("!p-4", "UnsupportedImportant"),
+    ("bg-red-500!", "UnsupportedImportant"),
+    ("-tracking-wide", "UnsupportedNegation"),
+    ("bg-transparent", "UnsupportedValue"),
+    ("tracking-[7px]", "UnsupportedValue"),
+    ("text-sm/6", "UnsupportedModifier"),
+    ("text-base/tight", "UnsupportedModifier"),
+    ("text-lg/loose", "UnsupportedModifier"),
+    ("@container/card-header", "UnsupportedModifier"),
+    ("not-hover:opacity-50", "UnsupportedVariant"),
+    ("has-first:grid-cols-3", "UnsupportedVariant"),
+    ("[&:hover]:bg-red-600", "UnsupportedVariant"),
+    ("[@media(print)]:hidden", "UnsupportedVariant"),
+];
+
+/// The shadcn token table (the corpus's `shadcn` theme context).
+fn shadcn_tokens() -> TokenTable {
+    let source = ThemeSource::shadcn().expect("the built-in shadcn source parses");
+    TokenTable::baked(&source).expect("the baked shadcn table builds")
+}
+
+/// The scale-up floor: EVERY corpus entry (the 2992-entry expansion) must
+/// lower through the V1 pipeline with ZERO diagnostics under its own
+/// theme's token table — the "never a silent drop" contract at scale. The
+/// generator only emits classes the classification artifact marked V1-ok,
+/// so a refusal here is a drift between the committed artifact and the
+/// pipeline (a registry or lowering change that forgot the regeneration).
+/// The v0.x oracle's battery (`aeolus-core/tests/parity_golden.rs`) pins
+/// the byte-parity subset; the families it skips ride THIS battery's
+/// zero-diagnostics floor plus the wave/flagship byte shapes above.
+#[test]
+fn the_expanded_corpus_lowers_clean_through_the_v1_pipeline() {
+    let raw = include_str!("../../aeolus-core/tests/fixtures/golden.corpus");
+    let default = default_tokens();
+    let shadcn = shadcn_tokens();
+    let config = Config::default();
+    let mut entries = 0usize;
+    let mut failures: Vec<String> = Vec::new();
+    let mut theme = String::new();
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("@theme ") {
+            theme = rest.trim().to_string();
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("@entry ") else {
+            continue;
+        };
+        let (entry_theme, class) = rest.split_once(' ').expect("entry line shape");
+        let _ = entry_theme;
+        entries += 1;
+        let table = if theme == "shadcn" { &shadcn } else { &default };
+        match compile_theme(class, table, &config) {
+            Ok(compiled) => {
+                let expected_refusal = DOCUMENTED_V1_REFUSALS
+                    .iter()
+                    .find(|(cls, _)| *cls == class)
+                    .map(|(_, kind)| *kind);
+                if let Some(kind) = expected_refusal {
+                    // The seed's documented typed-refusal surface: the
+                    // class rides the corpus for the v0.x oracle's
+                    // byte-parity (the seed predates the V1 pipeline's
+                    // boundaries); the V1 lane refuses it TYPED. The KIND
+                    // is pinned — a drift in the refusal shape fails
+                    // here, never silently.
+                    let actual = compiled
+                        .diagnostics
+                        .first()
+                        .map(|diagnostic| {
+                            format!("{:?}", diagnostic.kind)
+                                .split_once('{')
+                                .unwrap_or((&format!("{:?}", diagnostic.kind), ""))
+                                .0
+                                .trim()
+                                .to_string()
+                        })
+                        .unwrap_or_else(|| "NO_DIAGNOSTIC".to_string());
+                    if actual != kind {
+                        failures.push(format!(
+                            "{theme}:{class} — refusal drift: expected {kind}, got {actual}"
+                        ));
+                    }
+                    continue;
+                }
+                if !compiled.diagnostics.is_empty() {
+                    failures.push(format!(
+                        "{theme}:{class} — {} diagnostics: {:?}",
+                        compiled.diagnostics.len(),
+                        compiled.diagnostics
+                    ));
+                }
+                if compiled.program.layers.is_empty() {
+                    failures.push(format!("{theme}:{class} — empty program"));
+                }
+            }
+            Err(err) => failures.push(format!("{theme}:{class} — compile error {err}")),
+        }
+    }
+    // The artifact-count pin: the corpus is the generator's committed
+    // output (2992 @end entries at this pin) — a regeneration that changes
+    // the count updates this number deliberately.
+    assert_eq!(entries, 2992, "the corpus entry count at this pin");
+    assert!(
+        failures.is_empty(),
+        "{} V1 lowering failures:\n{}",
+        failures.len(),
+        failures.join("\n")
     );
 }
