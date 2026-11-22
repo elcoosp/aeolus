@@ -63,6 +63,15 @@ use i_slint_core::graphics::{
 use i_slint_core::items::{BuiltInMouseCursor, TextHorizontalAlignment, TextOverflow, TextWrap};
 
 pub mod program;
+// The backend-neutral static front door (plan §3.6 surface 1–2 for
+// every backend): the macros freeze programs at EXPANSION time with NO
+// GPUI audit gate — the `LoweringReport` below is the honesty channel
+// for what this backend cannot express. The optional `theme:` argument
+// bakes a host sheet at expansion (plan §3.4 T0/T1); the no-arg form is
+// the embedded shadcn bake. The emitted `StaticProgram` feeds
+// `lower_program` directly.
+pub use aeolus_macro::{cn_static, tw_static, variants_static};
+
 pub use program::{
     REM_PX, env_for_probe, lower_program,
     lower_program_probes_containers_struct_descendants_supports, lower_program_pseudo,
