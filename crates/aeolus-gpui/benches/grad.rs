@@ -35,6 +35,46 @@ fn grad_composition(bencher: Bencher) {
     });
 }
 
+#[divan::bench]
+fn grad_via_walk(bencher: Bencher) {
+    // The via-stop walk arm (the wave's multi-stop machinery): the
+    // program the DYNAMIC lane compiles (the static gate keeps the
+    // verified refusal — no three-stop form at the pin), the walk
+    // recording the full stop state (via colour + position) and
+    // composing NOTHING (never a flattened misreading) — the
+    // recorded-state cost beside the two-stop compose above.
+    use aeolus_rt::ClassCell;
+    let cell = ClassCell::new();
+    let program = cell
+        .get(
+            "bg-linear-to-r from-red-500 via-white to-blue-500",
+            &Default::default(),
+        )
+        .expect("the via program compiles through the dynamic lane");
+    bencher.bench(|| gpui::StyleRefinement::default().tw(program));
+}
+
+#[divan::bench]
+fn grad_via_composition(bencher: Bencher) {
+    // The via stop's unit surface: the accumulator records the full
+    // three-stop state and degrades to no gradient (the honest
+    // two-stop boundary at the pin).
+    use aeolus_ir::{Prop, Val};
+    bencher.bench(|| {
+        let mut state = aeolus_gpui::GradState::default();
+        state.apply(
+            Prop::BackgroundImage,
+            Val::Kw(0),
+            "linear-gradient(to right, var(--tw-gradient-stops))",
+        );
+        state.apply(Prop::GradientFrom, Val::Rgba([251, 44, 54, 255]), "");
+        state.apply(Prop::GradientVia, Val::Rgba([255, 255, 255, 255]), "");
+        state.apply(Prop::GradientViaPosition, Val::Pct(50.0), "");
+        state.apply(Prop::GradientTo, Val::Rgba([59, 130, 246, 255]), "");
+        state.background()
+    });
+}
+
 fn main() {
     divan::main();
 }
