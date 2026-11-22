@@ -1,0 +1,16 @@
+/* The themed-program example's own sheet: the single-file shape a web
+ * Tailwind v4 project uses — `@theme` tokens plus a `.dark` block.
+ * The class grammar's colour suffixes are the registry's closed table
+ * (the v4 palette + the shadcn semantic tokens), so the sheet OVERRIDES
+ * those names' values: `--color-primary` carries a dark override (the
+ * T1 pair surface), `--color-accent` stays light-only (the T0 literal
+ * surface the `/50` modifier premultiplies). */
+@theme {
+  --color-primary: #0ea5e9;
+  --color-primary-foreground: #f0f9ff;
+  --color-accent: #f59e0b;
+}
+
+.dark {
+  --color-primary: #ef4444;
+}
