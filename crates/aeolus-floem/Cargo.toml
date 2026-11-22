@@ -16,6 +16,11 @@ publish = false
 aeolus-core = { path = "../aeolus-core" }
 aeolus-ir = { workspace = true }
 aeolus-rt = { path = "../aeolus-rt" }
+# The backend-neutral static front door: the macro entries the prelude
+# re-exports below (`tw_static!`/`cn_static!`/`variants_static!` — no
+# GPUI audit; the macro crate stays framework-free, so this adds no
+# framework dependency here either).
+aeolus-macro = { workspace = true }
 floem = { git = "https://github.com/lapce/floem", rev = "1351ffb162faeb8be983f1301d718a0d5fb59c27" }
 smallvec = "1"
 tracing = "0.1"
