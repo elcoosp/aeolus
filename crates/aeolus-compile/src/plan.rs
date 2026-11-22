@@ -259,6 +259,19 @@ pub enum PlanNoteKind {
         /// The decoded composite text, verbatim.
         text: &'static str,
     },
+    /// The between-child surface (`space-x-*`/`space-y-*`/
+    /// `divide-*`): the longhands carry the CHILD-SELECTOR intent —
+    /// they style the container's OTHER elements (`:where(& >
+    /// :not(:last-child))`), which a per-view plan lowering has no slot
+    /// for (the v0.x `Extras` surface models per-element styles only).
+    /// The IR lowering is correct; the CSS arm renders the child rule,
+    /// and the report path names the boundary precisely (the five
+    /// backends' honest "no child access" reason, the
+    /// `SlotUnsupported` variant's sharper sibling).
+    ChildSelector {
+        /// The longhand the between-child rule belongs to.
+        prop: Prop,
+    },
 }
 
 impl PlanNoteKind {
@@ -277,6 +290,7 @@ impl PlanNoteKind {
             PlanNoteKind::Direction { .. } => "aeolus::compile::plan::direction",
             PlanNoteKind::PseudoElement { .. } => "aeolus::compile::plan::pseudo_element",
             PlanNoteKind::CompositeValue { .. } => "aeolus::compile::plan::composite_value",
+            PlanNoteKind::ChildSelector { .. } => "aeolus::compile::plan::child_selector",
         }
     }
 
@@ -330,6 +344,12 @@ impl PlanNoteKind {
                 "the pseudo-element render target has no slot in the v0.x plan surface (the \
                  v0.x set carries selection/placeholder/file only); the layer reports \
                  instead of landing — emit_css renders the real output"
+            }
+            PlanNoteKind::ChildSelector { .. } => {
+                "the longhand styles the container's OTHER elements (the v4 \
+                 :where(& > :not(:last-child)) rule) — a per-view lowering has no child \
+                 access; emit_css renders the child rule, the GPUI lane composes the \
+                 tw_space wrapper, and the class stays reported, never silently dropped"
             }
         }
     }
@@ -1063,7 +1083,10 @@ impl PlanWriter {
             }
             Prop::MarginTop | Prop::MarginRight | Prop::MarginBottom | Prop::MarginLeft => {
                 // `mx-auto`'s keyword lands in the auto-edge slot (the
-                // v0.x oracle's own split: the margin slot stays unset).
+                // v0.x oracle's own split); OTHER keyword texts are the
+                // row's own px lengths (`sr-only`'s `-1px` composite
+                // leg, the truncate-fan shape) and take the px path
+                // like the numeric forms.
                 if matches!(val, Val::Kw(_)) {
                     if kw == Some("auto") {
                         let slot = style
@@ -1071,8 +1094,8 @@ impl PlanWriter {
                             .margin_auto
                             .get_or_insert_with(AutoEdges::default);
                         set_auto_edge(slot, edge_of(prop));
+                        return;
                     }
-                    return;
                 }
                 if let Some(px) = self.length_px(val, kw) {
                     let slot = style.margin.get_or_insert_with(Padding::default);
@@ -1980,6 +2003,67 @@ impl PlanWriter {
                             .push(PlanNoteKind::RowTextUnmappable { prop, text }),
                     }
                 }
+            }
+            // ---- the parity wave 1 tail (the five highest-traffic
+            // families) ---------------------------------------------
+            // line-clamp: the v0.x oracle RESOLVES the family — the
+            // resolver's own arm sets the Count AND the ellipsis
+            // overflow leg (`Applied::Texts`), so the bridge maps onto
+            // BOTH slots oracle-faithfully (the differential pins it).
+            // The `none` reset's text has no oracle slot (the resolver
+            // errors on `line-clamp-none`) — the typed note.
+            Prop::LineClamp => {
+                if let Some(n) = Self::number(val)
+                    && n >= 0.0
+                    && let Ok(count) = u16::try_from(n as u64)
+                {
+                    set_text(style, TextProperty::LineClamp, TextValue::Count(count));
+                    set_text(
+                        style,
+                        TextProperty::TextOverflow,
+                        TextValue::Keyword("ellipsis"),
+                    );
+                } else if let Some(text) = kw {
+                    self.notes
+                        .push(PlanNoteKind::RowTextUnmappable { prop, text });
+                }
+            }
+            // font-variant-numeric: the v0.x oracle resolves the
+            // family's keyword half (`tabular-nums`, `ordinal`) onto the
+            // same slot — the bridge carries the text verbatim (the
+            // slot's own keyword form; the oracle's `TextValue::Keyword`).
+            Prop::FontVariantNumeric => {
+                if let Some(text) = kw {
+                    set_text(
+                        style,
+                        TextProperty::FontVariantNumeric,
+                        TextValue::Keyword(text),
+                    );
+                }
+            }
+            // The between-child surface (space-*/divide-*): the
+            // longhands carry the CHILD-SELECTOR intent — no per-view
+            // plan slot exists (the note variant names the boundary
+            // precisely; the five backends translate it into their
+            // report entries, the CSS arm renders the child rule).
+            Prop::SpaceXReverse
+            | Prop::SpaceX
+            | Prop::SpaceYReverse
+            | Prop::SpaceY
+            | Prop::DivideXReverse
+            | Prop::DivideYReverse
+            | Prop::DivideStyle
+            | Prop::DivideX
+            | Prop::DivideY
+            | Prop::DivideColor => {
+                self.notes.push(PlanNoteKind::ChildSelector { prop });
+            }
+            // sr-only's clip leg: the v0.x Extras surface carries no
+            // clip-path slot (the SlotUnsupported precedent; the
+            // composite's OTHER legs land in their existing slots, the
+            // truncate multi-row precedent).
+            Prop::ClipPath => {
+                self.notes.push(PlanNoteKind::SlotUnsupported { prop });
             }
         }
     }
