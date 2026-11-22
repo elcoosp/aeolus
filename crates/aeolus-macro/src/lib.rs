@@ -83,7 +83,7 @@ pub fn tw(input: TokenStream) -> TokenStream {
         Ok(bake) => bake,
         Err(msg) => return compile_error(&input, &msg),
     };
-    let (compiled, classes) = match compile_literal_with(&literal, bake.as_ref(), "tw!") {
+    let (compiled, classes) = match compile_literal_with(&literal, bake.as_ref(), "tw!", false) {
         Ok(pair) => pair,
         Err(msg) => return compile_error(&input, &msg),
     };
@@ -122,10 +122,11 @@ pub fn tw_static(input: TokenStream) -> TokenStream {
         Ok(bake) => bake,
         Err(msg) => return compile_error(&input, &msg),
     };
-    let (compiled, classes) = match compile_literal_with(&literal, bake.as_ref(), "tw_static!") {
-        Ok(pair) => pair,
-        Err(msg) => return compile_error(&input, &msg),
-    };
+    let (compiled, classes) =
+        match compile_literal_with(&literal, bake.as_ref(), "tw_static!", false) {
+            Ok(pair) => pair,
+            Err(msg) => return compile_error(&input, &msg),
+        };
     let keywords = keyword_alignment(&compiled, &classes);
     let emitted = aeolus_codegen_gpui::emit_static_program_outlined(&compiled.program, &keywords);
     anchor_expression(bake.as_ref(), emitted.into(), "tw_static!")
@@ -150,7 +151,7 @@ pub fn cn(input: TokenStream) -> TokenStream {
     let mut compiled = Vec::new();
     let mut classes: Vec<ClassKeywords> = Vec::new();
     for string in &strings {
-        match compile_literal_with(string, bake.as_ref(), "cn!") {
+        match compile_literal_with(string, bake.as_ref(), "cn!", false) {
             Ok((c, k)) => {
                 compiled.push(c);
                 classes.extend(k);
@@ -198,7 +199,7 @@ pub fn cn_static(input: TokenStream) -> TokenStream {
     let mut compiled = Vec::new();
     let mut classes: Vec<ClassKeywords> = Vec::new();
     for string in &strings {
-        match compile_literal_with(string, bake.as_ref(), "cn_static!") {
+        match compile_literal_with(string, bake.as_ref(), "cn_static!", false) {
             Ok((c, k)) => {
                 compiled.push(c);
                 classes.extend(k);
@@ -294,6 +295,7 @@ fn compile_literal_with(
     literal: &str,
     theme: Option<&ThemeBake>,
     name: &str,
+    allow_refusals: bool,
 ) -> Result<(Compiled, Vec<ClassKeywords>), String> {
     let source = match theme {
         // The no-arg bake: the embedded shadcn palette, exactly as it
@@ -309,7 +311,7 @@ fn compile_literal_with(
     let config = Config::default();
     let compiled =
         compile_theme(literal, &table, &config).map_err(|err| format!("{name}: {err}"))?;
-    if !compiled.diagnostics.is_empty() {
+    if !compiled.diagnostics.is_empty() && !allow_refusals {
         return Err(render_diagnostics(name, &compiled.diagnostics));
     }
     let classes = keyword_texts(literal, &config).map_err(|err| format!("{name}: {err}"))?;
@@ -559,6 +561,18 @@ struct VariantTable {
     visibility: String,
     name: String,
     fields: Vec<VariantField>,
+    /// The closed-world table's refusal tolerance: the shadcn tables'
+    /// documented boundary families (`[&_svg]`, `has-[>svg]`, the
+    /// data-orientation attribute forms) lower with TYPED diagnostics on
+    /// the runtime-interned path — the diagnostics are the honesty
+    /// channel the handle carries. A `variants_static!` table that names
+    /// `allow_refusals: true` freezes the SAME programs at expansion
+    /// time WITH those diagnostics refused as the documented boundary
+    /// (the static form has no diagnostics slot; the runtime path stays
+    /// the diagnostics source of record and the differential pins the
+    /// bytes). Without the key the strict contract holds: any diagnostic
+    /// is a compile error.
+    allow_refusals: bool,
 }
 
 struct VariantField {
@@ -741,6 +755,7 @@ fn parse_variants(input: TokenStream) -> Result<VariantTable, String> {
     let entries = split_top_level(body, ',');
     let mut fields = Vec::new();
     let mut pending_field: Option<String> = None;
+    let mut allow_refusals = false;
     for entry in entries {
         let parts = split_first_colon(entry);
         let Some((field, rest)) = parts else {
@@ -750,6 +765,13 @@ fn parse_variants(input: TokenStream) -> Result<VariantTable, String> {
         let rest = rest.trim();
         if rest.is_empty() {
             pending_field = Some(field);
+            continue;
+        }
+        if field == "allow_refusals" {
+            allow_refusals = rest == "true";
+            if rest != "true" && rest != "false" {
+                return Err("variants!: `allow_refusals` takes `true` or `false`".into());
+            }
             continue;
         }
         let classes = match rest.parse::<TokenStream>() {
@@ -769,6 +791,7 @@ fn parse_variants(input: TokenStream) -> Result<VariantTable, String> {
         visibility,
         name,
         fields,
+        allow_refusals,
     })
 }
 
@@ -1151,7 +1174,7 @@ fn render_variants(
                 for (slot, classes) in slots {
                     let full = join_classes(&base, classes);
                     let (program, class_annotations) =
-                        compile_literal_with(&full, theme, "variants!")?;
+                        compile_literal_with(&full, theme, "variants!", table.allow_refusals)?;
                     let keywords = keyword_alignment(&program, &class_annotations);
                     if gate {
                         let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
@@ -1178,7 +1201,8 @@ fn render_variants(
                 ));
             }
             None => {
-                let (program, _) = compile_literal_with(&base, theme, "variants!")?;
+                let (program, _) =
+                    compile_literal_with(&base, theme, "variants!", table.allow_refusals)?;
                 let keywords = keyword_alignment(&program, &[]);
                 if gate {
                     let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
@@ -1246,7 +1270,7 @@ fn render_variants(
                     }
                 }
                 let (program, class_annotations) =
-                    compile_literal_with(&classes, theme, "variants!")?;
+                    compile_literal_with(&classes, theme, "variants!", table.allow_refusals)?;
                 let keywords = keyword_alignment(&program, &class_annotations);
                 if gate {
                     let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
@@ -1318,7 +1342,7 @@ fn render_variants(
                         }
                     }
                     let (program, class_annotations) =
-                        compile_literal_with(&classes, theme, "variants!")?;
+                        compile_literal_with(&classes, theme, "variants!", table.allow_refusals)?;
                     let keywords = keyword_alignment(&program, &class_annotations);
                     if gate {
                         let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
@@ -1468,7 +1492,7 @@ mod render_tests {
             css: "@theme { --color-brand: var(--never-declared); }".to_string(),
             anchor: String::new(),
         };
-        let err = compile_literal_with("bg-primary", Some(&bake), "tw!")
+        let err = compile_literal_with("bg-primary", Some(&bake), "tw!", false)
             .expect_err("the unresolved var() refuses");
         assert!(err.starts_with("tw!: theme: "), "{err}");
         assert!(
