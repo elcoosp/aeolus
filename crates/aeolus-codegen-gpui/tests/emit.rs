@@ -319,9 +319,10 @@ fn the_conformance_seam_reads_the_capability_tables() {
         assert!(!supports(prop));
         assert!(polyfilled(prop));
     }
-    // The ring family and the filter tier's polyfill half are the whole
-    // polyfill set (the §3.7 ring row + the filter row's landed half),
-    // in Prop::ALL's own discriminant order.
+    // The ring family, the filter tier's polyfill half AND the wave-1
+    // between-child families are the whole polyfill set (the §3.7 ring
+    // row + the filter row's landed half + the space/divide wrapper
+    // row), in Prop::ALL's own discriminant order.
     assert_eq!(
         report.polyfill(),
         &[
@@ -338,6 +339,16 @@ fn the_conformance_seam_reads_the_capability_tables() {
             Prop::FilterSepia,
             Prop::FilterDropShadow,
             Prop::Filter,
+            Prop::SpaceXReverse,
+            Prop::SpaceX,
+            Prop::SpaceYReverse,
+            Prop::SpaceY,
+            Prop::DivideXReverse,
+            Prop::DivideYReverse,
+            Prop::DivideStyle,
+            Prop::DivideX,
+            Prop::DivideY,
+            Prop::DivideColor,
         ]
     );
 }
