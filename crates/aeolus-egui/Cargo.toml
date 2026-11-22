@@ -16,6 +16,14 @@ aeolus-core = { path = "../aeolus-core" }
 # The V1 runtime seam: the `StaticProgram`/`Env`/`AttrProbe`/`TokenSource`
 # types the program lane walks.
 aeolus-rt = { path = "../aeolus-rt" }
+# The backend-neutral static front door: the macro entries the prelude
+# re-exports below (`tw_static!`/`cn_static!`/`variants_static!` — no
+# GPUI audit; the macro crate stays framework-free, so this adds no
+# framework dependency here either).
+# The macro expansion's emitted consts name the IR types
+# (`::aeolus_ir::Layer`/`Decl`/`Val`) — the frozen program is IR data.
+aeolus-ir = { workspace = true }
+aeolus-macro = { workspace = true }
 # The immediate-mode library itself; windowing/frame integration lives in
 # `eframe`/`egui-winit`, which apps depend on — styling needs none of it and
 # everything here compiles headless (Context::default() works without a pass).
