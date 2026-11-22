@@ -1496,26 +1496,56 @@ pub(crate) fn decide(
         Cond::Optional => fires(env.form_associated && !env.required_field),
         Cond::InRange => fires(env.range_bounded && env.range_in),
         Cond::OutOfRange => fires(env.range_bounded && !env.range_in),
-        Cond::GroupHover => fires(env.group_hover),
-        Cond::GroupFocus => fires(env.group_focus),
+        // The parent-relative probes answer from the env's unnamed
+        // facts: the BARE form is the flat `.group`-ancestor question
+        // the boolean carries (the dominant fold's own reading), and a
+        // NAMED label form (`group-hover/menu:`) is a DIFFERENT
+        // condition — the named-container fold's own rule — the Env's
+        // unnamed boolean cannot answer. With no group registry in
+        // this arm, the named form is the QUIET miss a selector whose
+        // group does not match is (the walk's own reading; the CSS arm
+        // renders the named head the real selector carries).
+        Cond::GroupHover { name: None } => fires(env.group_hover),
+        Cond::GroupFocus { name: None } => fires(env.group_focus),
         // The composition tier answers from the env like the landed
         // pair: each composition is its own fact (a `.group` ancestor
         // in the composed state), unanswered = not fired (CSS
         // semantics).
-        Cond::GroupFocusVisible => fires(env.group_focus_visible),
-        Cond::GroupFocusWithin => fires(env.group_focus_within),
-        Cond::GroupActive => fires(env.group_active),
-        Cond::GroupDisabled => fires(env.group_disabled),
-        Cond::GroupVisited => fires(env.group_visited),
-        Cond::GroupChecked => fires(env.group_checked),
-        Cond::PeerHover => fires(env.peer_hover),
-        Cond::PeerFocus => fires(env.peer_focus),
-        Cond::PeerFocusVisible => fires(env.peer_focus_visible),
-        Cond::PeerFocusWithin => fires(env.peer_focus_within),
-        Cond::PeerActive => fires(env.peer_active),
-        Cond::PeerDisabled => fires(env.peer_disabled),
-        Cond::PeerVisited => fires(env.peer_visited),
-        Cond::PeerChecked => fires(env.peer_checked),
+        Cond::GroupFocusVisible { name: None } => fires(env.group_focus_visible),
+        Cond::GroupFocusWithin { name: None } => fires(env.group_focus_within),
+        Cond::GroupActive { name: None } => fires(env.group_active),
+        Cond::GroupDisabled { name: None } => fires(env.group_disabled),
+        Cond::GroupVisited { name: None } => fires(env.group_visited),
+        Cond::GroupChecked { name: None } => fires(env.group_checked),
+        Cond::PeerHover { name: None } => fires(env.peer_hover),
+        Cond::PeerFocus { name: None } => fires(env.peer_focus),
+        Cond::PeerFocusVisible { name: None } => fires(env.peer_focus_visible),
+        Cond::PeerFocusWithin { name: None } => fires(env.peer_focus_within),
+        Cond::PeerActive { name: None } => fires(env.peer_active),
+        Cond::PeerDisabled { name: None } => fires(env.peer_disabled),
+        Cond::PeerVisited { name: None } => fires(env.peer_visited),
+        Cond::PeerChecked { name: None } => fires(env.peer_checked),
+        // The NAMED label forms: the env's unnamed facts cannot answer
+        // them (the condition names its group), the quiet miss a
+        // selector whose group is not in that state is. The CSS arm
+        // renders the named head the real selector carries — the
+        // boundary the condition's own doc pins.
+        Cond::GroupHover { name: Some(_) }
+        | Cond::GroupFocus { name: Some(_) }
+        | Cond::GroupFocusVisible { name: Some(_) }
+        | Cond::GroupFocusWithin { name: Some(_) }
+        | Cond::GroupActive { name: Some(_) }
+        | Cond::GroupDisabled { name: Some(_) }
+        | Cond::GroupVisited { name: Some(_) }
+        | Cond::GroupChecked { name: Some(_) }
+        | Cond::PeerHover { name: Some(_) }
+        | Cond::PeerFocus { name: Some(_) }
+        | Cond::PeerFocusVisible { name: Some(_) }
+        | Cond::PeerFocusWithin { name: Some(_) }
+        | Cond::PeerActive { name: Some(_) }
+        | Cond::PeerDisabled { name: Some(_) }
+        | Cond::PeerVisited { name: Some(_) }
+        | Cond::PeerChecked { name: Some(_) } => Fire::No,
         Cond::Bp(bp) | Cond::Min(bp) => fires(env.viewport_rem >= bp.rem()),
         Cond::Max(bp) => fires(env.viewport_rem < bp.rem()),
         // The UNNAMED container question answers from the nearest
