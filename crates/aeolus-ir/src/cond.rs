@@ -464,45 +464,103 @@ pub enum Cond {
     /// state block's `staticVariant('details-content',
     /// ['&::details-content'])`, the v4.1 addition).
     DetailsContent,
-    /// `group-hover:` — a `.group` ancestor is hovered (the named
-    /// `group-hover/x` label form folds to the same probe with a name the
-    /// compile stage threads through).
-    GroupHover,
-    /// `group-focus:`.
-    GroupFocus,
+    /// `group-hover:` — a `.group` ancestor is hovered. The NAMED label
+    /// form (`group-hover/menu:`) rides the payload: `Some("menu")` names
+    /// WHICH group the question tests — two different groups are two
+    /// different conditions, the named-container fold's own rule (the
+    /// v0.9 oracle's `@md/name` reading); the bare form is `None` and
+    /// answers from the unnamed `.group` fact. The payload interns into
+    /// the same leak pool the attribute probes use, so the static form
+    /// stays a `static` item end to end.
+    GroupHover {
+        /// The named group (`group-hover/menu:` → `Some("menu")`); `None`
+        /// for the bare `group-hover:` form (the unnamed `.group` fact).
+        name: Option<&'static str>,
+    },
+    /// `group-focus:`. Same payload contract as [`Cond::GroupHover`].
+    GroupFocus {
+        /// The named group (`group-focus/menu:` → `Some("menu")`).
+        name: Option<&'static str>,
+    },
     /// `group-focus-visible:` — a `.group` ancestor matches
     /// `:focus-visible` (the tailwindcss v4.1.17 `group` compound
     /// mechanism composes with every StyleRules-eligible variant; the
-    /// composition tier carries the full probe-state set).
-    GroupFocusVisible,
-    /// `group-focus-within:`.
-    GroupFocusWithin,
-    /// `group-active:`.
-    GroupActive,
-    /// `group-disabled:`.
-    GroupDisabled,
-    /// `group-visited:`.
-    GroupVisited,
-    /// `group-checked:`.
-    GroupChecked,
-    /// `peer-hover:` — a `.peer` sibling is hovered.
-    PeerHover,
-    /// `peer-focus:`.
-    PeerFocus,
+    /// composition tier carries the full probe-state set). Same payload
+    /// contract as [`Cond::GroupHover`].
+    GroupFocusVisible {
+        /// The named group label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `group-focus-within:`. Same payload contract as [`Cond::GroupHover`].
+    GroupFocusWithin {
+        /// The named group label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `group-active:`. Same payload contract as [`Cond::GroupHover`].
+    GroupActive {
+        /// The named group label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `group-disabled:`. Same payload contract as [`Cond::GroupHover`].
+    GroupDisabled {
+        /// The named group label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `group-visited:`. Same payload contract as [`Cond::GroupHover`].
+    GroupVisited {
+        /// The named group label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `group-checked:`. Same payload contract as [`Cond::GroupHover`].
+    GroupChecked {
+        /// The named group label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `peer-hover:` — a `.peer` sibling is hovered. The NAMED label
+    /// form (`peer-hover/menu:`) rides the payload, the group side's
+    /// own reading.
+    PeerHover {
+        /// The named peer label (`peer-hover/menu:` → `Some("menu")`).
+        name: Option<&'static str>,
+    },
+    /// `peer-focus:`. Same payload contract as [`Cond::PeerHover`].
+    PeerFocus {
+        /// The named peer label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
     /// `peer-focus-visible:` — a `.peer` sibling matches
     /// `:focus-visible` (the `peer` compound mechanism's composition,
-    /// the group side's shape).
-    PeerFocusVisible,
-    /// `peer-focus-within:`.
-    PeerFocusWithin,
-    /// `peer-active:`.
-    PeerActive,
-    /// `peer-disabled:`.
-    PeerDisabled,
-    /// `peer-visited:`.
-    PeerVisited,
-    /// `peer-checked:`.
-    PeerChecked,
+    /// the group side's shape). Same payload contract as
+    /// [`Cond::PeerHover`].
+    PeerFocusVisible {
+        /// The named peer label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `peer-focus-within:`. Same payload contract as [`Cond::PeerHover`].
+    PeerFocusWithin {
+        /// The named peer label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `peer-active:`. Same payload contract as [`Cond::PeerHover`].
+    PeerActive {
+        /// The named peer label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `peer-disabled:`. Same payload contract as [`Cond::PeerHover`].
+    PeerDisabled {
+        /// The named peer label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `peer-visited:`. Same payload contract as [`Cond::PeerHover`].
+    PeerVisited {
+        /// The named peer label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
+    /// `peer-checked:`. Same payload contract as [`Cond::PeerHover`].
+    PeerChecked {
+        /// The named peer label, `None` for the bare form.
+        name: Option<&'static str>,
+    },
     /// `data-*:` — the element's own `data-` attribute probe (plan §3.5's
     /// "typed state bits, not string probes" row; the probe IS the typed
     /// bit the plan names, the payload its name). `data-open:` folds to
@@ -714,22 +772,22 @@ impl Cond {
             // family: the group/peer state compositions are the same
             // parent-relative relation (rank 3), only the composed
             // state differs.
-            Cond::GroupHover
-            | Cond::GroupFocus
-            | Cond::GroupFocusVisible
-            | Cond::GroupFocusWithin
-            | Cond::GroupActive
-            | Cond::GroupDisabled
-            | Cond::GroupVisited
-            | Cond::GroupChecked
-            | Cond::PeerHover
-            | Cond::PeerFocus
-            | Cond::PeerFocusVisible
-            | Cond::PeerFocusWithin
-            | Cond::PeerActive
-            | Cond::PeerDisabled
-            | Cond::PeerVisited
-            | Cond::PeerChecked => 3,
+            Cond::GroupHover { .. }
+            | Cond::GroupFocus { .. }
+            | Cond::GroupFocusVisible { .. }
+            | Cond::GroupFocusWithin { .. }
+            | Cond::GroupActive { .. }
+            | Cond::GroupDisabled { .. }
+            | Cond::GroupVisited { .. }
+            | Cond::GroupChecked { .. }
+            | Cond::PeerHover { .. }
+            | Cond::PeerFocus { .. }
+            | Cond::PeerFocusVisible { .. }
+            | Cond::PeerFocusWithin { .. }
+            | Cond::PeerActive { .. }
+            | Cond::PeerDisabled { .. }
+            | Cond::PeerVisited { .. }
+            | Cond::PeerChecked { .. } => 3,
             // The at-rule tier: the supports condition sorts BESIDE the
             // media forms — tailwindcss v4.1.17's own conditional-rule
             // order (`@media`, `@supports`, `@container`) maps onto the
@@ -816,26 +874,47 @@ impl Cond {
             // condition names its own closed text (the validation
             // arm's shape).
             Cond::Starting => Some("starting"),
-            Cond::GroupHover => Some("group-hover"),
-            Cond::GroupFocus => Some("group-focus"),
+            // The parent-relative spellings: the BARE forms name their
+            // own closed text (the element-state arm's shape); a NAMED
+            // label form has no static text (the name is the payload,
+            // the attribute-probe precedent — `None`, the same answer
+            // `source_text` gives the named-container forms).
+            Cond::GroupHover { name: None } => Some("group-hover"),
+            Cond::GroupFocus { name: None } => Some("group-focus"),
             // The composition spellings are bare variants: the
             // condition names its own closed text (the
             // element-state arm's shape — the composed state is part
             // of the spelling, the group/peer prefix the relation).
-            Cond::GroupFocusVisible => Some("group-focus-visible"),
-            Cond::GroupFocusWithin => Some("group-focus-within"),
-            Cond::GroupActive => Some("group-active"),
-            Cond::GroupDisabled => Some("group-disabled"),
-            Cond::GroupVisited => Some("group-visited"),
-            Cond::GroupChecked => Some("group-checked"),
-            Cond::PeerHover => Some("peer-hover"),
-            Cond::PeerFocus => Some("peer-focus"),
-            Cond::PeerFocusVisible => Some("peer-focus-visible"),
-            Cond::PeerFocusWithin => Some("peer-focus-within"),
-            Cond::PeerActive => Some("peer-active"),
-            Cond::PeerDisabled => Some("peer-disabled"),
-            Cond::PeerVisited => Some("peer-visited"),
-            Cond::PeerChecked => Some("peer-checked"),
+            Cond::GroupFocusVisible { name: None } => Some("group-focus-visible"),
+            Cond::GroupFocusWithin { name: None } => Some("group-focus-within"),
+            Cond::GroupActive { name: None } => Some("group-active"),
+            Cond::GroupDisabled { name: None } => Some("group-disabled"),
+            Cond::GroupVisited { name: None } => Some("group-visited"),
+            Cond::GroupChecked { name: None } => Some("group-checked"),
+            Cond::PeerHover { name: None } => Some("peer-hover"),
+            Cond::PeerFocus { name: None } => Some("peer-focus"),
+            Cond::PeerFocusVisible { name: None } => Some("peer-focus-visible"),
+            Cond::PeerFocusWithin { name: None } => Some("peer-focus-within"),
+            Cond::PeerActive { name: None } => Some("peer-active"),
+            Cond::PeerDisabled { name: None } => Some("peer-disabled"),
+            Cond::PeerVisited { name: None } => Some("peer-visited"),
+            Cond::PeerChecked { name: None } => Some("peer-checked"),
+            Cond::GroupHover { name: Some(_) }
+            | Cond::GroupFocus { name: Some(_) }
+            | Cond::GroupFocusVisible { name: Some(_) }
+            | Cond::GroupFocusWithin { name: Some(_) }
+            | Cond::GroupActive { name: Some(_) }
+            | Cond::GroupDisabled { name: Some(_) }
+            | Cond::GroupVisited { name: Some(_) }
+            | Cond::GroupChecked { name: Some(_) }
+            | Cond::PeerHover { name: Some(_) }
+            | Cond::PeerFocus { name: Some(_) }
+            | Cond::PeerFocusVisible { name: Some(_) }
+            | Cond::PeerFocusWithin { name: Some(_) }
+            | Cond::PeerActive { name: Some(_) }
+            | Cond::PeerDisabled { name: Some(_) }
+            | Cond::PeerVisited { name: Some(_) }
+            | Cond::PeerChecked { name: Some(_) } => None,
             // The attribute probes carry their spelling in the payload —
             // the segment text itself (`data-[state=open]`, `has-focus`),
             // which no const table reconstructs. `source_text` returns
