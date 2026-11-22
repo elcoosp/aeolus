@@ -703,7 +703,32 @@ pub(crate) fn row_to_css(
         if !arm.accepts(suffix) {
             continue;
         }
-        let rendered = arm_to_css(arm, suffix, negative, alpha, row, tokens, config, arb)?;
+        // The transform family's v4.1.17 machinery emission (the §3.7
+        // transform row's CSS half): each utility writes its `--tw-*`
+        // var and the composed `translate:`/`rotate:`/`scale:`
+        // `transform:` line beside it — the filter chain's own emission
+        // shape (the vars carry the axis values, the composed line
+        // references them, so the cascade composes axes across
+        // utilities exactly as the real compiler's output reads; the
+        // golden corpus pins the bytes). The generic [`arm_to_css`]
+        // render stays the other families' path.
+        let rendered = if matches!(
+            row.root,
+            "translate-x"
+                | "translate-y"
+                | "rotate"
+                | "scale"
+                | "scale-x"
+                | "scale-y"
+                | "skew-x"
+                | "skew-y"
+        ) {
+            transform_css(
+                row.root, arm, suffix, negative, row, alpha, tokens, config, arb,
+            )?
+        } else {
+            arm_to_css(arm, suffix, negative, alpha, row, tokens, config, arb)?
+        };
         // A modifier never half-applies (the same contract as the IR
         // form): it rides only when EVERY rendered value is colour-form.
         if alpha.is_some() && !rendered.iter().all(|r| r.colour_form) {
@@ -1183,6 +1208,198 @@ fn num_text(v: f32) -> String {
         format!("{v:.0}")
     } else {
         format!("{v}")
+    }
+}
+
+/// The composed translate line the translate family's rules carry
+/// (both axes' var references — the unset axis reads its `@property`
+/// initial `0`, the pinned corpus's own bytes).
+const TRANSLATE_COMPOSED: &str = "var(--tw-translate-x) var(--tw-translate-y)";
+
+/// The composed scale line (both axes' var references, the `-z` twin
+/// omitted — the pinned corpus's own bytes).
+const SCALE_COMPOSED: &str = "var(--tw-scale-x) var(--tw-scale-y)";
+
+/// The composed `transform:` var chain the skew family's rules carry
+/// (the 3D rotate slots the v4 machinery names beside the skew pair —
+/// the chain's text is identical in every skew rule, the pinned
+/// corpus's own bytes).
+const TRANSFORM_CHAIN: &str = "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
+
+/// The transform family's v4.1.17 emission (the §3.7 transform row's
+/// CSS half) — the golden corpus's own bytes, quoted from the pinned
+/// compiler: each utility writes its `--tw-*` var line and the
+/// COMPOSED property line beside it (`translate:` / `rotate:` /
+/// `scale:` / the `transform:` var chain), so the cascade composes
+/// axes across utilities exactly as the real output reads. The var
+/// line's slot is the row's own longhand; the composed line rides the
+/// family's tail slot (the stable cascade sort keeps var-then-composed
+/// order). `rotate` writes the bare property directly (no var — the
+/// pinned compiler's own two-stop form for the 2D rotation).
+///
+/// Arbitrary values keep the generic verbatim render beside the
+/// composed line (the bracketed form's value passes through; the
+/// composed line references the same vars). The refusals stay the
+/// row's own: a value the arm kinds do not accept is the shape
+/// mismatch, never a guessed unit.
+fn transform_css(
+    root: &'static str,
+    arm: ValueKind,
+    suffix: Option<&str>,
+    negative: bool,
+    row: UtilityRow,
+    alpha: Option<f32>,
+    tokens: Option<&TokenTable>,
+    config: Config,
+    arb: Option<Arb<'_>>,
+) -> Result<Vec<RenderedCss>, Reject> {
+    // The Arbitrary arm keeps the generic verbatim render (the unit
+    // grammar's own output); the composed line rides beside it.
+    if matches!(arm, ValueKind::Arbitrary) {
+        let mut out = arm_to_css(arm, suffix, negative, alpha, row, tokens, config, arb)?;
+        let chain = match root {
+            "translate-x" | "translate-y" => Some(("translate", TRANSLATE_COMPOSED)),
+            "scale" | "scale-x" | "scale-y" => Some(("scale", SCALE_COMPOSED)),
+            "skew-x" | "skew-y" => Some(("transform", TRANSFORM_CHAIN)),
+            _ => None,
+        };
+        if let Some((name, text)) = chain {
+            out.push(line(row.targets[0], name, text));
+        }
+        return Ok(out);
+    }
+    let s = suffix.unwrap_or_default();
+    let signed = |n: f32| if negative { -n } else { n };
+    // The negation form (the pinned corpus's own bytes): a value the
+    // utility composed wraps in the `calc(<value> * -1)` multiplier —
+    // `-rotate-90` renders `rotate: calc(90deg * -1)`, never a
+    // folded `-90deg` literal.
+    let negate = |text: String| format!("calc({text} * -1)");
+    // The axis value's rendered text per arm kind (the row's own
+    // grammar decides which kinds accept).
+    let value: String = match arm {
+        ValueKind::Spacing => {
+            if s == "px" {
+                if negative {
+                    "-1px".to_string()
+                } else {
+                    "1px".to_string()
+                }
+            } else {
+                // The RAW multiplier rides the calc (the pinned corpus's
+                // `calc(var(--spacing) * 2)` — the var itself carries the
+                // rem unit; the spacing step must not fold in here).
+                let n = signed(finite(parse_num(s)?)?);
+                format!("calc(var(--spacing) * {})", num_text(n))
+            }
+        }
+        // The fraction form is the RAW fraction in the calc multiplier —
+        // the pinned corpus's `--tw-translate-x: calc(1/2 * 100%)` (the
+        // percent rides the multiplier's second operand, signed).
+        ValueKind::Fraction => {
+            let (n, d) = s.split_once('/').ok_or(Reject::Value {
+                reason: REASON_SHAPE_MISMATCH,
+            })?;
+            let (n, d) = (parse_num(n)?, parse_num(d)?);
+            let _ = finite(n * d);
+            let pct = if negative { "-100%" } else { "100%" };
+            format!("calc({}/{} * {pct})", num_text(n), num_text(d))
+        }
+        ValueKind::Number | ValueKind::PositiveInt => num_text(parse_num(s)?),
+        _ => {
+            return Err(Reject::Value {
+                reason: REASON_SHAPE_MISMATCH,
+            });
+        }
+    };
+    // The per-root value wrapper: the unit-bearing forms the family's
+    // own grammar renders (degrees for rotate/skew, the percent scale
+    // for the scale family), the negation wrapping the composed text —
+    // the raw number stays UNSIGNED here (the `calc(<value> * -1)`
+    // wrapper carries the sign, `-rotate-90` renders
+    // `rotate: calc(90deg * -1)`; the signed literal would double the
+    // negation).
+    let wrapped = |text: String| {
+        let unit = match root {
+            "rotate" => format!("{text}deg"),
+            "skew-x" => format!("skewX({text}deg)"),
+            "skew-y" => format!("skewY({text}deg)"),
+            _ => format!("{text}%"),
+        };
+        if negative && matches!(root, "rotate" | "skew-x" | "skew-y") {
+            negate(unit)
+        } else {
+            unit
+        }
+    };
+    let value = match arm {
+        ValueKind::Number | ValueKind::PositiveInt => wrapped(value),
+        _ => value,
+    };
+    let transform_line = |prop: Prop, name: &'static str, text: String| RenderedCss {
+        prop,
+        prop_name: name,
+        value: CssValue {
+            base: text,
+            dark: None,
+        },
+        colour_form: false,
+    };
+    match root {
+        // The 2D rotation: the bare property, no var (the pinned
+        // compiler's own form — `rotate: 45deg`).
+        "rotate" => Ok(vec![transform_line(Prop::Rotate, "rotate", value)]),
+        // The scale family: the axis var(s) and the composed
+        // `scale:` line — the two-axis form writes all THREE vars
+        // (the z twin the real output carries beside the x/y pair).
+        "scale" => Ok(vec![
+            transform_line(Prop::ScaleX, Prop::ScaleX.name(), value.clone()),
+            transform_line(Prop::ScaleY, Prop::ScaleY.name(), value.clone()),
+            transform_line(Prop::ScaleY, "--tw-scale-z", value),
+            transform_line(Prop::ScaleY, "scale", SCALE_COMPOSED.to_string()),
+        ]),
+        "scale-x" => Ok(vec![
+            transform_line(Prop::ScaleX, Prop::ScaleX.name(), value),
+            transform_line(Prop::ScaleY, "scale", SCALE_COMPOSED.to_string()),
+        ]),
+        "scale-y" => Ok(vec![
+            transform_line(Prop::ScaleY, Prop::ScaleY.name(), value),
+            transform_line(Prop::ScaleY, "scale", SCALE_COMPOSED.to_string()),
+        ]),
+        // The skew family: the axis var with its function value and
+        // the composed `transform:` var chain (the chain's text is
+        // identical in every skew rule so the cascade never loses a
+        // component — the filter chain's own emission shape).
+        "skew-x" => Ok(vec![
+            transform_line(Prop::SkewX, Prop::SkewX.name(), value),
+            transform_line(Prop::SkewY, "transform", TRANSFORM_CHAIN.to_string()),
+        ]),
+        "skew-y" => Ok(vec![
+            transform_line(Prop::SkewY, Prop::SkewY.name(), value),
+            transform_line(Prop::SkewY, "transform", TRANSFORM_CHAIN.to_string()),
+        ]),
+        // The translate family: the axis var (the spacing multiple's
+        // calc() form — the fraction the percentage, the arbitrary its
+        // verbatim value) and the composed `translate:` line.
+        "translate-x" => Ok(vec![
+            transform_line(Prop::TranslateX, Prop::TranslateX.name(), value),
+            transform_line(
+                Prop::TranslateY,
+                "translate",
+                TRANSLATE_COMPOSED.to_string(),
+            ),
+        ]),
+        "translate-y" => Ok(vec![
+            transform_line(Prop::TranslateY, Prop::TranslateY.name(), value),
+            transform_line(
+                Prop::TranslateY,
+                "translate",
+                TRANSLATE_COMPOSED.to_string(),
+            ),
+        ]),
+        _ => Err(Reject::Value {
+            reason: REASON_SHAPE_MISMATCH,
+        }),
     }
 }
 
