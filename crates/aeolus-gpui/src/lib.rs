@@ -81,6 +81,7 @@ mod grad;
 mod motion;
 mod ring;
 mod shadow;
+mod space;
 pub use containers::{ContainerQuery, TwContainerExt, container_rem};
 pub use filters::FilterState;
 pub use grad::GradState;
@@ -89,6 +90,7 @@ pub use motion::{
 };
 pub use ring::RingState;
 pub use shadow::{SHADOW_PRESET_TEXTS, ShadowState, parse_shadow_bands};
+pub use space::{Axis, SpaceDiv, SpaceDivState, TwSpaceExt};
 
 pub use aeolus_macro::{cn, theme, tw, tw_cn, variants};
 pub use aeolus_rt::theme_from_css;
@@ -108,9 +110,9 @@ pub use aeolus_rt::{ContainerBound, ContainerProbe, ContainerState, MeasuredCont
 /// extension traits.
 pub mod prelude {
     pub use crate::{
-        AeolusRoot, ContainerQuery, FilterState, GradState, TwAnimExt, TwContainerExt, TwExt,
-        TwStateExt, begin_frame, cn, container_rem, set_env, theme, theme_from_css, tw, tw_cn,
-        variants,
+        AeolusRoot, Axis, ContainerQuery, FilterState, GradState, SpaceDiv, SpaceDivState,
+        TwAnimExt, TwContainerExt, TwExt, TwSpaceExt, TwStateExt, begin_frame, cn, container_rem,
+        set_env, theme, theme_from_css, tw, tw_cn, variants,
     };
     pub use aeolus_compile::Env;
     pub use aeolus_rt::{
@@ -465,6 +467,7 @@ pub trait TwStateExt: StatefulInteractiveElement + Styled + Sized {
             &mut grid,
             &mut shadow,
             &mut filter,
+            &mut space::SpaceDivState::default(),
         );
         this = this.hover(|style| {
             apply_state_polyfills(style, &program, is_hover, ring, grad, grid, shadow, filter)
@@ -865,6 +868,11 @@ fn apply_matching<S: Styled>(
         &mut GridState::default(),
         &mut ShadowState::default(),
         &mut FilterState::default(),
+        // The between-child state composes here and drops: the plain
+        // Styled lane has no children to style — the consumer is
+        // [`TwSpaceExt::tw_space`], whose walk takes the state out of
+        // the same route (the accumulator's own doc comment).
+        &mut space::SpaceDivState::default(),
     )
 }
 
@@ -887,6 +895,7 @@ fn apply_matching_polyfills<S: Styled>(
     grid: &mut GridState,
     shadow: &mut ShadowState,
     filter: &mut FilterState,
+    space_div: &mut space::SpaceDivState,
 ) -> S {
     for (layer_index, layer) in program.layers.iter().enumerate() {
         if !cond_matches(layer.cond, env, probes, containers, structs) {
@@ -902,6 +911,18 @@ fn apply_matching_polyfills<S: Styled>(
             // colour feeds the ring's `currentColor` default.
             if is_ring_prop(decl.prop) {
                 ring.apply(decl.prop, decl.val, keyword);
+                continue;
+            }
+            // The between-child families ride THEIR accumulator (the
+            // parity wave 1's polyfill half): the margins/borders the
+            // v4 child rule composes. The consumer is
+            // [`TwSpaceExt::tw_space`] — the wrapper lane takes the
+            // state out of the same walk and styles the CHILDREN; the
+            // plain Styled lane composes the state and drops it (a
+            // per-element surface has no children to style, the
+            // documented boundary).
+            if space::is_space_div_prop(decl.prop) {
+                space_div.apply(decl.prop, decl.val, keyword);
                 continue;
             }
             if is_grad_prop(decl.prop) {
@@ -1219,6 +1240,17 @@ fn apply_state_polyfills<S: Styled>(
                 ring.apply(decl.prop, decl.val, keyword);
                 continue;
             }
+            // The between-child families route here too (the walk stays
+            // total over every state closure) — the state-layer
+            // composition composes into its own accumulator and drops:
+            // the closure's between-child margins would style the
+            // wrapper's children at state time, which the element
+            // closure cannot reach (the documented boundary — the CSS
+            // arm renders the state-conditioned child rule, the base
+            // walk's wrapper carries the base parts).
+            if space::is_space_div_prop(decl.prop) {
+                continue;
+            }
             if is_grad_prop(decl.prop) {
                 grad.apply(decl.prop, decl.val, keyword);
                 continue;
@@ -1327,6 +1359,16 @@ fn apply_decl<S: Styled>(style: S, prop: Prop, val: Val, keyword: &str) -> S {
         },
         Prop::TextAlign => text_align(style, keyword),
         Prop::TextDecorationLine => text_decoration(style, keyword),
+        // The parity wave 1's native pair: the clamp count (the pinned
+        // `Styled::line_clamp` sets the text-style slot AND the
+        // overflow-hidden the v4 composite emits) and the
+        // font-variant-numeric tags (the OpenType surface's own values,
+        // composed ADDITIVELY the way v4's var machinery composes them
+        // — one tag per family, the `normal` reset clearing the set).
+        Prop::LineClamp => with_num(style, val, |style, lines| {
+            style.line_clamp(usize::try_from(lines.max(0.0) as u64).unwrap_or(usize::MAX))
+        }),
+        Prop::FontVariantNumeric => font_feature(style, keyword),
         // The decoration family's colour/thickness/style longhands (the
         // §3.7 typography surface's decoration half) — the helpers carry
         // the per-leg semantics (the pinned methods' get-or-insert on the
@@ -1601,6 +1643,52 @@ fn with_color<S: Styled>(style: S, val: Val, f: impl FnOnce(S, Hsla) -> S) -> S 
         Some(color) => f(style, color),
         None => style,
     }
+}
+
+/// The font-variant-numeric keyword's OpenType tag — the CSS value's
+/// own feature surface (`tabular-nums` → `tnum`, `ordinal` → `ordn`,
+/// the diagonal/stacked fractions' `frac`/`dfrn`); the `normal` reset
+/// clears the composed set (v4's own `normal-nums` reading). `None` =
+/// the keyword outside the closed family (the walk's no-op arm).
+fn font_feature_tag(keyword: &str) -> Option<&'static str> {
+    match keyword {
+        "ordinal" => Some("ordn"),
+        "slashed-zero" => Some("zero"),
+        "lining-nums" => Some("lnum"),
+        "oldstyle-nums" => Some("onum"),
+        "proportional-nums" => Some("pnum"),
+        "tabular-nums" => Some("tnum"),
+        "diagonal-fractions" => Some("frac"),
+        "stacked-fractions" => Some("dfrn"),
+        _ => None,
+    }
+}
+
+/// Compose one font-variant-numeric tag into the element's own
+/// `FontFeatures` slot (the additive form the v4 var machinery
+/// composes: several `*-nums` classes stack their tags; the `normal`
+/// reset replaces the set with the empty default).
+fn font_feature<S: Styled>(mut style: S, keyword: &str) -> S {
+    if keyword == "normal" {
+        let text_style = style.text_style();
+        text_style.font_features = Some(gpui::FontFeatures::default());
+        return style;
+    }
+    let Some(tag) = font_feature_tag(keyword) else {
+        return style;
+    };
+    let text_style = style.text_style();
+    let features = text_style
+        .font_features
+        .get_or_insert_with(gpui::FontFeatures::default);
+    // The tag lands once per family: an already-present tag re-enables
+    // (the cascade's last write) instead of duplicating the entry.
+    let entries = std::sync::Arc::make_mut(&mut features.0);
+    match entries.iter_mut().find(|(existing, _)| existing == tag) {
+        Some(entry) => entry.1 = 1,
+        None => entries.push((tag.to_string(), 1)),
+    }
+    style
 }
 
 /// The row text's own length form: the plain px/rem spellings the row
