@@ -75,7 +75,7 @@
 
 use aeolus_core::Color;
 use aeolus_data::{UtilityRow, ValueKind};
-use aeolus_ir::Prop;
+use aeolus_ir::{Prop, Val};
 use aeolus_syntax::Arb;
 
 use crate::lower::Reject;
@@ -189,6 +189,22 @@ pub(crate) const REASON_ARBITRARY_PROPERTY: &str = "the bracket names a PROPERTY
      value: the registry row already names the property, and the arbitrary-property form is the codegen \
      pass's surface";
 
+pub(crate) const REASON_ARBITRARY_PROPERTY_EMPTY: &str = "the property declaration's value is empty \
+     ([mask-type:] spells no value) — a truncated declaration is a boundary, never a broken-CSS \
+     passthrough";
+
+/// The PROPERTY NAME a `Prop::Arbitrary` declaration carries — the
+/// composition's fold key (the one key the longhand bitset cannot
+/// carry: the name is the author's, unbounded). The name is the
+/// declaration's own interned `Val::Verbatim` text's prefix before the
+/// first `:` (property names never contain one; values may).
+pub(crate) fn property_name(val: Val) -> &'static str {
+    match val {
+        Val::Verbatim(text) => text.split(':').next().unwrap_or(""),
+        _ => "",
+    }
+}
+
 pub(crate) const REASON_ARBITRARY_COMPOSITE: &str = "the row's slots take no composite value: the sized \
      functions (calc()/min()/max()/clamp()) lower on the single-target scalar rows, the track lists \
      (underscore joins, repeat()/minmax()/fit-content()) on the grid-template/auto rows, the image \
@@ -216,6 +232,7 @@ pub(crate) fn is_boundary_reason(reason: &str) -> bool {
         REASON_ARBITRARY_UNIT
             | REASON_ARBITRARY_HINT
             | REASON_ARBITRARY_PROPERTY
+            | REASON_ARBITRARY_PROPERTY_EMPTY
             | REASON_ARBITRARY_COMPOSITE
             | REASON_ARBITRARY_MALFORMED
             | REASON_ARBITRARY_COMPOSITE_NEGATIVE
