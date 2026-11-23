@@ -27,6 +27,7 @@ use gpui::px;
 
 #[test]
 fn underline_and_wavy_compose() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("underline decoration-wavy");
     let style = gpui::StyleRefinement::default().tw(program);
     let underline = style.text.underline.expect("underline composes");
@@ -35,6 +36,7 @@ fn underline_and_wavy_compose() {
 
 #[test]
 fn solid_resets_the_wavy_form() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("underline decoration-wavy decoration-solid");
     let style = gpui::StyleRefinement::default().tw(program);
     let underline = style.text.underline.expect("underline composes");
@@ -43,6 +45,7 @@ fn solid_resets_the_wavy_form() {
 
 #[test]
 fn thickness_composes_on_the_underline_leg() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The pinned `text_decoration_0..8` methods' own reading: the
     // thickness arm lands on the underline style's absolute-px slot.
     let program = tw!("underline decoration-4");
@@ -68,6 +71,7 @@ fn thickness_composes_on_the_underline_leg() {
 
 #[test]
 fn thickness_patches_the_strikethrough_leg_when_it_composes() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The v4 reading: `text-decoration-thickness` recolours/resizes BOTH
     // lines when they compose; alone it creates no line (the pinned
     // methods get-or-insert the underline leg, the walk mirrors them).
@@ -83,6 +87,7 @@ fn thickness_patches_the_strikethrough_leg_when_it_composes() {
 
 #[test]
 fn colour_composes_on_both_legs() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("underline decoration-red-500");
     let style = gpui::StyleRefinement::default().tw(program);
     let underline = style.text.underline.expect("underline composes");
@@ -113,6 +118,7 @@ fn colour_composes_on_both_legs() {
 
 #[test]
 fn colour_alone_does_not_create_a_line_through() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // `decoration-red-500` alone: the underline leg follows the pinned
     // method's get-or-insert (an underline composes — GPUI's own
     // reading of the class), but NO line-through appears (the
@@ -131,6 +137,7 @@ fn colour_alone_does_not_create_a_line_through() {
 
 #[test]
 fn the_decoration_family_composes_through_the_macro() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The full family in one string — the frozen program walks all four
     // longhands.
     let program = tw!("underline decoration-wavy decoration-4 decoration-red-500");
