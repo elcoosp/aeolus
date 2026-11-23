@@ -42,5 +42,12 @@ harness = false
 name = "style_face"
 harness = false
 
+# The `.tw()` walk's allocation bench (plan §4's static-application
+# path): divan's own allocation tracking reports `alloc_count` beside
+# the wall clock — the battery's pins, priced.
+[[bench]]
+name = "alloc_contract"
+harness = false
+
 [lints]
 workspace = true
