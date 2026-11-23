@@ -89,6 +89,58 @@ pub(crate) const REASON_NON_FINITE: &str = "the suffix parses as a non-finite f3
 pub(crate) const REASON_SHAPE_MISMATCH: &str = "the row's shape contract accepted the suffix but no arm lowered it \
      (registry/compile drift — please report)";
 
+/// Lower the BARE arbitrary-property declaration — the v4 class whose
+/// bracket IS the utility (`[mask-type:luminance]`, `[--brand:red]`).
+/// The lexer has already split the bracket (the `Arb::hint` slot
+/// carries the property NAME, `Arb::value` the text), so the lowering
+/// is the composite grammar's own intern discipline: the value decodes
+/// underscores, the whole `name: value` text interns into the leak
+/// pool, and the declaration rides the appended
+/// [`aeolus_ir::Prop::Arbitrary`] arm. The author owns the CSS
+/// validity (the `Val::Verbatim` contract); an empty value is the
+/// malformed boundary, typed.
+pub(crate) fn property_to_decls(arb: Arb<'_>) -> Result<Vec<Decl>, Reject> {
+    let name = arb.hint.ok_or(Reject::Value {
+        reason: arbitrary::REASON_ARBITRARY_PROPERTY,
+    })?;
+    let value = arbitrary::decode_underscores(arb.value);
+    if value.is_empty() {
+        return Err(Reject::Value {
+            reason: arbitrary::REASON_ARBITRARY_PROPERTY_EMPTY,
+        });
+    }
+    let text: &'static str = Box::leak(format!("{name}: {value}").into_boxed_str());
+    Ok(vec![Decl {
+        prop: Prop::Arbitrary,
+        val: Val::Verbatim(text),
+    }])
+}
+
+/// The CSS arm's rendering of the bare property declaration: the
+/// interned NAME as the rule's property, the decoded value as its
+/// text — the same declaration `property_to_decls` lowers, one
+/// rendering per walk (the diagnostics-equal battery's shape).
+pub(crate) fn property_to_css(arb: Arb<'_>) -> Result<Vec<CssDecl>, Reject> {
+    let name = arb.hint.ok_or(Reject::Value {
+        reason: arbitrary::REASON_ARBITRARY_PROPERTY,
+    })?;
+    let value = arbitrary::decode_underscores(arb.value);
+    if value.is_empty() {
+        return Err(Reject::Value {
+            reason: arbitrary::REASON_ARBITRARY_PROPERTY_EMPTY,
+        });
+    }
+    let name: &'static str = Box::leak(name.to_string().into_boxed_str());
+    Ok(vec![CssDecl {
+        prop: Prop::Arbitrary,
+        prop_name: name,
+        value: CssValue {
+            base: value,
+            dark: None,
+        },
+    }])
+}
+
 /// Lower ONE matched row for one candidate body. The registry guarantees
 /// the body addresses the row's root and at least one of its value
 /// shapes accepts the suffix; everything past that guarantee is typed.
