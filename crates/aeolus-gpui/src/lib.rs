@@ -64,7 +64,7 @@
 //! [`ShadowState`] accumulator — the ring's bands and the preset's
 //! bands in one v4-ordered call.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use aeolus_compile::{CompileError, Config, Env, structural_fires};
 use aeolus_ir::{Cond, Prop, Val};
@@ -127,13 +127,66 @@ thread_local! {
     static ENV: RefCell<Env> = RefCell::new(Env::default());
 }
 
+// The frame marker (plan §3.5's Env note, §9's mitigation row): whether
+// `begin_frame` or `set_env` has run on THIS thread. The debug-assert in
+// `env` reads it; the marker itself is debug-only — release builds
+// compile both the marker and the assert out, so the UI path's cost
+// stays exactly the TLS load it always was.
+#[cfg(debug_assertions)]
+thread_local! {
+    static FRAME_BEGUN: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Mark this thread's frame environment as deliberately set —
+/// [`begin_frame`] (the per-render refresh) and [`set_env`] (the
+/// explicit escape hatch) both ride it. Release builds inline this to
+/// nothing: the marker's only reader is the debug-assert.
+#[cfg(debug_assertions)]
+fn mark_frame() {
+    FRAME_BEGUN.with(|marked| marked.set(true));
+}
+
+/// Release half of [`mark_frame`]: the assert compiles out, so the
+/// marker never needs setting (the empty body inlines away).
+#[cfg(not(debug_assertions))]
+fn mark_frame() {}
+
 /// Replace the process-wide probe environment used by [`TwExt::tw`].
+///
+/// The deliberate escape hatch for the frame environment's own
+/// debug-assert: a thread that never renders a frame — a test, a
+/// headless walk, a non-UI thread — sets its env EXPLICITLY here (or
+/// reads through the `tw_env*` entries' explicit `Env` values), and
+/// [`env`]'s debug-assert (plan §3.5: "add a debug-assert that
+/// `begin_frame` ran") stays quiet. An unframed read without this
+/// refuses in debug builds — the resting default's dark/viewport
+/// answers would ride silently.
 pub fn set_env(env: Env) {
+    mark_frame();
     ENV.with(|current| *current.borrow_mut() = env);
 }
 
 /// The current probe environment.
+///
+/// # Panics
+/// In debug builds, when neither [`begin_frame`] nor [`set_env`] has
+/// run on this thread yet: the frame facts (`dark`, the viewport rem,
+/// the preference/state bits) would answer from the resting default —
+/// the stale-Env hazard the plan's debug-assert exists for. Release
+/// builds compile the assert out (the §3.4 note's zero-cost read);
+/// the escape hatches are [`set_env`] and the `tw_env*` entries'
+/// explicit `Env` values.
 pub fn env() -> Env {
+    #[cfg(debug_assertions)]
+    FRAME_BEGUN.with(|marked| {
+        debug_assert!(
+            marked.get(),
+            "aeolus: the frame Env was read before begin_frame(window) or \
+             set_env(env) ran on this thread — the resting default's dark/viewport \
+             answers would ride silently (plan §3.5's debug-assert; set_env and \
+             the tw_env* entries are the deliberate escape hatches)"
+        );
+    });
     ENV.with(|current| *current.borrow())
 }
 
@@ -1916,8 +1969,10 @@ pub fn text_align_value(keyword: &str) -> TextAlign {
 
 /// Refresh the probe environment from the window: dark mode and the
 /// viewport width in rem. Call once per render; [`AeolusRoot`] does it
-/// for you.
+/// for you. The call marks the thread's frame environment (plan
+/// §3.5's debug-assert in [`env`] keys on it).
 pub fn begin_frame(window: &gpui::Window) {
+    mark_frame();
     let rem = window.rem_size();
     let viewport_rem = if rem > px(0.0) {
         window.viewport_size().width / rem
