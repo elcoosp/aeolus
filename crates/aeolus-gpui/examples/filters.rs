@@ -17,6 +17,7 @@
 use aeolus_gpui::prelude::*;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The image-card surface a gallery would wear: the full matrix
     // chain over a coloured surface — brightness, contrast,
     // grayscale, hue-rotate, invert, saturate, sepia in one program.
