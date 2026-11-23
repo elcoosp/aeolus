@@ -21,15 +21,14 @@ use lsp_types::{
     DocumentRangeFormattingParams, DocumentSymbolParams, ExecuteCommandOptions,
     ExecuteCommandParams, FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability,
     FullDocumentDiagnosticReport, GotoDefinitionParams, Hover, HoverContents,
-    HoverProviderCapability, InitializeResult, InlayHint, InlayHintKind, InlayHintLabel,
-    InlayHintOptions, InlayHintParams, InlayHintServerCapabilities, InlayHintTooltip,
-    LinkedEditingRangeParams, LinkedEditingRangeServerCapabilities, LinkedEditingRanges, Location,
-    MarkupContent, MarkupKind, NumberOrString, OneOf, PrepareRenameResponse,
-    PublishDiagnosticsParams, ReferenceParams, RelatedFullDocumentDiagnosticReport, RenameParams,
-    SelectionRange, SelectionRangeParams, SelectionRangeProviderCapability, SemanticToken,
-    SemanticTokenType, SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend,
-    SemanticTokensOptions, SemanticTokensParams, SemanticTokensRangeParams,
-    SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SymbolKind,
+    HoverProviderCapability, InlayHint, InlayHintKind, InlayHintLabel, InlayHintOptions,
+    InlayHintParams, InlayHintServerCapabilities, InlayHintTooltip, LinkedEditingRangeParams,
+    LinkedEditingRangeServerCapabilities, LinkedEditingRanges, Location, MarkupContent, MarkupKind,
+    NumberOrString, OneOf, PrepareRenameResponse, PublishDiagnosticsParams, ReferenceParams,
+    RelatedFullDocumentDiagnosticReport, RenameParams, SelectionRange, SelectionRangeParams,
+    SelectionRangeProviderCapability, SemanticToken, SemanticTokenType, SemanticTokens,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams,
+    SemanticTokensRangeParams, SemanticTokensServerCapabilities, ServerCapabilities, SymbolKind,
     TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
     TextDocumentSyncOptions, TextEdit, Uri, WorkDoneProgressOptions, WorkspaceEdit,
     WorkspaceSymbolParams,
@@ -234,13 +233,19 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
     match request.method.as_str() {
         "initialize" => {
             session.initialized = true;
-            let result = InitializeResult {
-                capabilities: server_capabilities(),
-                server_info: Some(ServerInfo {
-                    name: "aeolus".to_string(),
-                    version: Some(env!("CARGO_PKG_VERSION").to_string()),
-                }),
-            };
+            // The wire shape builds through `json!` rather than the typed
+            // `InitializeResult` literal: lsp-types 0.97.0 gates
+            // `offset_encoding` behind its own feature set, and the
+            // workspace's feature unification flips the struct's fields
+            // between builds — the wire bytes are the contract, not the
+            // struct literal (the same shape serializes either way).
+            let result = serde_json::json!({
+                "capabilities": server_capabilities(),
+                "server_info": {
+                    "name": "aeolus",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+            });
             let result = serde_json::to_value(result).unwrap_or(Value::Null);
             respond(request.id, Some(result))
         }
