@@ -8,6 +8,14 @@ repository.workspace = true
 rust-version = "1.88"
 publish = false
 
+# The iai-callgrind golden's opt-in (the bench's own contract: nightly
+# + valgrind only, never locally on stable). The feature carries no
+# code — it exists so the `iai_contract` bench target can name it in
+# `required-features` and every default/all-features stable gate skips
+# it, while the nightly workflow selects it explicitly.
+[features]
+iai = []
+
 [dependencies]
 gpui = { package = "gpui-pre", version = "=0.3.12" }
 aeolus-ir = { workspace = true }
@@ -130,10 +138,13 @@ name = "transform"
 harness = false
 
 # The §4 instruction-count golden (the iai-callgrind gate, nightly CI
-# only — the stable `perf_contract` stays the wall-clock half).
+# only — the stable `perf_contract` stays the wall-clock half). The
+# `iai` feature gates the target: the nightly workflow selects it,
+# stable gates (no valgrind here) skip it.
 [[bench]]
 name = "iai_contract"
 harness = false
+required-features = ["iai"]
 
 [lints]
 workspace = true
