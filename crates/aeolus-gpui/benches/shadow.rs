@@ -11,6 +11,7 @@ use aeolus_gpui::prelude::*;
 
 #[divan::bench]
 fn shadow_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The shadcn card corpus: the two-band lg preset, the recolour and
     // the text colour the `currentColor` band would read — the whole
     // `shadow-*` machinery in one walk.
