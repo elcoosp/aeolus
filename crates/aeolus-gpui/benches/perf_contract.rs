@@ -61,6 +61,7 @@ use gpui::{FontWeight, Styled, px, relative, rems};
 fn red() -> gpui::Hsla {
     use std::sync::OnceLock;
     static BAKED: OnceLock<gpui::Hsla> = OnceLock::new();
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     *BAKED.get_or_init(|| {
         let program = tw!("bg-red-500");
         let style = gpui::StyleRefinement::default().tw(program);
@@ -195,6 +196,7 @@ fn colour_close_solid(a: &gpui::Fill, b: &gpui::Fill) -> bool {
 /// The walked refinement wrapper (built once, outside the measured
 /// loop — the clone benches' source and the parity pins' walked half).
 fn walked_inline(program: StaticProgram) -> gpui::StyleRefinement {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     gpui::StyleRefinement::default().tw(program)
 }
 
@@ -352,6 +354,7 @@ fn hand_grid_chain(bencher: Bencher) {
 
 #[divan::bench]
 fn static_walk_button(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("inline-flex items-center justify-center gap-2 rounded-md \
          px-4 py-2 font-medium border border-red-500 bg-red-500 text-red-500");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
@@ -359,24 +362,28 @@ fn static_walk_button(bencher: Bencher) {
 
 #[divan::bench]
 fn static_walk_layout(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("w-full h-10 px-3 py-2 border border-red-500 rounded-lg");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
 
 #[divan::bench]
 fn static_walk_typo(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("font-bold underline decoration-wavy decoration-2 decoration-red-500");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
 
 #[divan::bench]
 fn static_walk_grid(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("grid grid-cols-3 gap-4 h-32");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
 
 #[divan::bench]
 fn static_walk_state(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The stateful representative rides the walk solo (the hover/focus
     // layers need the host's interactivity — no hand equivalent).
     let program = tw!("hover:bg-red-500/90 focus:ring-2 focus:ring-red-500 bg-red-500");
@@ -385,6 +392,7 @@ fn static_walk_state(bencher: Bencher) {
 
 #[divan::bench]
 fn ring_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The polyfill representative solo: the bands the accumulator builds
     // ARE the hand-written output, so this number is the polyfill's own
     // compose cost.
@@ -453,6 +461,7 @@ fn cell_warm(bencher: Bencher) {
     thread_local! {
         static CELL: aeolus_rt::ClassCell = aeolus_rt::ClassCell::new();
     }
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     CELL.with(|cell| {
         let _ = cell.get(BUTTON, &Default::default()).expect("compiles");
     });
@@ -466,6 +475,7 @@ fn cell_warm(bencher: Bencher) {
 
 #[divan::bench]
 fn cell_cold(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     bencher.bench(|| {
         let cell = aeolus_rt::ClassCell::new();
         let program = cell.get(BUTTON, &Default::default()).expect("compiles");
