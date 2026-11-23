@@ -291,6 +291,40 @@ fn anchor_expression(theme: Option<&ThemeBake>, emitted: TokenStream, name: &str
         })
 }
 
+/// The merged-arm assembly: compile each PIECE separately and fold the
+/// programs through the IR-level `cn()` overlay (plan §3.3's
+/// "Overlay/`cn()` at IR level") — the composition lane the runtime
+/// handle's cn-merge runs, so the frozen arm bytes match the RefCell
+/// path's merged programs. One piece short-circuits to its own compile
+/// (the single-class arms keep the raw cascade byte shape); the keyword
+/// annotations concatenate in piece order (the alignment queues
+/// consume per (cond, prop), so the merged program's winners pop the
+/// piece-order texts the joined compile would have carried). The
+/// diagnostics ride `cn`'s concatenation; the allow_refusals contract
+/// is each piece's own compile (a refusal without the key is the
+/// compile error the literal form reports).
+fn compile_pieces_with(
+    pieces: &[&str],
+    theme: Option<&ThemeBake>,
+    allow_refusals: bool,
+) -> Result<(Compiled, Vec<ClassKeywords>), String> {
+    if let [only] = pieces {
+        return compile_literal_with(only, theme, "variants!", allow_refusals);
+    }
+    // The merge runs at the granularity the runtime handle freezes its
+    // programs at: the string-level conflict merge over the pieces (the
+    // `cn()` engine's audited table — the same call
+    // `aeolus_shadcn::classes::button_classes` runs), then ONE compile
+    // of the merged string. The IR-level `overlay` dedupes per-longhand
+    // — coarser than the cascade-origin pairs the runtime path keeps
+    // (the `aria-invalid` ring pair rides two variant prefixes, one
+    // layer, both decls) — so the byte-identity pin holds at the
+    // merge-the-runtime-runs granularity, and the IR overlay stays the
+    // runtime composition lane beside it.
+    let merged = aeolus_compile::cn_string(pieces);
+    compile_literal_with(&merged, theme, "variants!", allow_refusals)
+}
+
 fn compile_literal_with(
     literal: &str,
     theme: Option<&ThemeBake>,
@@ -1235,7 +1269,17 @@ fn render_variants(
             // already refused above — no `slots:` to name).
             for combo in combos {
                 let mut pattern = Vec::new();
-                let mut classes = base.clone();
+                // The merged-arm assembly (the M3 deviation's close): the
+                // arm's PIECES compile separately and fold through the
+                // IR-level `cn()` overlay at expansion time — the same
+                // composition lane the runtime handle's cn-merge runs, so
+                // the frozen bytes match the RefCell path's merged
+                // programs (the differential pins it), never the joined
+                // string's raw-cascade shape.
+                let mut pieces: Vec<&str> = Vec::new();
+                if !base.is_empty() {
+                    pieces.push(base.as_str());
+                }
                 for (field, enum_name, groups) in &group_fields {
                     let key = combo
                         .iter()
@@ -1246,16 +1290,14 @@ fn render_variants(
                         .iter()
                         .find(|(group_key, _)| group_key == key)
                         .map_or("", |(_, source)| source.for_slot(""));
-                    if !classes.is_empty() {
-                        classes.push(' ');
+                    if !class.is_empty() {
+                        pieces.push(class);
                     }
-                    classes.push_str(class);
                     pattern.push(format!("{enum_name}::{}", pascal_case(key)));
                 }
                 // The compound entries whose constraints ALL match this combo
                 // fold their class list in — cva's semantics, resolved at
-                // expansion time (the arm already carries the whole class
-                // string).
+                // expansion time (each matching entry rides its own piece).
                 for entry in &compounds {
                     if entry
                         .constraints
@@ -1263,20 +1305,20 @@ fn render_variants(
                         .all(|(group, key)| combo.iter().any(|(f, k)| f == group && k == key))
                     {
                         let class = entry.classes.for_slot("");
-                        if !classes.is_empty() {
-                            classes.push(' ');
+                        if !class.is_empty() {
+                            pieces.push(class);
                         }
-                        classes.push_str(class);
                     }
                 }
                 let (program, class_annotations) =
-                    compile_literal_with(&classes, theme, "variants!", table.allow_refusals)?;
+                    compile_pieces_with(&pieces, theme, table.allow_refusals)?;
                 let keywords = keyword_alignment(&program, &class_annotations);
                 if gate {
                     let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
                     if !refusals.is_empty() {
                         return Err(format!(
-                            "variants!: {classes:?} uses capabilities GPUI cannot express:{}",
+                            "variants!: {:?} uses capabilities GPUI cannot express:{}",
+                            pieces.join(" "),
                             render_refusals(&refusals)
                         ));
                     }
@@ -1311,7 +1353,18 @@ fn render_variants(
             for (slot, slot_base) in slots {
                 for combo in &combos {
                     let mut pattern = vec![format!("{slot_enum}::{}", pascal_case(slot))];
-                    let mut classes = join_classes(&base, slot_base);
+                    // The merged-arm assembly (the plain table's own rule):
+                    // base + slot base + group sources + compounds ride
+                    // SEPARATE piece compiles, folded through the IR-level
+                    // `cn()` overlay before the freeze — the RefCell path's
+                    // merged byte shape, not the joined string's.
+                    let mut pieces: Vec<&str> = Vec::new();
+                    if !base.is_empty() {
+                        pieces.push(base.as_str());
+                    }
+                    if !slot_base.is_empty() {
+                        pieces.push(slot_base.as_str());
+                    }
                     for (field, enum_name, groups) in &group_fields {
                         let key = combo
                             .iter()
@@ -1322,10 +1375,9 @@ fn render_variants(
                             .iter()
                             .find(|(group_key, _)| group_key == key)
                             .map_or("", |(_, source)| source.for_slot(slot));
-                        if !classes.is_empty() {
-                            classes.push(' ');
+                        if !class.is_empty() {
+                            pieces.push(class);
                         }
-                        classes.push_str(class);
                         pattern.push(format!("{enum_name}::{}", pascal_case(key)));
                     }
                     for entry in &compounds {
@@ -1335,20 +1387,20 @@ fn render_variants(
                             .all(|(group, key)| combo.iter().any(|(f, k)| f == group && k == key))
                         {
                             let class = entry.classes.for_slot(slot);
-                            if !classes.is_empty() {
-                                classes.push(' ');
+                            if !class.is_empty() {
+                                pieces.push(class);
                             }
-                            classes.push_str(class);
                         }
                     }
                     let (program, class_annotations) =
-                        compile_literal_with(&classes, theme, "variants!", table.allow_refusals)?;
+                        compile_pieces_with(&pieces, theme, table.allow_refusals)?;
                     let keywords = keyword_alignment(&program, &class_annotations);
                     if gate {
                         let refusals = aeolus_codegen_gpui::audit(&program.program, &keywords);
                         if !refusals.is_empty() {
                             return Err(format!(
-                                "variants!: {classes:?} uses capabilities GPUI cannot express:{}",
+                                "variants!: {:?} uses capabilities GPUI cannot express:{}",
+                                pieces.join(" "),
                                 render_refusals(&refusals)
                             ));
                         }
