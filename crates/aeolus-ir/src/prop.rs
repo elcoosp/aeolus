@@ -485,6 +485,22 @@ pub enum Prop {
     /// every framework backend reports it (no framework carries a
     /// clip-path slot — the honest refusal the audit gates run).
     ClipPath,
+    /// The v4 arbitrary-PROPERTY declaration (`[mask-type:luminance]`,
+    /// `[--brand:red]`) — the bracket IS the utility, the property name
+    /// is the AUTHOR's (unbounded: no per-property longhand can exist),
+    /// so the declaration rides ONE appended arm with the whole
+    /// `name: value` text interned in the [`crate::Val::Verbatim`] slot
+    /// (the composite grammar's own storage discipline). The
+    /// discriminant sorts it after every longhand: the raw cascade
+    /// keeps the author's relative order among property declarations.
+    /// The CSS/interp arms render the text verbatim (the author owns
+    /// the CSS validity — the composite precedent); every framework
+    /// backend reports it (the per-property refusal names the
+    /// property); the composition folds per NAME, the one key the
+    /// longhand bitset cannot carry (the overlay walk's documented
+    /// rule), and the mask keeps the arm's single bit (the granularity
+    /// note lives where the composition is documented).
+    Arbitrary,
 }
 
 impl Prop {
@@ -650,6 +666,7 @@ impl Prop {
         Self::DivideY,
         Self::DivideColor,
         Self::ClipPath,
+        Self::Arbitrary,
     ];
 
     /// The CSS longhand name (`padding-top`, `grid-template-columns`, ...).
@@ -830,6 +847,11 @@ impl Prop {
             Prop::DivideY => "--tw-divide-y",
             Prop::DivideColor => "--tw-divide-color",
             Prop::ClipPath => "clip-path",
+            // The property name is the author's, carried by the
+            // declaration's own `Val::Verbatim` text — this marker is
+            // the report face only (the CSS arm reads the interned
+            // name, never this).
+            Prop::Arbitrary => "arbitrary-property",
         }
     }
 }
@@ -849,7 +871,7 @@ impl Prop {
 /// `size-4` vs `w-4`) is `union`/`contains` — no per-backend tables.
 ///
 /// The budget is asserted, not assumed: the two words hold 256 bits
-/// against the current 159-longhand surface (the filter + backdrop
+/// against the current 160-longhand surface (the filter + backdrop
 /// layers' twenty, the content longhand, and the decoration half's
 /// three, the parity wave 1 tail's thirteen — line-clamp,
 /// font-variant-numeric, the space/divide child-selector families'
