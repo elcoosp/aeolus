@@ -17,6 +17,7 @@
 use aeolus_gpui::prelude::*;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     println!("── GPUI between-child polyfill from the V1 program ──");
 
     // The toolbar row a settings screen would wear: base layout and
