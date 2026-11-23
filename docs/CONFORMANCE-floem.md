@@ -2,7 +2,7 @@
 
 # Aeolus conformance — floem
 
-**score: 84.91% expressible** (84.91% native + 0.00% polyfilled) over 159 longhands
+**score: 84.38% expressible** (84.38% native + 0.00% polyfilled) over 160 longhands
 
 The per-longhand tiers, in the IR's cascade order. The per-declaration refinements (the emit gates' text-dependent verdicts) live at the gates themselves — this is the per-longhand ceiling.
 
@@ -167,5 +167,6 @@ The per-longhand tiers, in the IR's cascade order. The per-declaration refinemen
 | `--tw-divide-y` | refused |
 | `--tw-divide-color` | refused |
 | `clip-path` | refused |
+| `arbitrary-property` | refused |
 
-**corpus at scale: 2992 entries — 85.39% expressible** (per-entry share of the expanded golden.corpus; an entry counts when every lowered longhand lands native/polyfill. The ceiling score above is the per-longhand share over the 159 longhands — the two answer different questions.)
+**corpus at scale: 2992 entries — 85.39% expressible** (per-entry share of the expanded golden.corpus; an entry counts when every lowered longhand lands native/polyfill. The ceiling score above is the per-longhand share over the 160 longhands — the two answer different questions.)
