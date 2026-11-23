@@ -14,6 +14,10 @@
 //!    at the source).
 
 use crate::error::{LexError, LexErrorKind, LexFailure};
+// `no_std + alloc` (plan §3.2): the heap types come from `alloc`, never
+// the `std` prelude (the crate does not link std).
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Which arbitrary syntax a value used (`[...]` vs the v4.1 `(...)`
 /// shorthand). Mirrors the oracle's `ArbForm`.
