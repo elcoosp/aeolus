@@ -392,14 +392,6 @@ pub(crate) fn run_css(
         #[cfg(feature = "tracing")]
         tracing::trace!(raw = %candidate.raw, "candidate");
 
-        if candidate.important {
-            diagnostics.push(Diagnostic::new(
-                candidate.span,
-                candidate.raw,
-                DiagnosticKind::UnsupportedImportant,
-            ));
-            continue;
-        }
         let set = match classify_segments(&candidate.variants, customs) {
             Ok(set) => set,
             Err(missed) => {
@@ -555,7 +547,7 @@ pub(crate) fn run_css(
             continue;
         }
         decls.sort_by_key(|decl| decl.prop);
-        push_rules(&mut rules, candidate.raw, &set, &decls);
+        push_rules(&mut rules, candidate.raw, &set, &decls, candidate.important);
     }
 
     #[cfg(feature = "tracing")]
@@ -642,6 +634,7 @@ fn classify_segments(variants: &[&str], customs: &Customs) -> Result<CondSet, Va
                 aeolus_ir::Cond::Data { .. }
                     | aeolus_ir::Cond::Aria { .. }
                     | aeolus_ir::Cond::Has(_)
+                    | aeolus_ir::Cond::Not(_)
                     | aeolus_ir::Cond::Structural(_)
                     | aeolus_ir::Cond::Supports(_)
                     | aeolus_ir::Cond::Media(_)
@@ -982,7 +975,21 @@ fn apply_cond_shape(set: &mut CondSet, cond: aeolus_ir::Cond) {
         // The structural probes: the v4 positional selectors (the same
         // forms the v0.x oracle's `structural_pseudo` renders — one
         // grammar, the render cannot drift the fold).
-        Cond::Structural(test) => set.pseudos.push(structural_pseudo(test)),
+        Cond::Structural(test) => set.pseudos.push(variant::structural_pseudo(test)),
+        // The negation probe: the star-prefixed `:not(...)` fragment the
+        // real v4 output renders (`&:not(*:hover)` nested — the corpus
+        // pins the flattened `:not(*:hover)` suffix), derived from the
+        // SAME fragment grammar the fold validated. The `not-` arm
+        // refuses fragment-less inners (`not-dark:` has no `:not(...)`
+        // fragment the flat model renders), so the builtin path always
+        // derives; a HOST-built payload outside the folded surface
+        // degrades to the `:not(*)` never-match the CSS grammar accepts
+        // — the payload contract's own boundary, never a guess that
+        // matches everything.
+        Cond::Not(inner) => {
+            let fragment = variant::has_inner_fragment(inner).unwrap_or("*");
+            set.probes.push(format!(":not({fragment})"));
+        }
         // The direction probes: the upstream static-variant selectors
         // derived from the typed bit (the v4.1.17 `staticVariant` texts
         // — the render cannot drift the fold, the structural-pseudo
@@ -1017,38 +1024,6 @@ fn direction_probe(spelling: &str) -> &'static str {
         "ltr" => ":where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)",
         "rtl" => ":where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)",
         _ => unreachable!("the direction probe renders the closed spelling set"),
-    }
-}
-
-/// The positional selector suffix for one structural test — the v0.x
-/// oracle's `structural_pseudo` forms (`first:` → `:first-child`, the
-/// `nth-N:` ordinals 1-based, the parity spellings CSS's own words).
-/// The fixed forms are static text; the ordinal forms intern into the
-/// leak pool (the variant.rs payload precedent — the CSS emitter runs
-/// per build, never per render, so the one-time cost is the pool's
-/// own discipline).
-fn structural_pseudo(test: aeolus_ir::Structural) -> &'static str {
-    use aeolus_ir::Structural;
-    match test {
-        Structural::First => ":first-child",
-        Structural::Last => ":last-child",
-        Structural::Odd => ":nth-child(odd)",
-        Structural::Even => ":nth-child(even)",
-        Structural::Only => ":only-child",
-        Structural::Empty => ":empty",
-        Structural::Nth(n) => Box::leak(format!(":nth-child({n})").into_boxed_str()),
-        Structural::NthLast(n) => Box::leak(format!(":nth-last-child({n})").into_boxed_str()),
-        // The of-type tier: the same selector grammar in the
-        // type-relative dimension (the upstream `staticVariant` texts:
-        // `&:first-of-type` through the `nth-of-type` functional
-        // bodies).
-        Structural::FirstOfType => ":first-of-type",
-        Structural::LastOfType => ":last-of-type",
-        Structural::OnlyOfType => ":only-of-type",
-        Structural::NthOfType(n) => Box::leak(format!(":nth-of-type({n})").into_boxed_str()),
-        Structural::NthLastOfType(n) => {
-            Box::leak(format!(":nth-last-of-type({n})").into_boxed_str())
-        }
     }
 }
 
@@ -1253,8 +1228,17 @@ fn selector_for(raw: &str, set: &CondSet, dark_companion: bool, child: bool) -> 
 /// picks the pair's dark half where one exists (the light half never
 /// renders under dark). The between-child families (space/divide)
 /// render their child-selector form — the selector wraps the class
-/// compound, the declarations stay the rule body.
-fn push_rules(rules: &mut Vec<CssRule>, raw: &str, set: &CondSet, decls: &[lower::CssDecl]) {
+/// compound, the declarations stay the rule body. `important` is the
+/// v4.1.17 trailing-`!` grammar's own flag: the ` !important` suffix
+/// rides EVERY declaration the rule carries (the real tailwind output's
+/// own shape — `padding: calc(var(--spacing) * 4) !important;`).
+fn push_rules(
+    rules: &mut Vec<CssRule>,
+    raw: &str,
+    set: &CondSet,
+    decls: &[lower::CssDecl],
+    important: bool,
+) {
     // The between-child emission shape: one longhand's presence flips
     // the whole candidate's selector (the declarations ARE the child
     // rule's body — v4's own emission form).
@@ -1270,6 +1254,10 @@ fn push_rules(rules: &mut Vec<CssRule>, raw: &str, set: &CondSet, decls: &[lower
     } else {
         ""
     };
+    // The important suffix: one token before the semicolon, both
+    // halves of a baked dark pair carrying it (the cascade origin is
+    // the candidate's, not a half's).
+    let suffix = if important { " !important" } else { "" };
     let lines = |dark: bool| {
         let body = decls
             .iter()
@@ -1279,7 +1267,7 @@ fn push_rules(rules: &mut Vec<CssRule>, raw: &str, set: &CondSet, decls: &[lower
                 } else {
                     &decl.value.base
                 };
-                format!("{}: {};", decl.prop_name, value)
+                format!("{}: {}{suffix};", decl.prop_name, value)
             })
             .collect::<Vec<_>>()
             .join("\n");
