@@ -22,7 +22,7 @@ use aeolus_compile::{
     Config, DescendantFact, DescendantKind, DescendantState, Env, InterpNote, compile, interp,
     interp_descendants,
 };
-use aeolus_ir::Prop;
+use aeolus_ir::{Cond, Prop};
 
 fn main() {
     // The element's subtree facts (plan §3.5): the element's own
@@ -83,6 +83,19 @@ fn main() {
 
     // The sourceless walk keeps the reported boundary: the dedicated
     // note replaces the blanket attribute spelling for the family.
+    // The ARBITRARY bracketed inner (the selector-text grammar the real
+    // v4.1.17 renderings pin): the combinator inner rides verbatim
+    // (`has-[>svg]` → `&:has(>svg)` — the shadcn Button table's own
+    // class), every other selector inner wraps the star form.
+    let combinator = compile("has-[>svg]:px-3 has-[li]:py-2", &Config::default())
+        .expect("the class string compiles");
+    println!("\narbitrary selector inners:");
+    for layer in combinator.program.layers {
+        if layer.cond != Cond::Base {
+            println!("  {:?} -> {} declarations", layer.cond, layer.decls.len());
+        }
+    }
+
     let compiled = compile("has-focus:p-8", &Config::default()).expect("the class string compiles");
     let interped = interp(&compiled.program, &Env::default()).expect("no theme forms");
     println!("\nsourceless walk:");
