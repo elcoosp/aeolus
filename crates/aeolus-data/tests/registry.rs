@@ -414,7 +414,21 @@ fn registry_covers_every_oracle_grouped_corpus_class() {
         let Some(oracle) = collision_group(&token) else {
             continue; // outside the tw_merge scope — the registry may skip it
         };
-        let rows: Vec<_> = lookup(token.body).collect();
+        // The pipeline's own read (the compile walk's fraction
+        // re-attachment FIRST, the modifier gate after — the audited
+        // F1 precedence plan.rs documents): a modifier-carrying class
+        // rides the RE-JOINED body when that hits. `aspect-1/2`'s body
+        // alone is `aspect-1`, a spelling no shape accepts, while the
+        // re-attached form is the fraction the aspect row's own shape
+        // takes; `w-1/2` hits both ways, so the re-attach mirrors the
+        // walk instead of second-guessing it.
+        let rejoined = token
+            .modifier
+            .map(|modifier| format!("{}/{}", token.body, modifier));
+        let rows: Vec<_> = match rejoined {
+            Some(text) if lookup(&text).next().is_some() => lookup(&text).collect(),
+            _ => lookup(token.body).collect(),
+        };
         if !rows.iter().any(|r| r.group == oracle) {
             misses.push(format!(
                 "{class} (body {:?}, oracle {oracle:?}) → {:?}",
