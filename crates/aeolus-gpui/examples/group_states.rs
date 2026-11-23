@@ -22,6 +22,7 @@
 use aeolus_gpui::prelude::*;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The named condition IS which group the question tests — the IR
     // slot rides the label (the named-container fold's own rule).
     let named = tw!("group-hover/menu:bg-red-500");
