@@ -954,6 +954,11 @@ fn conjunctive_env(conds: &[Cond]) -> Env {
             | Cond::FileSelector
             | Cond::Backdrop
             | Cond::DetailsContent => {}
+            // The negation grammar holds on the RESTING env — the
+            // condition is the inner probe's complement, the env
+            // builder's own facts unset the inner (a `not-hover:`
+            // situation's env carries hover = false, the arm's shape).
+            Cond::Not(_) => {}
             // The starting-style at-rule is frame state the conjunctive
             // env bakes (the fired situation's own reading — the media
             // facts' shape).
@@ -1083,6 +1088,9 @@ fn cond_label(cond: &Cond) -> String {
         Cond::GroupHas(_) => "group-has".to_string(),
         Cond::PeerHas(_) => "peer-has".to_string(),
         Cond::Structural(_) => "structural".to_string(),
+        // The negation grammar: the inner spelling rides the payload
+        // (the `not-hover` label the fold consumed).
+        Cond::Not(inner) => format!("not-{inner}"),
         Cond::Starting => "starting-style".to_string(),
     }
 }
