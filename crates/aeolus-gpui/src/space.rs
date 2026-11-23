@@ -414,8 +414,10 @@ mod tests {
     /// patch itself is per-child).
     #[test]
     fn the_patch_styles_the_child_it_is_given() {
-        let mut state = SpaceDivState::default();
-        state.space_x = Some((Val::Rem(1.0), ""));
+        let state = SpaceDivState {
+            space_x: Some((Val::Rem(1.0), "")),
+            ..SpaceDivState::default()
+        };
         let mut patched = gpui::div().into_any_element();
         let mut untouched = gpui::div().into_any_element();
         state.patch_child(&mut patched);
