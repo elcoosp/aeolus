@@ -384,6 +384,7 @@ mod tests {
     #[test]
     fn the_walk_fills_the_column_margin() {
         use crate::prelude::*;
+        set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
         let wrapper = gpui::div().tw_space(tw!("space-x-4"));
         let state = wrapper.state();
         assert_eq!(state.space_x, Some((Val::Rem(1.0), "")));
@@ -399,6 +400,7 @@ mod tests {
     #[test]
     fn the_walk_fills_reverse_and_divide() {
         use crate::prelude::*;
+        set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
         let wrapper = gpui::div().tw_space(tw!("space-x-2 space-x-reverse divide-y divide-dashed"));
         let state = wrapper.state();
         assert!(state.space_x_reverse);
