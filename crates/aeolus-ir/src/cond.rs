@@ -691,6 +691,21 @@ pub enum Cond {
     /// QUIET miss a frame the element is not in is (the media facts'
     /// own reading, no probe seam and no sourceless note).
     Starting,
+    /// `not-<inner>:` — the v4.1 negation grammar (`not-hover:`,
+    /// `not-focus:`, `not-data-open:`, the tailwindcss v4.1.17
+    /// `variants.ts` `functional('not', …)` registration): the
+    /// element does NOT match the inner probe. The payload is the
+    /// INNER SEGMENT spelling (`"hover"`, `"data-open"`,
+    /// `"first"`) — the consumer re-classifies it through the same
+    /// closed table the fold used (one grammar, two consumers: the
+    /// interp inverts the inner's answer, the CSS arm renders the
+    /// star-prefixed `:not(...)` fragment the corpus pins,
+    /// `:not(*:hover)` / `:not(*[data-open])`). A nested `not-` inner
+    /// refuses at the fold (the oracle's own NESTED_NOT boundary).
+    /// The specificity is the INNER's — CSS's own `:not(X)` rule (the
+    /// argument's specificity) — so `not-hover:` sorts with the probe
+    /// tier it negates.
+    Not(&'static str),
 }
 
 impl Cond {
@@ -767,6 +782,14 @@ impl Cond {
             | Cond::Has(_)
             | Cond::Dir(_)
             | Cond::Structural(_) => 2,
+            // The negation grammar takes the INNER's specificity — CSS's
+            // own `:not(X)` rule (the argument's specificity counts), so
+            // `not-hover:` sorts with the probe tier it negates. The
+            // payload is the inner spelling; the rank mirrors the
+            // element-own probe tier the inner's folded condition rides
+            // (the fold's dominant rule keeps source order for mixed
+            // ranks).
+            Cond::Not(_) => 2,
             Cond::GroupHas(_) | Cond::PeerHas(_) => 3,
             // The parent-relative composition tier ranks with its
             // family: the group/peer state compositions are the same
@@ -929,6 +952,14 @@ impl Cond {
             | Cond::PeerHas(_)
             | Cond::Supports(_)
             | Cond::Structural(_) => None,
+            // The negation grammar: the condition names the INNER
+            // spelling it negates (`not-hover:` → Some("hover")-shaped
+            // payloads carry no static text — the inner spelling IS the
+            // payload, so the condition reconstructs `not-<inner>`
+            // only for the closed spellings; a payload inner
+            // (`data-[x=y]`) has no closed text and answers None like
+            // every payload form).
+            Cond::Not(_) => None,
             // Breakpoint names need the u8 formatting — not const. The
             // non-const wrapper covers them (see `source_text`), and a
             // NAMED container form has no static text either way (the
