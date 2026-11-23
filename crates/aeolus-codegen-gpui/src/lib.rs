@@ -218,8 +218,12 @@ pub fn emit_static_program(program: &Program, keywords: &[&str]) -> TokenStream 
         decl_consts.push(quote! {
             const #name: &[#ir::Decl] = &[#(#decls),*];
         });
+        // The cascade origin freezes with the layer: an important layer
+        // (the v4.1.17 trailing-`!` grammar) renders through
+        // `Layer::important`, the normal origin through `Layer::new`.
+        let ctor = layer_ctor(layer.important, &ir);
         layer_entries.push(quote! {
-            #ir::Layer::new(#cond, #name)
+            #ctor(#cond, #name)
         });
     }
     let texts = keywords.iter().map(|text| {
@@ -252,7 +256,10 @@ pub fn emit_static_program_outlined(program: &Program, keywords: &[&str]) -> Tok
             let val = val_tokens(decl.val, &ir);
             quote! { #ir::Decl { prop: #ir::Prop::#prop, val: #val } }
         });
-        quote! { #ir::Layer::new(#cond, &[#(#decls),*]) }
+        // The cascade origin freezes with the layer (the reference
+        // face's own rule — `Layer::important` for the `p-4!` grammar).
+        let ctor = layer_ctor(layer.important, &ir);
+        quote! { #ctor(#cond, &[#(#decls),*]) }
     });
     let texts = keywords.iter().map(|text| {
         let text = *text;
@@ -276,6 +283,18 @@ fn ident_tokens(value: impl std::fmt::Debug, what: &str) -> TokenStream {
     format!("{value:?}")
         .parse()
         .unwrap_or_else(|_| panic!("{what}: the Debug name is not valid Rust token syntax"))
+}
+
+/// The layer constructor's tokens for one cascade origin — `Layer::new`
+/// renders the normal origin, `Layer::important` the v4.1.17 trailing-`!`
+/// grammar's origin (the flag survives the freeze the same way the mask
+/// derives from the declarations).
+fn layer_ctor(important: bool, ir: &TokenStream) -> TokenStream {
+    if important {
+        quote! { #ir::Layer::important }
+    } else {
+        quote! { #ir::Layer::new }
+    }
 }
 
 /// Flatten per-class annotations into the declaration-parallel slice the
@@ -314,6 +333,10 @@ fn cond_tokens(cond: Cond, ir: &TokenStream) -> TokenStream {
         Cond::Has(inner) => quote! { #ir::Cond::Has(#inner) },
         Cond::GroupHas(inner) => quote! { #ir::Cond::GroupHas(#inner) },
         Cond::PeerHas(inner) => quote! { #ir::Cond::PeerHas(#inner) },
+        // The negation grammar: the inner spelling rides the payload
+        // (the `not-hover` spelling the fold consumed, the interp's
+        // re-classification key).
+        Cond::Not(inner) => quote! { #ir::Cond::Not(#inner) },
         Cond::Bp(bp) => {
             let bp = bp_tokens(bp, ir);
             quote! { #ir::Cond::Bp(#bp) }
