@@ -35,6 +35,8 @@ use aeolus_codegen::{Emit, ir_path};
 use aeolus_data::rows::{DROP_SHADOW_DEFAULT, DROP_SHADOW_PRESETS, FILTER_CHAIN};
 use aeolus_data::tables::SHADOW_PRESETS;
 
+pub mod profile;
+
 /// The emit gate's refusal type, re-exported for the macro surface's
 /// `audit` gate (the compile-error renderer reads `prop` + `reason`).
 pub use aeolus_codegen::Unsupported;
@@ -42,6 +44,7 @@ use aeolus_compile::{Config, keyword_texts};
 use aeolus_ir::{Bp, Cond, Program, Prop, Val};
 use aeolus_theme::{ThemeSource, TokenTable};
 use proc_macro2::TokenStream;
+pub use profile::{Profile, ProfileError, emit_static_program_for, profile_from_manifest};
 use quote::quote;
 
 // The generated capability table (the §3.7 generator slice): the emit
