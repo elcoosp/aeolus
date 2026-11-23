@@ -513,14 +513,10 @@ fn run_plan(
     let mut shadow_bucket: Option<Cond> = None;
 
     for candidate in &candidates {
-        if candidate.important {
-            sheet.diagnostics.push(Diagnostic::new(
-                candidate.span,
-                candidate.raw,
-                DiagnosticKind::UnsupportedImportant,
-            ));
-            continue;
-        }
+        // The v4.1.17 important grammar lowers like every candidate —
+        // the origin flag is the IR's own layer fact (the plan surface
+        // has no important slot, the origin's win order rides the layer
+        // sort the IR assembly already applies).
         // The variant fold: the SAME typed surface and refusal set the
         // IR walk applies (the customs' aliases ride the classifier).
         let cond = match variant::fold(&candidate.variants, customs) {
@@ -2669,6 +2665,22 @@ fn bucket(
             ))]);
             bucket_rule(plan, when, write);
         }
+        // The negation grammar: the oracle's own `Atom::Not` shape — the
+        // inner re-derives the fragment the fold validated and maps onto
+        // ONE test (the `variant_test` single-inner boundary); a
+        // fragment the v0.x Test surface cannot carry rides the same
+        // typed fragment note the has- family keeps.
+        Cond::Not(inner) => match not_test_of(inner) {
+            Ok(test) => {
+                let when = V0Cond(vec![Atom::Not(test)]);
+                bucket_rule(plan, when, write);
+            }
+            Err(reason) => notes.push(PlanNote {
+                span,
+                raw: raw.to_string(),
+                kind: PlanNoteKind::HasFragment { inner, reason },
+            }),
+        },
         Cond::Has(inner) => match has_test(inner) {
             Ok(test) => {
                 let when = V0Cond(vec![Atom::Has(test)]);
@@ -2947,6 +2959,49 @@ fn has_test(inner: &'static str) -> Result<Test, &'static str> {
         return Ok(test);
     }
     Err("the attribute inner is outside the data-/aria- families the Test surface carries")
+}
+
+/// The negation grammar's inner spelling → the v0.x oracle's `Atom::Not`
+/// test — the same fragment the CSS arm renders, mapped through the
+/// state/attribute surface [`has_test`] carries first, then the
+/// structural pseudos' own 1:1 table ([`structural_of`] consumes). The
+/// oracle's `variant_test` shape: ONE simple inner test.
+fn not_test_of(inner: &'static str) -> Result<Test, &'static str> {
+    let fragment = crate::variant::has_inner_fragment(inner)
+        .ok_or("the inner lost the fragment the not- fold validated")?;
+    if let Ok(test) = has_test(fragment) {
+        return Ok(test);
+    }
+    // The structural fragments (`*:first-child`, `*:nth-child(odd)`) —
+    // the CSS pseudo names parse back onto the typed structural table.
+    let state = fragment
+        .strip_prefix("*:")
+        .ok_or("the fragment is outside the state/attribute/structural surfaces")?;
+    let (name, arg) = match state.split_once('(') {
+        Some((name, rest)) => (
+            name,
+            rest.strip_suffix(')')
+                .ok_or("the nth arguments lost their closing paren")?,
+        ),
+        None => (state, ""),
+    };
+    let ordinal = |text: &str| text.parse::<i32>().ok();
+    let test = match (name, arg) {
+        ("first-child", "") => Structural::First,
+        ("last-child", "") => Structural::Last,
+        ("only-child", "") => Structural::Only,
+        ("empty", "") => Structural::Empty,
+        ("nth-child", "odd") => Structural::Odd,
+        ("nth-child", "even") => Structural::Even,
+        ("nth-child", arg) => {
+            Structural::Nth(ordinal(arg).ok_or("the ordinal is outside the i32 grammar")?)
+        }
+        ("nth-last-child", arg) => {
+            Structural::NthLast(ordinal(arg).ok_or("the ordinal is outside the i32 grammar")?)
+        }
+        _ => return Err("the structural pseudo is outside the typed table"),
+    };
+    Ok(Test::Structural(structural_of(test)))
 }
 
 /// The typed structural test → the v0.x oracle's own — a 1:1 map (the
