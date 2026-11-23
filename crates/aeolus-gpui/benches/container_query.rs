@@ -38,6 +38,7 @@ fn measured_card() -> MeasuredContainers {
 
 #[divan::bench]
 fn tw_containers_static_table(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = card_program();
     let bounds = [ContainerBound {
         name: "card",
@@ -49,6 +50,7 @@ fn tw_containers_static_table(bencher: Bencher) {
 
 #[divan::bench]
 fn tw_containers_measured_handle(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = card_program();
     let measured = measured_card();
     bencher.bench_local(|| gpui::StyleRefinement::default().tw_containers(program, &measured));
