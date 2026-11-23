@@ -372,16 +372,10 @@ pub(crate) fn run_rust(
         #[cfg(feature = "tracing")]
         tracing::trace!(raw = %candidate.raw, "candidate");
 
-        if candidate.important {
-            diagnostics.push(Diagnostic::new(
-                candidate.span,
-                candidate.raw,
-                DiagnosticKind::UnsupportedImportant,
-            ));
-            continue;
-        }
         // The SAME typed fold the IR walk applies (the artifact is the
         // IR's own token shape — not the CSS arm's conjunctive render).
+        // The v4.1.17 important grammar lowers like every candidate:
+        // the origin flag rides the fragment's layers.
         let cond = match variant::fold(&candidate.variants, customs) {
             Ok(cond) => cond,
             Err(miss) => {
@@ -577,7 +571,10 @@ pub(crate) fn run_rust(
         // order within one longhand). The annotations ride the sort by
         // their prop key.
         decls.sort_by_key(|decl: &Decl| decl.prop);
-        let token_text = layer_tokens(cond, &decls, &annotations, tokens);
+        // The cascade origin rides the fragment: the v4.1.17 trailing-`!`
+        // grammar's important candidates render the `Layer::important`
+        // constructor (the flag survives the token form).
+        let token_text = layer_tokens(cond, &decls, &annotations, tokens, candidate.important);
         fragments.push(RustFragment {
             class: candidate.raw.to_string(),
             cond,
@@ -608,9 +605,15 @@ fn layer_tokens(
     decls: &[Decl],
     annotations: &[(Prop, &'static str)],
     tokens: Option<&TokenTable>,
+    important: bool,
 ) -> String {
     use std::fmt::Write as _;
-    let mut out = String::from("aeolus_ir::Layer::new(\n");
+    let ctor = if important {
+        "aeolus_ir::Layer::important"
+    } else {
+        "aeolus_ir::Layer::new"
+    };
+    let mut out = format!("{ctor}(\n");
     let _ = writeln!(out, "    aeolus_ir::Cond::{cond:?},");
     out.push_str("    &[\n");
     for decl in decls {
