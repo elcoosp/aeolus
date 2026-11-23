@@ -2288,13 +2288,31 @@ pub fn overlay(base: &Program, over: &Program) -> Program {
         decls.sort_by_key(|decl: &Decl| decl.prop);
         let mut merged: Vec<Decl> = Vec::with_capacity(decls.len());
         for decl in decls {
-            if merged
+            if decl.prop == Prop::Arbitrary {
+                // The property declarations compose by NAME — the one
+                // key the longhand bitset cannot carry (the name is the
+                // author's, unbounded): the same name folds last-wins,
+                // distinct names coexist, exactly the CSS cascade's own
+                // per-property rule. The bit granularity note lives in
+                // the Prop::Arbitrary docs; the removed declarations
+                // beyond the bit answer are this walk's documented
+                // name-keyed half.
+                let name = arbitrary::property_name(decl.val);
+                if let Some(idx) = merged.iter().rposition(|d: &Decl| {
+                    d.prop == Prop::Arbitrary && arbitrary::property_name(d.val) == name
+                }) {
+                    merged.remove(idx);
+                }
+                merged.push(decl);
+            } else if merged
                 .last()
                 .is_some_and(|last: &Decl| last.prop == decl.prop)
             {
                 merged.pop();
+                merged.push(decl);
+            } else {
+                merged.push(decl);
             }
-            merged.push(decl);
         }
         let merged: &'static [Decl] = Box::leak(merged.into_boxed_slice());
         layers.push(if important {
@@ -2603,6 +2621,55 @@ fn run(
                     };
                 }
             };
+            // The v4 arbitrary-PROPERTY form: a bare `[prop:value]` (an
+            // empty body with the lexer's property flag) IS the utility —
+            // the declaration lowers onto the appended `Prop::Arbitrary`
+            // arm (`lower::property_to_decls`). The ROOTED spelling
+            // keeps the value pass's typed refusal below (the row already
+            // names its own property); the negative flag has no property
+            // form (a `-` prefix is not the grammar), so a negated bare
+            // bracket keeps the unknown-root miss.
+            if candidate.body.is_empty()
+                && !candidate.negative
+                && candidate.arbitrary.is_some_and(|arb| arb.is_property)
+            {
+                let lowered = match lower::property_to_decls(
+                    candidate.arbitrary.expect("the property flag set"),
+                ) {
+                    Ok(decls) => {
+                        let idx = match conds
+                            .iter()
+                            .position(|&(c, imp)| c == cond && imp == candidate.important)
+                        {
+                            Some(idx) => idx,
+                            None => {
+                                conds.push((cond, candidate.important));
+                                groups.push(Vec::new());
+                                conds.len() - 1
+                            }
+                        };
+                        let produced = decls.len();
+                        total_decls += produced;
+                        groups[idx].extend(decls);
+                        CandidateOutcome::Lowered {
+                            decls: produced,
+                            diagnostics: diagnostics.len() - diag_start,
+                        }
+                    }
+                    Err(reject) => {
+                        diagnostics.push(reject_diagnostic(
+                            candidate,
+                            candidate.body,
+                            reject,
+                            candidate.modifier,
+                        ));
+                        CandidateOutcome::Missed {
+                            diagnostics: diagnostics.len() - diag_start,
+                        }
+                    }
+                };
+                break 'candidate lowered;
+            }
             // The registry read side, with the value pass's fraction
             // re-attachment (the audited oracle's F1: the raw `/modifier`
             // is the DENOMINATOR for fraction-shaped rows — `w-1/2` lexes
