@@ -84,8 +84,7 @@ fn load_fixture() -> Fixture {
             }
             if let Some((name, value)) = line
                 .strip_prefix("--")
-                .map(|rest| rest.split_once(':'))
-                .flatten()
+                .and_then(|rest| rest.split_once(':'))
             {
                 vars.root
                     .insert(format!("--{name}"), value.trim().to_string());
@@ -801,7 +800,7 @@ fn frozen(class: &str) -> (&'static [aeolus_ir::Layer], &'static [&'static str])
 fn the_fold_carries_the_clamp_and_variant_slots() {
     let (layers, keywords) = frozen("line-clamp-2");
     let (style, walk) = program_style(layers, keywords, &aeolus_compile::Env::default());
-    assert!(walk.is_empty(), "line-clamp-2 folds clean: {:?}", walk);
+    assert!(walk.is_empty(), "line-clamp-2 folds clean: {walk:?}");
     assert!(
         style
             .text
@@ -815,7 +814,7 @@ fn the_fold_carries_the_clamp_and_variant_slots() {
 
     let (layers, keywords) = frozen("tabular-nums");
     let (style, walk) = program_style(layers, keywords, &aeolus_compile::Env::default());
-    assert!(walk.is_empty(), "tabular-nums folds clean: {:?}", walk);
+    assert!(walk.is_empty(), "tabular-nums folds clean: {walk:?}");
     assert!(
         style.text.contains(&(
             TextProperty::FontVariantNumeric,
@@ -942,8 +941,7 @@ fn the_negated_and_reverse_forms_render() {
         sheet
             .to_string()
             .contains("margin-inline-start: calc(-0.5rem * var(--tw-space-x-reverse))"),
-        "the negated form bakes the negative value: {}",
-        sheet
+        "the negated form bakes the negative value: {sheet}"
     );
     let sheet = emit_css_theme("space-x-reverse", &tokens, &Config::default()).expect("compiles");
     assert_eq!(
@@ -1006,8 +1004,14 @@ fn the_target_css_arm_renders_the_same_sheet() {
 /// grammar, the special bg-transparent keyword and the has-first
 /// composition tier).
 const DOCUMENTED_V1_REFUSALS: &[(&str, &str)] = &[
-    ("!p-4", "UnsupportedImportant"),
-    ("bg-red-500!", "UnsupportedImportant"),
+    // The wave-2 grammar push closed the important!/negation/
+    // arbitrary-variant/has-first families (the candidates now lower
+    // clean — the compile crate's own grammar battery pins the folds),
+    // so those rows left this list. The remaining rows are the honest
+    // boundaries that STAY: the negative-tracking negation, the
+    // bg-transparent keyword, the tracking arbitrary length, the
+    // text-size line-height modifiers, the named-container declaration
+    // modifier and the at-rule arbitrary-variant bracket form.
     ("-tracking-wide", "UnsupportedNegation"),
     ("bg-transparent", "UnsupportedValue"),
     ("tracking-[7px]", "UnsupportedValue"),
@@ -1015,9 +1019,6 @@ const DOCUMENTED_V1_REFUSALS: &[(&str, &str)] = &[
     ("text-base/tight", "UnsupportedModifier"),
     ("text-lg/loose", "UnsupportedModifier"),
     ("@container/card-header", "UnsupportedModifier"),
-    ("not-hover:opacity-50", "UnsupportedVariant"),
-    ("has-first:grid-cols-3", "UnsupportedVariant"),
-    ("[&:hover]:bg-red-600", "UnsupportedVariant"),
     ("[@media(print)]:hidden", "UnsupportedVariant"),
 ];
 
