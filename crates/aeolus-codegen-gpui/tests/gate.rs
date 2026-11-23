@@ -132,3 +132,28 @@ fn audit_refuses_the_unrenderable_style_and_thickness_forms() {
         );
     }
 }
+
+/// The arbitrary-PROPERTY declaration refuses: the property name is the
+/// AUTHOR's (unbounded — no per-property slot can exist), so no GPUI
+/// builder surface carries it; the CSS/interp arms render the
+/// declaration verbatim and the refusal names the form (the
+/// per-declaration gate, the clip-path precedent).
+#[test]
+fn audit_refuses_the_arbitrary_property_declaration() {
+    for literal in [
+        "[mask-type:luminance]",
+        "[--brand:red]",
+        "hover:[mask-type:luminance]",
+    ] {
+        let (program, keywords) = frozen(literal);
+        let refusals = audit(&program, &keywords);
+        assert!(
+            !refusals.is_empty(),
+            "{literal}: the property declaration refuses at the gate"
+        );
+        assert!(
+            refusals.iter().any(|u| matches!(u.prop, Prop::Arbitrary)),
+            "{literal}: the refusal names the arbitrary-property longhand, got {refusals:?}"
+        );
+    }
+}
