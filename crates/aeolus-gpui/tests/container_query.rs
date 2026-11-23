@@ -45,6 +45,7 @@ fn container_rem_is_the_window_rem_sizes_own_division() {
 
 #[test]
 fn published_width_drives_the_walk_like_the_built_in_table() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("@md/card:p-4");
     let measured = MeasuredContainers::new();
     measured.publish("card", 48.0);
@@ -70,6 +71,7 @@ fn published_width_drives_the_walk_like_the_built_in_table() {
 
 #[test]
 fn republish_follows_the_resize() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("@md/card:p-4");
     let measured = MeasuredContainers::new();
     measured.publish("card", 47.9);
@@ -87,6 +89,7 @@ fn republish_follows_the_resize() {
 
 #[test]
 fn unpublished_name_is_the_quiet_miss() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("@md/card:p-4");
     let measured = MeasuredContainers::new();
     let applied = gpui::StyleRefinement::default().tw_containers(program, &measured);
@@ -117,6 +120,7 @@ fn unnamed_forms_keep_answering_from_the_env() {
 
 #[test]
 fn max_form_fires_strictly_below_the_measured_width() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("@max-lg/sidebar:hidden");
     let measured = MeasuredContainers::new();
     measured.publish("sidebar", 63.9);
