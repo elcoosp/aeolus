@@ -44,13 +44,38 @@ pub struct Layer {
     /// One bit per declaration longhand — always `PropMask::of(decls')`
     /// masks, kept in sync by construction.
     pub mask: PropMask,
+    /// The cascade-ORIGIN flag the v4.1.17 important grammar carries
+    /// (`p-4!` — the trailing-`!` spelling the lexer marks): the layer's
+    /// declarations are author-IMPORTANT declarations. The assembly sort
+    /// places important layers AFTER their same-specificity normal
+    /// siblings (important beats normal in the CSS cascade origin
+    /// order), so the front-to-back read every consumer runs gives them
+    /// the win with no consumer-side flag check; the CSS arm renders the
+    /// ` !important` suffix the real output carries.
+    pub important: bool,
 }
 
 impl Layer {
     /// Build a layer, deriving the mask from the declarations (the
     /// dynamic-form constructor; the static form writes the literals and
-    /// the tests pin the invariant).
+    /// the tests pin the invariant). The NORMAL cascade origin —
+    /// [`Layer::important`] is the `p-4!` spelling's constructor.
     pub const fn new(cond: Cond, decls: &'static [Decl]) -> Self {
+        Self::with_origin(cond, decls, false)
+    }
+
+    /// Build an author-IMPORTANT layer (the v4.1.17 trailing-`!`
+    /// grammar): same mask derivation, the origin flag set. The
+    /// emitters' `Layer::new` calls render normal layers verbatim; an
+    /// important layer freezes through this constructor so the flag
+    /// survives the static form.
+    pub const fn important(cond: Cond, decls: &'static [Decl]) -> Self {
+        Self::with_origin(cond, decls, true)
+    }
+
+    /// The one constructor both origins share — the mask derives, the
+    /// flag rides.
+    const fn with_origin(cond: Cond, decls: &'static [Decl], important: bool) -> Self {
         // Const `for` isn't available; index loop over the slice.
         let mut mask = PropMask::EMPTY;
         let mut i = 0;
@@ -58,7 +83,12 @@ impl Layer {
             mask = mask.insert(decls[i].prop);
             i += 1;
         }
-        Self { cond, decls, mask }
+        Self {
+            cond,
+            decls,
+            mask,
+            important,
+        }
     }
 
     /// The longhands this layer sets (the mask's longhand list).
