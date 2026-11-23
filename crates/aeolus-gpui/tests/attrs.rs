@@ -37,6 +37,7 @@ fn bits() -> [AttrBit<'static>; 2] {
 
 #[test]
 fn data_value_layer_fires_on_a_matching_bit() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("data-[state=open]:p-4");
     let rows = bits();
     let state = AttrState::new(&rows);
@@ -46,6 +47,7 @@ fn data_value_layer_fires_on_a_matching_bit() {
 
 #[test]
 fn data_value_layer_stays_quiet_on_a_different_value() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("data-[state=open]:p-4");
     let state = AttrState::new(&[AttrBit {
         kind: AttrKind::Data,
@@ -58,6 +60,7 @@ fn data_value_layer_stays_quiet_on_a_different_value() {
 
 #[test]
 fn data_presence_layer_fires_on_any_value() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("data-open:p-4");
     // The presence test answers on ANY value — the corpus's `[data-open]`.
     let state = AttrState::new(&[AttrBit {
@@ -71,6 +74,7 @@ fn data_presence_layer_fires_on_any_value() {
 
 #[test]
 fn data_presence_layer_stays_quiet_without_the_bit() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("data-open:p-4");
     let state = AttrState::new(&[AttrBit {
         kind: AttrKind::Data,
@@ -83,6 +87,7 @@ fn data_presence_layer_stays_quiet_without_the_bit() {
 
 #[test]
 fn aria_busy_layer_fires_on_the_true_bit() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // Bare `aria-busy:` folds to the"true"value (the corpus's
     // `[aria-busy="true"]`), so the"true"bit answers it.
     let program = tw!("aria-busy:hidden");
@@ -94,6 +99,7 @@ fn aria_busy_layer_fires_on_the_true_bit() {
 
 #[test]
 fn aria_bracket_form_compares_the_verbatim_value() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("aria-[sort=asc]:p-4");
     let asc = AttrState::new(&[AttrBit {
         kind: AttrKind::Aria,
@@ -114,6 +120,7 @@ fn aria_bracket_form_compares_the_verbatim_value() {
 
 #[test]
 fn sourceless_walk_keeps_attribute_layers_quiet() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The documented sourceless semantics: without a probe source the
     // element-own layers skip (CSS selector-miss), and the plain `.tw`
     // walk stays exactly what it was before the seam.
@@ -124,6 +131,7 @@ fn sourceless_walk_keeps_attribute_layers_quiet() {
 
 #[test]
 fn has_layers_stay_quiet_even_with_bits() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The descendant shapes are not element-own attribute bits — the
     // plan §3.5 row keeps them the diagnosed boundary, with or without
     // a source (the interp reports them as notes; the GPUI walk skips).
@@ -169,6 +177,7 @@ fn custom_probe_impl_answers_the_walk() {
         }
     }
 
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("data-[state=open]:p-4");
     let probe = OwnedBit {
         name: "state",
