@@ -22,6 +22,7 @@ use aeolus_gpui::prelude::*;
 use gpui::px;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // One hand-off per view: the wrapper's clone publishes into it at
     // the layout phase, the styled descendants' clones read from it.
     let containers = MeasuredContainers::new();
