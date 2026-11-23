@@ -10,6 +10,7 @@ use aeolus_gpui::prelude::*;
 
 #[test]
 fn the_matrix_chain_compiles_through_the_macro_gate() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // All seven colour-matrix primitives + the reset arm in one string:
     // the emit gate passes the closed-world forms, the frozen program
     // carries the longhands the walk recolours.
@@ -38,6 +39,7 @@ fn the_matrix_chain_compiles_through_the_macro_gate() {
 
 #[test]
 fn the_drop_shadow_presets_compile_through_the_macro_gate() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("shadow-lg drop-shadow-md");
     let style = gpui::StyleRefinement::default().tw(program);
     let shadows = style.box_shadow.expect("both tiers compose");
