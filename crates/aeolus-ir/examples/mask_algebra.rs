@@ -38,6 +38,7 @@ const BASE: Layer = Layer {
         },
     ],
     mask: PropMask::of(PADDING),
+    important: false,
 };
 
 /// `hover:px-8`: the x-edges only, `2rem`, under a hover probe.
@@ -54,6 +55,7 @@ const HOVER_PX8: Layer = Layer {
         },
     ],
     mask: PropMask::of(PADDING_X),
+    important: false,
 };
 
 static LAYERS: [Layer; 2] = [BASE, HOVER_PX8];
