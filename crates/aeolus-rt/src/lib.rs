@@ -77,6 +77,11 @@ pub use aeolus_compile::{
     program_style_pseudo_theme, program_style_struct, program_style_supports, program_style_with,
     structural_fires,
 };
+// The negation grammar's inner re-classification seam beside the probe
+// vocabulary (the backend lanes' `decide` mirrors read the same closed
+// table the fold validated — one grammar, every consumer, the
+// no-manifest-add discipline).
+pub use aeolus_compile::variant::negation_inner;
 pub use aeolus_core::plan::ResolvedStyle;
 // The observability face BOTH dynamic slots carry: the bounded pool's
 // seam (`DynObserver`, the `NoObserver` every-constructor default, the
