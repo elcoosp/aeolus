@@ -45,10 +45,24 @@ fn arbitrary_carry_hint_form_and_property_flag() {
     assert_eq!(a.value, "--my-var");
     assert_eq!(c.body, "bg");
 
-    // A bare property bracket has no utility head — the oracle rejects
-    // it (per-class honest failure); the property FLAG is testable on a
-    // headed form.
-    let e = parse_candidate("[mask-type:luminance]").expect_err("no utility head");
+    // The bare property bracket IS the head — v4's arbitrary-property
+    // form (`[mask-type:luminance]`, `[--brand:red]`) parses with an
+    // empty utility body and the property flag set; the property FLAG
+    // stays testable on a headed form too (that spelling keeps its
+    // typed refusal at the value pass: the row already names its own
+    // property).
+    let c = parse_candidate("[mask-type:luminance]").expect("the property form parses");
+    assert_eq!(c.body, "");
+    let a = c.arbitrary.expect("arbitrary");
+    assert!(a.is_property, "unknown ':' hint = property form");
+    assert_eq!(a.hint, Some("mask-type"));
+    assert_eq!(a.value, "luminance");
+    let c = parse_candidate("[--brand:red]").expect("the custom-property form parses");
+    assert_eq!(c.body, "");
+    let a = c.arbitrary.expect("arbitrary");
+    assert!(a.is_property, "a '--' name is not a type hint");
+    assert_eq!(a.hint, Some("--brand"));
+    let e = parse_candidate("[length:200px]").expect_err("a hinted bare bracket has no head");
     assert_eq!(e.kind, LexErrorKind::EmptyHead);
     let c = parse_candidate("bg-[mask-type:luminance]").expect("parses");
     let a = c.arbitrary.expect("arbitrary");
