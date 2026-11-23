@@ -10,6 +10,7 @@ use aeolus_gpui::prelude::*;
 
 #[divan::bench]
 fn decoration_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The §3.7 decoration tier's own corpus: line, style, thickness and
     // colour — all four longhands in one walk.
     let program = tw!("underline decoration-wavy decoration-4 decoration-red-500 bg-primary");
@@ -18,6 +19,7 @@ fn decoration_walk(bencher: Bencher) {
 
 #[divan::bench]
 fn line_only_floor(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The pre-decoration floor: the line longhand alone (the walk arm
     // the family appended its three longhands beside).
     let program = tw!("underline bg-primary");
@@ -26,6 +28,7 @@ fn line_only_floor(bencher: Bencher) {
 
 #[divan::bench]
 fn decoration_integer_thickness_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The bare-integer thickness form (the v4 isPositiveInteger
     // grammar's own arm) with the line-through leg beside — the two-leg
     // patch the colour/thickness arms compose.
