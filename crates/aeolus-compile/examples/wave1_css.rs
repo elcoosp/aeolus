@@ -29,7 +29,7 @@ fn main() {
         let sheet =
             emit_css_theme(class, &tokens, &Config::default()).expect("the wave-1 classes compile");
         println!("· {class}:");
-        print!("{}", sheet);
+        print!("{sheet}");
         println!();
     }
 
@@ -39,7 +39,7 @@ fn main() {
     // overflow leg).
     let sheet = emit_css("line-clamp-2", &Config::default()).expect("compiles");
     println!("· line-clamp-2:");
-    print!("{}", sheet);
+    print!("{sheet}");
     println!();
     let plan = emit_plan("line-clamp-2", &Config::default()).expect("the bridge lowers");
     println!("· line-clamp-2 plan slots: {:?}", plan.plan.base.text);
@@ -53,5 +53,5 @@ fn main() {
         "· sr-only ({} declarations):",
         sheet.rules[0].body.lines().count()
     );
-    print!("{}", sheet);
+    print!("{sheet}");
 }
