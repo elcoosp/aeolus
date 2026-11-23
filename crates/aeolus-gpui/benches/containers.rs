@@ -38,12 +38,14 @@ fn card_bounds() -> [ContainerBound<'static>; 1] {
 
 #[divan::bench]
 fn tw_sourceless(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = card_program();
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
 
 #[divan::bench]
 fn tw_containers_bounds_miss(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = card_program();
     let bounds: [ContainerBound<'static>; 0] = [];
     let card = ContainerState::new(&bounds);
@@ -52,6 +54,7 @@ fn tw_containers_bounds_miss(bencher: Bencher) {
 
 #[divan::bench]
 fn tw_containers_bounds_hit(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = card_program();
     let bounds = card_bounds();
     let card = ContainerState::new(&bounds);
