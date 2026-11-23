@@ -20,6 +20,7 @@ use aeolus_gpui::prelude::*;
 use aeolus_rt::ClassCell;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The static lane keeps the typed refusal (no per-element slot to
     // freeze the transform into — the emit gate's verified reason), so
     // the lane's programs come from the dynamic lane's cell (the
