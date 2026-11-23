@@ -688,6 +688,12 @@ fn is_active(cond: Cond) -> bool {
 
 fn env_matches(cond: Cond, env: &Env) -> bool {
     match cond {
+        // The negation grammar has no env-only surface here: the walk's
+        // own `cond_matches` routes `Cond::Not` through its inversion arm
+        // BEFORE this fallback (the payload needs the probe sources the
+        // inner's arms read), so this arm is the exhaustiveness shoulder
+        // — the quiet miss a matcher without an inversion seam keeps.
+        Cond::Not(_) => false,
         Cond::Base => true,
         Cond::Dark => env.dark,
         Cond::Hover => env.hover,
@@ -895,6 +901,16 @@ fn cond_matches(
     structs: Option<&dyn StructProbe>,
 ) -> bool {
     match cond {
+        // The negation grammar inverts the INNER's full verdict — the
+        // payload re-classifies through the same closed table the fold
+        // used (the interp's `decide` arm, the `negation_inner` seam),
+        // and the inversion runs over the SAME probe sources the inner's
+        // own arms read (an unqueried probe layer stays quiet — the
+        // walk has no note channel, the complement cannot out-claim it).
+        Cond::Not(inner) => match aeolus_compile::variant::negation_inner(inner) {
+            Some(folded) => !cond_matches(folded, env, probes, containers, structs),
+            None => false,
+        },
         // The element-own probes answer through the seam — the interp's
         // `decide` semantics applied at the host: a presence spelling
         // fires on any value, a value spelling on equality, a miss is
