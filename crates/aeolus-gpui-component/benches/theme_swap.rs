@@ -9,7 +9,6 @@ use divan::Bencher;
 
 use aeolus_gpui_component::{AeolusTheme, Env};
 use aeolus_rt::ClassCell;
-use gpui::Styled;
 
 const LIGHT: &str = include_str!("../examples/fixtures/light.css");
 const DARK: &str = include_str!("../examples/fixtures/dark.css");
@@ -28,14 +27,14 @@ fn style_resolve_pre_swap(bencher: Bencher) {
     let theme = AeolusTheme::from_css(LIGHT, None).expect("the sheet parses");
     let cell = ClassCell::new();
     let env = Env::default();
-    bencher.bench(|| theme.style(gpui::StyleRefinement::default(), &cell, BUTTON, env));
+    bencher.bench_local(|| theme.style(gpui::StyleRefinement::default(), &cell, BUTTON, env));
 }
 
 /// The absorb itself: the merge, the in-place table rebuild, the mirror
 /// re-projection and the §3.4 drops (the version bump rides).
 #[divan::bench]
 fn absorb_css(bencher: Bencher) {
-    bencher.bench(|| {
+    bencher.bench_local(|| {
         let mut theme = AeolusTheme::from_css(LIGHT, None).expect("the sheet parses");
         theme.absorb_css(DARK).expect("the swap merges");
     });
@@ -58,5 +57,5 @@ fn style_resolve_post_swap(bencher: Bencher) {
         warm.background.is_some(),
         "the warm resolve carried the token"
     );
-    bencher.bench(|| theme.style(gpui::StyleRefinement::default(), &cell, BUTTON, env));
+    bencher.bench_local(|| theme.style(gpui::StyleRefinement::default(), &cell, BUTTON, env));
 }
