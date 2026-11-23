@@ -60,6 +60,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.96
       - run: cargo check -p aeolus-xilem -p aeolus-floem -p aeolus-iced -p aeolus-egui -p aeolus-slint -p aeolus-shadcn
 
+  # Plan §3.2's crate-table note ("no_std + alloc capable, borrowed") —
+  # gated HERE, not just claimed: the lexer builds without std for a
+  # no_std target (the differential RED the no_std face landed against;
+  # a regression back to `std` types fails this job).
+  no-std-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv6m-none-eabi
+      - run: cargo check -p aeolus-syntax --target thumbv6m-none-eabi
+
   fmt:
     runs-on: ubuntu-latest
     steps:
