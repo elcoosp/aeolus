@@ -43,12 +43,15 @@
 //!   `parse_nth` — every `i32`, the selector forms `nth-[2n+1]:`
 //!   staying outside).
 //!
-//! What does NOT fold (the OTHER arbitrary variants — the `*:` and
-//! `[@media…]` spellings — unregistered spellings,
-//! compound `has-` inners — including structural inners, `has-first:` —
-//! parent-relative compounds like `group-data-*`, and the structural
-//! parent-relative compositions `group-first:`/`peer-last:`) comes back
-//! as a typed unsupported-variant diagnostic — never a silent drop.
+//! What does NOT fold (the OTHER arbitrary variants — the lateral `*:`/
+//! `**:` spellings, the relative `[>+~…]` selectors, the at-rule
+//! `[@media…]`/`[@container…]` bracket forms, bare `[:hover]` without
+//! the `&` prefix, compound `[&:hover:focus]` conjunctions,
+//! `nth-[2n+1]` An+B ordinals; unregistered spellings, compound `has-`
+//! inners like `has-[>svg]`, parent-relative compounds like
+//! `group-data-*`, and the structural parent-relative compositions
+//! `group-first:`/`peer-last:`) comes back as a typed
+//! unsupported-variant diagnostic — never a silent drop.
 
 use aeolus_ir::{Bp, Cond, Structural};
 
@@ -62,14 +65,14 @@ use crate::custom::ClassifyVariant;
 /// [`VariantMiss::variant`] verbatim as an unsupported-variant
 /// diagnostic.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct VariantMiss {
+pub struct VariantMiss {
     /// The variant segment that refused, verbatim (`"has-data-[x]"`).
-    pub(crate) variant: String,
+    pub variant: String,
 }
 
 impl VariantMiss {
     /// The miss for one refusing segment.
-    pub(crate) fn new(variant: &str) -> Self {
+    pub fn new(variant: &str) -> Self {
         Self {
             variant: variant.to_string(),
         }
@@ -111,6 +114,16 @@ pub(crate) fn classify(variant: &str, classifier: &impl ClassifyVariant) -> Opti
     classify_builtin(variant).or_else(|| classifier.classify(variant))
 }
 
+/// The negation grammar's inner re-classification — the interp's
+/// `decide` arm and the backend lanes' `decide` mirrors read the SAME
+/// closed table the fold validated (one grammar, every consumer; the
+/// `breakpoint` fn's own reverse-walk precedent). `None` = the inner is
+/// outside the table (a payload contract break on the caller's side —
+/// the honest quiet miss).
+pub fn negation_inner(inner: &str) -> Option<Cond> {
+    classify_builtin(inner)
+}
+
 /// The built-in table's classification for ONE variant segment — the
 /// closed spelling set the typed `Cond` surface covers. The custom
 /// aliases ride [`classify`]'s second half, never this table.
@@ -121,6 +134,35 @@ pub(crate) fn classify(variant: &str, classifier: &impl ClassifyVariant) -> Opti
 /// the dynamic form's storage — one bounded string per folded
 /// segment, the same cost the program's own slices pay.
 pub(crate) fn classify_builtin(variant: &str) -> Option<Cond> {
+    // The arbitrary-variant grammar (`[&:hover]:`, `[&:nth-child(3)]:`,
+    // `[&[data-open]]:` — the v4.1.17 bracket forms): the ampersand
+    // prefix names the element itself, so the selector maps onto the
+    // ONE typed probe it carries. The one-simple-test boundary is the
+    // v0.x oracle's own (`selector::classify` → `single_test`): a
+    // conjunction (`[&:hover:focus]`), a lateral/relative selector, an
+    // at-rule form or a bare bracket without the `&` refuses typed.
+    if variant.starts_with('[') {
+        return arbitrary_variant(variant);
+    }
+    // The negation grammar (`not-hover:`, `not-data-open:` — the v4.1.17
+    // `functional('not', …)` registration): the inner re-classifies
+    // through this same table and the condition carries the spelling.
+    // A nested `not-` inner refuses (the oracle's own NESTED_NOT
+    // boundary) and the bare `not-` refuses with it — the payload can
+    // never be empty.
+    if let Some(inner) = variant.strip_prefix("not-") {
+        if inner.is_empty() || inner.starts_with("not-") || inner.starts_with('[') {
+            return None;
+        }
+        // The fold validates the RENDER half with the fold: the inner
+        // must both classify (the interp's inversion reads the same
+        // table) AND carry a `:not(...)` fragment the CSS arm renders
+        // (`not-dark:` has no flat-model fragment and refuses typed,
+        // the honest boundary). One grammar, both consumers.
+        return classify_builtin(inner)
+            .filter(|_| has_inner_fragment(inner).is_some())
+            .map(|_| Cond::Not(intern(inner)));
+    }
     if let Some(rest) = variant.strip_prefix("data-") {
         let (name, value) = attr_fields(rest)?;
         return Some(Cond::Data { name, value });
@@ -515,6 +557,15 @@ pub(crate) fn has_inner_fragment(rest: &str) -> Option<&'static str> {
     if let Some(pseudo) = state_pseudo(state) {
         return Some(intern(&format!("*{pseudo}")));
     }
+    // The structural inners (the v4.1.17 has-grammar's own expansion:
+    // `has-first:` renders `&:has(*:first-child)` in the real tailwind
+    // output — the corpus pins the star-prefixed positional forms). The
+    // OF-TYPE tier and the `nth-N` ordinals ride the same table; a
+    // bracketed An+B ordinal (`nth-[2n+1]`) stays outside.
+    let structural = inner.trim_start_matches(':');
+    if let Some(test) = structural_inner(structural) {
+        return Some(intern(&format!("*{}", structural_pseudo(test))));
+    }
     if let Some(data) = inner.strip_prefix("data-") {
         let (name, value) = attr_fields(if data.starts_with('[') {
             data
@@ -543,6 +594,170 @@ pub(crate) fn has_inner_fragment(rest: &str) -> Option<&'static str> {
         return Some(intern(&format!("*{}", attr_selector("aria", name, value))));
     }
     None
+}
+
+/// The structural inner spelling for the has-fragment grammar — the
+/// v4.1.17 has- family's bare positional forms (`has-first:`,
+/// `has-last:`, `has-odd:`, `has-even:`, `has-only:` — the real
+/// tailwind output renders `&:has(*:first-child)` et al., the corpus
+/// pins them) and the `nth-N`/`nth-last-N` child-index ordinals. The
+/// bracketed An+B ordinals (`nth-[2n+1]`) stay outside — the parse
+/// refuses them like every other i32-only ordinal grammar.
+fn structural_inner(text: &str) -> Option<Structural> {
+    match text {
+        "first" => Some(Structural::First),
+        "last" => Some(Structural::Last),
+        "odd" => Some(Structural::Odd),
+        "even" => Some(Structural::Even),
+        "only" => Some(Structural::Only),
+        _ => {
+            if let Some(n) = text.strip_prefix("nth-last-") {
+                return n.parse::<i32>().ok().map(Structural::NthLast);
+            }
+            text.strip_prefix("nth-")
+                .and_then(|n| n.parse::<i32>().ok())
+                .map(Structural::Nth)
+        }
+    }
+}
+
+/// The structural test's selector text — the v0.x oracle's
+/// `structural_pseudo` forms (`first:` → `:first-child`, the `nth-N:`
+/// ordinals 1-based, the parity spellings CSS's own words). The fixed
+/// forms are static text; the ordinal forms intern into the leak pool
+/// (the payload precedent — the fold and the CSS arm render the same
+/// text, one function, three consumers: the variant family's fold
+/// fragments, the has- grammar and the CSS arm's own `Cond::Structural`
+/// suffix).
+pub(crate) fn structural_pseudo(test: Structural) -> &'static str {
+    match test {
+        Structural::First => ":first-child",
+        Structural::Last => ":last-child",
+        Structural::Odd => ":nth-child(odd)",
+        Structural::Even => ":nth-child(even)",
+        Structural::Only => ":only-child",
+        Structural::Empty => ":empty",
+        Structural::Nth(n) => Box::leak(format!(":nth-child({n})").into_boxed_str()),
+        Structural::NthLast(n) => Box::leak(format!(":nth-last-child({n})").into_boxed_str()),
+        Structural::FirstOfType => ":first-of-type",
+        Structural::LastOfType => ":last-of-type",
+        Structural::OnlyOfType => ":only-of-type",
+        Structural::NthOfType(n) => Box::leak(format!(":nth-of-type({n})").into_boxed_str()),
+        Structural::NthLastOfType(n) => {
+            Box::leak(format!(":nth-last-of-type({n})").into_boxed_str())
+        }
+    }
+}
+
+/// The arbitrary-variant grammar ([`classify_builtin`]'s bracketed arm):
+/// the `[&<self-test>]` spellings — the ampersand names the element
+/// itself, the selector maps onto the ONE typed probe it carries. The
+/// accepted surface is the v0.x oracle's `single_test` boundary (one
+/// simple self test per bracket):
+///
+/// * a probe state (`[&:hover]`, `[&:focus-visible]`) → its typed
+///   [`Cond`];
+/// * a structural pseudo (`[&:first-child]`, `[&:nth-child(3)]`,
+///   `[&:nth-child(odd)]`) → the typed [`Structural`];
+/// * a data-/aria- attribute test (`[&[data-open]]`,
+///   `[&[data-state=open]]`) → the typed attribute probe;
+///
+/// and everything else refuses typed — the lateral `*`/`**` variants,
+/// the relative `[>+~…]` selectors, the at-rule `[@media…]` forms (the
+/// `(print)` paren head the oracle renders has no flat-`Cond` at-rule
+/// text), the bare `[:hover]` without the `&` (the upstream `:is(...)`
+/// wrap has no typed reading), compound conjunctions
+/// (`[&:hover:focus]`), pseudo-elements and the An+B ordinals. The
+/// refusal is the typed unsupported-variant diagnostic — never a
+/// silent drop.
+fn arbitrary_variant(variant: &str) -> Option<Cond> {
+    let inner = variant
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))?;
+    // The v4 arbitrary-value convention rides the selector too: `_`
+    // spells the space a class string cannot carry.
+    let sel = inner.replace('_', " ");
+    let sel = sel.as_str();
+    let rest = sel.strip_prefix('&')?;
+    // The attribute-test form: `&[data-open]` / `&[data-state=open]` —
+    // the selector's attribute compound rides the same grammar the
+    // `data-`/`aria-` variants fold through.
+    if let Some(attr) = rest.strip_prefix('[') {
+        let attr = attr.strip_suffix(']')?;
+        if let Some(fields) = attr.strip_prefix("data-") {
+            let (name, value) = attr_fields(&format!("[{fields}]"))?;
+            return Some(Cond::Data { name, value });
+        }
+        if let Some(fields) = attr.strip_prefix("aria-") {
+            let (name, value) = attr_fields(&format!("[{fields}]"))?;
+            let value = value.or(Some(intern("true")));
+            return Some(Cond::Aria { name, value });
+        }
+        return None;
+    }
+    // The pseudo-class form: ONE pseudo (the single-test boundary — a
+    // second conjunct refuses), a pseudo-ELEMENT double-colon refuses.
+    let pseudo = rest.strip_prefix(':')?;
+    if pseudo.starts_with(':') {
+        return None;
+    }
+    // The structural pseudos first (the CSS spellings — `first-child`,
+    // not the variant spelling `first`), the ordinal grammar the
+    // i32-only one the structural family carries.
+    if let Some(test) = structural_pseudo_name(pseudo) {
+        return Some(Cond::Structural(test));
+    }
+    // The probe states: the pseudo name IS the variant spelling the
+    // closed table folds (`focus-visible`, `read-only`) — the same
+    // table, one grammar. A compound selector text (`:hover:focus`,
+    // a `/label` tail, a second pseudo) is NOT an identifier and
+    // refuses before the table (the single-test boundary — the
+    // fold's one-condition model has no conjunction slot).
+    if !pseudo
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return None;
+    }
+    classify_builtin(pseudo)
+}
+
+/// The CSS structural pseudo-class spelling → the typed test
+/// (`:first-child` → [`Structural::First`], `:nth-child(3)` /
+/// `:nth-child(odd)` → the ordinal, the of-type tier beside). The
+/// `nth-last-*` prefixes are checked first — the longest-prefix wins
+/// (the fold's own discipline).
+fn structural_pseudo_name(pseudo: &str) -> Option<Structural> {
+    let (name, arg) = match pseudo.split_once('(') {
+        Some((name, rest)) => (name, rest.strip_suffix(')')?),
+        None => (pseudo, ""),
+    };
+    match name {
+        "first-child" if arg.is_empty() => Some(Structural::First),
+        "last-child" if arg.is_empty() => Some(Structural::Last),
+        "only-child" if arg.is_empty() => Some(Structural::Only),
+        "empty" if arg.is_empty() => Some(Structural::Empty),
+        "first-of-type" if arg.is_empty() => Some(Structural::FirstOfType),
+        "last-of-type" if arg.is_empty() => Some(Structural::LastOfType),
+        "only-of-type" if arg.is_empty() => Some(Structural::OnlyOfType),
+        "nth-child" => match arg {
+            "odd" => Some(Structural::Odd),
+            "even" => Some(Structural::Even),
+            arg => arg.parse::<i32>().ok().map(Structural::Nth),
+        },
+        "nth-last-child" => arg.parse::<i32>().ok().map(Structural::NthLast),
+        "nth-of-type" => match arg {
+            "odd" => None,
+            "even" => None,
+            arg => arg.parse::<i32>().ok().map(Structural::NthOfType),
+        },
+        "nth-last-of-type" => match arg {
+            "odd" => None,
+            "even" => None,
+            arg => arg.parse::<i32>().ok().map(Structural::NthLastOfType),
+        },
+        _ => None,
+    }
 }
 
 /// The pseudo-class text for one probe-state name — the same spellings
@@ -897,6 +1112,27 @@ pub const KNOWN_VARIANTS: &[&str] = &[
     // The supports family: the bracketed arbitrary form's demo spelling
     // (a custom condition rides the same prefix grammar).
     "supports-[display:grid]",
+    // The negation grammar (the v4.1.17 `functional('not', …)`
+    // registration — the demo spellings the fold documents; the inner
+    // surface is the closed table the fold validates the fragment for).
+    "not-hover",
+    "not-data-open",
+    // The has- family's structural inners (the v4.1.17 has-grammar's
+    // bare positional forms — `has-first:` renders `&:has(*:first-child)`,
+    // the corpus pins them; custom payloads ride the same prefix
+    // grammar).
+    "has-first",
+    "has-last",
+    "has-odd",
+    "has-even",
+    "has-only",
+    // The arbitrary-variant grammar (the v4.1.17 bracket forms — the
+    // `&`-prefixed single self tests the fold maps onto the typed
+    // surface; the at-rule/lateral/relative forms stay the typed
+    // refusal).
+    "[&:hover]",
+    "[&:nth-child(3)]",
+    "[&[data-open]]",
     // The media-feature preferences (the closed static-variant set).
     "motion-safe",
     "motion-reduce",
@@ -1081,6 +1317,23 @@ mod completion_tests {
             // The supports family (the demo spelling; custom conditions
             // are open-ended, not closed).
             "supports-[display:grid]",
+            // The negation grammar (the demo spellings; the inner
+            // surface is the closed table the fold validates the
+            // fragment for).
+            "not-hover",
+            "not-data-open",
+            // The has- family's structural inners (the bare positional
+            // forms the v4.1.17 grammar registers).
+            "has-first",
+            "has-last",
+            "has-odd",
+            "has-even",
+            "has-only",
+            // The arbitrary-variant grammar (the `&`-prefixed single
+            // self tests the fold maps onto the typed surface).
+            "[&:hover]",
+            "[&:nth-child(3)]",
+            "[&[data-open]]",
             // The media-feature preferences (the closed set).
             "motion-safe",
             "motion-reduce",
