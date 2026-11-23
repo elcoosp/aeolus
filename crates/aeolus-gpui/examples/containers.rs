@@ -15,6 +15,7 @@ use aeolus_gpui::prelude::*;
 use aeolus_rt::interp_containers;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The dashboard-card surface: the base card, the `@md/card` min
     // form (roomier padding once the card container is at least `md`)
     // and the `@max-lg/card` max form (tighter padding while it is
