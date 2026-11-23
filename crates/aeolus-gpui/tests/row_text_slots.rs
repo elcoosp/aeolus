@@ -22,6 +22,7 @@ use gpui::{px, rems};
 
 #[test]
 fn border_widths_apply_from_the_number_and_keyword_forms() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The integer scale: `border-2` is 2px (v4's own reading — the bare
     // integers are the px scales). The bare root: the 1px default the
     // row table carries.
@@ -46,6 +47,7 @@ fn border_widths_apply_from_the_number_and_keyword_forms() {
 
 #[test]
 fn radius_and_text_size_apply_from_the_row_texts() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The radius scale's rem text (`rounded-md` → 0.375rem) and the
     // composite text size's primary (`text-sm` → 0.875rem) apply from
     // the row texts the frozen program carries.
@@ -77,6 +79,7 @@ fn radius_and_text_size_apply_from_the_row_texts() {
 
 #[test]
 fn the_spacing_scale_is_unchanged() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The regression guard: the spacing scale rode `Val::Rem` before the
     // seam and reads identically after it.
     let program = tw!("p-4 gap-2");
@@ -95,6 +98,7 @@ fn the_spacing_scale_is_unchanged() {
 fn text_align_applies_through_the_walks_own_mapping() {
     use gpui::TextAlign;
 
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("text-center");
     let style = gpui::StyleRefinement::default().tw(program);
     let ts = &style.text;
