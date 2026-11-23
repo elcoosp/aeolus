@@ -28,6 +28,7 @@ use gpui::{Display, rems};
 
 #[test]
 fn named_min_container_fires_at_and_above_its_width() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("@md/card:p-4");
     // `md` is 48rem: AT the boundary fires, above fires, below misses
     // — the min-width boundary the viewport breakpoints pin.
@@ -55,6 +56,7 @@ fn named_min_container_fires_at_and_above_its_width() {
 
 #[test]
 fn named_max_container_fires_strictly_below_its_width() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("@max-lg/sidebar:hidden");
     // `lg` is 64rem: strictly below fires, AT the boundary misses —
     // the max-width boundary rule.
@@ -75,6 +77,7 @@ fn named_max_container_fires_strictly_below_its_width() {
 
 #[test]
 fn unknown_container_name_is_a_quiet_miss() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The host knows no such container — the CSS selector that does
     // not match, quiet, never an exclusion.
     let program = tw!("@md/card:p-4");
@@ -88,6 +91,7 @@ fn unknown_container_name_is_a_quiet_miss() {
 
 #[test]
 fn sourceless_named_container_stays_quiet() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The documented sourceless semantics: without a bounds source the
     // named layers skip (the interp reports `ContainerUnqueried`; this
     // walk has no note channel), and the plain `.tw` walk stays exactly
@@ -116,6 +120,7 @@ fn unnamed_container_still_answers_from_the_env() {
 
 #[test]
 fn first_matching_name_answers() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The built-in table answers with the FIRST row for a repeated
     // name (the `ContainerState::container` contract the compile-side
     // pins) — here the first row's width wins.
@@ -150,6 +155,7 @@ fn custom_probe_impl_answers_the_walk() {
         }
     }
 
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("@md/card:p-4");
     let probe = Measured {
         widths: [("card", 52.0)].into_iter().collect(),
@@ -160,6 +166,7 @@ fn custom_probe_impl_answers_the_walk() {
 
 #[test]
 fn named_containers_compose_with_probes_and_struct_in_one_walk() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // Three seams, one walk: the attribute bits answer the data layer,
     // the container bounds answer the named layer, the structural
     // facts answer the positional layer — the interp's
@@ -205,6 +212,7 @@ fn dark_and_named_container_layers_compose_in_one_walk() {
 
 #[test]
 fn min_and_max_forms_compose_by_cascade_when_both_fire() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // At 48rem BOTH forms fire (at `md`, still below `lg`) — the same
     // longhand twice, so the LATER layer wins the cascade (the max
     // form's tighter value), exactly the CSS source-order rule.
@@ -220,6 +228,7 @@ fn min_and_max_forms_compose_by_cascade_when_both_fire() {
 
 #[test]
 fn walk_matches_the_interps_containers_arm_differentially() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The differential pin: for the same program + env + bounds, the
     // GPUI walk's verdict is the interp arm's — the fired declaration
     // at a qualifying width, no declaration below it.
