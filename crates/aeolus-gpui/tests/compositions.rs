@@ -46,6 +46,7 @@ fn the_peer_composition_fires_on_the_frame_fact() {
 
 #[test]
 fn the_unset_facts_stay_the_quiet_miss() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("group-active:p-4 peer-disabled:p-2");
     let style = gpui::StyleRefinement::default().tw(program);
     assert_eq!(
@@ -56,6 +57,7 @@ fn the_unset_facts_stay_the_quiet_miss() {
 
 #[test]
 fn the_base_layer_answers_beside_a_quiet_composition() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("p-8 group-checked:p-4");
     let style = gpui::StyleRefinement::default().tw(program);
     assert_eq!(
