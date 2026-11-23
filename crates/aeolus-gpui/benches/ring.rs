@@ -10,6 +10,7 @@ use aeolus_gpui::prelude::*;
 
 #[divan::bench]
 fn ring_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The shadcn focus-ring corpus: width, colour, offset width and
     // offset colour — all four `--tw-ring-*` longhands in one walk.
     let program = tw!("ring-2 ring-red-500 ring-offset-2 ring-offset-white bg-primary");
