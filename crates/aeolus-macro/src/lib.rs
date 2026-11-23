@@ -98,7 +98,12 @@ pub fn tw(input: TokenStream) -> TokenStream {
             ),
         );
     }
-    let emitted = aeolus_codegen_gpui::emit_static_program_outlined(&compiled.program, &keywords);
+    let profile = match project_profile("tw!") {
+        Ok(profile) => profile,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let emitted =
+        aeolus_codegen_gpui::emit_static_program_for(profile, &compiled.program, &keywords);
     anchor_expression(bake.as_ref(), emitted.into(), "tw!")
 }
 
@@ -128,7 +133,12 @@ pub fn tw_static(input: TokenStream) -> TokenStream {
             Err(msg) => return compile_error(&input, &msg),
         };
     let keywords = keyword_alignment(&compiled, &classes);
-    let emitted = aeolus_codegen_gpui::emit_static_program_outlined(&compiled.program, &keywords);
+    let profile = match project_profile("tw_static!") {
+        Ok(profile) => profile,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let emitted =
+        aeolus_codegen_gpui::emit_static_program_for(profile, &compiled.program, &keywords);
     anchor_expression(bake.as_ref(), emitted.into(), "tw_static!")
 }
 
@@ -176,7 +186,11 @@ pub fn cn(input: TokenStream) -> TokenStream {
             ),
         );
     }
-    let emitted = aeolus_codegen_gpui::emit_static_program_outlined(&merged.program, &keywords);
+    let profile = match project_profile("cn!") {
+        Ok(profile) => profile,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let emitted = aeolus_codegen_gpui::emit_static_program_for(profile, &merged.program, &keywords);
     anchor_expression(bake.as_ref(), emitted.into(), "cn!")
 }
 
@@ -213,7 +227,11 @@ pub fn cn_static(input: TokenStream) -> TokenStream {
         Err(err) => return compile_error(&input, &format!("cn_static!: {err}")),
     };
     let keywords = last_keywords(&merged, &classes);
-    let emitted = aeolus_codegen_gpui::emit_static_program_outlined(&merged.program, &keywords);
+    let profile = match project_profile("cn_static!") {
+        Ok(profile) => profile,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let emitted = aeolus_codegen_gpui::emit_static_program_for(profile, &merged.program, &keywords);
     anchor_expression(bake.as_ref(), emitted.into(), "cn_static!")
 }
 
@@ -489,6 +507,24 @@ fn resolve_theme(rel: &str, name: &str) -> Result<ThemeBake, String> {
         ));
     }
     Ok(ThemeBake { css, anchor })
+}
+
+/// Read the project's `aeolus.toml` code-size profile — plan §4's
+/// knob (`profile = "speed" | "size"`, the inline-vs-outlined emit
+/// axis) — relative to the CALLING crate's manifest (the same
+/// `CARGO_MANIFEST_DIR` anchor the `theme:` bake rides). A missing
+/// file answers the shipped default (the outlined emit), so the knob
+/// is opt-in; a mis-set knob is the codegen crate's typed refusal,
+/// rendered as a compile error by the entry points.
+fn project_profile(name: &str) -> Result<aeolus_codegen_gpui::Profile, String> {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
+        format!(
+            "{name}: profile: CARGO_MANIFEST_DIR is unset — the aeolus.toml \
+             knob resolves relative to the calling crate's manifest"
+        )
+    })?;
+    aeolus_codegen_gpui::profile_from_manifest(std::path::Path::new(&manifest))
+        .map_err(|err| format!("{name}: profile: {err}"))
 }
 
 fn extract_single_string(input: &TokenStream, name: &str) -> Result<String, String> {
@@ -1080,6 +1116,10 @@ fn render_variants(
     theme: Option<&ThemeBake>,
     gate: bool,
 ) -> Result<TokenStream, String> {
+    // The code-size profile resolves ONCE per table — the §4
+    // `aeolus.toml` knob every arm's freeze renders under (the
+    // entries' own opt-in; the default is the shipped outlined face).
+    let profile = project_profile("variants!")?;
     let mut output = String::new();
     // The themed tables carry the rebuild anchor as their first ITEM
     // (module position — the enum defs follow).
@@ -1219,7 +1259,8 @@ fn render_variants(
                             ));
                         }
                     }
-                    let tokens = aeolus_codegen_gpui::emit_static_program_outlined(
+                    let tokens = aeolus_codegen_gpui::emit_static_program_for(
+                        profile,
                         &program.program,
                         &keywords,
                     );
@@ -1247,8 +1288,11 @@ fn render_variants(
                         ));
                     }
                 }
-                let tokens =
-                    aeolus_codegen_gpui::emit_static_program_outlined(&program.program, &keywords);
+                let tokens = aeolus_codegen_gpui::emit_static_program_for(
+                    profile,
+                    &program.program,
+                    &keywords,
+                );
                 output.push_str(&enum_defs);
                 output.push_str(&format!(
                     "{visibility}struct {name};\nimpl {name} {{\n    {visibility}fn style() -> ::aeolus_rt::StaticProgram {{\n        {tokens}\n    }}\n}}\n"
@@ -1323,8 +1367,11 @@ fn render_variants(
                         ));
                     }
                 }
-                let tokens =
-                    aeolus_codegen_gpui::emit_static_program_outlined(&program.program, &keywords);
+                let tokens = aeolus_codegen_gpui::emit_static_program_for(
+                    profile,
+                    &program.program,
+                    &keywords,
+                );
                 arms.push_str(&format!("        ({}) => {tokens},\n", pattern.join(", ")));
             }
 
@@ -1405,7 +1452,8 @@ fn render_variants(
                             ));
                         }
                     }
-                    let tokens = aeolus_codegen_gpui::emit_static_program_outlined(
+                    let tokens = aeolus_codegen_gpui::emit_static_program_for(
+                        profile,
                         &program.program,
                         &keywords,
                     );
