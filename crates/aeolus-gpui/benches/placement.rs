@@ -26,18 +26,21 @@ fn shell_program() -> StaticProgram {
 
 #[divan::bench]
 fn tw_line_placements(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("col-start-2 col-end-9 row-start-3 row-end-6");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
 
 #[divan::bench]
 fn tw_span_compose(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = shell_program();
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
 
 #[divan::bench]
 fn tw_basis_family(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("basis-16 basis-1/2 basis-[30%]");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
