@@ -17,6 +17,7 @@ fn program_of(classes: &str) -> StaticProgram {
 
 #[divan::bench]
 fn transform_frozen_read(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The lane's frozen read: the base+env layers' seven longhands
     // into one `TransformState` (the banner corpus: translate, rotate,
     // scale, skew in one program).
@@ -26,6 +27,7 @@ fn transform_frozen_read(bencher: Bencher) {
 
 #[divan::bench]
 fn transform_compose(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The matrix compose: scale (the skew folded into the 2×2), then
     // rotate, then translate — GPUI's own TransformationMatrix.
     let program = program_of("translate-x-4 rotate-45 scale-75 skew-x-12");
