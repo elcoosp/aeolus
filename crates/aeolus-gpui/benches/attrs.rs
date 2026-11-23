@@ -42,12 +42,14 @@ fn button_bits() -> [AttrBit<'static>; 1] {
 
 #[divan::bench]
 fn tw_sourceless(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = button_program();
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
 
 #[divan::bench]
 fn tw_probes_bit_miss(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = button_program();
     let rows: [AttrBit<'static>; 0] = [];
     let state = AttrState::new(&rows);
@@ -56,6 +58,7 @@ fn tw_probes_bit_miss(bencher: Bencher) {
 
 #[divan::bench]
 fn tw_probes_bit_hit(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = button_program();
     let rows = button_bits();
     let state = AttrState::new(&rows);
