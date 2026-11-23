@@ -184,6 +184,7 @@ pub static XILEM_CAPABILITIES: &[PropCapability] = &[
     PropCapability { prop: Prop::DivideY, tier: Tier::Refused, reason: "the longhand styles the container's OTHER elements (the v4 :where(& > :not(:last-child)) rule) — a per-view lowering has no child access; emit_css renders the child rule, the GPUI lane composes the tw_space wrapper, and the class stays reported, never silently dropped" },
     PropCapability { prop: Prop::DivideColor, tier: Tier::Refused, reason: "the longhand styles the container's OTHER elements (the v4 :where(& > :not(:last-child)) rule) — a per-view lowering has no child access; emit_css renders the child rule, the GPUI lane composes the tw_space wrapper, and the class stays reported, never silently dropped" },
     PropCapability { prop: Prop::ClipPath, tier: Tier::Refused, reason: "the longhand lowers into the IR correctly; the v0.x plan shape has no slot for it — the class stays reported, the rest of the plan is usable" },
+    PropCapability { prop: Prop::Arbitrary, tier: Tier::Refused, reason: "the composite arbitrary value (calc()/track lists/image functions) lowers into the IR verbatim; the v0.x plan slots carry baked numerics and row keywords — emit_css renders the real output" },
 ];
 
 /// floem — the own-walk reactive lane's committed verdicts (the drift pin beside the backend re-runs the replay).
@@ -348,6 +349,7 @@ pub static FLOEM_CAPABILITIES: &[PropCapability] = &[
     PropCapability { prop: Prop::DivideY, tier: Tier::Refused, reason: "the between-child surface styles OTHER elements — a per-view lowering has no child access (the CSS emit arm renders the child rule)" },
     PropCapability { prop: Prop::DivideColor, tier: Tier::Refused, reason: "the between-child surface styles OTHER elements — a per-view lowering has no child access (the CSS emit arm renders the child rule)" },
     PropCapability { prop: Prop::ClipPath, tier: Tier::Refused, reason: "no Floem clip-path slot — the sr-only composite's clip leg stays the CSS emit arm's output" },
+    PropCapability { prop: Prop::Arbitrary, tier: Tier::Refused, reason: "no Floem slot for an author-defined property — the arbitrary-property declaration ([mask-type:luminance] form) stays the CSS emit arm's output" },
 ];
 
 /// iced — the native-style lane's committed verdicts (the drift pin beside the backend re-runs the replay).
@@ -512,6 +514,7 @@ pub static ICED_CAPABILITIES: &[PropCapability] = &[
     PropCapability { prop: Prop::DivideY, tier: Tier::Refused, reason: "the longhand styles the container's OTHER elements (the v4 :where(& > :not(:last-child)) rule) — a per-view lowering has no child access; emit_css renders the child rule, the GPUI lane composes the tw_space wrapper, and the class stays reported, never silently dropped" },
     PropCapability { prop: Prop::DivideColor, tier: Tier::Refused, reason: "the longhand styles the container's OTHER elements (the v4 :where(& > :not(:last-child)) rule) — a per-view lowering has no child access; emit_css renders the child rule, the GPUI lane composes the tw_space wrapper, and the class stays reported, never silently dropped" },
     PropCapability { prop: Prop::ClipPath, tier: Tier::Refused, reason: "the longhand lowers into the IR correctly; the v0.x plan shape has no slot for it — the class stays reported, the rest of the plan is usable" },
+    PropCapability { prop: Prop::Arbitrary, tier: Tier::Refused, reason: "the composite arbitrary value (calc()/track lists/image functions) lowers into the IR verbatim; the v0.x plan slots carry baked numerics and row keywords — emit_css renders the real output" },
 ];
 
 /// egui — the painted-surface lane's committed verdicts (the drift pin beside the backend re-runs the replay).
@@ -676,6 +679,7 @@ pub static EGUI_CAPABILITIES: &[PropCapability] = &[
     PropCapability { prop: Prop::DivideY, tier: Tier::Refused, reason: "the longhand styles the container's OTHER elements (the v4 :where(& > :not(:last-child)) rule) — a per-view lowering has no child access; emit_css renders the child rule, the GPUI lane composes the tw_space wrapper, and the class stays reported, never silently dropped" },
     PropCapability { prop: Prop::DivideColor, tier: Tier::Refused, reason: "the longhand styles the container's OTHER elements (the v4 :where(& > :not(:last-child)) rule) — a per-view lowering has no child access; emit_css renders the child rule, the GPUI lane composes the tw_space wrapper, and the class stays reported, never silently dropped" },
     PropCapability { prop: Prop::ClipPath, tier: Tier::Refused, reason: "the longhand lowers into the IR correctly; the v0.x plan shape has no slot for it — the class stays reported, the rest of the plan is usable" },
+    PropCapability { prop: Prop::Arbitrary, tier: Tier::Refused, reason: "the composite arbitrary value (calc()/track lists/image functions) lowers into the IR verbatim; the v0.x plan slots carry baked numerics and row keywords — emit_css renders the real output" },
 ];
 
 /// slint — the property-tree lane's committed verdicts (the drift pin beside the backend re-runs the replay).
@@ -840,4 +844,5 @@ pub static SLINT_CAPABILITIES: &[PropCapability] = &[
     PropCapability { prop: Prop::DivideY, tier: Tier::Refused, reason: "the longhand styles the container's OTHER elements (the v4 :where(& > :not(:last-child)) rule) — a per-view lowering has no child access; emit_css renders the child rule, the GPUI lane composes the tw_space wrapper, and the class stays reported, never silently dropped" },
     PropCapability { prop: Prop::DivideColor, tier: Tier::Refused, reason: "the longhand styles the container's OTHER elements (the v4 :where(& > :not(:last-child)) rule) — a per-view lowering has no child access; emit_css renders the child rule, the GPUI lane composes the tw_space wrapper, and the class stays reported, never silently dropped" },
     PropCapability { prop: Prop::ClipPath, tier: Tier::Refused, reason: "the longhand lowers into the IR correctly; the v0.x plan shape has no slot for it — the class stays reported, the rest of the plan is usable" },
+    PropCapability { prop: Prop::Arbitrary, tier: Tier::Refused, reason: "the composite arbitrary value (calc()/track lists/image functions) lowers into the IR verbatim; the v0.x plan slots carry baked numerics and row keywords — emit_css renders the real output" },
 ];
