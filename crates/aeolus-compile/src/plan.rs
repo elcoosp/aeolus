@@ -1070,6 +1070,11 @@ impl PlanWriter {
             _ => None,
         };
         match prop {
+            // The arbitrary-PROPERTY declaration always rides the
+            // `Val::Verbatim` slot (the composite note above answered
+            // it — the plan slot stays unset, the typed note is the
+            // bridge's answer); this arm is the exhaustiveness marker.
+            Prop::Arbitrary => {}
             // ---- the per-edge families (the EdgeSet masks) ----------
             Prop::PaddingTop | Prop::PaddingRight | Prop::PaddingBottom | Prop::PaddingLeft => {
                 if let Some(px) = self.length_px(val, kw) {
