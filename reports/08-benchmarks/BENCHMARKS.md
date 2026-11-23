@@ -681,3 +681,16 @@ Run: `cargo bench -p aeolus-lsp -- rename_token_fold format_range_slice execute_
 | `format_range_slice` | **1.079 µs** | the range-scoped sort: the byte-range conversion, the intersection filter, the sort seam's canonical join over the touched string |
 | `execute_command_sort` | **2.709 µs** | the command round trip through the state machine (the params parse, the sort walk, the wire mapping) |
 | `definition_walk` | **994.8 ns** | the goto-definition face (the locator, the pooled compile gate, the decomposition, the provenance lookup) |
+
+## The `.tw()` walk's allocation contract (2026-11-23, sandbox)
+
+Run: `cargo bench -p aeolus-rt --bench alloc_contract` (divan 0.1.21), release profile, median of 100 — beside the alloc-contract battery's pins (`crates/aeolus-rt/tests/alloc_contract.rs`, the v0.x battery's counting-allocator idiom carried to the plan §4 row the perf table's enforcement cell names: "extend `alloc_contract.rs` to the `.tw()` path"). The colour conversion the walk used to run per frame — a `format!` hex string through the full `Color::parse` — went through the audited `from_srgb` DIRECTLY (bit-identical inputs, four heap events per colour per element per frame deleted); the walk's own machinery now answers zero on every Copy-slot family, and the answer's owned `Vec` slots (`ResolvedStyle::text`, the shadow bands) fill with the Vec's growth pattern, upper-bounded by the battery.
+
+| Bench | Median | What it prices |
+| --- | --- | --- |
+| `assemble` | **0.415 ns** | the freeze (`StaticProgramBuilder::assemble`) — the struct's own two-pointer construction, zero heap events |
+| `walk_layout` | **198.1 ns** | the layout families (`p-4 px-8 gap-4 rounded-lg border-2 items-center justify-center`) — every slot Copy, the walk's own machinery at zero allocs |
+| `walk_colour` | **226.1 ns** | the colour family (`bg-red-500 text-red-500 border-red-500`) — the direct `from_srgb` conversion, zero allocs |
+| `walk_button` | **390.8 ns** | the shadcn Button base string — the answer's own `Vec` fills included (1 alloc steady-state, the typography slot's growth) |
+
+The battery's exact-zero pins (freeze, layout, colour, resting-env quiet layers, the `::before` cascade, the row-text reads) and upper-bound pins (the typography slot ≤ 4, the Button walk ≤ 4) carry the contract; the headless read-out is `cargo run -p aeolus-rt --example alloc_contract`.
