@@ -241,7 +241,12 @@ fn handle_request(session: &mut Session, request: Request) -> Handled {
             // struct literal (the same shape serializes either way).
             let result = serde_json::json!({
                 "capabilities": server_capabilities(),
-                "server_info": {
+                // The LSP wire is camelCase end to end (`serverInfo`, 3.6):
+                // the typed `ServerInfo` serialized the same shape — a
+                // snake_case key would leave every client without the
+                // server name (the initialize capabilities pin catches
+                // it in `tests/server.rs`).
+                "serverInfo": {
                     "name": "aeolus",
                     "version": env!("CARGO_PKG_VERSION"),
                 },
