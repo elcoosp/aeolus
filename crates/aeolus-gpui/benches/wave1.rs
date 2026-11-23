@@ -16,6 +16,7 @@ fn main() {
 /// overflow-hidden compose).
 #[divan::bench]
 fn line_clamp_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("line-clamp-2 bg-primary");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
@@ -24,6 +25,7 @@ fn line_clamp_walk(bencher: Bencher) {
 /// `FontFeatures` composition — three families stacking).
 #[divan::bench]
 fn variant_numeric_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("tabular-nums ordinal slashed-zero bg-primary");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
@@ -33,6 +35,7 @@ fn variant_numeric_walk(bencher: Bencher) {
 /// routing cost).
 #[divan::bench]
 fn space_divide_routing_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("space-x-4 divide-y-2 divide-red-500 divide-dashed bg-primary");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
@@ -58,6 +61,7 @@ fn wrapper_state_pass(bencher: Bencher) {
 /// explain).
 #[divan::bench]
 fn plain_walk_floor(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("bg-primary flex");
     bencher.bench(|| gpui::StyleRefinement::default().tw(program));
 }
