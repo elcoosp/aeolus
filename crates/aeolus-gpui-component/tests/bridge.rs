@@ -16,7 +16,6 @@
 use aeolus_gpui::TwExt;
 use aeolus_gpui_component::{ActiveTheme, AeolusTheme, Env, SwapError};
 use aeolus_rt::{ClassCell, StaticProgram, ThemeSource, TokenTable};
-use gpui::Styled;
 
 const LIGHT: &str = include_str!("../examples/fixtures/light.css");
 const DARK: &str = include_str!("../examples/fixtures/dark.css");
