@@ -12,6 +12,7 @@ use gpui::{BorderStyle, FontFeatures, Length, px, rems};
 /// overflow-hidden the pinned `Styled::line_clamp` method composes.
 #[test]
 fn the_clamp_count_lands_natively() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("line-clamp-2");
     let style = gpui::StyleRefinement::default().tw(program);
     let text = &style.text;
@@ -28,6 +29,7 @@ fn the_clamp_count_lands_natively() {
 /// `normal-nums` resets the set.
 #[test]
 fn the_variant_tags_compose_and_reset() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("tabular-nums ordinal");
     let style = gpui::StyleRefinement::default().tw(program);
     let features = style.text.font_features.as_ref().expect("the tags compose");
@@ -54,6 +56,7 @@ fn the_variant_tags_compose_and_reset() {
 /// runtime half).
 #[test]
 fn the_wrapper_composes_the_between_child_parts() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let wrapper = gpui::div().tw_space(tw!(
         "space-x-4 space-y-2 divide-y divide-red-500 divide-dashed"
     ));
@@ -80,6 +83,7 @@ fn the_wrapper_composes_the_between_child_parts() {
 /// wrapper's patch reads the flag).
 #[test]
 fn the_reverse_flip_composes() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let wrapper = gpui::div().tw_space(tw!("space-x-2 space-x-reverse"));
     let state = wrapper.state();
     assert!(state.space_x_reverse);
@@ -89,6 +93,7 @@ fn the_reverse_flip_composes() {
 /// The divide widths land through the absolute slot (the px rows).
 #[test]
 fn the_divide_widths_land_absolute() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let wrapper = gpui::div().tw_space(tw!("divide-x-2 divide-y-reverse"));
     let state = wrapper.state();
     assert_eq!(
@@ -103,6 +108,7 @@ fn the_divide_widths_land_absolute() {
 /// (the plain lane's documented drop — the wrapper is the consumer).
 #[test]
 fn the_plain_lane_drops_the_between_child_parts() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("space-x-4");
     let style = gpui::StyleRefinement::default().tw(program);
     assert_eq!(style.margin.right, None);
@@ -130,6 +136,7 @@ fn the_static_front_doors_freeze_the_wave1_families() {
 /// closed set (dashed/solid).
 #[test]
 fn the_divide_style_maps_the_pinned_set() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let wrapper = gpui::div().tw_space(tw!("divide-dashed"));
     assert_eq!(wrapper.state().divide_style, Some("dashed"));
     let _ = BorderStyle::Dashed; // the pinned surface's own enum
