@@ -30,6 +30,7 @@ fn the_starting_layer_fires_on_the_frame_fact() {
 
 #[test]
 fn the_unset_fact_stays_the_quiet_miss() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("starting:p-4");
     let style = gpui::StyleRefinement::default().tw(program);
     assert_eq!(
@@ -40,6 +41,7 @@ fn the_unset_fact_stays_the_quiet_miss() {
 
 #[test]
 fn the_base_layer_answers_beside_a_quiet_starting_layer() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("p-8 starting:p-4");
     let style = gpui::StyleRefinement::default().tw(program);
     assert_eq!(
