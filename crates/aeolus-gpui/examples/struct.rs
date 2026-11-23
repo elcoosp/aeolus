@@ -14,6 +14,7 @@
 use aeolus_gpui::prelude::*;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The list-row surface a settings list would wear: the base row,
     // the `first:`/`last:` rounding layers and the `odd:` stripe.
     let program = tw!("flex items-center gap-2 border-b px-4 py-2 \
