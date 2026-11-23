@@ -257,6 +257,17 @@ fn is_border_width(els: &[&str]) -> bool {
         ["border", e] => {
             matches!(*e, "t" | "r" | "b" | "l" | "x" | "y" | "s" | "e") || e.parse::<f32>().is_ok()
         }
+        // The side + explicit-value form (`border-r-2`, `border-t-10` —
+        // the 2992-entry corpus carries all of them): a side letter
+        // whose value segment is a WIDTH (the registry's own split —
+        // `border-t-2` a width, `border-t-red-500` a colour, the
+        // battery's pin at tests/registry.rs) rides the per-side width
+        // group; a colour value (`border-r-red-500`, three-plus value
+        // segments or a non-width tail) stays in the colour group.
+        ["border", e, v] => {
+            matches!(*e, "x" | "y")
+                || (matches!(*e, "t" | "r" | "b" | "l" | "s" | "e") && v.parse::<f32>().is_ok())
+        }
         ["border", e, ..] => matches!(*e, "x" | "y"),
         _ => false,
     }
