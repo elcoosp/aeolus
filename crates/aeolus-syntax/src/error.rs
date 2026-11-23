@@ -79,7 +79,9 @@ impl fmt::Display for LexError {
     }
 }
 
-impl std::error::Error for LexError {}
+// `core::error::Error` (stable 1.81, under the crate's 1.88 MSRV) — the
+// no_std face's trait impl (the `std` version was the last std tie).
+impl core::error::Error for LexError {}
 
 /// One degraded token from [`crate::parse_class_string`]: the typed lex
 /// failure carried with the token's own span inside the INPUT string.
@@ -123,4 +125,4 @@ impl fmt::Display for LexFailure<'_> {
     }
 }
 
-impl std::error::Error for LexFailure<'_> {}
+impl core::error::Error for LexFailure<'_> {}
