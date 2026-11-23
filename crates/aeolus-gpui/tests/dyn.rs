@@ -48,6 +48,7 @@ fn cell_program_equals_the_macro_program() {
 /// slow lane's one-call entrance.
 #[test]
 fn tw_dyn_applies_the_compiled_program() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let cell = ClassCell::new();
     let style = gpui::StyleRefinement::default().tw_dyn(&cell, "p-4");
     assert_eq!(style.padding.top, Some(rems(1.0).into()));
@@ -58,6 +59,7 @@ fn tw_dyn_applies_the_compiled_program() {
 /// the token to the baked literal the style refinement consumes.
 #[test]
 fn tw_dyn_theme_resolves_tokens() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let table = baked_shadcn();
     let cell = ClassCell::new();
     let style = gpui::StyleRefinement::default().tw_dyn_theme(&cell, "bg-primary", &table);
@@ -70,6 +72,7 @@ fn tw_dyn_theme_resolves_tokens() {
 /// never a silent drop.
 #[test]
 fn tw_dyn_reports_the_token_boundary() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let cell = ClassCell::new();
     let style = gpui::StyleRefinement::default().tw_dyn(&cell, "bg-primary");
     assert!(style.background.is_none(), "no theme table, no colour");
@@ -81,6 +84,7 @@ fn tw_dyn_reports_the_token_boundary() {
 /// reset.
 #[test]
 fn tw_dyn_degrades_to_the_last_good_program() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let cell = ClassCell::new();
     let good = gpui::StyleRefinement::default().tw_dyn(&cell, "p-4");
     let degraded = gpui::StyleRefinement::default().tw_dyn(&cell, "");
@@ -92,6 +96,7 @@ fn tw_dyn_degrades_to_the_last_good_program() {
 /// `dark:` tier fires under a dark probe.
 #[test]
 fn tw_dyn_env_lifts_the_dark_layer() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let cell = ClassCell::new();
     let env = Env {
         dark: true,
