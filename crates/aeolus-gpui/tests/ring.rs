@@ -20,6 +20,7 @@ fn red_500() -> gpui::Hsla {
 
 #[test]
 fn ring_width_and_color_compose_one_spread_layer() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // ring-2 = 2px spread in the ring colour — v4's
     // `0 0 0 calc(var(--tw-ring-offset-width) + var(--tw-ring-width))
     // var(--tw-ring-color)` with the offset width at its 0 default.
@@ -35,6 +36,7 @@ fn ring_width_and_color_compose_one_spread_layer() {
 
 #[test]
 fn the_offset_band_rides_under_the_ring_band() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // ring-offset-2 + ring-2: v4's TWO layers — the offset band first
     // (its own colour), the ring band spread over
     // offset-width + ring-width on top.
@@ -54,6 +56,7 @@ fn the_offset_band_rides_under_the_ring_band() {
 
 #[test]
 fn bare_ring_falls_back_to_the_current_text_colour() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // v4's `--tw-ring-color: currentColor` default: the ring band paints
     // in the element's own text colour, which the walk reads from the
     // SAME cascade (text-red-500 sets Prop::Color).
@@ -71,6 +74,7 @@ fn bare_ring_falls_back_to_the_current_text_colour() {
 
 #[test]
 fn ring_0_clears_the_polyfill() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // ring-0 sets the width to 0: no band left, no box shadows — the
     // element keeps its plain refinement (the `ring-2 ring-0` override
     // the tw_merge table's own `ring-w` group documents).
@@ -121,6 +125,7 @@ fn the_ring_state_composes_the_v4_list() {
 
 #[test]
 fn later_widths_win_the_cascade() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The walk applies layers in cascade order: `ring-2 hover:ring-4`
     // under a hovering env resolves the 4px band (the longhand the LAST
     // fired layer wrote wins, like every other family).
