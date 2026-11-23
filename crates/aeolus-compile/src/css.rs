@@ -399,6 +399,36 @@ pub(crate) fn run_css(
                 continue;
             }
         };
+        // The v4 arbitrary-PROPERTY form: a bare `[prop:value]` (an
+        // empty body with the lexer's property flag) IS the utility —
+        // the declaration renders verbatim onto the appended
+        // `Prop::Arbitrary` arm (`lower::property_to_css`, the IR
+        // walk's own branch: the gate order matches, the diagnostics
+        // stay equal). The ROOTED spelling keeps the value pass's
+        // typed refusal below (the row already names its own
+        // property); the negative flag has no property form.
+        if candidate.body.is_empty()
+            && !candidate.negative
+            && candidate.arbitrary.is_some_and(|arb| arb.is_property)
+        {
+            let mut decls: Vec<lower::CssDecl> = Vec::new();
+            match lower::property_to_css(candidate.arbitrary.expect("the property flag set")) {
+                Ok(mut rendered) => decls.append(&mut rendered),
+                Err(reject) => {
+                    diagnostics.push(reject_diagnostic(
+                        candidate,
+                        candidate.body,
+                        reject,
+                        candidate.modifier,
+                    ));
+                }
+            }
+            if !decls.is_empty() {
+                decls.sort_by_key(|decl| decl.prop);
+                push_rules(&mut rules, candidate.raw, &set, &decls, candidate.important);
+            }
+            continue;
+        }
         // The fraction re-attachment, byte-identical to the IR walk's
         // (the audited oracle's F1: the raw `/modifier` is the
         // DENOMINATOR for fraction-shaped rows). The two walks share
