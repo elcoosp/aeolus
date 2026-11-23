@@ -49,7 +49,8 @@ use floem::taffy::style::Overflow;
 use aeolus_ir::{Cond, Prop, Val};
 use aeolus_rt::{
     AttrKind, AttrProbe, ContainerProbe, DescendantKind, DescendantProbe, Env, InterpError,
-    PseudoTarget, StaticProgram, StructProbe, SupportsProbe, TokenSource, structural_fires,
+    PseudoTarget, StaticProgram, StructProbe, SupportsProbe, TokenSource, negation_inner,
+    structural_fires,
 };
 
 use crate::LoweringReport;
@@ -523,6 +524,29 @@ fn decide(
             aeolus_ir::Direction::Ltr => !env.direction_rtl,
             aeolus_ir::Direction::Rtl => env.direction_rtl,
         }),
+        // The negation grammar inverts the INNER's answer — the payload
+        // re-classifies through the same closed table the fold used (the
+        // interp's own arm, the `negation_inner` seam): a Yes turns No,
+        // a No turns Yes, and an unqueried inner stays unqueried (the
+        // exclusion the complement cannot out-claim).
+        Cond::Not(inner) => match negation_inner(inner) {
+            Some(folded) => {
+                match decide(
+                    folded,
+                    env,
+                    probes,
+                    containers,
+                    structs,
+                    descendants,
+                    supports,
+                ) {
+                    Fire::Yes => Fire::No,
+                    Fire::No => Fire::Yes,
+                    Fire::Excluded(reason) => Fire::Excluded(reason),
+                }
+            }
+            None => Fire::No,
+        },
         // The supports conditions answer through the interp arm's
         // SupportsProbe seam (the decide semantics shared verbatim): a
         // YES fires, a source-answered NO is the CSS-quiet skip (an
