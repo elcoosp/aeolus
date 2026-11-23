@@ -122,21 +122,33 @@ pub fn parse_candidate(raw: &str) -> Result<Candidate<'_>, LexError> {
     let (body, arbitrary, modifier) = split_body(body_src)?;
 
     if body.is_empty() {
-        return Err(LexError::whole(rest_all.len(), LexErrorKind::EmptyHead));
-    }
-    // Elements: the dash-split must have no empty segments (the oracle's
-    // "double '-'" rejection; NO cap — the documented divergence).
-    let mut start = 0usize;
-    for (i, &b) in body.as_bytes().iter().enumerate() {
-        if b == b'-' {
-            if i == start {
-                return Err(LexError::whole(rest_all.len(), LexErrorKind::EmptyElement));
-            }
-            start = i + 1;
+        // The v4 arbitrary-PROPERTY form: the bracket IS the utility
+        // (`[mask-type:luminance]`, `[--brand:red]`) — an empty body
+        // with the property flag set parses (the compile stage lowers
+        // it onto the IR's appended `Prop::Arbitrary` arm). Every OTHER
+        // bare bracket (the hinted `[length:200px]` spelling has no
+        // utility root to read the hint against) keeps the typed
+        // no-head refusal.
+        if !arbitrary.is_some_and(|a| a.is_property) {
+            return Err(LexError::whole(rest_all.len(), LexErrorKind::EmptyHead));
         }
     }
-    if start == body.len() {
-        return Err(LexError::whole(rest_all.len(), LexErrorKind::EmptyElement));
+    // Elements: the dash-split must have no empty segments (the oracle's
+    // "double '-'" rejection; NO cap — the documented divergence). The
+    // bare property form has no body to scan.
+    if !body.is_empty() {
+        let mut start = 0usize;
+        for (i, &b) in body.as_bytes().iter().enumerate() {
+            if b == b'-' {
+                if i == start {
+                    return Err(LexError::whole(rest_all.len(), LexErrorKind::EmptyElement));
+                }
+                start = i + 1;
+            }
+        }
+        if start == body.len() {
+            return Err(LexError::whole(rest_all.len(), LexErrorKind::EmptyElement));
+        }
     }
 
     Ok(Candidate {
