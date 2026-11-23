@@ -15,6 +15,7 @@
 use aeolus_gpui::prelude::*;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The card surface a shadcn Card would wear: the two-band lg
     // preset, its `shadow-{color}` recolour and the text colour the
     // `currentColor` band would read — the whole `shadow-*` machinery
