@@ -267,9 +267,11 @@ fn a_composed_stack_suggests_no_variant() {
 #[test]
 fn the_whole_token_refusals_answer_empty() {
     // The kinds with no honest correction (the help text is the
-    // story): the lexer's miss, the importance flag, the modifier,
-    // the negation.
-    for raw in ["p--4", "!p-4", "bg-primary/var(--x)", "-p-4"] {
+    // story): the lexer's miss, the modifier, the negation. (The
+    // `!p-4` leg left with the wave-2 important grammar — the
+    // candidate lowers with the cascade origin now, so there is no
+    // refusal to stay quiet.)
+    for raw in ["p--4", "bg-primary/var(--x)", "-p-4"] {
         let diagnostics = diagnostics_of(raw);
         assert!(
             !diagnostics.is_empty(),
