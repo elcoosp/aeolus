@@ -146,5 +146,12 @@ name = "iai_contract"
 harness = false
 required-features = ["iai"]
 
+# The frame-Env debug-assert's microbenchmarks (the §3.5/§9 mitigation:
+# the marked read's cost the walk path pays, beside the escape hatch's
+# own mark + store).
+[[bench]]
+name = "frame_env"
+harness = false
+
 [lints]
 workspace = true
