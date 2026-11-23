@@ -188,7 +188,12 @@ mod sort;
 mod statics;
 mod style_walk;
 mod suggest;
-mod variant;
+pub mod variant;
+// The string-level conflict merge (the audited `tw_merge` table) — the
+// composition granularity the runtime handle freezes its programs at;
+// the static macro's merged arms read it through this re-export (the
+// no-manifest-add discipline the rt re-exports keep).
+pub use aeolus_core::cn as cn_string;
 mod walk_observer;
 
 use std::fmt;
@@ -2243,17 +2248,23 @@ pub fn overlay(base: &Program, over: &Program) -> Program {
         "overlay: the ir-level composition"
     );
 
-    // Conditions group first-seen (base then over); declarations
-    // concatenate in the same order. The specificity sort + the
-    // per-longhand last-wins dedupe in the assembly step do the rest.
-    let mut conds: Vec<Cond> = Vec::new();
+    // Conditions group first-seen (base then over) beside their
+    // cascade origin — an important layer folds with same-condition
+    // important layers only, so the origin flag the v4.1.17 grammar
+    // carries survives the composition (an important base wins the
+    // read over a normal override the way the CSS cascade's origin
+    // order runs). Declarations concatenate in the same order. The
+    // specificity sort + the per-longhand last-wins dedupe in the
+    // assembly step do the rest.
+    let mut conds: Vec<(Cond, bool)> = Vec::new();
     let mut groups: Vec<Vec<Decl>> = Vec::new();
     for program in [base, over] {
         for layer in program.layers {
-            let idx = match conds.iter().position(|&c| c == layer.cond) {
+            let key = (layer.cond, layer.important);
+            let idx = match conds.iter().position(|&k| k == key) {
                 Some(idx) => idx,
                 None => {
-                    conds.push(layer.cond);
+                    conds.push(key);
                     groups.push(Vec::new());
                     conds.len() - 1
                 }
@@ -2263,16 +2274,17 @@ pub fn overlay(base: &Program, over: &Program) -> Program {
     }
 
     // The assembly: stable specificity sort (first-seen order breaks
-    // ties), per-group cascade order (Prop's discriminant IS the sort
-    // order; the stable sort keeps source order within one longhand),
-    // then the composition's own contract — the LAST declaration per
-    // longhand wins, so the dedupe drops exactly the shadowed earlier
-    // decls (the overlap `base_conflicts()` names on the raw
-    // concatenation).
-    let mut order: Vec<(Cond, Vec<Decl>)> = conds.into_iter().zip(groups).collect();
-    order.sort_by_key(|(cond, _)| cond.specificity());
+    // ties; the important origin sorts after its same-specificity
+    // normal siblings), per-group cascade order (Prop's discriminant IS
+    // the sort order; the stable sort keeps source order within one
+    // longhand), then the composition's own contract — the LAST
+    // declaration per longhand wins, so the dedupe drops exactly the
+    // shadowed earlier decls (the overlap `base_conflicts()` names on
+    // the raw concatenation).
+    let mut order: Vec<((Cond, bool), Vec<Decl>)> = conds.into_iter().zip(groups).collect();
+    order.sort_by_key(|((cond, important), _)| (cond.specificity(), u8::from(*important)));
     let mut layers: Vec<Layer> = Vec::with_capacity(order.len());
-    for (cond, mut decls) in order {
+    for ((cond, important), mut decls) in order {
         decls.sort_by_key(|decl: &Decl| decl.prop);
         let mut merged: Vec<Decl> = Vec::with_capacity(decls.len());
         for decl in decls {
@@ -2285,7 +2297,11 @@ pub fn overlay(base: &Program, over: &Program) -> Program {
             merged.push(decl);
         }
         let merged: &'static [Decl] = Box::leak(merged.into_boxed_slice());
-        layers.push(Layer::new(cond, merged));
+        layers.push(if important {
+            Layer::important(cond, merged)
+        } else {
+            Layer::new(cond, merged)
+        });
     }
     let layers: &'static [Layer] = Box::leak(layers.into_boxed_slice());
     Program::new(layers)
@@ -2559,7 +2575,13 @@ fn run(
     // reasons defer to one deduped report per candidate (one class,
     // one boundary — never a per-sibling diagnostic pile, never a
     // silent drop when NO row took the class).
-    let mut conds: Vec<Cond> = Vec::new();
+    // The v4.1.17 important grammar rides the group key: an important
+    // candidate's declarations assemble into their OWN layer (the
+    // cascade-origin fact is per-candidate, the cond alone does not
+    // carry it) — the assembly sort places important layers after their
+    // same-specificity normal siblings, the front-to-back read's own
+    // win order.
+    let mut conds: Vec<(Cond, bool)> = Vec::new();
     let mut groups: Vec<Vec<Decl>> = Vec::new();
     // The observability seam's per-candidate deltas: the declarations
     // total so far (the two extend sites add to it) and the diagnostics
@@ -2572,16 +2594,6 @@ fn run(
         tracing::trace!(raw = %candidate.raw, "candidate");
 
         let outcome: CandidateOutcome = 'candidate: {
-            if candidate.important {
-                diagnostics.push(Diagnostic::new(
-                    candidate.span,
-                    candidate.raw,
-                    DiagnosticKind::UnsupportedImportant,
-                ));
-                break 'candidate CandidateOutcome::Missed {
-                    diagnostics: diagnostics.len() - diag_start,
-                };
-            }
             let cond = match variant::fold(&candidate.variants, customs) {
                 Ok(cond) => cond,
                 Err(miss) => {
@@ -2660,10 +2672,13 @@ fn run(
                             candidate.arbitrary,
                         ) {
                             Ok(decls) => {
-                                let idx = match conds.iter().position(|&c| c == cond) {
+                                let idx = match conds
+                                    .iter()
+                                    .position(|&(c, imp)| c == cond && imp == candidate.important)
+                                {
                                     Some(idx) => idx,
                                     None => {
-                                        conds.push(cond);
+                                        conds.push((cond, candidate.important));
                                         groups.push(Vec::new());
                                         conds.len() - 1
                                     }
@@ -2769,10 +2784,12 @@ fn run(
                                 config,
                             ) {
                                 Ok(decls) => {
-                                    let idx = match conds.iter().position(|&c| c == cond) {
+                                    let idx = match conds.iter().position(|&(c, imp)| {
+                                        c == cond && imp == candidate.important
+                                    }) {
                                         Some(idx) => idx,
                                         None => {
-                                            conds.push(cond);
+                                            conds.push((cond, candidate.important));
                                             groups.push(Vec::new());
                                             conds.len() - 1
                                         }
@@ -2820,14 +2837,22 @@ fn run(
     // breaks ties), the per-group cascade order (Prop's discriminant IS
     // the sort order; the stable sort keeps source order within one
     // longhand, so the later duplicate wins the front-to-back read),
-    // then intern into the leak pool.
-    let mut order: Vec<(Cond, Vec<Decl>)> = conds.into_iter().zip(groups).collect();
-    order.sort_by_key(|(cond, _)| cond.specificity());
+    // then intern into the leak pool. The important origin rides the
+    // sort key: an important layer sorts AFTER its same-specificity
+    // normal siblings (the CSS cascade's own origin order — important
+    // beats normal), so the front-to-back read every consumer runs
+    // gives the `p-4!` layer the win with no consumer-side check.
+    let mut order: Vec<((Cond, bool), Vec<Decl>)> = conds.into_iter().zip(groups).collect();
+    order.sort_by_key(|((cond, important), _)| (cond.specificity(), u8::from(*important)));
     let mut layers: Vec<Layer> = Vec::with_capacity(order.len());
-    for (cond, mut decls) in order {
+    for ((cond, important), mut decls) in order {
         decls.sort_by_key(|decl: &Decl| decl.prop);
         let decls: &'static [Decl] = Box::leak(decls.into_boxed_slice());
-        layers.push(Layer::new(cond, decls));
+        layers.push(if important {
+            Layer::important(cond, decls)
+        } else {
+            Layer::new(cond, decls)
+        });
     }
     let layers: &'static [Layer] = Box::leak(layers.into_boxed_slice());
     // The observability seam's assembly hook: the sorted layer count,
