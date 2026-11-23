@@ -6,6 +6,15 @@
 //! input, and carries the byte [`Candidate::span`] it occupies — the
 //! diagnostics surface (LSP hover, editor squiggles) hangs off that.
 //!
+//! **`no_std + alloc`** (the plan §3.2 crate-table note, delivered): the
+//! crate builds `#![no_std]`, reaching the heap only through `extern
+//! crate alloc` (`Vec`/`String`), and `core::error::Error` carries the
+//! typed lex errors (the `std` trait impls were the last `std` ties).
+//! A `no_std` host — a build script, an embedded lexer — links the
+//! crate unchanged; the differential gate
+//! `cargo check -p aeolus-syntax --target thumbv6m-none-eabi` proves the
+//! face stays honest (CI's `no-std-syntax` job runs the same command).
+//!
 //! The grammar mirrors the v0.x `aeolus-core::parser` exactly (it stays
 //! the oracle until the registry-as-data pipeline replaces it — plan
 //! §5.2); the differential tests in `tests/differential.rs` pin the two
@@ -18,6 +27,11 @@
 //! What the lexer does NOT do: classify variant names (the typed
 //! `NamedVariant` table), resolve values, or lower to the IR. The lexer
 //! segments and spans; the registry (P2's compile stage) interprets.
+
+// `no_std` + `alloc` (plan §3.2's crate-table note): the heap types ride
+// `extern crate alloc`, `std` is never linked (see the crate header).
+#![no_std]
+extern crate alloc;
 
 mod candidate;
 mod error;
