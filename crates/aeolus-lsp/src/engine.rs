@@ -2346,6 +2346,10 @@ fn cond_label(cond: Cond) -> &'static str {
         Cond::Media(_) => "media preference",
         Cond::Dir(_) => "direction",
         Cond::Structural(_) => "structural",
+        // The negation grammar: the hover renders the family label (the
+        // inner spelling rides the payload — the CLI's own `not-<inner>`
+        // label).
+        Cond::Not(_) => "negation",
         Cond::Starting => "starting-style",
     }
 }
