@@ -561,9 +561,11 @@ fn multi_token_composites_lower_through_the_verbatim_slot() {
 }
 
 #[test]
-fn the_arbitrary_property_form_refuses_typed() {
-    // `[mask-type:luminance]` names a PROPERTY, not a value — the row
-    // already names the property; the form is the codegen host's.
+fn the_rooted_arbitrary_property_form_still_refuses_typed() {
+    // `w-[mask-type:luminance]` names a PROPERTY on a utility whose row
+    // already names its own — the value pass keeps the typed refusal.
+    // The BARE form (`[mask-type:luminance]`) is the class that lowers
+    // (the section-9 battery below).
     let compiled = compile("w-[mask-type:luminance]", &Config::default()).expect("compiles");
     assert!(matches!(
         one_diagnostic(&compiled),
@@ -756,4 +758,183 @@ fn the_grammar_is_deterministic() {
     for (la, lb) in a.program.layers.iter().zip(b.program.layers.iter()) {
         assert_eq!(la.decls, lb.decls, "same input, same declarations");
     }
+}
+
+// ---------------------------------------------------------------------------
+// 9. The arbitrary-PROPERTY form — the bare `[prop:value]` class (v4's
+//    arbitrary-property utility: the bracket IS the head). The last typed
+//    refusal of the arbitrary grammar closes: the declaration lowers onto
+//    `Prop::Arbitrary` + the interned `Val::Verbatim("name: value")`, the
+//    composition folds per PROPERTY NAME (the one key the bitset cannot
+//    carry), the CSS arm renders the declaration verbatim, and the rooted
+//    spelling keeps its typed refusal (the row already names its own).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_bare_arbitrary_property_form_lowers() {
+    let compiled = compile("[mask-type:luminance]", &Config::default()).expect("compiles");
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    assert_eq!(
+        base_decl(&compiled, Prop::Arbitrary),
+        Val::Verbatim("mask-type: luminance"),
+        "the normalized `name: value` text, interned"
+    );
+
+    // The custom-property spelling is the same declaration surface.
+    let compiled = compile("[--brand:red]", &Config::default()).expect("compiles");
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    assert_eq!(
+        base_decl(&compiled, Prop::Arbitrary),
+        Val::Verbatim("--brand: red")
+    );
+}
+
+#[test]
+fn the_property_value_decodes_underscores() {
+    // The composite grammar's underscore contract: `_` is a space, `\_`
+    // escapes a literal one — the same decoder every arbitrary value rides.
+    let compiled = compile("[--tw-x:1px_2px]", &Config::default()).expect("compiles");
+    assert_eq!(
+        base_decl(&compiled, Prop::Arbitrary),
+        Val::Verbatim("--tw-x: 1px 2px")
+    );
+}
+
+#[test]
+fn the_property_form_composes_with_variants() {
+    let compiled = compile("hover:[mask-type:luminance]", &Config::default()).expect("compiles");
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    let layer = compiled
+        .program
+        .layers
+        .iter()
+        .find(|layer| layer.cond == aeolus_ir::Cond::Hover)
+        .expect("the hover layer exists");
+    assert_eq!(
+        layer.decls,
+        [aeolus_ir::Decl {
+            prop: Prop::Arbitrary,
+            val: Val::Verbatim("mask-type: luminance"),
+        }]
+        .as_slice(),
+        "the declaration rides the folded condition"
+    );
+}
+
+#[test]
+fn the_property_form_sorts_last_in_the_base_cascade() {
+    // The discriminant order IS the cascade order; the appended
+    // `Prop::Arbitrary` arm sorts after every longhand (the raw cascade
+    // keeps the author's relative order among property declarations).
+    let compiled = compile("p-4 [mask-type:luminance]", &Config::default()).expect("compiles");
+    let base = compiled
+        .program
+        .layers
+        .iter()
+        .find(|layer| layer.cond == aeolus_ir::Cond::Base)
+        .expect("the base layer exists");
+    let last = base.decls.last().expect("decls exist");
+    assert_eq!(last.prop, Prop::Arbitrary);
+    let before: Vec<_> = base.decls[..base.decls.len() - 1]
+        .iter()
+        .map(|d| d.prop)
+        .collect();
+    assert!(
+        before.iter().all(|p| p != &Prop::Arbitrary),
+        "the longhands precede the property declaration"
+    );
+}
+
+#[test]
+fn the_overlay_folds_property_declarations_by_name() {
+    // The bitset carries ONE `Prop::Arbitrary` bit; the composition's
+    // last-wins key for property declarations is the PROPERTY NAME (the
+    // `Val::Verbatim` text's prefix before the first ':') — different
+    // names coexist, same names fold last-wins, exactly the CSS cascade.
+    let base = compile("[mask-type:x]", &Config::default()).expect("compiles");
+    let same_name = compile("[mask-type:y]", &Config::default()).expect("compiles");
+    let other_name = compile("[--brand:red]", &Config::default()).expect("compiles");
+
+    let folded = aeolus_compile::overlay(&base.program, &same_name.program);
+    let decls = folded
+        .layers
+        .iter()
+        .flat_map(|l| l.decls.iter().copied())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        decls,
+        [aeolus_ir::Decl {
+            prop: Prop::Arbitrary,
+            val: Val::Verbatim("mask-type: y"),
+        }]
+        .as_slice(),
+        "the same name folds last-wins"
+    );
+
+    let folded = aeolus_compile::overlay(&base.program, &other_name.program);
+    let decls = folded
+        .layers
+        .iter()
+        .flat_map(|l| l.decls.iter().copied())
+        .collect::<Vec<_>>();
+    assert_eq!(decls.len(), 2, "different names coexist: {decls:?}");
+
+    // `cn` rides the same overlay walk — the N-ary form answers alike.
+    let merged = aeolus_compile::cn(&[&base, &same_name, &other_name]).expect("merges");
+    let decls = merged
+        .program
+        .layers
+        .iter()
+        .flat_map(|l| l.decls.iter().copied())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        decls.len(),
+        2,
+        "same name folded, the distinct name kept: {decls:?}"
+    );
+}
+
+#[test]
+fn the_css_arm_renders_the_property_declaration() {
+    let sheet = emit_css("[mask-type:luminance]", &Config::default()).expect("compiles");
+    assert!(sheet.diagnostics.is_empty(), "{:?}", sheet.diagnostics);
+    let text = format!("{sheet}");
+    assert!(text.contains("mask-type: luminance"), "{text}");
+
+    // The variant-composed form renders under the variant's own selector.
+    let sheet = emit_css("hover:[--brand:red]", &Config::default()).expect("compiles");
+    let text = format!("{sheet}");
+    assert!(text.contains("--brand: red"), "{text}");
+}
+
+#[test]
+fn the_interpreter_resolves_the_property_declaration() {
+    // A property declaration is a CONCRETE value (the verbatim text) —
+    // the theme-less interp resolves it like every other arbitrary value.
+    let compiled = compile("[mask-type:luminance]", &Config::default()).expect("compiles");
+    let resolved = interp(&compiled.program, &aeolus_compile::Env::default()).expect("resolves");
+    assert!(resolved.notes.is_empty(), "{:?}", resolved.notes);
+    assert_eq!(resolved.touched().len(), 1, "the one property declaration");
+}
+
+#[test]
+fn the_static_form_carries_the_property_declaration() {
+    let compiled = compile("[mask-type:luminance]", &Config::default()).expect("compiles");
+    let text = emit_static(&compiled.program);
+    assert!(
+        text.contains("aeolus_ir::Val::Verbatim(\"mask-type: luminance\")"),
+        "the interned text rides the frozen form: {text}"
+    );
 }
