@@ -58,6 +58,7 @@ fn the_preset_texts_quote_the_audited_theme_file() {
 
 #[test]
 fn shadow_lg_composes_the_two_audited_bands() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // `--shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px
     // rgb(0 0 0 / 0.1)` — the two layers, first-paints-on-top order
     // preserved.
@@ -80,6 +81,7 @@ fn shadow_lg_composes_the_two_audited_bands() {
 
 #[test]
 fn the_full_preset_scale_composes() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The band counts across the audited scale (2xs/xs/2xl carry one
     // band, sm..xl two) with each scale step's own geometry.
     let style = gpui::StyleRefinement::default().tw(tw!("shadow-2xs"));
@@ -115,6 +117,7 @@ fn the_full_preset_scale_composes() {
 
 #[test]
 fn shadow_none_clears_to_the_v4_transparent_band() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // v4's own output: `box-shadow: 0 0 #0000` — one transparent band,
     // the composed surface the cascade reads (a later `shadow-lg`
     // replaces it, an earlier one it replaces).
@@ -130,6 +133,7 @@ fn shadow_none_clears_to_the_v4_transparent_band() {
 
 #[test]
 fn shadow_inner_composes_the_inset_band_in_the_text_colour() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The pinned `BoxShadow` carries the `inset` flag, so v4's
     // `inset 0 0 0 0 currentColor` placeholder composes natively — the
     // band's `currentColor` reads the element's own text colour, the
@@ -144,6 +148,7 @@ fn shadow_inner_composes_the_inset_band_in_the_text_colour() {
 
 #[test]
 fn the_cascade_is_last_write_wins() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // `shadow-sm shadow-lg`: the later preset replaces the earlier one
     // wholesale (the per-longhand cascade every other family runs).
     let style = gpui::StyleRefinement::default().tw(tw!("shadow-sm shadow-lg"));
@@ -154,6 +159,7 @@ fn the_cascade_is_last_write_wins() {
 
 #[test]
 fn the_shadow_color_recolors_the_preset_v4_true() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // v4's `--tw-shadow-colored` machinery: `shadow-red-500` replaces
     // every band colour with the shadow colour (the band's own black
     // never leaks), the alpha riding the recolour itself. The theme
@@ -173,6 +179,7 @@ fn the_shadow_color_recolors_the_preset_v4_true() {
 
 #[test]
 fn the_shadow_color_modifier_rides_the_recolour() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // `shadow-red-500/50`: the premultiplied `/opacity` identity bakes
     // the alpha into the token's colour (mix-first-then-map through the
     // gamut, the theme pass's own read) before the walk sees it — the
@@ -208,6 +215,7 @@ fn the_shadow_color_modifier_rides_the_recolour() {
 
 #[test]
 fn a_shadow_color_without_a_preset_composes_nothing() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // v4's `--tw-shadow-color` alone colors an EMPTY shadow — nothing
     // paints, and an empty state never touches the refinement (the
     // `ring-0` contract).
@@ -221,6 +229,7 @@ fn a_shadow_color_without_a_preset_composes_nothing() {
 
 #[test]
 fn ring_bands_and_shadow_bands_compose_one_list() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // GPUI's `shadow()` replaces the whole `Vec<BoxShadow>` — the two
     // accumulators compose in ONE call, v4's list order (the ring
     // machinery's bands first, the shadow preset's bands after — the
