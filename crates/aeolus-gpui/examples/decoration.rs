@@ -22,6 +22,7 @@
 use aeolus_gpui::prelude::*;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The annotated-phrase surface a docs renderer would wear: the
     // full family in one program — line, style, thickness and the
     // frozen palette colour.
