@@ -35,7 +35,7 @@ it compiles it through the full V1 pipeline at macro-expansion time and emits a 
 | ------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `tw!("p-4 …")`     | validated, then the **input string emitted back** — re-parsed every process start | compiled at expansion → **frozen static program**; the string is never emitted          |
 | Static hot path    | parse → resolve → cache (**exclusive lock even on a hit**)                        | **zero parse, zero hash, zero locks** — static data applied under a `Copy` `Env`        |
-| IR                 | heap-shaped `StylePlan` (`Vec`/`BTreeMap`/`Box`), per-edge set-mask patches       | `Copy` longhands (**159 props**) + `PropMask` bitsets — `p-4 ⊕ px-8` is bit ops         |
+| IR                 | heap-shaped `StylePlan` (`Vec`/`BTreeMap`/`Box`), per-edge set-mask patches       | `Copy` longhands (**160 props**) + `PropMask` bitsets — `p-4 ⊕ px-8` is bit ops         |
 | Theme lookups      | `HashMap<String, Token>` by name                                                  | **tiered tables**: T0 literals · T1 dark pairs · T2 one load + one multiply             |
 | `cn()` / overrides | string-level tw_merge at runtime                                                  | **IR-level `cn()` + `overlay`** — rightmost-wins per longhand, computed at compile time |
 | Utility semantics  | 4,000-line `match` walls                                                          | **247 registry rows as data** → generated index, docs, sort order, conformance         |
@@ -244,7 +244,7 @@ probe situation the string names — the diagnostics channels byte-equal, the sh
 per-candidate parts, every documented divergence a typed note.
 
 **Six published scores** (plan §5.1's conformance moat — the per-longhand expressible share over
-the 159-longhand IR, each the backend's OWN walk verdicts, drift-pinned by the replay test beside
+the 160-longhand IR, each the backend's OWN walk verdicts, drift-pinned by the replay test beside
 its crate; the pages are the committed `docs/CONFORMANCE*.md` artifacts):
 
 | backend | score | page |
@@ -431,7 +431,7 @@ differential oracle — no big-bang migration.
 | Phase                   | Scope                                                                                                                                             | Status                         |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | **P0** Prove it         | iai/criterion gates vs hand-written builders; replace §4 targets                                                                                  | ✅ the stable half landed 2026-11 — `benches/perf_contract` (the walk beside the hand-written chains, parity-pinned; walk 1.07 µs vs hand 84 ns on the button string, clone 70 ns, cell warm 908 ns) — and the nightly half is in-tree: `benches/iai_contract` (the iai-callgrind instruction-count golden, `iai`-feature-gated) runs on the `iai-nightly` workflow (nightly + valgrind, no stable CI job — the flag the golden keeps) |
-| **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (247 rows) · `aeolus-ir` (159 longhands)                                                                          | ✅ landed                      |
+| **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (247 rows) · `aeolus-ir` (160 longhands)                                                                          | ✅ landed                      |
 | **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all five emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
 | **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill; shadow tier (`shadow-*` → GPUI's own `Vec<BoxShadow>`) | ✅ landed                      |
 | **P4** Env & state      | frame `Env`, dark/breakpoints, state layers, `AttrProbe` host seam                                                                                | ✅ landed                      |
@@ -440,8 +440,8 @@ differential oracle — no big-bang migration.
 
 **Open boundaries — typed, test-pinned, never silent:**
 
-- composite arbitrary values landed (the IR's verbatim slot: `calc()`, track lists, `url()`, `aspect-[16/9]`) and the wider v4 hint table landed (`angle:` on the degree rows, `time:` on the millisecond rows, `position:`, `family-name:`/`generic-name:`, `absolute-size:`/`relative-size:`, `string:` onto the new `content` longhand — the `content-["…"]` spelling now lowers); the arbitrary-property form (`[mask-type:luminance]`) → the remaining typed refusal
-- the `has-*` family answers through the descendant-probe seam (`DescendantProbe`/`DescendantState`, the `*_descendants` walks); the `*:` arbitrary-variant half stays diagnosed with reasons (honest failure, kept)
+- composite arbitrary values landed (the IR's verbatim slot: `calc()`, track lists, `url()`, `aspect-[16/9]`) and the wider v4 hint table landed (`angle:` on the degree rows, `time:` on the millisecond rows, `position:`, `family-name:`/`generic-name:`, `absolute-size:`/`relative-size:`, `string:` onto the new `content` longhand — the `content-["…"]` spelling now lowers); the arbitrary-property form LANDED 2026-11 (the bare `[mask-type:luminance]`/`[--brand:red]` class lowers onto the appended `Prop::Arbitrary` arm — the interned `name: value` verbatim text, the CSS/interp arms rendering it verbatim, the composition folding per property NAME, the framework lanes keeping their typed per-declaration refusals; the ROOTED spelling `w-[mask-type:luminance]` keeps its typed refusal — the row already names its own property)
+- the `has-*` family answers through the descendant-probe seam (`DescendantProbe`/`DescendantState`, the `*_descendants` walks) and the ARBITRARY bracketed inner landed 2026-11 — the selector-text grammar the real v4.1.17 renderings pin: combinator inners verbatim (`has-[>svg]` → `&:has(>svg)`, the shadcn Button table's own class), the `*:is(…)` star wrap otherwise, the at-rule inner the typed refusal; the `*:` lateral arbitrary variant stays diagnosed with reasons (honest failure, kept)
 - container **measurement** (who computes element widths) → the seam landed, the GPUI walk answers named queries through it (`tw_containers`), and the GPUI measuring wrapper landed beside it: `tw_container(name, &MeasuredContainers)` publishes the element box's width at the layout phase, the delta handshake asks for one re-render on a real change
 - GPUI motion's static emit keeps its per-longhand refusals (`with_animation` needs element id + animator — the stateful `TwAnimExt` lane applies them at runtime); >2-stop / radial / conic gradients refuse
 - the decoration family landed (`decoration-{color,thickness,style}` — three appended longhands, the GPUI walk riding the pinned `text_decoration_*` methods); GPUI renders a single solid line, so the `double`/`dotted`/`dashed` style keywords and the `auto`/`from-font`/rem/percent thickness forms keep their typed refusals (the CSS/interp arms carry the real output)
