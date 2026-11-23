@@ -11,6 +11,7 @@ fn tw_compiles_to_a_static_program() {
 
 #[test]
 fn tw_applies_to_style_refinement() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("p-4 bg-primary");
     let style = gpui::StyleRefinement::default().tw(program);
     assert!(style.padding.top.is_some());
@@ -25,6 +26,7 @@ fn tw_state_compiles() {
 
 #[test]
 fn cn_merges_at_compile_time() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = cn!("p-4", "px-8");
     let base = &program.layers[0];
     let width_decls = base
@@ -40,6 +42,7 @@ fn cn_merges_at_compile_time() {
 
 #[test]
 fn unsupported_keyword_value_is_not_a_program() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("contents");
     let style = gpui::StyleRefinement::default().tw(program);
     assert!(style.display.is_some());
@@ -56,6 +59,7 @@ variants! { pub Button {
 
 #[test]
 fn variants_compile_a_closed_world_table() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = Button::style(ButtonVariant::Default, ButtonSize::Sm);
     let style = gpui::StyleRefinement::default().tw(program);
     assert_eq!(style.padding.left, Some(rems(0.75).into()));
