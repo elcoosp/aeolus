@@ -1164,6 +1164,17 @@ fn apply_decl(
             );
             style
         }
+        // The arbitrary-PROPERTY declaration: the property name is the
+        // AUTHOR's (unbounded) — no Floem style prop can carry it; the
+        // report names the declaration's own property text (the honest
+        // per-decl note, the clip-path precedent).
+        Prop::Arbitrary => {
+            report.drop(
+                prop.name(),
+                "no Floem slot for an author-defined property — the arbitrary-property declaration ([mask-type:luminance] form) stays the CSS emit arm's output",
+            );
+            style
+        }
     }
 }
 
