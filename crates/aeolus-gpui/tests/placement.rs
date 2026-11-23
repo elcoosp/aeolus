@@ -40,6 +40,7 @@ fn row(style: &gpui::StyleRefinement) -> (GridPlacement, GridPlacement) {
 
 #[test]
 fn line_placements_land_on_the_grid_location() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let style = gpui::StyleRefinement::default().tw(tw!("col-start-2 col-end-5"));
     assert_eq!(
         column(&style),
@@ -51,6 +52,7 @@ fn line_placements_land_on_the_grid_location() {
 
 #[test]
 fn the_span_fingerprint_composes_the_span_form() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // `col-span-3` fans to (start, end) = (3, 3) — the v4 `span 3 / span 3`
     // reading. The walk composes GPUI's Span placement from the pair.
     let style = gpui::StyleRefinement::default().tw(tw!("col-span-3"));
@@ -67,6 +69,7 @@ fn the_span_fingerprint_composes_the_span_form() {
 
 #[test]
 fn a_line_placement_cascades_over_the_span_pair() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The per-longhand cascade: `col-span-3 col-start-2` — the later
     // start overwrites the span pair's; the end keeps the span's value.
     let style = gpui::StyleRefinement::default().tw(tw!("col-span-3 col-start-2"));
@@ -78,6 +81,7 @@ fn a_line_placement_cascades_over_the_span_pair() {
 
 #[test]
 fn negative_lines_pass_through() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let style = gpui::StyleRefinement::default().tw(tw!("-col-start-2"));
     assert_eq!(
         column(&style),
@@ -87,6 +91,7 @@ fn negative_lines_pass_through() {
 
 #[test]
 fn the_basis_family_lands_on_flex_basis() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let style = gpui::StyleRefinement::default().tw(tw!("basis-16"));
     assert_eq!(style.flex_basis, Some(rems(4.0).into()), "basis-16 is 4rem");
 
@@ -107,6 +112,7 @@ fn the_basis_family_lands_on_flex_basis() {
 
 #[test]
 fn an_unmentioned_axis_stays_auto() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // No accidental placement: a padding-only program leaves the grid
     // location untouched.
     let style = gpui::StyleRefinement::default().tw(tw!("p-4"));
