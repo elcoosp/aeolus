@@ -18,6 +18,7 @@ use aeolus_gpui::prelude::*;
 /// are crate-private; the Debug form is the surface a refinement dump
 /// shows — `LinearGradient(<angle>, <from>, <to>)`).
 fn background_of(program: StaticProgram) -> String {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let style = gpui::StyleRefinement::default().tw(program);
     match style.background {
         Some(gpui::Fill::Color(background)) => format!("{background:?}"),
@@ -26,6 +27,7 @@ fn background_of(program: StaticProgram) -> String {
 }
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The hero banner's fade: the direction row (`to right` = the CSS
     // 90°), the from stop with its `20%` position patch, the to stop —
     // the whole gradient family in one program.
