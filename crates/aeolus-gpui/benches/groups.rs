@@ -9,6 +9,7 @@ use aeolus_gpui::prelude::*;
 
 #[divan::bench]
 fn unnamed_fold_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The wave-1 baseline: the flat boolean fold, the env's unnamed
     // fact answering.
     let program = tw!("group-hover:p-4 group-active:bg-red-500 p-8");
@@ -17,6 +18,7 @@ fn unnamed_fold_walk(bencher: Bencher) {
 
 #[divan::bench]
 fn named_label_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The named form: the env walk stays quiet (no group registry),
     // the label extraction (the state walk's own dispatch work) rides
     // `tw_state`'s native closure wiring.
