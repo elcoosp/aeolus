@@ -110,7 +110,10 @@ fn probe_class(root: &str, kind: ValueKind) -> String {
 /// `Prop::Content` through the value pass's hint targets — the root's
 /// keyword half is `align-content`). The coverage pin below refuses a
 /// corpus that misses a longhand, so this list grows with the IR.
-const HAND_PROBES: &[(&str, &[Prop])] = &[("content-[\"Hello\"]", &[Prop::Content])];
+const HAND_PROBES: &[(&str, &[Prop])] = &[
+    ("content-[\"Hello\"]", &[Prop::Content]),
+    ("[mask-type:luminance]", &[Prop::Arbitrary]),
+];
 
 /// The probe corpus: one entry per registry row whose class string
 /// lowers clean (the registry is the compile walk's own source of
