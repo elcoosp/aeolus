@@ -32,3 +32,9 @@ divan = "0.1"
 [[bench]]
 name = "gate"
 harness = false
+
+# The §4 code-size knob's microbenchmarks (the per-expansion cost the
+# aeolus.toml profile read adds, beside the dispatch's branch).
+[[bench]]
+name = "profile"
+harness = false
