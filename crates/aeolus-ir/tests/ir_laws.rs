@@ -171,6 +171,7 @@ const P4: Layer = Layer {
         Prop::PaddingBottom,
         Prop::PaddingLeft,
     ]),
+    important: false,
 };
 
 const PX8: Layer = Layer {
@@ -186,6 +187,7 @@ const PX8: Layer = Layer {
         },
     ],
     mask: PropMask::of(&[Prop::PaddingRight, Prop::PaddingLeft]),
+    important: false,
 };
 
 const HOVER_PX8: Layer = Layer {
@@ -201,6 +203,7 @@ const HOVER_PX8: Layer = Layer {
         },
     ],
     mask: PropMask::of(&[Prop::PaddingRight, Prop::PaddingLeft]),
+    important: false,
 };
 
 /// `mt-4`: a single-edge margin layer (widens the touched set).
@@ -211,6 +214,7 @@ const MT4: Layer = Layer {
         val: Val::Rem(1.0),
     }],
     mask: PropMask::of(&[Prop::MarginTop]),
+    important: false,
 };
 
 static HOVER_FIRST: [Layer; 2] = [HOVER_PX8, P4];
