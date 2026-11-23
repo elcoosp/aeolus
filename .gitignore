@@ -1,5 +1,6 @@
 skills/
 node_modules/
+target/
 ship.toml
 .github/pr-body.md
 DELIVERY-STATE.md
