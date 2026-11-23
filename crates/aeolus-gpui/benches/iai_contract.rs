@@ -14,6 +14,7 @@ use iai_callgrind::{black_box, library_benchmark, library_benchmark_group, main}
 
 #[library_benchmark]
 fn the_walk_button() -> (bool, bool) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = aeolus_gpui::tw!(
         "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 font-medium border border-red-500 bg-red-500 text-red-500"
     );
@@ -26,6 +27,7 @@ fn the_walk_button() -> (bool, bool) {
 
 #[library_benchmark]
 fn the_walk_layout() -> (bool, bool) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = aeolus_gpui::tw!("w-full h-10 px-3 py-2 border border-red-500 rounded-lg");
     let style = gpui::StyleRefinement::default().tw(program);
     (
@@ -36,6 +38,7 @@ fn the_walk_layout() -> (bool, bool) {
 
 #[library_benchmark]
 fn the_walk_typo() -> (bool, bool) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program =
         aeolus_gpui::tw!("font-bold underline decoration-wavy decoration-2 decoration-red-500");
     let style = gpui::StyleRefinement::default().tw(program);
@@ -47,6 +50,7 @@ fn the_walk_typo() -> (bool, bool) {
 
 #[library_benchmark]
 fn the_walk_grid() -> (bool, bool) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = aeolus_gpui::tw!("grid grid-cols-3 gap-4 h-32");
     let style = gpui::StyleRefinement::default().tw(program);
     (
@@ -57,6 +61,7 @@ fn the_walk_grid() -> (bool, bool) {
 
 #[library_benchmark]
 fn the_walk_state() -> (bool, bool) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program =
         aeolus_gpui::tw!("hover:bg-red-500/90 focus:ring-2 focus:ring-red-500 bg-red-500");
     let style = gpui::StyleRefinement::default().tw(program);
