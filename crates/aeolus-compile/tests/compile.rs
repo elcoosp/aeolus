@@ -401,19 +401,19 @@ fn group_and_peer_compositions_fold_the_full_probe_state_set() {
 #[test]
 fn unsupported_variants_are_typed_and_skip_the_utility() {
     // The lexer accepts the segment; the typed Cond surface does not
-    // cover it (a bare unknown has- inner names no state and no
-    // data-/aria- compound). Honest report, the REST of the string
-    // still compiles.
-    let compiled = compile("has-[x]:p-4 p-2", &Config::default()).expect("compiles");
+    // cover it (an at-rule has- inner is not a :has()-able selector —
+    // the real compiler emits no rule for the class either). Honest
+    // report, the REST of the string still compiles.
+    let compiled = compile("has-[@media(print)]:p-4 p-2", &Config::default()).expect("compiles");
     assert_eq!(compiled.diagnostics.len(), 1, "one report: {compiled:?}");
     let d = &compiled.diagnostics[0];
     assert_eq!(
         d.kind,
         DiagnosticKind::UnsupportedVariant {
-            variant: "has-[x]".to_string()
+            variant: "has-[@media(print)]".to_string()
         }
     );
-    assert_eq!(d.span, (0, 7), "the variant segment's own span");
+    assert_eq!(d.span, (0, 19), "the variant segment's own span");
     assert_eq!(d.kind.code(), "aeolus::compile::unsupported_variant");
     assert!(
         d.kind.help().contains("Cond"),
