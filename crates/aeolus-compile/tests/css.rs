@@ -313,8 +313,11 @@ fn boundaries_ride_the_sheet_diagnostics() {
     // (The `!p-4` leg left this battery with the wave-2 important
     // grammar — the candidate lowers with the cascade origin now; the
     // compile crate's `css_renders_the_important_suffix` pins it.)
-    let sheet = emit_css("p-red not-a-utility has-[x]:p-4", &Config::default())
-        .expect("non-empty input renders");
+    let sheet = emit_css(
+        "p-red not-a-utility has-[@media(print)]:p-4",
+        &Config::default(),
+    )
+    .expect("non-empty input renders");
     assert!(sheet.rules.is_empty(), "nothing lowered: {:?}", sheet.rules);
     assert_eq!(sheet.diagnostics.len(), 3, "{:?}", sheet.diagnostics);
     let codes: Vec<&str> = sheet.diagnostics.iter().map(|d| d.kind.code()).collect();
