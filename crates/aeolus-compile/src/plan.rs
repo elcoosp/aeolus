@@ -1517,6 +1517,14 @@ impl PlanWriter {
                     }
                 }
                 Val::Num(n) => style.extras.aspect_ratio = Some(n),
+                // The fraction form (`aspect-1/2` — the registry row's
+                // own shape, the lowering's `Val::Pct(n/d·100)`): the
+                // slot carries the RATIO the oracle answers, so the
+                // percent lands divided. The silent `_` drop this arm
+                // used to take (Pct fell through, the class "covered"
+                // by the registry yet nowhere in the walk) was the
+                // corpus-coverage battery's aspect miss.
+                Val::Pct(p) => style.extras.aspect_ratio = Some(p / 100.0),
                 _ => {}
             },
             Prop::Cursor => {
@@ -2426,12 +2434,22 @@ fn em_text(text: &str) -> Option<f32> {
 
 /// The baked-table → Oklab conversion (the audited parser; the
 /// differential tolerance covers the `/255` quantization step).
+///
+/// Allocation-free BY CONSTRUCTION (the `.tw()` walk's per-frame
+/// budget — the alloc-contract battery pins the colour walk at zero):
+/// the audited [`Color::from_srgb`] takes the `u8/255` channels
+/// DIRECTLY — the same numeric inputs, the same conversion the 8-digit
+/// hex arm of `Color::parse` feeds it (`u8::from_str_radix` →
+/// `f32::from(v) / 255.0`), so the answers are bit-identical to the
+/// hex-string round-trip this used to make (`format!` + the full
+/// parser: four heap events per colour per element per frame).
 fn oklab(rgba: [u8; 4]) -> Color {
-    let hex = format!(
-        "#{:02x}{:02x}{:02x}{:02x}",
-        rgba[0], rgba[1], rgba[2], rgba[3]
-    );
-    Color::parse(&hex).unwrap_or(Color::TRANSPARENT)
+    Color::from_srgb(
+        f32::from(rgba[0]) / 255.0,
+        f32::from(rgba[1]) / 255.0,
+        f32::from(rgba[2]) / 255.0,
+        f32::from(rgba[3]) / 255.0,
+    )
 }
 
 // ---------------------------------------------------------------------------
