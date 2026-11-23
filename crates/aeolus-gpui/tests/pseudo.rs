@@ -12,6 +12,7 @@ use gpui::rems;
 
 #[test]
 fn pseudo_layers_stay_out_of_the_element_cascade() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("before:p-4");
     let style = gpui::StyleRefinement::default().tw(program);
     assert_eq!(
@@ -22,6 +23,7 @@ fn pseudo_layers_stay_out_of_the_element_cascade() {
 
 #[test]
 fn the_base_cascade_answers_beside_an_excluded_pseudo_layer() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("p-8 before:p-4");
     let style = gpui::StyleRefinement::default().tw(program);
     assert_eq!(
@@ -33,6 +35,7 @@ fn the_base_cascade_answers_beside_an_excluded_pseudo_layer() {
 
 #[test]
 fn every_pseudo_spelling_stays_excluded() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // `tw!` freezes a string literal — one call per spelling (the
     // closed set walked, the walk's exclusion answer pinned each time).
     for style in [
