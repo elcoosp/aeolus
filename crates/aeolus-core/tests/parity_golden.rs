@@ -74,7 +74,7 @@ fn v0_flag(theme: &str, class: &str) -> Option<bool> {
     const ARTIFACT: &str = include_str!("../../../tools/expansion_corpus.json");
     // The needle pins the whole record head; a collision would need a class
     // string carrying `","d":` — impossible, class strings carry no quotes.
-    let needle = format!("{{\"cls\":\"{}\",\"d\":", class);
+    let needle = format!("{{\"cls\":\"{class}\",\"d\":");
     let start = ARTIFACT.find(&needle)?;
     let tail = &ARTIFACT[start + needle.len()..];
     let end = tail.find('}')?;
@@ -902,7 +902,7 @@ fn unescape_selector(sel: &str) -> String {
         }
         // `\HHH ` — up to six hex digits, one whitespace terminator.
         let mut hex = String::new();
-        while hex.len() < 6 && chars.peek().is_some_and(|ch| ch.is_ascii_hexdigit()) {
+        while hex.len() < 6 && chars.peek().is_some_and(char::is_ascii_hexdigit) {
             hex.push(chars.next().unwrap());
         }
         if hex.is_empty() {
