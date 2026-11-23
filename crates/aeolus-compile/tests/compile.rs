@@ -22,7 +22,7 @@
 //! Written FIRST (the RED spec): the suite fails against a stub crate
 //! and passes only once `compile()` satisfies every pin below.
 
-use aeolus_compile::{CompileError, Config, DiagnosticKind, Spacing, compile};
+use aeolus_compile::{CompileError, Config, DiagnosticKind, Spacing, compile, emit_css};
 use aeolus_data::tables;
 use aeolus_ir::{Bp, Cond, Decl, Program, Prop, PropMask, Val};
 
@@ -441,18 +441,62 @@ fn unsupported_variants_are_typed_and_skip_the_utility() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn importance_is_a_typed_boundary() {
+fn important_lowers_with_the_cascade_origin() {
+    // The wave-2 important grammar (the v4.1.17 trailing-`!` spelling
+    // the lexer marks): the candidate lowers with the author-important
+    // origin — its OWN layer (the origin is per-candidate), sorted
+    // AFTER the same-specificity normal siblings; the CSS arm renders
+    // the ` !important` suffix the real tailwind output pins.
     let compiled = compile("p-4!", &Config::default()).expect("compiles");
-    assert_eq!(compiled.diagnostics.len(), 1);
-    assert_eq!(
-        compiled.diagnostics[0].kind,
-        DiagnosticKind::UnsupportedImportant
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "the important candidate lowers clean: {:?}",
+        compiled.diagnostics
     );
-    assert_eq!(
-        compiled.diagnostics[0].kind.code(),
-        "aeolus::compile::unsupported_important"
+    let important = compiled
+        .program
+        .layers
+        .iter()
+        .find(|layer| layer.important)
+        .expect("the important layer assembled");
+    assert_eq!(important.cond, Cond::Base);
+    assert!(
+        important
+            .decls
+            .iter()
+            .any(|decl| decl.prop == Prop::PaddingTop),
+        "the important fan-out lowered"
     );
-    assert!(compiled.program.layers.is_empty(), "nothing lowered");
+    // The origin wins the read: a normal padding override AFTER the
+    // important candidate in source order still loses (the CSS
+    // cascade's own origin order — important beats normal).
+    let composed = compile("p-4! px-8", &Config::default()).expect("compiles");
+    let winner = composed
+        .program
+        .layers
+        .iter()
+        .rev()
+        .find(|layer| layer.mask.contains(Prop::PaddingLeft))
+        .expect("a padding-left winner exists");
+    assert!(
+        winner.important,
+        "the important origin wins the front-to-back read"
+    );
+}
+
+#[test]
+fn css_renders_the_important_suffix() {
+    let sheet = emit_css("p-4!", &Config::default()).expect("renders");
+    assert_eq!(sheet.rules.len(), 1);
+    assert!(
+        sheet.rules[0]
+            .body
+            .lines()
+            .all(|line| line.ends_with(" !important;")),
+        "every declaration carries the suffix: {:?}",
+        sheet.rules[0].body
+    );
+    assert_eq!(sheet.diagnostics.len(), 0);
 }
 
 #[test]
