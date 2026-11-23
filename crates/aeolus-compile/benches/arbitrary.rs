@@ -85,3 +85,22 @@ fn compile_button(bencher: Bencher) {
             .expect("non-empty input compiles");
     });
 }
+
+/// The bare arbitrary-PROPERTY battery — the appended `Prop::Arbitrary`
+/// arm's own cost: the property declarations (a plain property, a
+/// custom property, a variant-composed one) through the same walk the
+/// value grammar rides (the intern + underscore decode on the bare
+/// form, one declaration each).
+const PROPERTY_CLASSES: &str = "[mask-type:luminance] [--brand:red] [--tw-x:1px_2px] \
+     hover:[mask-type:luminance] focus:[--tw-y:var(--brand)]";
+
+/// The property declarations' compile cost — the grammar's newest
+/// class shape, priced beside the value grammar's own floors.
+#[divan::bench]
+fn compile_arbitrary_properties(bencher: Bencher) {
+    let tokens = table();
+    bencher.bench(|| {
+        compile_theme(PROPERTY_CLASSES, &tokens, &Config::default())
+            .expect("non-empty input compiles")
+    });
+}
