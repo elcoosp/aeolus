@@ -15,6 +15,7 @@
 use aeolus_gpui::prelude::*;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The dashboard-shell surface: a 12-column grid whose main pane
     // starts at column 2, ends at column 9 (a line placement pair),
     // spans two rows (the SPAN fingerprint — one class fanning onto
