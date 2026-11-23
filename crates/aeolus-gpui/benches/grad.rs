@@ -10,6 +10,7 @@ use aeolus_gpui::prelude::*;
 
 #[divan::bench]
 fn grad_walk(bencher: Bencher) {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The banner corpus: direction, from stop, position patch, to stop
     // — the whole gradient family in one walk.
     let program = tw!("bg-linear-to-r from-red-500 from-20% to-blue-500 bg-primary");
@@ -44,6 +45,7 @@ fn grad_via_walk(bencher: Bencher) {
     // composing NOTHING (never a flattened misreading) — the
     // recorded-state cost beside the two-stop compose above.
     use aeolus_rt::ClassCell;
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let cell = ClassCell::new();
     let program = cell
         .get(
