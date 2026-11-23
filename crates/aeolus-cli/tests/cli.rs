@@ -1028,10 +1028,15 @@ fn plan_fail_on_maps_the_typed_codes() {
     );
     let (code, _, _) = run_cmd(&["plan", "--fail-on", "none", "bg-notacolor"]);
     assert_eq!(code, 0, "default-off: the artifact still emitted");
-    let (code, _, _) = run_cmd(&["plan", "--fail-on", "any", "!p-4"]);
+    // The important-flag spelling used to ride this pin as a refusal;
+    // the 2026-11-23 important wave landed `!p-4`/`p-4!` as a real
+    // feature (the author-important layer origin), so the finding now
+    // rides the STANDING boundary the README keeps: the
+    // arbitrary-property form stays a typed refusal.
+    let (code, _, _) = run_cmd(&["plan", "--fail-on", "any", "bg-[mask-type:luminance]"]);
     assert_eq!(
         code, 1,
-        "the important-flag refusal is a finding under --fail-on any"
+        "the arbitrary-property refusal is a finding under --fail-on any"
     );
 }
 
