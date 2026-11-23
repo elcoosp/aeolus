@@ -87,23 +87,18 @@ fn every_button_combo_is_byte_identical_across_both_paths() {
         for (si, size) in sizes.iter().enumerate() {
             let runtime_program = runtime.program(*variant, *size);
             let static_program = Button::style(static_variants[vi], static_sizes[si]);
-            // The static arm pins the CONCATENATION lower (the macro
-            // grammar's arm assembly) — byte-identical to a fresh
-            // compile of the joined string.
-            let joined = format!(
-                "{} {} {}",
-                aeolus_shadcn::classes::BUTTON_BASE,
-                variant.classes(),
-                size.classes()
-            );
-            let oracle = concat_bytes(&joined, &tokens);
+            // THE merged-arm pin: the static arm freezes the SAME cn()-merge
+            // composition the runtime handle's cn-merge lane runs (the
+            // macro's expansion-time `cn()` over the arm's pieces) —
+            // byte-identical to the RefCell path's interned program,
+            // keyword slices included.
             assert_eq!(
                 aeolus_compile::emit_static(&static_program.program()),
-                aeolus_compile::emit_static(&oracle.program()),
-                "the static arm must be byte-identical to the concatenation compile ({variant:?}/{size:?})"
+                aeolus_compile::emit_static(&runtime_program.program()),
+                "the static arm must be byte-identical to the RefCell path's merged program ({variant:?}/{size:?})"
             );
             assert_eq!(
-                static_program.keywords, oracle.keywords,
+                static_program.keywords, runtime_program.keywords,
                 "the keyword row texts ride beside the layers ({variant:?}/{size:?})"
             );
             // The runtime handle stays byte-identical to ITS own fresh
@@ -151,18 +146,18 @@ fn every_badge_combo_is_byte_identical_across_both_paths() {
     for (variant, static_variant) in pairs {
         let runtime_program = runtime.program(variant);
         let static_program = Badge::style(static_variant);
-        let joined = format!(
-            "{} {}",
-            aeolus_shadcn::classes::BADGE_BASE,
-            variant.classes()
-        );
-        let oracle = concat_bytes(&joined, &tokens);
+        // THE merged-arm pin: the static arm freezes the RefCell path's
+        // cn()-merged program (the expansion-time `cn()` over the arm's
+        // pieces), keyword slices included.
         assert_eq!(
             aeolus_compile::emit_static(&static_program.program()),
-            aeolus_compile::emit_static(&oracle.program()),
-            "badge {variant:?}: the static arm must be byte-identical to the concatenation compile"
+            aeolus_compile::emit_static(&runtime_program.program()),
+            "badge {variant:?}: the static arm must be byte-identical to the RefCell path's merged program"
         );
-        let _ = runtime_program;
+        assert_eq!(
+            static_program.keywords, runtime_program.keywords,
+            "badge {variant:?}: the keyword row texts ride beside the layers"
+        );
     }
 }
 
@@ -183,18 +178,18 @@ fn every_alert_combo_is_byte_identical_across_both_paths() {
     for (variant, static_variant) in pairs {
         let runtime_program = runtime.program(variant);
         let static_program = Alert::style(static_variant);
-        let joined = format!(
-            "{} {}",
-            aeolus_shadcn::classes::ALERT_BASE,
-            variant.classes()
-        );
-        let oracle = concat_bytes(&joined, &tokens);
+        // THE merged-arm pin: the static arm freezes the RefCell path's
+        // cn()-merged program (the expansion-time `cn()` over the arm's
+        // pieces), keyword slices included.
         assert_eq!(
             aeolus_compile::emit_static(&static_program.program()),
-            aeolus_compile::emit_static(&oracle.program()),
-            "alert {variant:?}: the static arm must be byte-identical to the concatenation compile"
+            aeolus_compile::emit_static(&runtime_program.program()),
+            "alert {variant:?}: the static arm must be byte-identical to the RefCell path's merged program"
         );
-        let _ = runtime_program;
+        assert_eq!(
+            static_program.keywords, runtime_program.keywords,
+            "alert {variant:?}: the keyword row texts ride beside the layers"
+        );
     }
 }
 
