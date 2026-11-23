@@ -25,5 +25,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y valgrind
       - name: Run the instruction-count golden
         run: |
-          cargo +nightly bench -p aeolus-gpui --bench iai_contract \
+          cargo +nightly bench -p aeolus-gpui --features iai --bench iai_contract \
             -- --save-baseline iai-contract
