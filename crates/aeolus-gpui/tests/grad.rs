@@ -20,6 +20,7 @@ use aeolus_gpui::prelude::*;
 /// angle first (GPUI's convention: 0° = to top, clockwise, the CSS
 /// convention).
 fn gradient_debug(program: StaticProgram) -> String {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let style = gpui::StyleRefinement::default().tw(program);
     let Some(gpui::Fill::Color(background)) = style.background else {
         panic!("the gradient paints a background fill");
@@ -100,6 +101,7 @@ fn the_stop_positions_ride_the_stops() {
 
 #[test]
 fn bg_none_never_paints_a_gradient() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("bg-none");
     let style = gpui::StyleRefinement::default().tw(program);
     assert!(
