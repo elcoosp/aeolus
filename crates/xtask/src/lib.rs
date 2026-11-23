@@ -170,8 +170,8 @@ fn corpus_scale(capability: &impl Capability) -> CorpusScale {
 /// The corpus-at-scale line the six conformance pages render under the
 /// per-longhand ceiling table: the EXPANDED corpus's entry-level
 /// expressibility for the backend (the §5.1 "at scale" measure). The
-/// ceiling score above stays the per-longhand share over the 159
-/// longhands — the two numbers answer different questions (can the
+/// ceiling score above stays the per-longhand share over the
+/// longhand list — the two numbers answer different questions (can the
 /// backend carry a longhand at all; can it carry a real class fully).
 fn corpus_scale_section(capability: &impl Capability) -> String {
     let scale = corpus_scale(capability);
