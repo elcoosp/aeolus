@@ -310,10 +310,13 @@ fn baked_literal_alpha_renders_the_premultiplied_bake() {
 
 #[test]
 fn boundaries_ride_the_sheet_diagnostics() {
-    let sheet = emit_css("p-red not-a-utility has-[x]:p-4 !p-4", &Config::default())
+    // (The `!p-4` leg left this battery with the wave-2 important
+    // grammar — the candidate lowers with the cascade origin now; the
+    // compile crate's `css_renders_the_important_suffix` pins it.)
+    let sheet = emit_css("p-red not-a-utility has-[x]:p-4", &Config::default())
         .expect("non-empty input renders");
     assert!(sheet.rules.is_empty(), "nothing lowered: {:?}", sheet.rules);
-    assert_eq!(sheet.diagnostics.len(), 4, "{:?}", sheet.diagnostics);
+    assert_eq!(sheet.diagnostics.len(), 3, "{:?}", sheet.diagnostics);
     let codes: Vec<&str> = sheet.diagnostics.iter().map(|d| d.kind.code()).collect();
     assert_eq!(
         codes,
@@ -321,7 +324,6 @@ fn boundaries_ride_the_sheet_diagnostics() {
             "aeolus::compile::shape_rejected",
             "aeolus::compile::unknown_root",
             "aeolus::compile::unsupported_variant",
-            "aeolus::compile::unsupported_important",
         ]
     );
     // The help texts stay actionable (the linter renders them).
