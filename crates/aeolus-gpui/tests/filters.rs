@@ -55,6 +55,7 @@ fn program(classes: &str) -> StaticProgram {
 }
 
 fn background_of(classes: &str) -> gpui::Background {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let style = gpui::StyleRefinement::default().tw(program(classes));
     let Some(gpui::Fill::Color(background)) = style.background else {
         panic!("the solid background reaches the refinement: {classes}");
@@ -147,6 +148,7 @@ fn the_chain_composes_in_the_var_canonical_order() {
 
 #[test]
 fn the_text_and_border_slots_recolour_alongside_the_background() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The chain recolours EVERY colour the walk composes — the text
     // colour (Prop::Color) and the border colour ride the same
     // matrices (CSS filters apply to the element's rendered paint).
@@ -162,6 +164,7 @@ fn the_text_and_border_slots_recolour_alongside_the_background() {
 
 #[test]
 fn drop_shadow_presets_compose_onto_the_box_shadow_list() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // drop-shadow-md: `drop-shadow(0 3px 3px rgb(0 0 0 / 0.12))` — the
     // offset/blur tokens land on GPUI's own band (no spread, not
     // inset), the alpha byte the audited text's rounding (0.12·255 =
@@ -178,6 +181,7 @@ fn drop_shadow_presets_compose_onto_the_box_shadow_list() {
 
 #[test]
 fn bare_drop_shadow_composes_its_two_default_bands() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The bare `drop-shadow` utility: v4's `--drop-shadow` token is the
     // TWO-band composition (0 1px 2px 0.1, 0 1px 1px 0.06) — both
     // bands land, in the token's own order.
@@ -192,6 +196,7 @@ fn bare_drop_shadow_composes_its_two_default_bands() {
 
 #[test]
 fn drop_shadow_bands_ride_beside_the_shadow_presets() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The shadow tier's preset bands and the filter's drop-shadow
     // bands compose into ONE list — the shadow bands first (the
     // `--tw-shadow` machinery), the drop-shadow bands after. The
@@ -212,6 +217,7 @@ fn drop_shadow_bands_ride_beside_the_shadow_presets() {
 
 #[test]
 fn the_matrix_recolours_the_composed_shadow_and_ring_bands() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // CSS filters recolour the element's painted shadows too: the
     // shadow tier's recolour lands red-500, the matrix grays it
     // (89, 89, 89). The ring band (spread-only) rides the same read.
@@ -227,6 +233,7 @@ fn the_matrix_recolours_the_composed_shadow_and_ring_bands() {
 
 #[test]
 fn the_matrix_recolours_the_gradient_stops() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The gradient's stops are the element's paint: from-red-500 grays
     // to the luminance row, to-white stays white (the luminance row
     // maps white to white). The composed Background compares EQUAL to
@@ -247,6 +254,7 @@ fn the_matrix_recolours_the_gradient_stops() {
 
 #[test]
 fn the_reset_arm_clears_the_chain_and_the_bare_root_redeclares_it() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // `filter-none` is the reset the cascade reads — the bake rides
     // unfiltered, the way v4's own cascade reads the reset after the
     // primitives.
@@ -278,6 +286,7 @@ fn the_reset_arm_clears_the_chain_and_the_bare_root_redeclares_it() {
 
 #[test]
 fn the_spatial_and_backdrop_halves_stay_the_documented_skip() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The walk skips the spatial and backdrop longhands (the static
     // gate refuses them typed; a cell-compiled program reaching the
     // walk degrades to the skip, never a wrong paint): the bake rides
@@ -337,6 +346,7 @@ fn the_unit_surface_composes_the_chain_alone() {
 
 #[test]
 fn the_empty_chain_is_an_identity() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // No filter class in the program: the walk composes NOTHING new —
     // the refinement equals the one the pre-filter walk produced (the
     // empty-registration byte-identity the custom seam pins, on this
