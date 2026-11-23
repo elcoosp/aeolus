@@ -1691,6 +1691,32 @@ pub(crate) fn decide(
         | Cond::FileSelector
         | Cond::Backdrop
         | Cond::DetailsContent => Fire::Note(InterpNote::PseudoElement { cond, props }),
+        // The negation grammar inverts the INNER's answer — the payload
+        // re-classifies through the same closed table the fold used (one
+        // grammar, two consumers; the fold validated the inner so the
+        // re-classify cannot miss). A Yes turns No, a No turns Yes (the
+        // CSS `:not(X)` semantics), and an UNQUERIED inner stays
+        // unqueried: not knowing whether `[data-open]` holds, the
+        // negation cannot claim the complement either.
+        Cond::Not(inner) => {
+            let Some(folded) = crate::variant::classify_builtin(inner) else {
+                return Fire::No;
+            };
+            match decide(
+                folded,
+                env,
+                probes,
+                containers,
+                structs,
+                descendants,
+                supports,
+                props,
+            ) {
+                Fire::Yes => Fire::No,
+                Fire::No => Fire::Yes,
+                Fire::Note(note) => Fire::Note(note),
+            }
+        }
     }
 }
 
