@@ -24,6 +24,7 @@ use gpui::rems;
 
 #[test]
 fn the_first_child_facts_fire_the_first_layer() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("first:p-4");
     let facts = StructFacts::new(0, 3);
     let style = gpui::StyleRefinement::default().tw_struct(program, &facts);
@@ -32,6 +33,7 @@ fn the_first_child_facts_fire_the_first_layer() {
 
 #[test]
 fn a_middle_child_quietly_skips_the_first_layer() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("first:p-4");
     let facts = StructFacts::new(1, 3);
     let style = gpui::StyleRefinement::default().tw_struct(program, &facts);
@@ -40,6 +42,7 @@ fn a_middle_child_quietly_skips_the_first_layer() {
 
 #[test]
 fn the_odd_layer_follows_the_one_based_css_parity() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("odd:p-4");
     // Index 0: the FIRST child — `:nth-child(odd)` fires.
     let style = gpui::StyleRefinement::default().tw_struct(program, &StructFacts::new(0, 3));
@@ -51,6 +54,7 @@ fn the_odd_layer_follows_the_one_based_css_parity() {
 
 #[test]
 fn the_last_child_facts_fire_the_last_layer() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("last:p-4");
     let style = gpui::StyleRefinement::default().tw_struct(program, &StructFacts::new(2, 3));
     assert_eq!(style.padding.top, Some(rems(1.0).into()));
@@ -60,6 +64,7 @@ fn the_last_child_facts_fire_the_last_layer() {
 
 #[test]
 fn the_ordinal_is_one_based() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("nth-3:p-4");
     // Index 2 of 3: the third child.
     let style = gpui::StyleRefinement::default().tw_struct(program, &StructFacts::new(2, 3));
@@ -70,6 +75,7 @@ fn the_ordinal_is_one_based() {
 
 #[test]
 fn unknown_facts_are_a_quiet_miss_not_a_fire() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("first:p-4 empty:p-4");
     let style = gpui::StyleRefinement::default().tw_struct(program, &StructFacts::UNKNOWN);
     assert_eq!(
@@ -95,6 +101,7 @@ fn a_host_struct_probe_impl_answers_the_same_walk() {
             StructFacts::new(2, 5)
         }
     }
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("nth-3:p-4");
     let style = gpui::StyleRefinement::default().tw_struct(program, &ThirdOfFive);
     assert_eq!(style.padding.top, Some(rems(1.0).into()));
@@ -104,6 +111,7 @@ fn a_host_struct_probe_impl_answers_the_same_walk() {
 /// the DOM-position facts answer their own layers in one call.
 #[test]
 fn the_seams_compose_in_one_walk() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     let program = tw!("data-open:p-4 first:p-2");
     let bits = [AttrBit {
         kind: AttrKind::Data,
