@@ -743,6 +743,14 @@ const VERBATIM_UNSUPPORTED: &str = "GPUI's builder surface takes no composite va
      arbitrary forms (calc(), track lists, url()/image(), ratios) stay the CSS/interp \
      arms' output (the value pass's verbatim slot)";
 
+/// The arbitrary-PROPERTY declaration's per-decl refusal: the property
+/// name is the AUTHOR's (unbounded — no per-property slot can exist),
+/// so no GPUI builder surface carries it; the declaration stays the
+/// CSS/interp arms' verbatim output.
+const PROPERTY_UNSUPPORTED: &str = "GPUI has no slot for an author-defined property — the \
+     arbitrary-property declaration ([mask-type:luminance], [--brand:red]) stays the \
+     CSS/interp arms' output";
+
 /// The decoration family's per-decl refusals, the VAL's half (the
 /// thickness longhand's absolute-pixel slot: the keyword and
 /// rem/percent forms have no GPUI answer). `None` = expressible.
@@ -769,6 +777,12 @@ fn decoration_val_unsupported_reason(prop: Prop, val: Val) -> Option<&'static st
 /// gate first, the decoration family's val-dependent gate, the per-prop
 /// tiers ([`unsupported_reason`]) otherwise.
 fn decl_unsupported_reason(prop: Prop, val: Val, keyword: &str) -> Option<&'static str> {
+    // The property declaration's own arm first: the name is the
+    // author's, the refusal names the form (the composite reason would
+    // point at the value grammar, which did not run here).
+    if prop == Prop::Arbitrary {
+        return Some(PROPERTY_UNSUPPORTED);
+    }
     if matches!(val, Val::Verbatim(_)) {
         return Some(VERBATIM_UNSUPPORTED);
     }
@@ -980,6 +994,11 @@ pub fn unsupported_reason(prop: Prop, keyword: &str) -> Option<&'static str> {
             "GPUI has no clip-path slot — the sr-only composite's clip leg stays \
              the CSS/interp arms' output (the composite's other legs ride their \
              own longhands' verdicts)",
+        ),
+        Prop::Arbitrary => Some(
+            "GPUI has no slot for an author-defined property — the arbitrary-property \
+             declaration ([mask-type:luminance], [--brand:red]) stays the CSS/interp \
+             arms' output",
         ),
         _ => {
             if expressible(prop) {
