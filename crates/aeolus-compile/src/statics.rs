@@ -101,9 +101,18 @@ pub fn emit_static(program: &Program) -> String {
     // emitter is a build-time path, but the shape stays allocation-lean).
     let mut out = String::from("static PROGRAM: &[aeolus_ir::Layer] = &[\n");
     for layer in program.layers {
+        // The cascade origin freezes with the layer: the v4.1.17
+        // trailing-`!` grammar's important layers render through
+        // `Layer::important` (the same constructor the token emitters
+        // pick), the normal origin through `Layer::new`.
+        let ctor = if layer.important {
+            "aeolus_ir::Layer::important"
+        } else {
+            "aeolus_ir::Layer::new"
+        };
         let _ = write!(
             out,
-            "    aeolus_ir::Layer::new(\n        aeolus_ir::Cond::{:?},\n        &[",
+            "    {ctor}(\n        aeolus_ir::Cond::{:?},\n        &[",
             layer.cond
         );
         out.push('\n');
