@@ -266,11 +266,15 @@ fn selector_unsafe_payloads_refuse() {
 }
 
 #[test]
-fn compound_and_structural_has_inners_refuse() {
+fn compound_has_inners_refuse() {
     // The v0.x oracle's own boundary (`has_atom`): one simple test per
-    // has- inner — compound selectors and the structural family (no
-    // `first:` surface in the compile stage yet) stay typed refusals.
-    for input in ["has-[p:hover]:p-4", "has-[>svg]:p-4", "has-first:p-4"] {
+    // has- inner — compound selectors and the relative forms stay typed
+    // refusals. (The STRUCTURAL inners left this refusal set with the
+    // wave-2 has-grammar push: `has-first:` folds to the typed
+    // `*:first-child` fragment the real tailwind output renders —
+    // `structural_has_inners_fold` pins the fold and the rendered
+    // shape.)
+    for input in ["has-[p:hover]:p-4", "has-[>svg]:p-4"] {
         let compiled = compile(input, &Config::default()).expect("non-empty input compiles");
         assert!(
             compiled
@@ -278,6 +282,48 @@ fn compound_and_structural_has_inners_refuse() {
                 .iter()
                 .any(|d| matches!(d.kind, DiagnosticKind::UnsupportedVariant { .. })),
             "{input} refuses typed: {:?}",
+            compiled.diagnostics
+        );
+    }
+}
+
+#[test]
+fn structural_has_inners_fold() {
+    // The wave-2 has-grammar push: the bare positional forms fold to the
+    // typed descendant probe and the CSS arm renders the star-prefixed
+    // fragment the real tailwind v4.1.17 output pins
+    // (`&:has(*:first-child)` et al.). The parent-relative
+    // compositions (`group-has-first:`, `peer-has-last:`) ride the same
+    // grammar — the "parent-relative composition forms" the wave-2
+    // findings name.
+    for (input, fragment) in [
+        ("has-first:p-4", ":has(*:first-child)"),
+        ("has-last:p-4", ":has(*:last-child)"),
+        ("has-odd:p-4", ":has(*:nth-child(odd))"),
+        ("has-even:p-4", ":has(*:nth-child(even))"),
+        ("has-only:p-4", ":has(*:only-child)"),
+    ] {
+        let compiled = compile(input, &Config::default()).expect("compiles");
+        assert!(
+            compiled.diagnostics.is_empty(),
+            "{input} lowers clean: {:?}",
+            compiled.diagnostics
+        );
+        let sheet = emit_css(input, &Config::default()).expect("renders");
+        assert!(
+            sheet
+                .rules
+                .iter()
+                .any(|rule| rule.selector.contains(fragment)),
+            "{input} renders the {fragment} fragment: {:?}",
+            sheet.rules.iter().map(|r| &r.selector).collect::<Vec<_>>()
+        );
+    }
+    for input in ["group-has-first:p-4", "peer-has-last:p-4"] {
+        let compiled = compile(input, &Config::default()).expect("compiles");
+        assert!(
+            compiled.diagnostics.is_empty(),
+            "{input} lowers clean: {:?}",
             compiled.diagnostics
         );
     }
