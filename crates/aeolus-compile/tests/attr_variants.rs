@@ -52,6 +52,13 @@ use aeolus_compile::{
 use aeolus_ir::{Cond, Prop, Val};
 use aeolus_theme::{ThemeSource, TokenTable};
 
+/// The interning the fold rides: the expected fragment leaks into the
+/// same pool the conditions borrow from, so the payload comparison is
+/// like against like (`&'static str` equality).
+fn fragment(text: &str) -> &'static str {
+    Box::leak(text.to_string().into_boxed_str())
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -168,13 +175,21 @@ fn has_named_state_folds_to_the_star_prefixed_fragment() {
 }
 
 #[test]
-fn has_bracketed_state_folds_like_the_named_spelling() {
-    // The v0.x oracle's `has_atom`: the bracketed state form strips to
-    // the same state test (`has-[:focus]` ≡ `has-focus`).
+fn the_bracketed_state_inner_is_the_selector_grammar() {
+    // The REAL v4.1.17 renderings (the probe run pins the bytes): the
+    // named form reads the state table (`has-focus` → `*:focus`, the
+    // corpus's own bytes), the ARBITRARY bracketed inner is selector
+    // text (`has-[:focus]` → `*:is(:focus)`) — the two spellings are
+    // DIFFERENT conditions, each its own real fragment.
+    assert_eq!(
+        one_cond("has-focus:p-4"),
+        Cond::Has("*:focus"),
+        "the named form keeps the corpus's star fragment"
+    );
     assert_eq!(
         one_cond("has-[:focus]:p-4"),
-        one_cond("has-focus:p-4"),
-        "the bracketed and named state spellings are one condition"
+        Cond::Has("*:is(:focus)"),
+        "the bracketed inner wraps the star :is() form"
     );
 }
 
@@ -266,25 +281,107 @@ fn selector_unsafe_payloads_refuse() {
 }
 
 #[test]
-fn compound_has_inners_refuse() {
-    // The v0.x oracle's own boundary (`has_atom`): one simple test per
-    // has- inner — compound selectors and the relative forms stay typed
-    // refusals. (The STRUCTURAL inners left this refusal set with the
-    // wave-2 has-grammar push: `has-first:` folds to the typed
-    // `*:first-child` fragment the real tailwind output renders —
-    // `structural_has_inners_fold` pins the fold and the rendered
-    // shape.)
-    for input in ["has-[p:hover]:p-4", "has-[>svg]:p-4"] {
+fn arbitrary_has_inners_fold_to_the_real_renderings() {
+    // The v4.1.17 arbitrary has- inner grammar (the REAL compiler's own
+    // output pins every rendering — the probe run, the corpus method):
+    // a leading combinator rides VERBATIM (`has-[>svg]` renders
+    // `&:has(>svg)` — the shadcn Button table's own class), every other
+    // selector inner wraps the star form `*:is(<inner>)`
+    // (`has-[li]` → `&:has(*:is(li))`, `has-[p:hover]` →
+    // `&:has(*:is(p:hover))`, the `.item`/`#app` spellings alike), and
+    // the underscore decodes to the space the arbitrary-variant
+    // grammar carries. The named/bare state, structural, data and aria
+    // inners keep their corpus-pinned fragments (the arms above this
+    // one in the fold).
+    let cases: &[(&str, &str)] = &[
+        ("has-[>svg]:p-4", ">svg"),
+        ("has-[+p]:p-4", "+p"),
+        ("has-[~span]:p-4", "~span"),
+        ("has-[li]:p-4", "*:is(li)"),
+        ("has-[p:hover]:p-4", "*:is(p:hover)"),
+        ("has-[.item]:p-4", "*:is(.item)"),
+        ("has-[#app]:p-4", "*:is(#app)"),
+        ("has-[.my_item]:p-4", "*:is(.my item)"),
+    ];
+    for (input, expected) in cases {
         let compiled = compile(input, &Config::default()).expect("non-empty input compiles");
         assert!(
-            compiled
-                .diagnostics
-                .iter()
-                .any(|d| matches!(d.kind, DiagnosticKind::UnsupportedVariant { .. })),
-            "{input} refuses typed: {:?}",
+            compiled.diagnostics.is_empty(),
+            "{input} lowers clean: {:?}",
             compiled.diagnostics
         );
+        let layer = compiled
+            .program
+            .layers
+            .iter()
+            .find(|layer| layer.cond != aeolus_ir::Cond::Base)
+            .expect("the has layer exists");
+        assert_eq!(
+            layer.cond,
+            aeolus_ir::Cond::Has(fragment(expected)),
+            "{input} renders the real fragment"
+        );
     }
+}
+
+#[test]
+fn the_parent_relative_has_forms_carry_the_combinator_inner() {
+    // `group-has-[>svg]:` and `peer-has-[>svg]:` fold to the same
+    // probe with the label machinery composing the head — the real
+    // output renders `:is(:where(.group):has(>svg) *)` /
+    // `:is(:where(.peer):has(>svg) ~ *)`, the fragment riding the
+    // probe verbatim.
+    for (input, cond_of) in [
+        ("group-has-[>svg]:p-4", 0usize),
+        ("peer-has-[>svg]:p-4", 1usize),
+    ] {
+        let compiled = compile(input, &Config::default()).expect("non-empty input compiles");
+        assert!(
+            compiled.diagnostics.is_empty(),
+            "{input} lowers clean: {:?}",
+            compiled.diagnostics
+        );
+        let layer = compiled
+            .program
+            .layers
+            .iter()
+            .find(|layer| layer.cond != aeolus_ir::Cond::Base)
+            .expect("the has layer exists");
+        let expected = if cond_of == 0 {
+            aeolus_ir::Cond::GroupHas(fragment(">svg"))
+        } else {
+            aeolus_ir::Cond::PeerHas(fragment(">svg"))
+        };
+        assert_eq!(layer.cond, expected, "{input} carries the fragment");
+    }
+}
+
+#[test]
+fn the_css_arm_renders_the_combinator_has_inner() {
+    // The rendered selector is the real compiler's own bytes:
+    // `&:has(>svg)`.
+    let sheet = emit_css("has-[>svg]:p-4", &Config::default()).expect("compiles");
+    let text = format!("{sheet}");
+    assert!(text.contains(":has(>svg)"), "{text}");
+}
+
+#[test]
+fn unknown_has_inners_still_refuse_typed() {
+    // The fold stays a CLOSED grammar: an at-rule inner is not a
+    // :has()-able selector (the real compiler emits no rule for the
+    // class) — the typed unsupported-variant miss, never a silent
+    // guess. (The deep compound selector inner folds — the
+    // `*:is(...)` wrap carries it; the probe run pins it.)
+    let compiled =
+        compile("has-[@media(print)]:p-4", &Config::default()).expect("non-empty input compiles");
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|d| matches!(d.kind, DiagnosticKind::UnsupportedVariant { .. })),
+        "the at-rule inner refuses typed: {:?}",
+        compiled.diagnostics
+    );
 }
 
 #[test]
@@ -330,14 +427,29 @@ fn structural_has_inners_fold() {
 }
 
 #[test]
-fn unknown_bare_has_inner_refuses() {
-    // `has-[x]` was the 0.16.0 refusal pin and STAYS one: a bare inner
-    // that names no state and no data-/aria- compound is not a probe.
+fn unknown_bare_has_inner_folds_the_selector_grammar() {
+    // `has-[x]` was the 0.16.0 refusal pin; the arbitrary-inner grammar
+    // (the real v4.1.17 renderings, the probe run) folds it as the
+    // selector text it is: `&:has(*:is(x))`.
     let compiled = compile("has-[x]:p-4", &Config::default()).expect("compiles");
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    assert_eq!(one_cond("has-[x]:p-4"), Cond::Has("*:is(x)"));
+}
+
+#[test]
+fn unknown_bare_nonbracket_has_inner_refuses() {
+    // The BARE spelling stays the closed grammar: an inner that names
+    // no state and no data-/aria- compound is not a probe form (the
+    // real compiler emits no rule for `has-x` either).
+    let compiled = compile("has-bogus-inner:p-4", &Config::default()).expect("compiles");
     assert_eq!(
         compiled.diagnostics[0].kind,
         DiagnosticKind::UnsupportedVariant {
-            variant: "has-[x]".to_string()
+            variant: "has-bogus-inner".to_string()
         }
     );
 }
@@ -703,13 +815,19 @@ fn css_renders_the_group_has_head_forms() {
 }
 
 #[test]
-fn group_has_compound_inner_refuses_typed() {
+fn group_has_compound_inner_folds_the_selector_grammar() {
+    // The arbitrary bracketed inner rides the parent-relative probe the
+    // same way the element-own form does: the fragment wraps
+    // `*:is(p:hover)`, the label machinery composes the head.
     let compiled = compile("group-has-[p:hover]:p-4", &Config::default()).expect("compiles");
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
     assert_eq!(
-        compiled.diagnostics[0].kind,
-        DiagnosticKind::UnsupportedVariant {
-            variant: "group-has-[p:hover]".to_string()
-        }
+        one_cond("group-has-[p:hover]:p-4"),
+        Cond::GroupHas("*:is(p:hover)")
     );
 }
 
