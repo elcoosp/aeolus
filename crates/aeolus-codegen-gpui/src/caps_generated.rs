@@ -171,4 +171,5 @@ pub static PROP_CAPABILITIES: &[PropCapability] = &[
     PropCapability { prop: Prop::DivideY, tier: Tier::Polyfill, reason: "" },
     PropCapability { prop: Prop::DivideColor, tier: Tier::Polyfill, reason: "" },
     PropCapability { prop: Prop::ClipPath, tier: Tier::Refused, reason: "GPUI has no clip-path slot — the sr-only composite's clip leg stays the CSS/interp arms' output (the composite's other legs ride their own longhands' verdicts)" },
+    PropCapability { prop: Prop::Arbitrary, tier: Tier::Refused, reason: "GPUI has no slot for an author-defined property — the arbitrary-property declaration ([mask-type:luminance], [--brand:red]) stays the CSS/interp arms' output" },
 ];
