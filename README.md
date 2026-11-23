@@ -104,6 +104,13 @@ let program = tw_static!(theme: "themes/app.css", "bg-primary text-primary-foreg
 Closed-world components compile to dispatch tables — shadcn's class tables keep their web vocabulary
 (the GPUI-gated `variants!`, or `variants_static!` on the five interpreter backends):
 
+The expansion's emit shape is a project knob (architecture plan §4's code-size line): an `aeolus.toml`
+beside your crate's manifest selects `profile = "speed"` (the inline reference emit — the call site's
+direct `StaticProgram::new` construction) or `profile = "size"` (the outlined emit — one
+`StaticProgramBuilder::assemble` call over `static` slices, the ICF-friendly shape and the shipped
+default; no file answers it). Both faces freeze byte-identical runtime content — the knob picks the
+EXPANSION shape; a mis-set value is a compile error naming the file.
+
 ```rust,ignore
 variants_static! { pub Button {
     base:    "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium",
@@ -318,6 +325,9 @@ Pay only for the dynamism you use. The `theme:` ARGUMENT bakes T0/T1 at expansio
 ## Variants & state
 
 `Env` is a `Copy` struct of frame facts written once per frame (`AeolusRoot`) — one TLS read, no locks.
+The read carries the plan §3.5 note's own debug-assert: a thread where neither `begin_frame` nor the
+explicit `set_env` escape hatch has run refuses in debug builds (the resting default's dark/viewport
+answers would ride silently); release builds compile the assert out — the TLS load is unchanged.
 
 | Family                                                     | V1 mapping                                                            | Status                                                        |
 | ---------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------- |
@@ -420,7 +430,7 @@ differential oracle — no big-bang migration.
 
 | Phase                   | Scope                                                                                                                                             | Status                         |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| **P0** Prove it         | iai/criterion gates vs hand-written builders; replace §4 targets                                                                                  | ✅ the stable half landed 2026-11 — `benches/perf_contract` (the walk beside the hand-written chains, parity-pinned; walk 1.07 µs vs hand 84 ns on the button string, clone 70 ns, cell warm 908 ns) — the iai-callgrind instruction-count golden is the planned nightly half (not yet in-tree: no iai-callgrind dependency rides the workspace) |
+| **P0** Prove it         | iai/criterion gates vs hand-written builders; replace §4 targets                                                                                  | ✅ the stable half landed 2026-11 — `benches/perf_contract` (the walk beside the hand-written chains, parity-pinned; walk 1.07 µs vs hand 84 ns on the button string, clone 70 ns, cell warm 908 ns) — and the nightly half is in-tree: `benches/iai_contract` (the iai-callgrind instruction-count golden, `iai`-feature-gated) runs on the `iai-nightly` workflow (nightly + valgrind, no stable CI job — the flag the golden keeps) |
 | **P1** Data-driven core | `aeolus-syntax` · `aeolus-data` (247 rows) · `aeolus-ir` (159 longhands)                                                                          | ✅ landed                      |
 | **P2** Full pipeline    | compile + theme passes, IR `cn()`, **all five emit arms**, customs, `DynCache`, arbitrary values, attribute fold, xtask generator                 | ✅ landed                      |
 | **P3** GPUI static      | `aeolus-codegen(-gpui)`, reworked `aeolus-macro`, `aeolus-rt`, `aeolus-gpui`; `ClassCell` dynamic lane; ring polyfill; shadow tier (`shadow-*` → GPUI's own `Vec<BoxShadow>`) | ✅ landed                      |
