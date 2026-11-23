@@ -379,9 +379,9 @@ aeolus resolve "p-4 bg-primary" | jq .                # plan snapshot · css · 
   `compile ⇒ interpret == emit` target rides the V1 pipeline since 2026-11), `/opacity`
   identity property test, the deterministic metamorphic battery (`tests/metamorphic.rs`).
 - **Allocation contract:** counting-allocator tests pin the hot path (`diff` of equal plans:
-  **zero** allocations). Workspace battery: 1819 tests green in the core set with all features (2026-11,
-  the folding-face handoff's honest sum — `cargo test --workspace --all-features`; the
-  folding face's and the workspace pull's two batteries beside the standing pins).
+  **zero** allocations). Workspace battery: 2404 tests green with all features (2026-11,
+  the reconciliation handoff's honest sum — `cargo test --workspace --all-features`; the
+  conformance pages' regeneration and the LSP wire-key pin beside the standing batteries).
 
 | Metric                                 | v0.x — *measured*¹          | V1 — *target*²                                       |
 | -------------------------------------- | --------------------------- | ---------------------------------------------------- |
@@ -444,7 +444,7 @@ differential oracle — no big-bang migration.
 
 | Crate            | Role                                                                                                                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `aeolus-syntax`  | zero-copy lexer: borrowed candidates + spans (std build today; `no_std + alloc` capable per the architecture plan)      |
+| `aeolus-syntax`  | zero-copy lexer: borrowed candidates + spans (`#![no_std]` + `extern crate alloc` — the §3.2 note delivered 2026-11; CI's `no-std-syntax` job gates the thumbv6m build)      |
 | `aeolus-data`    | the registry as data: 247 audited rows → generated roots index, docs, sort order                                       |
 | `aeolus-ir`      | `Copy` longhand IR: `Prop`/`Val`/`Decl`/`Layer`/`Program` + `PropMask` bitset algebra                                  |
 | `aeolus-theme`   | CSS-first `ThemeSource` → tiered `TokenTable`s; `@source` directives                                                   |
@@ -481,6 +481,7 @@ cargo run -p aeolus-compile --example compile_pipeline  # lex → registry → l
 cargo run -p aeolus-compile --example theme_seam        # tiers + the /opacity identity
 cargo run -p aeolus-compile --example project_build     # scan → dedupe → whole-project stylesheet
 cargo run -p aeolus-rt --example class_cell             # the dynamic lane: hit/miss counters, honest degradation
+cargo run -p aeolus-rt --example alloc_contract         # the walk's allocation contract: the counting-allocator read-out
 cargo run -p aeolus-compile --example dyn_store         # the DynStore storage seam: a host's own bounded store
 cargo run -p aeolus-compile --example walk_observer     # the walk face: the stage events, the byte-neutral twin
 cargo run -p aeolus-theme --example theme_observer      # the theme-resolution face: tier arms + typed misses streamed
@@ -569,6 +570,7 @@ cargo run -p aeolus-cli --example audit                 # the capability-audit f
 cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capability gate
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
+cargo run -p aeolus-syntax --example no_std_face  # the no_std face: the lexer a no_std host links, borrowed end to end
 cargo run -p aeolus-macro --example frozen_program
 cargo run -p aeolus-macro --example themed_program  # the `theme:` bake: T0/T1 literals at expansion, the include_str! rebuild anchor  # what a tw! expansion actually emits
 cargo run -p aeolus-macro --example variants        # variants!/tw_cn!/theme!: the cva tables + the baked theme
@@ -584,6 +586,7 @@ cargo run -p aeolus-core --example cn_merge
 cargo run -p aeolus-core --example gamut  # the CSS Color 4 chroma reduction beside the clamp oracle
 # V1 compiler
 cargo run -p aeolus-syntax --example lex_candidates
+cargo run -p aeolus-syntax --example no_std_face  # the no_std host's face: borrowed candidates, typed misses, the one alloc-bearing read
 cargo run -p aeolus-data --example registry_lookup
 cargo run -p aeolus-data --example codegen_artifacts
 cargo run -p aeolus-ir --example mask_algebra
@@ -649,6 +652,7 @@ cargo run -p aeolus-rt --example style_face  # the host surface's own style face
 cargo run -p aeolus-rt --example probe_face   # the host surface's probe face: the widest walk over a MeasuredContainers hand-off
 cargo run -p aeolus-rt --example cell_observer  # the view cell's observability face: the pool's seam joined, one stats handle across pool + cells
 cargo run -p aeolus-rt --example program_overlay
+cargo run -p aeolus-rt --example alloc_contract  # the allocation contract's headless read-out: the counting allocator wraps the walk
 cargo run -p aeolus-macro --example frozen_program
 cargo run -p aeolus-macro --example themed_program  # the `theme:` bake: T0/T1 literals at expansion, the include_str! rebuild anchor  # the tw!/cn! surface: the frozen program, printed
 cargo run -p aeolus-macro --example variants  # variants!/tw_cn!/theme!: the cva tables + the baked theme
