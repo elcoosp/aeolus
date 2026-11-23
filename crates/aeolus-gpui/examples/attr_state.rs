@@ -13,6 +13,7 @@
 use aeolus_gpui::prelude::*;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The form-row surface a settings dialog would wear: the base card,
     // the `aria-busy` save-in-progress layer and the `data-[state=open]`
     // separation layer.
