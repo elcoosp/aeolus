@@ -14,6 +14,7 @@
 use aeolus_gpui::prelude::*;
 
 fn main() {
+    aeolus_gpui::set_env(Default::default()); // the frame-Env escape hatch (plan §3.5's debug-assert keys on it)
     // The focus-ring surface a settings input would wear: ring width,
     // ring colour, the offset band's width and colour — all four
     // `--tw-ring-*` longhands in one program.
