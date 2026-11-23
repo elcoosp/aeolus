@@ -47,11 +47,15 @@
 //! `**:` spellings, the relative `[>+~…]` selectors, the at-rule
 //! `[@media…]`/`[@container…]` bracket forms, bare `[:hover]` without
 //! the `&` prefix, compound `[&:hover:focus]` conjunctions,
-//! `nth-[2n+1]` An+B ordinals; unregistered spellings, compound `has-`
-//! inners like `has-[>svg]`, parent-relative compounds like
+//! `nth-[2n+1]` An+B ordinals; unregistered bare `has-` spellings,
+//! at-rule `has-` inners, parent-relative compounds like
 //! `group-data-*`, and the structural parent-relative compositions
 //! `group-first:`/`peer-last:`) comes back as a typed
-//! unsupported-variant diagnostic — never a silent drop.
+//! unsupported-variant diagnostic — never a silent drop. (The
+//! ARBITRARY bracketed `has-` inner left this set 2026-11: the
+//! selector-text grammar folds — combinator inners verbatim, the
+//! `*:is(…)` star wrap otherwise — the real v4.1.17 renderings the
+//! probe run pins.)
 
 use aeolus_ir::{Bp, Cond, Structural};
 
@@ -532,27 +536,44 @@ fn is_attr_name(name: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-/// The `has-` inner → the rendered `:has(...)` fragment — the v0.x
-/// oracle's `has_atom`, pinned by the corpus's star-prefixed forms.
-/// One SIMPLE test per inner (the oracle's own boundary):
+/// The `has-` inner → the rendered `:has(...)` fragment — two grammars,
+/// the real v4.1.17 compiler's own renderings (the probe run pins the
+/// bytes; the corpus pins the bare forms):
 ///
-/// * a probe state, named (`has-focus`) or colon-wrapped
-///   (`has-[:focus]`) → `*:focus`;
-/// * a data-/aria- attribute compound (`has-data-[slot=x]`,
-///   `has-aria-invalid`) → `*[data-slot="x"]`, `*[aria-invalid="true"]`;
-/// * anything else (compound selectors, relative selectors, structural
-///   inners — the compile stage has no `first:` surface yet) refuses.
+/// * the ARBITRARY bracketed inner (`has-[…]`) is SELECTOR text: a
+///   leading combinator (`>`/`+`/`~`) rides VERBATIM (`has-[>svg]`
+///   renders `&:has(>svg)` — the shadcn Button table's own class),
+///   every other selector inner wraps the star form (`has-[li]` →
+///   `&:has(*:is(li))`, compounds and class/id selectors and the
+///   colon-wrapped states alike — `has-[:focus]` renders
+///   `&:has(*:is(:focus))`, distinct from the named form), the
+///   underscores decode to the spaces the arbitrary-variant grammar
+///   carries, and an at-rule inner is not a `:has()`-able selector —
+///   the typed refusal;
+/// * a bare inner reads the corpus's star-prefixed forms: a probe
+///   state (`has-focus` → `*:focus`), a structural inner
+///   (`has-first` → `*:first-child`), a data-/aria- attribute compound
+///   (`has-data-[slot=x]` → `*[data-slot="x"]`, `has-aria-invalid` →
+///   `*[aria-invalid="true"]`);
+/// * anything else refuses (unknown bare spellings — the closed
+///   grammar, never a silent guess).
 ///
 /// `pub(crate)`: the CSS arm's parent-relative heads
 /// (`group-has-*`/`peer-has-*`) render the SAME fragment from the SAME
 /// grammar — the render cannot drift the fold.
 pub(crate) fn has_inner_fragment(rest: &str) -> Option<&'static str> {
-    // The bracketed form strips to the same inner the named form reads
-    // (the oracle: `sel = inner without surrounding brackets`).
-    let inner = rest
-        .strip_prefix('[')
-        .and_then(|s| s.strip_suffix(']'))
-        .unwrap_or(rest);
+    // The arbitrary bracketed inner: the SELECTOR-text path.
+    if let Some(inner) = rest.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        if inner.is_empty() || inner.starts_with('@') {
+            return None;
+        }
+        let decoded = crate::arbitrary::decode_underscores(inner);
+        if decoded.starts_with('>') || decoded.starts_with('+') || decoded.starts_with('~') {
+            return Some(intern(&decoded));
+        }
+        return Some(intern(&format!("*:is({decoded})")));
+    }
+    let inner = rest;
     let state = inner.trim_start_matches(':');
     if let Some(pseudo) = state_pseudo(state) {
         return Some(intern(&format!("*{pseudo}")));
