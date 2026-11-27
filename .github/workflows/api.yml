@@ -1,0 +1,56 @@
+# The §5.8 governance gate's CI half: the two tools the governance line
+# names, split by the surface each can see —
+#
+# * `cargo public-api` covers BOTH publishable crates (aeolus-core's
+#   library surface and aeolus-macro's proc-macro surface — a
+#   proc-macro crate has no library target, so semver-checks cannot see
+#   it): the committed baselines under reports/11-public-api/ are the
+#   gate, a public-API change that forgets the regeneration fails the
+#   diff (the verify-tables drift-gate honesty, one tool over);
+# * `cargo semver-checks` covers aeolus-core's LIBRARY surface against
+#   the PR's base branch — the accidentially-breaking change is the
+#   gate (the macro's additive surface rides the baseline diff).
+#
+# Additive: the existing ci.yml jobs are untouched (the perf.yml
+# precedent).
+
+name: api
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  public-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      # cargo-public-api reads rustdoc JSON — the nightly-only
+      # contract its own docs carry.
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-public-api
+        run: cargo install cargo-public-api --locked
+      - name: The publishable pair's public API against the committed baselines
+        run: |
+          cargo public-api --simplified -p aeolus-core > /tmp/aeolus-core.txt
+          cargo public-api --simplified -p aeolus-macro > /tmp/aeolus-macro.txt
+          diff reports/11-public-api/aeolus-core.txt /tmp/aeolus-core.txt
+          diff reports/11-public-api/aeolus-macro.txt /tmp/aeolus-macro.txt
+
+  semver-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base branch's tree: the PR gate's baseline.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-semver-checks
+      - name: aeolus-core's library surface against the base branch
+        run: cargo semver-checks -p aeolus-core --baseline-rev "origin/${{ github.base_ref || 'main' }}"
