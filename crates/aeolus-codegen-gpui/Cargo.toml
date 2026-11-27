@@ -38,3 +38,9 @@ harness = false
 [[bench]]
 name = "profile"
 harness = false
+
+# The builder-chain emitter's microbenchmarks (the per-expansion cost
+# the tw_builder! face adds, beside the gate bench).
+[[bench]]
+name = "builder"
+harness = false
