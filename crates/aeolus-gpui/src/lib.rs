@@ -64,7 +64,14 @@
 //! [`ShadowState`] accumulator — the ring's bands and the preset's
 //! bands in one v4-ordered call.
 
-use std::cell::{Cell, RefCell};
+// The frame marker's `Cell` rides the SAME `debug_assertions` gate as
+// the marker itself (the release/bench build compiles the marker out,
+// so the import must go with it — the bench-profile `unused import`
+// warning was the tell, the no-silent-failures rule applied to the
+// build output).
+#[cfg(debug_assertions)]
+use std::cell::Cell;
+use std::cell::RefCell;
 
 use aeolus_compile::{CompileError, Config, Env, structural_fires};
 use aeolus_ir::{Cond, Prop, Val};
