@@ -3706,7 +3706,12 @@ fn write_audit_json(report: &AuditReport, order: &[String], out: &mut dyn Write)
     );
 }
 
-const USAGE: &str = "\
+/// The headless surface's own help text — the `--help` face, the
+/// usage-error suffix, and (since the docs book) the single source the
+/// book's CLI-reference chapter renders from (`cargo xtask gen-book`;
+/// the page regenerates from this const, so the book can never drift
+/// from the binary's `--help`).
+pub const USAGE: &str = "\
 aeolus — Tailwind v4 class compiler, headless surface
 
 USAGE:
