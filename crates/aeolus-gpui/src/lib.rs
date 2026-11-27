@@ -101,7 +101,7 @@ pub use shadow::{SHADOW_PRESET_TEXTS, ShadowState, parse_shadow_bands};
 pub use space::{Axis, SpaceDiv, SpaceDivState, TwSpaceExt};
 pub use transform::{TransformState, transform_state};
 
-pub use aeolus_macro::{cn, theme, tw, tw_cn, variants};
+pub use aeolus_macro::{cn, theme, tw, tw_builder, tw_cn, variants};
 pub use aeolus_rt::theme_from_css;
 // The attribute-bits seam (plan §3.5): the element's own `data-`/`aria-`
 // bits ride the host state surface, so the prelude carries the probe
@@ -115,19 +115,38 @@ pub use aeolus_rt::{AttrBit, AttrKind, AttrProbe, AttrState, StructFacts, Struct
 // [`TwContainerExt::tw_container`] measuring element publishes into).
 pub use aeolus_rt::{ContainerBound, ContainerProbe, ContainerState, MeasuredContainers};
 
+/// The builder-chain constructor surface — the paths the emitted
+/// closure tokens name (the emit (a) END FORM, the plan §3.2 status
+/// note's "backend method calls … the P3 codegen crate's surface").
+/// The codegen emitter
+/// ([`aeolus_codegen_gpui::lower_class_builder`]) renders one stable
+/// `::aeolus_gpui::chain::` path per constructor, so a consumer needs
+/// no `gpui` naming of its own; the trait methods the closure chains
+/// resolve through [`Styled`], which rides the prelude beside
+/// [`TwExt`].
+pub mod chain {
+    pub use gpui::{FontWeight, px, relative, rems, rgba};
+}
+
 /// The V1 consumption surface: macros, the program type and the two
 /// extension traits.
 pub mod prelude {
+    pub use crate::chain;
     pub use crate::{
         AeolusRoot, Axis, ContainerQuery, FilterState, GradState, SpaceDiv, SpaceDivState,
         TransformState, TwAnimExt, TwContainerExt, TwExt, TwSpaceExt, TwStateExt, begin_frame, cn,
-        container_rem, set_env, theme, theme_from_css, transform_state, tw, tw_cn, variants,
+        container_rem, set_env, theme, theme_from_css, transform_state, tw, tw_builder, tw_cn,
+        variants,
     };
+    // The builder-chain closure's method calls resolve `Styled`'s
+    // methods at the consumer's call site — the trait rides the
+    // prelude beside `TwExt` (the emit (a) END FORM's import story).
     pub use aeolus_compile::Env;
     pub use aeolus_rt::{
         AttrBit, AttrKind, AttrProbe, AttrState, ClassCell, ContainerBound, ContainerProbe,
         ContainerState, MeasuredContainers, StaticProgram, StructFacts, StructProbe,
     };
+    pub use gpui::Styled;
 }
 
 thread_local! {
@@ -216,6 +235,24 @@ pub trait TwExt: Styled + Sized {
     /// Apply the program under an explicit probe environment.
     fn tw_env(self, program: StaticProgram, env: Env) -> Self {
         apply_matching(self, &program, &env, None, None, None)
+    }
+
+    /// Apply the emitted builder-chain closure — the emit (a) END
+    /// FORM's application face ([`TwExt::tw_env`]'s compile-time
+    /// twin): `tw_builder!` expands to the method-call closure the
+    /// codegen emitter rendered at expansion time, and this entry
+    /// applies it with NO walk — the per-frame cost is the builder
+    /// calls themselves (the §4 target's shape).
+    ///
+    /// ```no_run
+    /// use aeolus_gpui::prelude::*;
+    ///
+    /// # fn demo<V: gpui::Styled>(view: V) -> V {
+    /// view.tw_chain(tw_builder!("flex flex-col p-4"))
+    /// # }
+    /// ```
+    fn tw_chain(self, f: impl FnOnce(Self) -> Self) -> Self {
+        f(self)
     }
 
     /// Apply the program under the current `env()`, with the element's
