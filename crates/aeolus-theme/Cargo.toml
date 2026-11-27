@@ -57,6 +57,12 @@ harness = false
 name = "observer"
 harness = false
 
+# The rsx.toml import's cold path: the parse+map walk over the demo
+# sheet and a synthetic wide sheet (plan §5's config-bridge bullet).
+[[bench]]
+name = "rsx"
+harness = false
+
 # Pedantic clippy, inherited from the workspace (v0.8 §4).
 [lints]
 workspace = true
