@@ -1,0 +1,15 @@
+# The Aeolus Book's build configuration (the docs book, plan §8's P5 row
+# and §5.8's governance line). The book is mdbook source committed in
+# tree: build it with `mdbook build docs/book`, gate it with
+# `cargo xtask verify-book` (the structural contract + the generated
+# chapters' byte drift) — the same gen/verify discipline the other
+# committed artifacts follow.
+[book]
+title = "The Aeolus Book"
+src = "src"
+
+# A missing chapter file or include target is a build error, never a
+# silently-generated stub page — the no-silent-failures rule applied to
+# the book itself.
+[build]
+create-missing = false
