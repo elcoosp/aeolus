@@ -57,6 +57,7 @@ use aeolus_ir::Val;
 
 mod observer;
 mod provenance;
+mod rsx;
 mod source;
 
 pub use observer::{
@@ -66,6 +67,10 @@ pub use observer::{
 // declaration sites the light sheet's own CSS carries, one scan over the
 // SAME text the reader parsed.
 pub use provenance::{TokenOrigin, TokenProvenance};
+// The rsx.toml import (plan §5's config-bridge bullet): the gpui-rsx
+// theme file walked onto the SAME CSS-first surface every other theme
+// rides, the unmappable entries on the typed note channel.
+pub use rsx::{RsxError, RsxImport, RsxNote, RsxNoteKind, RsxSpacingScale, import_rsx};
 pub use source::{SourceDirective, source_directives};
 
 /// Which value form a [`TokenTable`] resolves tokens to (plan §3.4's
