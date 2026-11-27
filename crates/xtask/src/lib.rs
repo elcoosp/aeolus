@@ -19,6 +19,15 @@
 //!                                        module)
 //! cargo xtask verify-gpui-caps         — the capability table's
 //!                                        focused drift gate
+//! cargo xtask gen-book                 — (re)write the docs book's
+//!                                        generated chapters (the CLI
+//!                                        reference, from the CLI's
+//!                                        own USAGE)
+//! cargo xtask verify-book              — the book's drift gate: the
+//!                                        generated chapters' bytes AND
+//!                                        the structural contract
+//!                                        (SUMMARY entries, include
+//!                                        targets)
 //! ```
 //!
 //! Both commands take `--root <dir>` to resolve the artifacts'
@@ -34,6 +43,8 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod book;
+
 use aeolus_codegen::conformance::{Capability, Conformance, PropCapability, TableCaps, Tier};
 use aeolus_codegen_gpui::{Caps, unsupported_reason};
 use aeolus_data::codegen::{self, GeneratedArtifact};
@@ -47,13 +58,19 @@ cargo xtask list\n    \
 cargo xtask gen-tables [--check] [--root <dir>]\n    \
 cargo xtask verify-tables [--root <dir>]\n    \
 cargo xtask gen-gpui-caps [--check] [--root <dir>]\n    \
-cargo xtask verify-gpui-caps [--root <dir>]\n\n\
+cargo xtask verify-gpui-caps [--root <dir>]\n    \
+cargo xtask gen-book [--check] [--root <dir>]\n    \
+cargo xtask verify-book [--root <dir>]\n\n\
 commands:\n    \
 list             print every committed artifact (name + workspace path)\n    \
 gen-tables       regenerate every artifact's committed bytes from the rows\n    \
 verify-tables    regenerate and compare; exit 1 on any drift (the test battery pins it)\n    \
 gen-gpui-caps    regenerate the §3.7 capability table (the codegen-gpui src module)\n    \
-verify-gpui-caps the capability table's focused drift gate (exit 1 on drift)\n\n\
+verify-gpui-caps the capability table's focused drift gate (exit 1 on drift)\n    \
+gen-book         regenerate the docs book's generated chapters (the CLI reference,\n    \
+                 from the CLI crate's own USAGE)\n    \
+verify-book      the book's drift gate: the generated chapters' bytes plus the\n    \
+                 structural contract (SUMMARY entries, include targets) — exit 1 on any\n\n\
 flags:\n    \
 --check        gen commands: compare instead of write (the verify behaviour)\n    \
 --root <dir>   resolve the artifacts' workspace-relative paths against <dir>\n    \
@@ -61,8 +78,8 @@ flags:\n    \
 
 /// Exit codes: `0` clean / written, `1` drift (verify mode), `2` usage
 /// error — the CLI's own code contract.
-const EXIT_OK: i32 = 0;
-const EXIT_DRIFT: i32 = 1;
+pub(crate) const EXIT_OK: i32 = 0;
+pub(crate) const EXIT_DRIFT: i32 = 1;
 const EXIT_USAGE: i32 = 2;
 
 /// The default workspace root: this crate lives at `crates/xtask`, so
@@ -594,6 +611,8 @@ where
             let _ = out.write_all(report.as_bytes());
             exit
         }
+        "gen-book" => book::gen_book(&root, check, out),
+        "verify-book" => book::verify(&root, out),
         other => {
             let _ = writeln!(err, "unknown command {other:?}\n{USAGE}");
             EXIT_USAGE
@@ -621,8 +640,13 @@ fn walk(root: &Path, check: bool, out: &mut dyn std::io::Write) -> i32 {
 /// dedicated commands run (the same write/verify contract as the full
 /// [`walk`], scoped to a single committed file). The exit code rides
 /// beside the artifact's report line (empty only on a prepare/write
-/// failure, whose message is the report).
-fn walk_one(root: &Path, check: bool, artifact: &'static dyn GeneratedArtifact) -> (i32, String) {
+/// failure, whose message is the report). The book seam
+/// ([`crate::book`]) reuses it for its own generated-chapter family.
+pub(crate) fn walk_one(
+    root: &Path,
+    check: bool,
+    artifact: &'static dyn GeneratedArtifact,
+) -> (i32, String) {
     let path = root.join(artifact.path());
     let generated = artifact.generate();
     let outcome = if check {
