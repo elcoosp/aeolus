@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Aeolus V1 generator driver: walks aeolus-data's GeneratedArtifact seam to regenerate (gen-tables) and drift-verify (verify-tables) the committed artifacts, plus the §3.7 capability table's gen-gpui-caps / verify-gpui-caps pair (plan §3.2's and §3.7's generator story)"
+description = "Aeolus V1 generator driver: walks aeolus-data's GeneratedArtifact seam to regenerate (gen-tables) and drift-verify (verify-tables) the committed artifacts, the §3.7 capability table's gen-gpui-caps / verify-gpui-caps pair and the docs book's gen-book / verify-book gate (plan §3.2, §3.7 and §8's generator story)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,6 +15,10 @@ publish = false
 # library (the driver is a thin, test-pinned CLI over them, the
 # aeolus-cli precedent: the whole program is `run(args, out, err)`).
 aeolus-data = { path = "../aeolus-data" }
+# The docs book's generated chapter (plan §8's P5 row, the "docs book"
+# deliverable): the CLI reference renders from the CLI crate's own
+# `USAGE` — the page is the binary's help text, never a parallel claim.
+aeolus-cli = { path = "../aeolus-cli" }
 # The §5.1 conformance score's seam and its GPUI impl (the
 # `conformance-docs` artifact's render inputs): the trait + report live
 # in aeolus-codegen, the capability impl rides the codegen-gpui crate's
