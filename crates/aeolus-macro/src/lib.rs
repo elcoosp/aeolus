@@ -235,6 +235,53 @@ pub fn cn_static(input: TokenStream) -> TokenStream {
     anchor_expression(bake.as_ref(), emitted.into(), "cn_static!")
 }
 
+/// The emit (a) END FORM's macro face: compile the literal and emit the
+/// builder-call closure — the method calls the walk would run, rendered
+/// at expansion time (plan `docs/AEOLUS_V1_ARCHITECTURE.md` §3.2
+/// status: "The backend METHOD calls the emit (a) end form implies
+/// (`FlexDirection::Column`, builder chains) remain the P3 codegen
+/// crate's surface"). Applied through [`TwExt::tw_chain`], the per-frame
+/// cost is the builder calls themselves — no walk, no dispatch.
+///
+/// The embedded shadcn bake rides (the T0 literals — the chain carries
+/// compile-time colour values only; a runtime-token slot or a
+/// non-native conditional family is a compile error naming the reason,
+/// the [`tw!`]-gated honesty contract). The `theme:` prefix does NOT
+/// ride here yet: the chain form's themed bake is the follow-up slice,
+/// the frozen-program macros carry it today.
+#[proc_macro]
+pub fn tw_builder(input: TokenStream) -> TokenStream {
+    let literal = match extract_single_string(&input.clone(), "tw_builder!") {
+        Ok(s) => s,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let (compiled, classes) = match compile_literal_with(&literal, None, "tw_builder!", false) {
+        Ok(pair) => pair,
+        Err(msg) => return compile_error(&input, &msg),
+    };
+    let keywords = keyword_alignment(&compiled, &classes);
+    let refusals = aeolus_codegen_gpui::audit_builder(&compiled.program, &keywords);
+    if !refusals.is_empty() {
+        return compile_error(
+            &input,
+            &format!(
+                "aeolus: {literal:?} uses capabilities the builder chain cannot express:{}",
+                render_refusals(&refusals)
+            ),
+        );
+    }
+    match aeolus_codegen_gpui::emit_builder(&compiled.program, &keywords) {
+        Ok(tokens) => tokens.into(),
+        Err(refusals) => compile_error(
+            &input,
+            &format!(
+                "aeolus: {literal:?} uses capabilities the builder chain cannot express:{}",
+                render_refusals(&refusals)
+            ),
+        ),
+    }
+}
+
 /// The compatibility alias kept for the pre-1.0 spelling (`tw_cn!`).
 #[proc_macro]
 pub fn tw_cn(input: TokenStream) -> TokenStream {
