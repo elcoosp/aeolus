@@ -35,7 +35,14 @@ use aeolus_codegen::{Emit, ir_path};
 use aeolus_data::rows::{DROP_SHADOW_DEFAULT, DROP_SHADOW_PRESETS, FILTER_CHAIN};
 use aeolus_data::tables::SHADOW_PRESETS;
 
+pub mod builder;
 pub mod profile;
+
+/// The builder-chain emitter (the emit (a) END FORM — the plan §3.2
+/// status note's "backend method calls … the P3 codegen crate's
+/// surface"): the walk's method calls rendered as tokens, the frozen
+/// program's compile-time twin.
+pub use builder::{GpuiBuilderEmit, audit_builder, emit_builder, lower_class_builder};
 
 /// The emit gate's refusal type, re-exported for the macro surface's
 /// `audit` gate (the compile-error renderer reads `prop` + `reason`).
@@ -776,7 +783,7 @@ fn decoration_val_unsupported_reason(prop: Prop, val: Val) -> Option<&'static st
 /// The per-declaration verdict over one decl: the verbatim slot's own
 /// gate first, the decoration family's val-dependent gate, the per-prop
 /// tiers ([`unsupported_reason`]) otherwise.
-fn decl_unsupported_reason(prop: Prop, val: Val, keyword: &str) -> Option<&'static str> {
+pub(crate) fn decl_unsupported_reason(prop: Prop, val: Val, keyword: &str) -> Option<&'static str> {
     // The property declaration's own arm first: the name is the
     // author's, the refusal names the form (the composite reason would
     // point at the value grammar, which did not run here).
