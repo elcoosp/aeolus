@@ -155,3 +155,9 @@ harness = false
 
 [lints]
 workspace = true
+
+# The emit (a) END FORM's runtime face: the emitted chain against the
+# walk against the hand-written calls (the §4 target row, one harness).
+[[bench]]
+name = "builder"
+harness = false
