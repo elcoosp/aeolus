@@ -762,6 +762,7 @@ cargo run -p xtask --example drift_walkthrough  # list + verify-tables through t
 
 **Design & specs**
 
+- [The Aeolus Book](docs/book/) — the ordered reader over the whole surface: pipeline, IR, themes, variants, backends, tooling, the generated reference pages (`mdbook build docs/book`, gated by `cargo xtask verify-book`)
 - [V1 architecture](docs/AEOLUS_V1_ARCHITECTURE.md) — the zero-runtime plan of record: pipeline, IR, theme tiers, performance contract
 - [Migration guide](docs/MIGRATION.md) — moving a gpui-rsx app onto the V1 pipeline: the behavioural-differences table, the `rsx.toml` import
 - [docs/REGISTRY.md](docs/REGISTRY.md) — the utility registry audit page (generated from the rows)
