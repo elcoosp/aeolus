@@ -495,6 +495,7 @@ cargo run -p aeolus-rt --example alloc_contract         # the walk's allocation 
 cargo run -p aeolus-compile --example dyn_store         # the DynStore storage seam: a host's own bounded store
 cargo run -p aeolus-compile --example walk_observer     # the walk face: the stage events, the byte-neutral twin
 cargo run -p aeolus-theme --example theme_observer      # the theme-resolution face: tier arms + typed misses streamed
+cargo run -p aeolus-theme --example rsx_import          # the rsx.toml import: the config bridge's importer face, notes beside the sheet
 cargo run -p aeolus-core --example gamut                # the CSS Color 4 gamut mapping: clamp beside chroma reduction
 cargo run -p aeolus-gpui --example ring                 # ring-* → v4 BoxShadow bands
 cargo run -p aeolus-gpui --example shadow               # shadow-* → GPUI's own BoxShadow list (the native tier)
@@ -543,8 +544,6 @@ cargo run -p aeolus-lsp --example lsp_semantic_tokens_range  # the range-scoped 
 cargo run -p aeolus-lsp --example lsp_incremental_sync  # the incremental sync: ranged didChange splices, the keystroke walk, the full-text replace beside
 cargo run -p aeolus-cli --example expand_viewport       # expand --width: the viewport fact the sm:..2xl: layers answer from
 cargo run -p aeolus-lsp --example lsp_symbols           # the outline face: one symbol per candidate class, the verdict beside the name
-cargo run -p aeolus-lsp --example lsp_token_rename  # the token-rename fold: the command's second face
-cargo run -p aeolus-lsp --example lsp_range_format  # the selection-scoped sort: the strings the range intersects
 cargo run -p aeolus-cli --example fmt                   # the fmt command's file face: the drift report + the rewrite
 cargo run -p aeolus-compile --example descendants       # the descendant-probe seam: the has-* family answers
 cargo run -p aeolus-cli --example expand_descendants    # expand --has: the subtree facts the has-* layers answer from
@@ -581,8 +580,8 @@ cargo run -p aeolus-codegen-gpui --example gate  # the macro surface's capabilit
 cargo run -p aeolus-codegen-gpui --example caps_table  # the generated GPUI capability table (xtask gen-gpui-caps)
 cargo run -p aeolus-codegen-gpui --example lower_class  # the third-party (gpui-rsx) seam
 cargo run -p aeolus-syntax --example no_std_face  # the no_std face: the lexer a no_std host links, borrowed end to end
-cargo run -p aeolus-macro --example frozen_program
-cargo run -p aeolus-macro --example themed_program  # the `theme:` bake: T0/T1 literals at expansion, the include_str! rebuild anchor  # what a tw! expansion actually emits
+cargo run -p aeolus-macro --example frozen_program     # what a tw! expansion actually emits
+cargo run -p aeolus-macro --example themed_program  # the `theme:` bake: T0/T1 literals at expansion, the include_str! rebuild anchor
 cargo run -p aeolus-macro --example variants        # variants!/tw_cn!/theme!: the cva tables + the baked theme
 ```
 
@@ -764,6 +763,7 @@ cargo run -p xtask --example drift_walkthrough  # list + verify-tables through t
 **Design & specs**
 
 - [V1 architecture](docs/AEOLUS_V1_ARCHITECTURE.md) — the zero-runtime plan of record: pipeline, IR, theme tiers, performance contract
+- [Migration guide](docs/MIGRATION.md) — moving a gpui-rsx app onto the V1 pipeline: the behavioural-differences table, the `rsx.toml` import
 - [docs/REGISTRY.md](docs/REGISTRY.md) — the utility registry audit page (generated from the rows)
 - [docs/CONFORMANCE.md](docs/CONFORMANCE.md) — the GPUI conformance page, from the emitter's own gates
 - [Core design](reports/03-aeolus-core-design/DESIGN.md) — the `Probe` parity model and the honesty contract
