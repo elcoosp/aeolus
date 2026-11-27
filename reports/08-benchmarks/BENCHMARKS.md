@@ -1,8 +1,106 @@
 # Benchmarks — hot-path report (deliverable 8)
 
+The project's reproducible benchmark record, one dated run per landing.
+The newest section is the 2026-11-27 workspace-wide re-run (the GPUI
+static walk beside the hand-written chains, the compile seams and the
+core lane on one box, one day, one method); the earlier sections keep
+their landing-day numbers as the history. The standing rule:
+treat absolute numbers as environment-specific; the ratios are the point.
+
+## The 2026-11-27 workspace-wide re-run (current record)
+
+Environment: shared 2-core CI sandbox (Linux), Rust 1.100.0
+(stable-x86_64-unknown-linux-gnu), divan 0.1.21, the `bench` profile
+(optimized, `lto = "thin"`), debug-assertions off, median of 100
+samples, timer precision 21 ns. Three suites, same box, same day:
+
+### The GPUI static walk beside the hand-written chains
+
+Command: `cargo bench -p aeolus-gpui --bench perf_contract`. The
+harness PINS the parity first (walk == hand-written, field by field)
+before anything is measured — the numbers compare like with like.
+
+| benchmark | median | notes |
+|---|---|---|
+| `hand_button_chain` | **79.0 ns** | the hand-written builder chain (33-class button) |
+| `static_walk_button` | **982.4 ns** | the frozen program's walk — **12.4x the hand chain**, +903 ns bounded and constant per string |
+| `hand_layout_chain` / `static_walk_layout` | 52.5 ns / 773.1 ns | **14.7x** |
+| `hand_typo_chain` / `static_walk_typo` | 48.1 ns / 295.8 ns | **6.2x** |
+| `hand_grid_chain` / `static_walk_grid` | 35.1 ns / 300.6 ns | **8.6x** |
+| `static_clone_button` | **65.4 ns** | the freeze-once-clone host pattern (skips the walk entirely) |
+| `cell_warm` | **1.167 us** | the V1 `ClassCell` warm hit (content compare + walk) |
+| `cell_cold` | **9.62 us** | compile + walk on a content change — **8.2x its own warm path** |
+| `ring_walk` | **185.8 ns** | the ring polyfill's walk |
+| `v0x_static_lane` | **47.9 ns** | the v0.x lane's static path |
+| `v0x_dynamic_warm` | **55.7 ns** | the v0.x lane's warm hit (its L1 is thread-local by design) |
+| `v0x_dynamic_fresh_cache` | **93.9 ns** (median of a wide slow tail) | the L1-hit-plus-reinsert shape, not a cold parse |
+
+Cross-check against the plan's recorded medians
+(`docs/AEOLUS_V1_ARCHITECTURE.md` §4, divan 2026-11): button walk
+1.07 us -> 982.4 ns, hand chain 84 ns -> 79.0 ns, clone 70 ns -> 65.4 ns,
+cell warm 908 ns -> 1.167 us, cold compile 9.4 us -> 9.62 us — same
+shape, environment-scale deltas. The committed CI gate
+(`.github/workflows/perf.yml`) compares the walk and the cell-warm path
+against `crates/aeolus-gpui/benches/baselines.json` and fails the PR on
+a >5% walk regression or a >2x cell-warm regression.
+
+### The compile seams
+
+Command: `cargo bench -p aeolus-compile` (the representative faces;
+every suite's full table prints from the command)
+
+| benchmark | median | notes |
+|---|---|---|
+| `compile_uncached_button` | **14.18 us** | the full V1 compile of the 33-class button (lex -> lookup -> lower -> assemble) |
+| `compile_cached_button` | **499.8 ns** | the `DynCache` warm hit — **28.4x its own miss** |
+| `emit_rust_button` | **26.64 us** | the emit (a) arm over the compiled button |
+| `emit_static_button` | **5.95 us** | the emit (b) arm's frozen `static` item |
+| `walk_sourceless_resting` | **424.2 ns** | the interp walk, sourceless probes quiet |
+| `walk_full_probe_wired` | **864.8 ns** | the full probe matrix wired (attributes, containers, descendants, supports) |
+| `pooled_observed_miss` / `pooled_observed_hit` | 6.86 us / **404.8 ns** | the observed pooled compile, miss and hit |
+| `sort_button_classes` | **7.98 us** | the registry-order class sort |
+| `composed_miss_fold` | **1.76 ms** | the suggestion seam's bounded-distance fold (a one-time miss-side cost) |
+| `interp_widget_state_button` | **159.1 ns** | the interp answering the widget-state layers under a wired env |
+| `interp_pseudo_selection` | **49.6 ns** | the `::selection` render target's own cascade |
+
+The observability faces' cost is measured in the same run:
+`walk_unobserved` 7.80 us vs `walk_recorded` 8.92 us — the recorded
+walk carries its events for ~14% on the miss path and nothing on the
+hits (a hit streams nothing).
+
+### The core lane (v0.x oracle) and the colour/gamut maths
+
+Command: `cargo bench -p aeolus-core` (suites `hot`, `gamut`,
+`snapshot`)
+
+| benchmark | median | notes |
+|---|---|---|
+| `parse_button` (33 classes) | **3.82 us** | lexer+parser only; the grammar has grown far past the v0.1.0 record below (hints, arbitrary forms, the attribute families) |
+| `resolve_button_cold` | **6.16 us** | full parse + theme + conflict + plan build |
+| `resolve_cached_hit` | **77.1 ns** | one hash lookup + plan clone |
+| `diff_unchanged` | **435.3 ns** | full `ResolvedStyle` diff, all slots equal |
+| `intern_hit` | **72.8 ns** | string interner hit path |
+| `cn_button_merge` (34 classes) | **4.38 us** | the conflict trie over base+override |
+| `color_mix_opacity` | **0.219 ns** | the oklab premultiplied mix (`/N` is one multiply) |
+| `theme_parse_shadcn` | **99.3 us** | one-time; the ~270-token default palette |
+| `plan_overlay_button` | **383.8 ns** | the per-slot overlay (mask + copy) |
+| `gamut_map_out_of_gamut` | **177.1 ns** | the binary-search chroma reduction (a bake-time cost) |
+| `snapshot_roundtrip_rich` | **462.5 us** | the debug serialisation's full round trip |
+
+### The nightly-only half (flagged, not run here)
+
+The instruction-count golden — `tw!(s)` vs hand-written, the +/-2%
+gate, `iai-callgrind` — rides `crates/aeolus-gpui/benches/
+iai_contract.rs` behind the `iai` feature and runs on the
+`iai-nightly` workflow (nightly toolchain + valgrind). It is not
+runnable in this environment and is not counted above; the stable
+divan medians stand in for it on stable, and `perf.yml` is the
+wall-clock half that DOES run on every PR.
+
+## The v0.1.0 record (historical, 2026-11-03, re-run 2026-11-04)
+
 Run: `cargo bench -p aeolus-core` (divan 0.1.21), release profile,
 2-core shared CI sandbox (Linux). Source: `crates/aeolus-core/benches/hot.rs`.
-Date: 2026-11-03, re-run 2026-11-04 on the v0.1.0 release branch (below).
 Treat absolute numbers as environment-specific; the ratios are the point.
 
 The benchmarked button string is 33 classes (the full shadcn Button base
